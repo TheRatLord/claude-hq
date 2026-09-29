@@ -1,0 +1,21 @@
+{
+  // Shared compiler options. Every project extends this; none of them emits (`tsc --noEmit`) except tsconfig.preload.json.
+  // Node 24 strips types natively, so sources must stay erasable: no enums, namespaces, parameter properties, `import x = require()`.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  }
+}

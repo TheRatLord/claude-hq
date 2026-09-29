@@ -1,0 +1,13 @@
+{
+  // Editor / catch-all project (tsserver picks the nearest tsconfig.json): everything at once. NOT run by `npm run typecheck`:
+  // merging the DOM and node libs into one program gives false positives (preload.cts is CJS, and the scripts that evaluate
+  // in the page see the renderer's `window.__hq` globals), so the checked projects are tsconfig.{node,renderer,test,preload,
+  // experiments}.json. scripts/typecheck.ts also fails if a source file falls outside all of them.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["shared", "server", "scripts", "electron", "renderer/src", "experiments", "vite.config.ts"],
+  "exclude": ["node_modules", "dist", "out", "scratch", "docs"]
+}

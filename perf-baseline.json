@@ -1,0 +1,284 @@
+{
+  "at": "2026-09-28T09:05:44.081Z",
+  "reason": "INT M2: whole office kit-dressed (21 cells incl. NAL/WAR) + STAT/AMB/AUD/UI/BRN M3; ~2.0-2.8M tris incl. shadows; 131-141 fps uncapped 1080p medium on the 780M. --force-busy: the contention flag came from other engineers' idle Chromium (GPU 0-12% busy); numbers match a verified-quiet shoot within 1-2% || earlier rows: M1.5 integration (INT): hq is the default layout, so the default perf rows are now spawn/pitOverview/street on hq; added them (merged: the proto M1-floor rows are kept). GPU was idle (0-6% busy) but perf's other-GPU-client probe flagged 1 client throughout, hence --force-busy. || earlier rows: M1 fix round 3 (CORE): re-baselined after RND's post-stack rework — the old mixed@proto 200.6 fps predated it (~250 fps now), so a ~30% regression would have passed the 15% gate. The GPU was never quiet for a full 3-scenario run (other engineers' review/perf runs in parallel), so each row is the best median-of-3/5 over 4 uncapped runs on 2026-09-27 15:05-15:40 (contention only lowers fps). Re-run `node scripts/perf.mjs --runs 5 --write-baseline --reason ...` on a quiet box to replace it.",
+  "mode": "uncapped",
+  "size": [
+    1920,
+    1080
+  ],
+  "quality": "medium",
+  "runs": 3,
+  "ms": 3000,
+  "rows": [
+    {
+      "key": "mixed@proto",
+      "scenario": "mixed",
+      "pose": "proto",
+      "layout": "proto",
+      "fps": 252.4,
+      "drawCalls": 124,
+      "triangles": 356134,
+      "programs": 22,
+      "actors": 12
+    },
+    {
+      "key": "mixed@protoDesks",
+      "scenario": "mixed",
+      "pose": "protoDesks",
+      "layout": "proto",
+      "fps": 224.1,
+      "drawCalls": 116,
+      "triangles": 285314,
+      "programs": 22,
+      "actors": 12
+    },
+    {
+      "key": "mixed@protoCorner",
+      "scenario": "mixed",
+      "pose": "protoCorner",
+      "layout": "proto",
+      "fps": 258.7,
+      "drawCalls": 132,
+      "triangles": 362840,
+      "programs": 22,
+      "actors": 12
+    },
+    {
+      "key": "crowd40@proto",
+      "scenario": "crowd40",
+      "pose": "proto",
+      "layout": "proto",
+      "fps": 232.3,
+      "drawCalls": 129,
+      "triangles": 834764,
+      "programs": 22,
+      "actors": 40
+    },
+    {
+      "key": "crowd40@protoDesks",
+      "scenario": "crowd40",
+      "pose": "protoDesks",
+      "layout": "proto",
+      "fps": 232.2,
+      "drawCalls": 119,
+      "triangles": 661006,
+      "programs": 22,
+      "actors": 40
+    },
+    {
+      "key": "crowd40@protoCorner",
+      "scenario": "crowd40",
+      "pose": "protoCorner",
+      "layout": "proto",
+      "fps": 221.4,
+      "drawCalls": 135,
+      "triangles": 903814,
+      "programs": 22,
+      "actors": 40
+    },
+    {
+      "key": "allStates@proto",
+      "scenario": "allStates",
+      "pose": "proto",
+      "layout": "proto",
+      "fps": 223.2,
+      "drawCalls": 124,
+      "triangles": 717290,
+      "programs": 22,
+      "actors": 33
+    },
+    {
+      "key": "allStates@protoDesks",
+      "scenario": "allStates",
+      "pose": "protoDesks",
+      "layout": "proto",
+      "fps": 222.2,
+      "drawCalls": 116,
+      "triangles": 655366,
+      "programs": 22,
+      "actors": 33
+    },
+    {
+      "key": "allStates@protoCorner",
+      "scenario": "allStates",
+      "pose": "protoCorner",
+      "layout": "proto",
+      "fps": 233.8,
+      "drawCalls": 132,
+      "triangles": 759142,
+      "programs": 22,
+      "actors": 33
+    },
+    {
+      "key": "mixed@spawn",
+      "scenario": "mixed",
+      "pose": "spawn",
+      "layout": "hq",
+      "fps": 130.7,
+      "runs": [
+        123.7,
+        130.7,
+        133.6
+      ],
+      "drawCalls": 144,
+      "triangles": 2247658,
+      "programs": 27,
+      "actors": 12,
+      "gpuBusyBefore": 0,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "mixed@pitOverview",
+      "scenario": "mixed",
+      "pose": "pitOverview",
+      "layout": "hq",
+      "fps": 136.8,
+      "runs": [
+        135.2,
+        138.5,
+        136.8
+      ],
+      "drawCalls": 118,
+      "triangles": 2173618,
+      "programs": 27,
+      "actors": 12,
+      "gpuBusyBefore": 0,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "mixed@street",
+      "scenario": "mixed",
+      "pose": "street",
+      "layout": "hq",
+      "fps": 138.6,
+      "runs": [
+        138.8,
+        138.5,
+        138.6
+      ],
+      "drawCalls": 103,
+      "triangles": 2053942,
+      "programs": 27,
+      "actors": 12,
+      "gpuBusyBefore": 0,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "crowd40@spawn",
+      "scenario": "crowd40",
+      "pose": "spawn",
+      "layout": "hq",
+      "fps": 131.9,
+      "runs": [
+        131,
+        131.9,
+        134.9
+      ],
+      "drawCalls": 146,
+      "triangles": 2830290,
+      "programs": 27,
+      "actors": 40,
+      "gpuBusyBefore": 9,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "crowd40@pitOverview",
+      "scenario": "crowd40",
+      "pose": "pitOverview",
+      "layout": "hq",
+      "fps": 132.4,
+      "runs": [
+        133.4,
+        131.2,
+        132.4
+      ],
+      "drawCalls": 119,
+      "triangles": 2739862,
+      "programs": 27,
+      "actors": 40,
+      "gpuBusyBefore": 9,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "crowd40@street",
+      "scenario": "crowd40",
+      "pose": "street",
+      "layout": "hq",
+      "fps": 134.4,
+      "runs": [
+        135.5,
+        134.4,
+        134.1
+      ],
+      "drawCalls": 107,
+      "triangles": 2498804,
+      "programs": 27,
+      "actors": 40,
+      "gpuBusyBefore": 9,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "allStates@spawn",
+      "scenario": "allStates",
+      "pose": "spawn",
+      "layout": "hq",
+      "fps": 137.6,
+      "runs": [
+        145.9,
+        137.6,
+        137.2
+      ],
+      "drawCalls": 144,
+      "triangles": 2561324,
+      "programs": 27,
+      "actors": 33,
+      "gpuBusyBefore": 10,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "allStates@pitOverview",
+      "scenario": "allStates",
+      "pose": "pitOverview",
+      "layout": "hq",
+      "fps": 135.6,
+      "runs": [
+        134.9,
+        136.3,
+        135.6
+      ],
+      "drawCalls": 118,
+      "triangles": 2537654,
+      "programs": 27,
+      "actors": 33,
+      "gpuBusyBefore": 10,
+      "contended": true,
+      "otherGpuClients": 1
+    },
+    {
+      "key": "allStates@street",
+      "scenario": "allStates",
+      "pose": "street",
+      "layout": "hq",
+      "fps": 136.4,
+      "runs": [
+        136.6,
+        134.1,
+        136.4
+      ],
+      "drawCalls": 101,
+      "triangles": 2329542,
+      "programs": 27,
+      "actors": 33,
+      "gpuBusyBefore": 10,
+      "contended": true,
+      "otherGpuClients": 1
+    }
+  ]
+}

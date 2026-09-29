@@ -1,0 +1,11 @@
+{
+  // experiments/: throwaway perf probes. bench/main.ts is a browser page (vite serves it), the rest are node scripts / the
+  // electron probe, so this project takes DOM + node + vite/client types.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["experiments", "renderer/src/stubs"],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,11 @@
+{
+  // every *.test.ts plus server/test/ helpers: node:test on node types, with the DOM lib because renderer tests import
+  // renderer modules (and fake the DOM). Run only these: npx tsc -p tsconfig.test.json | grep '^renderer/'
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["**/*.test.ts", "server/test", "renderer/src/stubs"],
+  "exclude": ["node_modules", "dist", "scratch", "docs"]
+}

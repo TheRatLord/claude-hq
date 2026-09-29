@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude HQ UI Kit</title>
+<!--
+  FINAL Claude HQ UI kit mockup — "Workshop Signage" + grafts (docs/design/ui-kit.md is the spec; this page is its
+  visual reference and must stay in sync with it). Self-contained: system fonts, CSS gradients, inline SVG filters,
+  procedural 5x7 dot-matrix (bitmap = renderer/src/world/stats/dotfont.ts). Only asset: final-bg.png (a clean game frame).
+  Scenes via hash: #work  #world  #palette  #cards  #dialogs  #kit
+  Class names are the kit's real class names (k-*), so the CSS can be lifted into ui/kit/styles.ts.
+-->
+<style>
+:root{
+  /* ---- shared/palette.ts (CORE / ENV / STATUS) ---- */
+  --clay:#D97757; --clay-deep:#B8593B; --clay-light:#EBA283; --clay-ink:#9A4A2E;
+  --cream:#F4EDE3; --paper:#FBF8F3; --oat:#E4D9C8; --sand:#CDBFA8;
+  --ink:#1F1E1D; --ink2:#3A3733;
+  --walnut:#7B5238; --walnut-lo:#3D2819; --teal:#5E9EA0; --enamel:#2F5E62; --butter:#F1C66E; --sage:#9DB38F;
+  --s-working:#4FA3E8; --s-blocked:#EF5A4C; --s-done:#63C48A; --s-idle:#B3AA9D; --s-unknown:#A98BE0; --s-shell:#7FE3A0; --s-busy:#F4B860;
+  /* ---- UI group (derived; no new hues) ---- */
+  --board:#221F1C; --board-lo:#1A1816; --board-hi:#2C2824; --glass:#141312; --crt:#1A1917;
+  --brass:#C9A15A; --brass-hi:#EBCB8A; --brass-lo:#8A6A34;
+  --t1:#F4EDE3; --t2:#BFB5A7; --t3:#9A9186;                /* on board: 14.1 / 8.1 / 5.3 : 1 */
+  --p1:#1F1E1D; --p2:#5A544D; --p3:#756C61;                /* on paper: 15.7 / 7.1 / 4.9 : 1 */
+  --b-blocked:#FF8A7C; --b-working:#8CC4F2; --b-done:#8FD9AB; --b-shell:#9FEAB9; --b-busy:#F6C98A;   /* status word on board */
+  --i-blocked:#B8332A; --i-working:#2C6DAA; --i-done:#2A7A4C; --i-busy:#8A5A12;                     /* status ink on paper */
+  --rule:rgba(94,158,160,.30); --stitch:rgba(90,84,77,.30);
+  --font-sign: ui-rounded, "SF Pro Rounded", Nunito, "Varela Round", Ubuntu, Cantarell, "DejaVu Sans", system-ui, sans-serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "DejaVu Sans", sans-serif;
+  --font-voice: "Iowan Old Style", Charter, "Bitstream Charter", "Source Serif Pro", Georgia, "DejaVu Serif", serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(.2,.9,.3,1.2);
+  --d2: 0 4px 10px rgba(28,16,8,.35), 0 18px 40px -8px rgba(28,16,8,.55);
+  --recess: inset 0 2px 4px rgba(0,0,0,.65), 0 1px 0 rgba(255,236,210,.06);
+  /* textures: 3 runtime SVG noise tiles (dropped on the Low tier: .hq-lowq) */
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.012 .55' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 .9  0 0 0 0 .75  0 0 0 .055 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --fibre: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='2' seed='9'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .38  0 0 0 0 .28  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --woodgrain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='60'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.006 .28' numOctaves='3' seed='2'/><feColorMatrix values='0 0 0 0 .2  0 0 0 0 .1  0 0 0 0 .04  0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.hq-lowq{--grain:none;--fibre:none;--woodgrain:none}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:#2a2622;font:13px/1.4 var(--font-ui);color:var(--t1);overflow:hidden;-webkit-font-smoothing:antialiased}
+.stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#3a342e url(final-bg.png) center/cover}
+.scene{display:none}
+body[data-scene="work"] .s-work, body[data-scene="world"] .s-world, body[data-scene="kit"] .s-kit,
+body[data-scene="cards"] .s-cards, body[data-scene="dialogs"] .s-dialogs{display:block}
+body[data-scene="palette"] .s-world, body[data-scene="palette"] .s-pal{display:block}
+body[data-scene="palette"] .s-world .aim{display:none}
+body[data-scene="kit"] .stage{background:#D9CFC2}
+.abs{position:absolute}
+
+/* ================================================================ MATERIALS */
+/* BOARD — painted ink in a walnut rim. For SCANNING. Rim + grain are mandatory on every tier. */
+.k-board{position:absolute;background:var(--grain),linear-gradient(180deg,#26221F,var(--board) 30%,#1E1B19);border-radius:12px;color:var(--t1);
+  box-shadow:0 0 0 1px #140f0b,0 0 0 5px var(--walnut),0 0 0 6px var(--walnut-lo),inset 0 1px 0 rgba(255,236,210,.06),inset 0 0 0 1px rgba(0,0,0,.5),var(--d2)}
+.k-board::before{content:"";position:absolute;inset:-5px;border-radius:15px;pointer-events:none;background:var(--woodgrain);
+  -webkit-mask:linear-gradient(#000,#000) content-box,linear-gradient(#000,#000);-webkit-mask-composite:xor;padding:5px;opacity:.9}
+.k-board::after{content:"";position:absolute;inset:-5px;border-radius:15px;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,220,180,.35),inset 0 -1px 0 rgba(0,0,0,.4)}
+.k-board.static{position:relative}
+/* PAPER — cream stock. For READING & DECIDING. */
+.k-paper{position:absolute;color:var(--p1);background:var(--fibre),linear-gradient(180deg,var(--paper),#F3ECE0);border-radius:4px;
+  box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 0 0 1px rgba(80,60,40,.18),0 2px 0 #E0D5C4,0 3px 0 #D2C5B1,0 16px 30px -10px rgba(40,24,10,.5),0 4px 8px rgba(40,24,10,.2)}
+.k-paper.static{position:relative}
+/* PLAQUE — teal enamel, cream keyline, rivets. ONE per surface, as its title. .sm = no rivets. */
+.k-plaque{display:inline-flex;align-items:center;gap:8px;position:relative;padding:5px 20px;border-radius:5px;white-space:nowrap;
+  background:linear-gradient(180deg,#3A6F73,var(--enamel) 55%,#27504F);color:var(--cream);
+  font:800 12.5px/1 var(--font-sign);letter-spacing:.14em;text-transform:uppercase;font-stretch:condensed;
+  box-shadow:inset 0 0 0 2px var(--enamel),inset 0 0 0 3px rgba(244,237,227,.75),0 2px 0 #1b3a3c,0 3px 6px rgba(0,0,0,.35)}
+.k-plaque::before,.k-plaque::after{content:"";position:absolute;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,var(--brass-hi),var(--brass) 45%,var(--brass-lo));box-shadow:0 1px 0 rgba(0,0,0,.4)}
+.k-plaque::before{left:7px}.k-plaque::after{right:7px}
+.k-plaque.sm{padding:4px 10px;font-size:10px}.k-plaque.sm::before,.k-plaque.sm::after{display:none}
+.k-plaque.clay{background:linear-gradient(180deg,#E08A6C,var(--clay) 55%,#C8674A);color:var(--ink);box-shadow:inset 0 0 0 2px var(--clay),inset 0 0 0 3px rgba(31,30,29,.45),0 2px 0 var(--clay-deep),0 3px 6px rgba(0,0,0,.35)}
+.k-plaque.butter{background:linear-gradient(180deg,#F6D68E,var(--butter) 55%,#E1B458);color:var(--ink);box-shadow:inset 0 0 0 2px var(--butter),inset 0 0 0 3px rgba(31,30,29,.55),0 2px 0 #B98C3A,0 3px 6px rgba(0,0,0,.35)}
+/* READOUT — glass + one brass ring + dot-matrix. Only: drawer blocked counter, HUD needs-you digit, triage progress, stamps' timers. */
+.k-readout{display:inline-flex;align-items:center;gap:7px;padding:4px 7px;border-radius:4px;background:radial-gradient(120% 90% at 50% 0%,#1f1d1b,var(--glass));
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.8),inset 0 0 0 1px #000,0 0 0 2px var(--brass-lo),0 1px 0 2px var(--brass)}
+canvas.dm{display:block}
+
+/* ================================================================ DIVIDERS */
+.k-groove{height:2px;background:linear-gradient(#0e0c0b 0 1px,rgba(255,236,210,.06) 1px 2px);border:0;margin:0}
+.k-stitch{height:0;border:0;border-top:1.5px dashed var(--stitch);margin:0}
+
+/* ================================================================ TYPE */
+.k-sign{font:800 11.5px/1 var(--font-sign);letter-spacing:.14em;text-transform:uppercase;font-stretch:condensed}
+.k-label{font:700 11px/1 var(--font-sign);letter-spacing:.04em;color:var(--t3)}   /* engraved, sentence case */
+.k-paper .k-label{color:var(--p3)}
+.k-voice{font-family:var(--font-voice)}   /* the agent's own words: question, task title, recap sentence */
+.mono{font-family:var(--font-mono)}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.p2{color:var(--p2)}.p3{color:var(--p3)}
+
+/* ================================================================ PARTS */
+/* KEYCAP — cream type-block, same on every material. Letters in sign font so O≠0, I≠1. */
+.k-key{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:4px;flex:none;
+  font:800 10.5px/1 var(--font-sign);color:var(--ink);background:linear-gradient(180deg,var(--paper),var(--oat));
+  box-shadow:inset 0 0 0 1px rgba(80,60,40,.28),0 2px 0 #B9A98E,0 2px 0 1px rgba(40,30,20,.25);vertical-align:1px;white-space:nowrap}
+.k-key.sm{height:16px;min-width:16px;font-size:9.5px;padding:0 4px}
+/* LEGEND — the key strip. One per surface. Leader shown once, then "then". */
+.k-legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--t2);font-size:12px}
+.k-paper .k-legend{color:var(--p2)}
+.k-legend .h{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.k-legend .then{color:var(--t3);margin:0 -8px 0 -10px}
+.k-paper .k-legend .then{color:var(--p3)}
+/* LAMP — status = bezel shape + lit glass (+ word or aria-label). */
+svg.k-lamp{width:14px;height:14px;flex:none;overflow:visible}
+svg.k-lamp.sm{width:12px;height:12px} svg.k-lamp.lg{width:18px;height:18px}
+.k-lamp.working{color:var(--s-working);filter:drop-shadow(0 0 3px rgba(79,163,232,.7))}
+.k-lamp.blocked{color:var(--s-blocked);filter:drop-shadow(0 0 4px rgba(239,90,76,.9));animation:pulse 1.4s ease-in-out infinite}
+.k-lamp.blocked.still{animation:none}
+.k-lamp.done{color:var(--s-done);filter:drop-shadow(0 0 3px rgba(99,196,138,.6))}
+.k-lamp.idle{color:#8a8176}
+.k-lamp.shell{color:var(--s-shell);filter:drop-shadow(0 0 3px rgba(127,227,160,.6))}
+.k-lamp.busy{color:var(--s-busy);filter:drop-shadow(0 0 3px rgba(244,184,96,.6))}
+.k-lamp.unknown{color:var(--s-unknown)}
+.k-paper .k-lamp{filter:none}
+@keyframes pulse{50%{filter:drop-shadow(0 0 1px rgba(239,90,76,.3));opacity:.72}}
+.k-state{display:inline-flex;align-items:center;gap:6px;font:650 12px/1 var(--font-ui)}
+.k-state.blocked{color:var(--b-blocked)}.k-state.working{color:var(--b-working)}.k-state.done{color:var(--b-done)}.k-state.idle{color:var(--t3)}.k-state.shell{color:var(--b-shell)}.k-state.busy{color:var(--b-busy)}
+.k-paper .k-state.blocked{color:var(--i-blocked)}.k-paper .k-state.working{color:var(--i-working)}.k-paper .k-state.done{color:var(--i-done)}.k-paper .k-state.idle{color:var(--p3)}.k-paper .k-state.busy{color:var(--i-busy)}
+/* BUTTON — key tile on the LEFT, sentence case. primary = clay (max one per surface), plain = keyline. */
+.k-btn{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px 0 6px;border-radius:6px;border:0;cursor:pointer;white-space:nowrap;
+  font:700 13px/1 var(--font-ui);color:var(--t1);background:none;box-shadow:inset 0 0 0 1.5px rgba(201,161,90,.5)}
+.k-btn.nokey{padding-left:12px}
+.k-paper .k-btn{color:var(--p1);box-shadow:inset 0 0 0 1.5px rgba(90,84,77,.38)}
+.k-btn.primary,.k-paper .k-btn.primary{color:var(--ink);background:linear-gradient(180deg,#E3876A,var(--clay));box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 3px 0 var(--clay-deep),0 4px 6px rgba(60,20,10,.3)}
+.k-btn.primary .k-key{background:linear-gradient(180deg,#FDF1EA,#F3D2C3);box-shadow:inset 0 0 0 1px rgba(80,30,10,.3),0 1px 0 var(--clay-deep)}
+.k-ibtn{width:26px;height:26px;display:inline-grid;place-items:center;border-radius:5px;color:var(--t2)}
+.k-ibtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.k-ibtn.on{color:var(--brass-hi)}
+/* SLOT — text input: recessed. */
+.k-slot{display:flex;align-items:center;gap:8px;height:34px;padding:0 8px 0 10px;border-radius:5px;background:var(--board-lo);box-shadow:var(--recess);color:var(--t3);font:12.5px var(--font-mono)}
+.k-slot svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.k-slot .sp{flex:1}
+.k-paper .k-slot{background:none;box-shadow:none;border-bottom:1.5px solid rgba(31,30,29,.55);border-radius:0;color:var(--p1);padding:0 2px;font:600 15px var(--font-ui)}
+/* DETENT — segmented choice (board): labels light, a clay notch under the active one. Never a filled segment. */
+.k-detent{position:relative;display:flex;padding:0 2px;height:30px;border-radius:5px;background:var(--board-lo);box-shadow:var(--recess)}
+.k-detent span{flex:1;display:grid;place-items:center;padding:0 6px;font:650 12px/1 var(--font-ui);color:var(--t3);position:relative;white-space:nowrap}
+.k-detent span.on{color:var(--t1)}
+.k-detent span.on::after{content:"";position:absolute;bottom:3px;left:50%;width:18px;margin-left:-9px;height:3px;border-radius:2px;background:var(--clay);box-shadow:0 0 6px rgba(217,119,87,.7)}
+.k-paper .k-detent{background:none;box-shadow:none;border-bottom:1.5px solid var(--stitch);border-radius:0;height:32px}
+.k-paper .k-detent span{color:var(--p2)} .k-paper .k-detent span.on{color:var(--p1);font-weight:750}
+.k-paper .k-detent span.on::after{bottom:-2px;width:70%;left:15%;margin:0;box-shadow:none}
+/* SWITCH — binary mode (Peek/Control, on/off on board). Knob turns clay when the "input-changing" side is on. */
+.k-switch{display:inline-flex;align-items:center;gap:9px;padding:6px 10px;border-radius:6px;background:var(--board-lo);box-shadow:var(--recess)}
+.k-switch .lb{font:650 12px/1 var(--font-ui);color:var(--t3)}
+.k-switch .lb.on{color:var(--t1)}
+.k-switch .track{position:relative;width:34px;height:16px;border-radius:8px;background:#0e0c0b;box-shadow:inset 0 1px 2px #000}
+.k-switch .track i{position:absolute;top:1px;left:1px;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 30%,var(--brass-hi),var(--brass) 55%,var(--brass-lo));transition:left .18s var(--ease)}
+.k-switch.right .track{background:#3a1d14}
+.k-switch.right .track i{left:19px;background:radial-gradient(circle at 40% 30%,#F3B39A,var(--clay) 55%,var(--clay-deep));box-shadow:0 0 6px rgba(217,119,87,.7)}
+/* TICK — on/off filter or option: a box with a check. Off reads unchecked, not disabled. */
+.k-tick{display:inline-flex;align-items:center;gap:6px;font:650 12px/1 var(--font-ui);color:var(--t1);white-space:nowrap}
+.k-tick i{width:13px;height:13px;border-radius:2px;display:grid;place-items:center;font:900 11px/1 var(--font-ui);font-style:normal;background:var(--board-lo);box-shadow:inset 0 0 0 1.4px var(--t3)}
+.k-tick.on i{background:var(--cream);box-shadow:none}
+.k-tick.on i::before{content:"✓";color:var(--ink)}
+.k-tick:not(.on){color:var(--t2)}
+.k-paper .k-tick{color:var(--p1)} .k-paper .k-tick i{background:var(--paper);box-shadow:inset 0 0 0 1.4px var(--p2)} .k-paper .k-tick.on i{background:var(--paper);box-shadow:inset 0 0 0 1.4px var(--p1)}
+/* CIRCLED — single choice on PAPER (settings, hire kind): the chosen word is circled in clay ink. */
+.k-circled{display:inline-flex;gap:10px}
+.k-circled span{position:relative;padding:3px 6px;font:600 13px/1.2 var(--font-ui);color:var(--p2)}
+.k-circled span.on{color:var(--p1);font-weight:750}
+.k-circled span.on::after{content:"";position:absolute;inset:-4px -4px -4px -5px;pointer-events:none;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M8 22 C6 8 40 3 64 4 C88 5 97 12 95 21 C93 32 62 37 40 36 C16 35 3 29 7 18 C9 12 20 7 30 6' fill='none' stroke='%23B8593B' stroke-width='2.2' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+/* PORTHOLE — live portrait in a brass ring; the INNER RIM carries the workspace colour (--ws). No workspace chip anywhere else in rows. */
+.k-port{flex:none;width:36px;height:36px;border-radius:50%;padding:2.5px;background:conic-gradient(from 200deg,var(--brass-hi),var(--brass-lo),var(--brass),var(--brass-hi),var(--brass-lo),var(--brass-hi));box-shadow:0 2px 3px rgba(0,0,0,.45)}
+.k-port>div{width:100%;height:100%;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 30%,#5b8f93,#2F5E62);box-shadow:inset 0 0 0 2.5px var(--ws,#6B6760)}
+.k-port svg{width:100%;height:100%;display:block}
+.k-port.xs{width:22px;height:22px;padding:1.5px}.k-port.xs>div{box-shadow:inset 0 0 0 1.5px var(--ws,#6B6760)}
+.k-port.lg{width:56px;height:56px;padding:3px}.k-port.lg>div{box-shadow:inset 0 0 0 3.5px var(--ws,#6B6760)}
+.k-port.shell>div{background:radial-gradient(circle at 50% 30%,#6c6f5e,#3e4237)}
+/* SHIELD — enamel workspace crest. Only in the drawer breadcrumb and a card header. */
+.k-shield{display:inline-block;width:9px;height:11px;border-radius:2px 2px 5px 5px;background:var(--ws);box-shadow:inset 0 0 0 1px rgba(244,237,227,.55),0 1px 0 rgba(0,0,0,.4);vertical-align:-1px}
+/* UNREAD — butter bulb (+ mono count when > 1) */
+.k-unread{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none;background:radial-gradient(circle at 40% 35%,#FFF2C4,var(--butter) 60%,#C9962F);box-shadow:0 0 6px rgba(241,198,110,.8)}
+/* GAUGE — context meter; rows only at >= 80 % or when selected */
+.k-gauge{display:inline-flex;align-items:center;gap:6px;font:10.5px/1 var(--font-mono);color:var(--t3)}
+.k-gauge .bar{position:relative;width:44px;height:5px;border-radius:3px;background:var(--board-lo);box-shadow:inset 0 1px 2px rgba(0,0,0,.7)}
+.k-gauge .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--sage),var(--butter))}
+.k-gauge.hot{color:var(--b-busy)} .k-gauge.hot .bar i{background:linear-gradient(90deg,var(--butter),var(--s-busy))}
+.k-paper .k-gauge{color:var(--p2)} .k-paper .k-gauge .bar{background:var(--oat);box-shadow:inset 0 1px 1px rgba(0,0,0,.2)}
+/* STAMP — worn rubber-stamp ink (SVG #inked). Paper only; max one per paper. */
+.k-stamp{display:inline-flex;align-items:center;gap:6px;padding:5px 8px 4px;border:2.5px solid currentColor;border-radius:4px;color:var(--i-blocked);
+  font:900 12px/1 var(--font-sign);letter-spacing:.12em;text-transform:uppercase;font-stretch:condensed;transform:rotate(-5deg);
+  filter:url(#inked);mix-blend-mode:multiply;white-space:nowrap}
+.k-stamp .mono{font-size:13px;letter-spacing:0;font-weight:800}
+.k-stamp.done{color:var(--i-done)} .k-stamp.locked{color:var(--i-blocked)} .k-stamp.ready{color:var(--i-working)}
+/* HIGHLIGHT — selection on paper: clay highlighter swipe + ▸ in the margin */
+.k-hl{position:relative;isolation:isolate}
+.k-hl::after{content:"";position:absolute;left:0;right:0;top:4px;bottom:4px;z-index:-1;border-radius:3px 10px 4px 12px;
+  background:linear-gradient(100deg,rgba(217,119,87,.26),rgba(235,162,131,.36) 60%,rgba(217,119,87,.18))}
+.k-hl::before{content:"";position:absolute;left:-13px;top:50%;border:6px solid transparent;border-left:8px solid var(--clay);margin-top:-6px}
+mark.k-match{background:linear-gradient(180deg,transparent 35%,rgba(241,198,110,.75) 35% 88%,transparent 88%);color:inherit;padding:0 1px}
+/* LEDGER — option lines (Claude's "1 Yes / 2 … / 3 No"): ONE rendering everywhere (roster, card, inbox, triage). */
+.k-ledger{margin:0;padding:0;list-style:none}
+.k-ledger li{position:relative;display:flex;align-items:center;gap:11px;height:36px;padding:0 8px;border-bottom:1.5px dashed var(--stitch);font:650 14px/1.2 var(--font-ui)}
+.k-ledger li:last-child{border-bottom:0}
+.k-ledger li .note{margin-left:auto;font:650 11px/1 var(--font-ui);color:var(--i-blocked)}
+.k-ledger li>span.tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-ledger.board li{height:28px;font-size:12.5px;color:var(--t1);border-bottom-color:rgba(255,236,210,.1);padding:0 4px;gap:9px}
+.k-ledger.board li .note{color:var(--b-blocked)}
+.k-ledger.board .k-hl::after{background:linear-gradient(100deg,rgba(217,119,87,.34),rgba(217,119,87,.14))}
+/* QUESTION — agent's voice with a red ledger margin */
+.k-q{position:relative;padding:1px 0 1px 13px;font:500 16.5px/1.35 var(--font-voice);color:var(--p1)}
+.k-q::before{content:"";position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:var(--s-blocked)}
+.k-q code{font:600 14px var(--font-mono)}
+/* POST-IT — butter note: fit hint, resize notice, outbox, onboarding aside. Lives in a strip, never over glyphs. */
+.k-postit{display:flex;align-items:center;gap:12px;padding:8px 12px;color:#3d2f12;background:linear-gradient(180deg,#F6D992,var(--butter));font:600 12.5px/1.3 var(--font-ui);
+  box-shadow:0 1px 0 #D9A94A,0 4px 8px rgba(40,24,10,.3);transform:rotate(-.4deg);border-radius:1px}
+.k-postit .k-key{box-shadow:inset 0 0 0 1px rgba(80,60,40,.35),0 2px 0 #C9963F}
+.k-postit .link{font-weight:750;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+
+/* ================================================================ TICKET (toast) — receipt with a perforated stub + torn bottom */
+.k-ticket{position:absolute;width:376px;color:var(--p1);filter:drop-shadow(0 12px 14px rgba(40,20,8,.42)) drop-shadow(0 1px 1px rgba(40,20,8,.25))}
+.k-ticket .in{display:flex;background:var(--fibre),linear-gradient(180deg,var(--paper),#F3ECE0);border-radius:4px 4px 0 0;
+  -webkit-mask:linear-gradient(#000,#000) top/100% calc(100% - 6px) no-repeat,conic-gradient(from 135deg at 50% 0,#000 90deg,transparent 0) bottom/10px 6px repeat-x}
+.k-ticket .stub{width:62px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding-bottom:6px;
+  background:linear-gradient(180deg,rgba(239,90,76,.10),rgba(239,90,76,.06));border-right:2px dotted rgba(90,84,77,.35)}
+.k-ticket.done .stub{background:linear-gradient(180deg,rgba(99,196,138,.12),rgba(99,196,138,.06))}
+.k-ticket .stub .mono{font-size:11.5px;font-weight:700;color:var(--i-blocked)}
+.k-ticket.done .stub .mono{color:var(--i-done)}
+.k-ticket .body{flex:1;min-width:0;padding:10px 14px 14px}
+.k-ticket .cap{font:11px/1 var(--font-mono);color:var(--p3)}
+.k-ticket .what{font:750 15px/1.2 var(--font-ui);margin:5px 0 3px}
+.k-ticket .q{font:500 14px/1.3 var(--font-voice);color:var(--p2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.k-ticket .tear{margin:9px 0 8px}
+.k-ticket .k-legend{color:var(--p2)}
+/* one-line variant: in the drawer footer rail */
+.k-ticket.line{position:relative;width:auto;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+.k-ticket.line .in{-webkit-mask:none;border-radius:3px;height:32px;align-items:center}
+.k-ticket.line .stub{width:auto;flex-direction:row;padding:0 9px;height:100%;gap:6px}
+.k-ticket.line .body{display:flex;align-items:center;gap:12px;padding:0 12px}
+.k-ticket.line .what{margin:0;font-size:13px}
+
+/* ================================================================ HUD */
+.rod{position:absolute;top:0;width:2px;height:12px;background:linear-gradient(90deg,#6a5a44,#b9a27a,#6a5a44)}
+.k-tally{position:absolute;top:12px;display:flex;align-items:center;padding:5px;height:44px;border-radius:9px}
+.k-tally .cell{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;position:relative;white-space:nowrap}
+.k-tally .cell + .cell::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;background:linear-gradient(90deg,#0c0a09 50%,rgba(255,236,210,.07) 50%)}
+.k-tally .n{font:800 16px/1 var(--font-ui);font-variant-numeric:tabular-nums;color:var(--t1)}
+.k-tally .w{font:600 13px/1 var(--font-ui);color:var(--t2)}
+.k-tally .cell.alarm{border-radius:6px;padding:0 8px 0 10px;background:radial-gradient(120% 140% at 50% 50%,#4a1712,#2a0f0c);box-shadow:inset 0 0 0 1px #000,inset 0 2px 4px rgba(0,0,0,.6)}
+.k-tally .cell.alarm .w{color:#FFC2B8;font-weight:700}
+.k-tally .cell.alarm + .cell::before{display:none}
+.k-tally .cell.clear .w{color:var(--b-done);font-weight:700}
+.k-rail{position:absolute;display:flex;gap:2px;padding:4px;border-radius:8px}
+.xhair{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:2.5px solid var(--cream);box-shadow:0 0 0 1.5px var(--ink),inset 0 0 0 1.5px var(--ink)}
+.xhair::after{content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px;border-radius:50%;background:var(--cream);box-shadow:0 0 0 1.5px var(--ink)}
+.k-aimtag{position:absolute;display:flex;align-items:center;gap:8px;padding:6px 11px 6px 7px;transform:rotate(-1.2deg);white-space:nowrap}
+.k-aimtag b{font:750 14px/1 var(--font-ui)}
+.k-aimtag .k-key{height:22px;min-width:22px;font-size:12px}
+.k-minimap{position:absolute;width:196px;height:156px;padding:7px;border-radius:9px;background:var(--woodgrain),linear-gradient(180deg,#8a5d40,var(--walnut) 60%,#5f3f2a);
+  box-shadow:inset 0 1px 0 rgba(255,220,180,.35),0 2px 0 var(--walnut-lo),0 12px 20px -6px rgba(20,10,4,.5)}
+.k-minimap .map{width:100%;height:100%;border-radius:2px;transform:rotate(-.8deg);
+  background:linear-gradient(var(--rule) 1px,transparent 1px) 0 0/10px 10px,linear-gradient(90deg,var(--rule) 1px,transparent 1px) 0 0/10px 10px,var(--fibre),#F4EDE1;box-shadow:0 1px 3px rgba(40,20,8,.5)}
+.k-minimap .map svg{width:100%;height:100%;display:block}
+.k-minimap .tape{position:absolute;width:40px;height:14px;background:rgba(236,224,196,.85);box-shadow:0 1px 1px rgba(0,0,0,.12)}
+.k-minimap .k-plaque{position:absolute;left:50%;bottom:-9px;transform:translateX(-50%)}
+.k-chev{position:absolute;display:flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 26px;color:var(--ink);white-space:nowrap;
+  background:linear-gradient(180deg,#E08A6C,var(--clay));clip-path:polygon(16px 0,100% 0,100% 100%,16px 100%,0 50%);
+  filter:drop-shadow(0 4px 6px rgba(40,16,8,.45));font:750 15px/1 var(--font-ui)}
+.k-chev .mono{font-size:13px;font-weight:700}
+.k-hotbar{position:absolute;display:flex;padding:6px;border-radius:9px;background:var(--woodgrain),linear-gradient(180deg,#8a5d40,var(--walnut) 60%,#5f3f2a);
+  box-shadow:inset 0 1px 0 rgba(255,220,180,.35),0 2px 0 var(--walnut-lo),0 12px 20px -6px rgba(20,10,4,.5)}
+.k-hotbar .cubby{position:relative;width:54px;height:54px;display:grid;place-items:center;background:linear-gradient(180deg,#171513,#24201d);box-shadow:inset 0 4px 6px rgba(0,0,0,.7);margin:0 3px;border-radius:3px}
+.k-hotbar .cubby .k-key{position:absolute;left:3px;top:3px;height:14px;min-width:14px;font-size:9px;padding:0 3px}
+.k-hotbar .cubby svg.k-lamp{position:absolute;right:4px;bottom:4px;width:11px;height:11px}
+.k-hotbar .cubby.empty{opacity:.5}
+.k-hotbar .cubby.sel{box-shadow:inset 0 4px 6px rgba(0,0,0,.7),0 0 0 2px var(--clay)}
+
+/* ================================================================ ROSTER */
+.roster{left:22px;top:22px;bottom:22px;width:360px;display:flex;flex-direction:column}
+.r-head{display:flex;align-items:center;gap:8px;padding:14px 10px 10px 14px}
+.sp{flex:1}
+.roster .k-detent{margin:0 12px}
+.roster .k-slot{margin:10px 12px 0}
+.r-ticks{display:flex;align-items:center;gap:13px;padding:11px 14px 11px}
+.list{flex:1;overflow:hidden;padding:2px 0}
+.k-gh{display:flex;align-items:center;gap:8px;height:30px;padding:0 14px 0 12px;margin-top:4px}
+.k-gh .chev{width:10px;height:10px;stroke:var(--t3);fill:none;stroke-width:2;stroke-linecap:round}
+.k-gh .name{font:800 11.5px/1 var(--font-sign);letter-spacing:.14em;text-transform:uppercase;color:var(--t2);font-stretch:condensed}
+.k-gh .fill{flex:1;height:2px;background:linear-gradient(#0e0c0b 0 1px,rgba(255,236,210,.06) 1px 2px);margin:0 4px}
+.k-gh .cnt{font:700 11.5px/1 var(--font-mono);color:var(--t3)}
+.k-gh.alarm .name{color:var(--b-blocked)}
+.k-gh .sum{font:12px/1 var(--font-ui);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;margin-left:2px}
+.k-row{position:relative;display:flex;gap:10px;min-height:48px;padding:6px 14px;align-items:flex-start}
+.k-row .main{flex:1;min-width:0}
+.k-row .l1{display:flex;align-items:baseline;gap:7px;white-space:nowrap;min-width:0}
+.k-row .nm{font:700 14px/1.25 var(--font-ui);color:var(--t1)}
+.k-row .ctx{font:12px/1.25 var(--font-ui);color:var(--t3);overflow:hidden;text-overflow:ellipsis}
+.k-row .k-unread{align-self:center}
+.k-row .l2{margin-top:2px;font:12px/1.35 var(--font-mono);color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.k-row .side{display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:3px}
+.k-row .age{display:inline-flex;align-items:center;gap:6px;font:700 12px/1 var(--font-mono);color:var(--t3)}
+.k-row .age.warm{color:var(--butter)} .k-row .age.hot{color:var(--b-blocked)}
+.k-row.sel{background:linear-gradient(90deg,rgba(244,237,227,.09),rgba(244,237,227,.035))}
+.k-row.sel::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:4px;border-radius:0 3px 3px 0;background:var(--clay);box-shadow:0 0 8px rgba(217,119,87,.6)}
+.k-row{flex-wrap:wrap}
+.k-row .under{flex-basis:100%;padding-left:46px;margin-top:-2px}
+.k-row .ask{margin:6px 0 2px}
+.k-row .ask .qv{font:500 14px/1.3 var(--font-voice);color:var(--t1);padding-left:10px;border-left:3px solid var(--s-blocked);margin-bottom:5px}
+.k-row .k-legend{margin-top:7px;font-size:11.5px;gap:13px}
+.k-row .note{display:inline-block;width:10px;height:10px;background:linear-gradient(135deg,var(--butter) 0 65%,#C9962F 65%);align-self:center;border-radius:1px}
+.r-foot{display:flex;align-items:center;gap:12px;padding:10px 14px 12px}
+
+/* ================================================================ DRAWER */
+.drawer{right:0;top:0;bottom:0;width:780px;border-radius:14px 0 0 14px;display:flex;flex-direction:column}
+.drawer.k-board{box-shadow:0 0 0 1px #140f0b,-5px 0 0 0 var(--walnut),-6px 0 0 0 var(--walnut-lo),inset 0 1px 0 rgba(255,236,210,.06),-18px 0 40px -8px rgba(28,16,8,.55)}
+.drawer.k-board::before,.drawer.k-board::after{display:none}
+.pull{position:absolute;left:-16px;top:50%;width:14px;height:64px;margin-top:-32px;border-radius:7px 0 0 7px;background:linear-gradient(90deg,var(--brass-hi),var(--brass) 45%,var(--brass-lo));box-shadow:-2px 2px 4px rgba(0,0,0,.4)}
+.pull::after{content:"";position:absolute;left:5px;top:18px;bottom:18px;width:2px;border-left:1.5px dotted rgba(60,40,15,.6)}
+.tabs{display:flex;align-items:flex-end;gap:4px;height:46px;padding:0 14px;background:linear-gradient(180deg,#141210,#1a1815);border-radius:14px 0 0 0;box-shadow:inset 0 -2px 3px rgba(0,0,0,.5)}
+.k-tab{position:relative;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px 0 8px;border-radius:6px 6px 0 0;color:var(--t2);font:650 13px/1 var(--font-ui);
+  background:linear-gradient(180deg,#2c2824,#24211e);box-shadow:inset 0 1px 0 rgba(255,236,210,.05)}
+.k-tab.on{height:40px;color:var(--t1);background:linear-gradient(180deg,#2a2622,#26221F);box-shadow:inset 0 3px 0 var(--clay),inset 1px 0 0 rgba(255,236,210,.05),inset -1px 0 0 rgba(255,236,210,.05);margin-bottom:0}
+.k-tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:4px;background:#26221F}
+.k-tab .x{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;opacity:.55;stroke-linecap:round}
+.d-head{display:flex;align-items:center;gap:14px;padding:12px 14px 11px 18px}
+.crumb{font:700 15px/1.2 var(--font-ui);display:flex;align-items:center;gap:0}
+.crumb .sep{color:var(--brass);margin:0 7px;font-weight:400}
+.crumb .dim{color:var(--t2);font-weight:600}
+.cwd{font:12px/1 var(--font-mono);color:var(--t3);margin-top:6px;display:flex;gap:12px;align-items:center}
+.crt{position:relative;flex:1;margin:0 14px;border-radius:8px;background:var(--crt);overflow:hidden;
+  box-shadow:inset 0 0 0 1px #000,inset 0 3px 10px rgba(0,0,0,.75),0 0 0 3px #0f0d0c,0 1px 0 3px rgba(255,236,210,.06)}
+.term{padding:14px 16px;font:14px/1.2 var(--font-mono);color:#ECE6DC;white-space:pre}
+.term .c{color:#D97757}.term .g{color:#7FC98F}.term .y{color:#E8C06A}.term .d{color:#6B6760}.term .w{color:#FBF8F3;font-weight:700}.term .r{color:#E5695B}
+.term .sel{background:#2A2825}
+.d-foot{display:flex;align-items:center;gap:14px;height:48px;padding:0 14px 0 18px}
+.d-foot .k-legend{flex-wrap:nowrap}
+.d-foot .k-ticket{flex:none}.d-foot .k-ticket .what{white-space:nowrap}
+.d-foot .mode{display:inline-flex;align-items:center;gap:7px;font:700 12.5px/1 var(--font-ui);color:var(--t1)}
+
+/* ================================================================ CARDS */
+.k-clip{position:absolute;width:400px}
+.k-clip .sheet{position:relative;padding:26px 20px 14px;transform:rotate(.35deg)}
+.k-clip .clamp{position:absolute;left:50%;top:-12px;width:92px;height:22px;margin-left:-46px;border-radius:6px 6px 9px 9px;z-index:2;
+  background:linear-gradient(180deg,var(--brass-hi),var(--brass) 50%,var(--brass-lo));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 3px 4px rgba(40,24,10,.45)}
+.k-clip .clamp::after{content:"";position:absolute;left:50%;top:5px;width:22px;height:8px;margin-left:-11px;border-radius:4px;background:#5b4520;box-shadow:inset 0 1px 2px #000}
+.who{display:flex;gap:12px;align-items:center}
+.who .nm{font:800 22px/1.1 var(--font-sign)}
+.who .sub{margin-top:4px;font:12.5px/1.2 var(--font-ui);color:var(--p2);display:flex;gap:6px;align-items:center}
+.who .k-stamp{margin-left:auto;align-self:flex-start;margin-top:4px}
+.confirm{display:flex;align-items:center;gap:10px;margin-top:12px}
+.confirm .say{font:600 13px/1.3 var(--font-ui);color:var(--p2)} .confirm .say b{color:var(--p1)}
+.card-foot{margin-top:12px;padding-top:10px;border-top:1.5px dashed var(--stitch)}
+.specs{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px;color:var(--p2);align-items:center}
+/* deck: sheets behind show as 2 edges */
+.deck{position:relative;isolation:isolate}
+.deck::before,.deck::after{content:"";position:absolute;left:10px;right:10px;height:14px;bottom:-8px;border-radius:0 0 4px 4px;background:#EDE4D5;box-shadow:0 0 0 1px rgba(80,60,40,.18),0 6px 10px -4px rgba(40,24,10,.4);z-index:-1}
+.deck::after{left:22px;right:22px;bottom:-16px;background:#DCCFBB}
+/* printout — tractor-feed paper (triage last 12 lines) */
+.k-printout{position:relative;padding:12px 34px;color:#2a2825;background:
+  radial-gradient(circle,#3a2f25 4px,transparent 4.5px) left 4px top 5px/18px 20px repeat-y,
+  radial-gradient(circle,#3a2f25 4px,transparent 4.5px) right 4px top 5px/18px 20px repeat-y,
+  repeating-linear-gradient(180deg,rgba(157,179,143,.22) 0 30px,transparent 30px 60px),var(--fibre),var(--paper);box-shadow:0 2px 0 #D2C5B1,0 10px 20px -8px rgba(0,0,0,.55)}
+.k-printout::before,.k-printout::after{content:"";position:absolute;top:0;bottom:0;border-left:1.5px dotted rgba(31,30,29,.3)}
+.k-printout::before{left:24px}.k-printout::after{right:24px}
+.k-printout pre{margin:0;font:12px/15px var(--font-mono)}
+/* slip — "While you were out" message slip */
+.k-slip .band{display:flex;align-items:baseline;justify-content:space-between;padding:12px 18px 9px;border-bottom:2px solid var(--clay)}
+.k-slip .band h3{margin:0;font:800 17px/1 var(--font-sign);letter-spacing:.06em;text-transform:uppercase;color:var(--clay-ink);font-stretch:condensed}
+.k-slip .ln{display:flex;gap:10px;align-items:center;padding:8px 18px;border-bottom:1.5px dashed var(--stitch);font-size:13px}
+.k-slip .ln b{font-weight:700;width:58px}
+.k-slip .ln .k-voice{flex:1;font-size:14px}
+
+/* ================================================================ DIALOGS */
+.veil{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 35%,rgba(20,12,6,.3),rgba(20,12,6,.62))}
+.k-index{width:640px;padding:0 0 12px;border-radius:3px}
+.k-index .top{display:flex;align-items:center;gap:12px;height:60px;padding:0 18px 0 20px;border-bottom:2px solid rgba(217,119,87,.8);box-shadow:0 3px 0 -1px var(--paper),0 4px 0 -1px rgba(217,119,87,.5)}
+.k-index .top .inp{flex:1;font:600 21px/1 var(--font-ui);color:var(--p1)}
+.caret{display:inline-block;width:2px;height:24px;background:var(--clay);vertical-align:-4px;margin-left:1px}
+.k-index .sec{padding:15px 20px 6px;font:800 10.5px/1 var(--font-sign);letter-spacing:.16em;color:var(--clay-ink);text-transform:uppercase;font-stretch:condensed;border-bottom:1.5px solid var(--rule)}
+.k-index .it{position:relative;display:flex;align-items:center;gap:11px;height:40px;padding:0 20px 0 22px;border-bottom:1.5px solid var(--rule)}
+.k-index .it.k-hl::after{left:12px;right:12px}
+.k-index .it.k-hl::before{left:3px}
+.k-index .it .nm{font:700 14px/1 var(--font-ui)}
+.k-index .it .ctx{font:12px/1 var(--font-mono);color:var(--p3)}
+.k-index .ic{width:22px;height:22px;display:grid;place-items:center;color:var(--p2)}
+.k-index .ic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.k-index .foot{padding:12px 20px 0}
+.form{padding:22px 24px 18px}
+.form .fld{margin-top:14px}
+.form .fld .k-label{display:block;margin-bottom:6px}
+.help-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:0 18px 18px}
+.help-cols .k-paper{padding:14px 16px}
+.help-cols h4{margin:0 0 8px;font:800 11px/1 var(--font-sign);letter-spacing:.14em;text-transform:uppercase;color:var(--clay-ink);font-stretch:condensed}
+.help-cols .kl{display:flex;align-items:center;gap:8px;height:27px;border-bottom:1.5px dashed var(--stitch);font-size:13px}
+.help-cols .kl:last-child{border:0}
+.help-cols .kl .ks{display:flex;gap:3px;min-width:84px}
+.k-fader{position:relative;width:180px;height:18px}
+.k-fader::before{content:"";position:absolute;left:0;right:0;top:8px;height:3px;border-radius:2px;background:var(--oat);box-shadow:inset 0 1px 1px rgba(0,0,0,.25)}
+.k-fader i{position:absolute;top:2px;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#F3B39A,var(--clay) 55%,var(--clay-deep));box-shadow:0 1px 2px rgba(0,0,0,.35)}
+.k-fader b{position:absolute;top:8px;left:0;height:3px;border-radius:2px;background:var(--clay-light)}
+
+/* ================================================================ KIT SHEET */
+.kit{position:absolute;inset:0;padding:30px 40px;background:var(--grain),linear-gradient(180deg,#D8CDBF,#CFC3B3);color:#3a2e24}
+.kit h2{margin:0 0 10px;font:800 12px/1 var(--font-sign);letter-spacing:.16em;text-transform:uppercase;color:#5a4a3a;font-stretch:condensed}
+.kit .grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:22px 26px}
+.kit .sw{padding:16px 18px}
+.kit .row2{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.kit .cap{font:11px var(--font-mono);color:var(--t3);margin-top:8px}
+.kit .k-paper .cap{color:var(--p3)}
+.never{columns:2;column-gap:30px;font-size:12.5px;line-height:1.5;color:var(--p2);margin:0;padding:0 0 0 18px}
+.never li{margin-bottom:4px;break-inside:avoid} .never b{color:var(--p1)}
+</style>
+</head>
+<body data-scene="work">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- worn rubber-stamp ink (graft: stationery) -->
+    <filter id="inked" x="-10%" y="-20%" width="120%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="7" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.6 2.45" result="holes"/>
+      <feComposite in="SourceGraphic" in2="holes" operator="in" result="worn"/>
+      <feTurbulence type="turbulence" baseFrequency=".06" numOctaves="1" seed="3" result="w"/>
+      <feDisplacementMap in="worn" in2="w" scale="1"/>
+    </filter>
+    <radialGradient id="glass" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".35" stop-color="currentColor" stop-opacity="1"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>
+    <linearGradient id="brassG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EBCB8A"/><stop offset=".5" stop-color="#C9A15A"/><stop offset="1" stop-color="#8A6A34"/></linearGradient>
+    <!-- LAMP sprite (ui/kit/lamps.ts): bezel shape carries the meaning -->
+    <symbol id="L-working" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.3" fill="url(#brassG)"/><circle cx="8" cy="8" r="5.4" fill="currentColor"/><circle cx="8" cy="8" r="5.4" fill="url(#glass)" opacity=".7"/></symbol>
+    <symbol id="L-blocked" viewBox="0 0 16 16"><path d="M8 .6 15.6 14.4H.4Z" fill="url(#brassG)" stroke="url(#brassG)" stroke-width="1" stroke-linejoin="round"/><path d="M8 3.6 13 12.8H3Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/><rect x="7.2" y="6.2" width="1.6" height="3.8" rx=".8" fill="#FFF3E8"/><circle cx="8" cy="11.4" r=".9" fill="#FFF3E8"/></symbol>
+    <symbol id="L-done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.3" fill="url(#brassG)"/><circle cx="8" cy="8" r="5.4" fill="currentColor"/><path d="M5.2 8.2 7.2 10.1 10.9 5.9" fill="none" stroke="#F4FFF6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="L-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.3" fill="url(#brassG)"/><circle cx="8" cy="8" r="5.4" fill="#2a2724"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/></symbol>
+    <symbol id="L-shell" viewBox="0 0 16 16"><rect x=".7" y="2" width="14.6" height="12" rx="3" fill="url(#brassG)"/><rect x="2.6" y="3.8" width="10.8" height="8.4" rx="1.8" fill="#0f1a13"/><path d="M4.3 6.1 6.3 8 4.3 9.9M7.6 10.2H11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="L-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.3" fill="url(#brassG)"/><circle cx="8" cy="8" r="5.4" fill="currentColor"/><text x="8" y="11" text-anchor="middle" font-size="8" font-weight="900" fill="#fff" font-family="DejaVu Sans,sans-serif">?</text></symbol>
+    <!-- stand-in portraits (the app uses the live portrait atlas) -->
+    <symbol id="clawd" viewBox="0 0 40 40"><rect x="7" y="12" width="26" height="22" rx="7" fill="#D97757"/><rect x="7" y="27" width="26" height="7" rx="4" fill="#B8593B" opacity=".5"/><rect x="3.5" y="19" width="5" height="6" rx="2.5" fill="#D97757"/><rect x="31.5" y="19" width="5" height="6" rx="2.5" fill="#D97757"/><circle cx="15" cy="21" r="2.1" fill="#1F1E1D"/><circle cx="25" cy="21" r="2.1" fill="#1F1E1D"/><circle cx="12.5" cy="25" r="1.8" fill="#E3A0A0" opacity=".7"/><circle cx="27.5" cy="25" r="1.8" fill="#E3A0A0" opacity=".7"/></symbol>
+    <symbol id="worried" viewBox="0 0 40 40"><use href="#clawd"/><path d="M12.5 17.3 16.8 18.4M27.5 17.3 23.2 18.4" stroke="#1F1E1D" stroke-width="1.4" stroke-linecap="round"/><ellipse cx="20" cy="27" rx="1.6" ry="2" fill="#1F1E1D"/></symbol>
+    <symbol id="ada" viewBox="0 0 40 40"><rect x="7" y="12" width="26" height="22" rx="7" fill="#E6DAC6"/><rect x="3.5" y="19" width="5" height="6" rx="2.5" fill="#E6DAC6"/><rect x="31.5" y="19" width="5" height="6" rx="2.5" fill="#E6DAC6"/><circle cx="15" cy="21" r="2.1" fill="#1F1E1D"/><circle cx="25" cy="21" r="2.1" fill="#1F1E1D"/><path d="M16.5 26q3.5 2.6 7 0" stroke="#1F1E1D" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M9 14c0-7 22-7 22 0v1H9Z" fill="#5E9EA0"/></symbol>
+    <symbol id="beanie" viewBox="0 0 40 40"><path d="M9 14c0-7 22-7 22 0v1H9Z" fill="currentColor"/><rect x="8" y="13" width="24" height="3.6" rx="1.8" fill="#F4EDE3"/><circle cx="20" cy="5.8" r="2.8" fill="#F4EDE3"/></symbol>
+    <symbol id="phones" viewBox="0 0 40 40"><path d="M8 18c0-10 24-10 24 0" fill="none" stroke="currentColor" stroke-width="3"/><rect x="5" y="16" width="5" height="8" rx="2" fill="currentColor"/><rect x="30" y="16" width="5" height="8" rx="2" fill="currentColor"/></symbol>
+    <symbol id="prop" viewBox="0 0 40 40"><path d="M11 14c0-6 18-6 18 0Z" fill="currentColor"/><rect x="19" y="3" width="2" height="5" fill="#3A3733"/><path d="M12 3.5h16" stroke="#F4EDE3" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="shelly" viewBox="0 0 40 40"><rect x="7" y="9" width="26" height="22" rx="5" fill="#E4D9C8"/><rect x="10" y="12" width="20" height="14" rx="3" fill="#10201A"/><path d="M13 16l3 2.5-3 2.5M18 22h5" stroke="#7FE3A0" stroke-width="1.8" fill="none" stroke-linecap="round"/><rect x="14" y="31" width="4" height="4" rx="1" fill="#CDBFA8"/><rect x="22" y="31" width="4" height="4" rx="1" fill="#CDBFA8"/></symbol>
+  </defs>
+</svg>
+
+<div class="stage" id="stage">
+
+<!-- ======================================================================== SCENE: WORK (roster + drawer) -->
+<div class="scene s-work">
+  <!-- HUD tally, centred on the visible world strip (382 .. 1140) -->
+  <div class="rod" style="left:640px"></div><div class="rod" style="left:880px"></div>
+  <div class="k-board k-tally" style="left:548px" data-tally="2,3,1,3,2"></div>
+  <div class="k-plaque sm abs" style="left:406px;top:20px">hqtest</div>
+  <div class="k-minimap" style="left:406px;bottom:24px" data-map><span class="k-plaque sm">Lobby</span></div>
+
+  <!-- ROSTER -->
+  <div class="k-board roster">
+    <div class="r-head">
+      <span class="k-plaque">Agents</span><span class="sp"></span>
+      <span class="k-ibtn" title="Compact  Alt+C"><svg viewBox="0 0 20 20"><path d="M4 6h12M4 10h12M4 14h12"/></svg></span>
+      <span class="k-ibtn on" title="Keep open"><svg viewBox="0 0 20 20"><path d="M7 3h6l-1 5 3 3H5l3-3ZM10 11v6"/></svg></span>
+      <span class="k-ibtn" title="Close  Tab"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></span>
+    </div>
+    <div class="k-detent"><span class="on">State</span><span>Space</span><span>Tab</span><span>Proj</span><span>Dir</span><span>Kind</span><span>Tool</span></div>
+    <div class="k-slot"><svg viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg><span class="sp">search · is:blocked ws: cwd:</span><span class="k-key">/</span></div>
+    <div class="r-ticks">
+      <span class="k-tick on"><i></i>Blocked</span><span class="k-tick on"><i></i>Working</span><span class="k-tick on"><i></i>Done</span><span class="k-tick"><i></i>Idle</span><span class="k-tick on"><i></i>Shells</span>
+    </div>
+    <div class="k-groove"></div>
+    <div class="list">
+      <div class="k-gh alarm"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp blocked"><use href="#L-blocked"/></svg><span class="name">Blocked</span><span class="cnt" style="color:var(--b-blocked)">2</span><span class="fill"></span><span class="k-legend" style="font-size:11.5px"><span class="h"><span class="k-key sm">B</span>inbox</span></span></div>
+      <div class="k-row">
+        <div class="k-port" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">flint</span><span class="ctx">hq-core › claude</span></div><div class="l2">Bash · npm run test:e2e</div></div>
+        <div class="side"><span class="age hot">4:12</span></div>
+      </div>
+      <div class="k-row sel">
+        <div class="k-port" style="--ws:#4B4FA6"><div><svg><use href="#worried"/><use href="#phones" style="color:#4B4FA6"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">lumen</span><span class="k-unread"></span><span class="ctx">infra › api</span></div><div class="l2">Edit · server/http.ts</div></div>
+        <div class="side"><span class="age warm">0:47</span><span class="k-gauge"><span class="bar"><i style="width:41%"></i></span>41%</span></div>
+        <div class="under"><div class="ask"><div class="qv">Allow this edit to server/http.ts?</div>
+            <ul class="k-ledger board"><li class="k-hl"><span class="k-key sm">1</span><span class="tx">Yes</span></li><li><span class="k-key sm">2</span><span class="tx">Yes, allow all edits this session</span></li><li><span class="k-key sm">3</span><span class="tx">No, tell Claude what to do</span></li></ul></div>
+          <div class="k-legend"><span class="h"><span class="k-key sm">⏎</span>open</span><span class="h"><span class="k-key sm">G</span>go</span><span class="h"><span class="k-key sm">F</span>follow</span></div></div>
+      </div>
+      <div class="k-gh"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp working"><use href="#L-working"/></svg><span class="name">Working</span><span class="cnt">3</span><span class="fill"></span></div>
+      <div class="k-row">
+        <div class="k-port" style="--ws:#A8385E"><div><svg><use href="#clawd"/><use href="#prop" style="color:#A8385E"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">gale</span><span class="ctx">tinker › orders</span></div><div class="l2">Read · orders/paginate.ts</div></div>
+        <div class="side"><span class="age">2:05</span></div>
+      </div>
+      <div class="k-row">
+        <div class="k-port" style="--ws:#1E7A74"><div><svg><use href="#clawd"/><use href="#beanie" style="color:#1E7A74"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">claude·2</span><span class="note" title="note"></span><span class="ctx">hq-core › ui</span></div><div class="l2">Grep · "roster-row"</div></div>
+        <div class="side"><span class="age">6:51</span><span class="k-gauge hot"><span class="bar"><i style="width:86%"></i></span>86%</span></div>
+      </div>
+      <div class="k-row">
+        <div class="k-port" style="--ws:#6B3F24"><div><svg><use href="#clawd"/><use href="#phones" style="color:#6B3F24"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">onyx</span><span class="ctx">ops › deploy</span></div><div class="l2">Bash · kubectl rollout status</div></div>
+        <div class="side"><span class="age">0:12</span></div>
+      </div>
+      <div class="k-gh"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp done"><use href="#L-done"/></svg><span class="name">Done</span><span class="cnt">1</span><span class="fill"></span></div>
+      <div class="k-row">
+        <div class="k-port" style="--ws:#6B7A2A"><div><svg><use href="#clawd"/><use href="#phones" style="color:#6B7A2A"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">tinker</span><span class="ctx">hq-sandbox › claude</span></div><div class="l2">List files and greet</div></div>
+        <div class="side"><span class="age">1:02</span></div>
+      </div>
+      <div class="k-gh"><svg class="chev" viewBox="0 0 10 10" style="transform:rotate(-90deg)"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp idle"><use href="#L-idle"/></svg><span class="name">Idle</span><span class="cnt">3</span><span class="sum">· moss · ledger · quill</span></div>
+      <div class="k-gh"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp shell"><use href="#L-shell"/></svg><span class="name">Shells</span><span class="cnt">2</span><span class="fill"></span></div>
+      <div class="k-row">
+        <div class="k-port shell" style="--ws:#1E7A74"><div><svg><use href="#shelly"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">dev</span><span class="ctx">hq-core</span></div><div class="l2">$ bash</div></div>
+        <div class="side"><span class="age">12m</span></div>
+      </div>
+      <div class="k-row">
+        <div class="k-port shell" style="--ws:#6B3F24"><div><svg><use href="#shelly"/></svg></div></div>
+        <div class="main"><div class="l1"><span class="nm">logs</span><span class="ctx">ops</span></div><div class="l2">$ tail -f /var/log/hq.log</div></div>
+        <div class="side"><span class="age" style="color:var(--b-busy)"><svg class="k-lamp busy sm"><use href="#L-shell"/></svg>3m</span></div>
+      </div>
+    </div>
+    <div class="k-groove"></div>
+    <div class="r-foot"><span class="k-label">Sort</span><span class="t2" style="font-size:12px;margin-left:-6px">recent ▾</span><span class="sp"></span><span class="k-btn" style="height:26px;font-size:12px"><span class="k-key sm">N</span>New shell</span><span class="k-legend" style="font-size:12px"><span class="h"><span class="k-key">?</span>keys</span></span></div>
+  </div>
+
+  <!-- DRAWER -->
+  <div class="k-board drawer">
+    <div class="pull" title="Drag to resize · double-click resets"></div>
+    <div class="tabs">
+      <div class="k-tab on"><div class="k-port xs" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div>flint<svg class="k-lamp blocked sm" aria-label="blocked"><use href="#L-blocked"/></svg><svg class="x" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3 3 9"/></svg></div>
+      <div class="k-tab"><div class="k-port xs" style="--ws:#4B4FA6"><div><svg><use href="#worried"/><use href="#phones" style="color:#4B4FA6"/></svg></div></div>lumen<svg class="k-lamp blocked sm" aria-label="blocked"><use href="#L-blocked"/></svg><span class="k-unread"></span></div>
+      <div class="k-tab"><div class="k-port xs shell" style="--ws:#1E7A74"><div><svg><use href="#shelly"/></svg></div></div>dev<svg class="k-lamp shell sm" aria-label="shell"><use href="#L-shell"/></svg></div>
+      <span class="sp"></span>
+      <span class="k-readout" title="Next blocked terminal" style="margin-bottom:9px"><svg class="k-lamp blocked sm"><use href="#L-blocked"/></svg><canvas class="dm" data-dm="1 BLOCKED" data-c="#EF5A4C" data-p="2"></canvas></span>
+      <span class="k-legend" style="margin:0 0 11px 10px;font-size:11px;gap:4px"><span class="k-key sm">Ctrl `</span><span class="k-key sm">U</span></span>
+    </div>
+    <div class="d-head">
+      <div>
+        <div class="crumb"><span class="k-shield" style="--ws:#1E7A74;margin-right:7px"></span><span class="dim">hq-core</span><span class="sep">›</span><span class="dim">claude</span><span class="sep">›</span>flint</div>
+        <div class="cwd">~/code/hq-core/server<span class="k-gauge" style="color:var(--t3)"><span class="bar"><i style="width:58%"></i></span>58% context</span></div>
+      </div>
+      <span class="sp"></span>
+      <div class="k-switch" title="Ctrl ` I"><span class="lb on">Peek</span><span class="track"><i></i></span><span class="lb">Control</span></div>
+      <div style="display:flex;gap:2px">
+        <span class="k-ibtn" title="Copy recent  Ctrl ` C"><svg viewBox="0 0 20 20"><rect x="6" y="6" width="10" height="10" rx="2"/><path d="M4 13V5a1 1 0 0 1 1-1h8"/></svg></span>
+        <span class="k-ibtn" title="History  Ctrl ` ["><svg viewBox="0 0 20 20"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7M3.5 3.5v3h3M10 6.5V10l2.5 1.5"/></svg></span>
+        <span class="k-ibtn" title="Fullscreen  Ctrl ` Z"><svg viewBox="0 0 20 20"><path d="M12 3h5v5M8 17H3v-5M17 3l-6 6M3 17l6-6"/></svg></span>
+        <span class="k-ibtn" title="More"><svg viewBox="0 0 20 20"><circle cx="5" cy="10" r=".9"/><circle cx="10" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/></svg></span>
+        <span class="k-ibtn" title="Collapse"><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></svg></span>
+      </div>
+    </div>
+    <div class="crt">
+<div class="term"><span class="c">▐▛███▜▌</span>   <span class="w">Claude Code</span> v2.1.284
+<span class="c">▝▜█████▛▘</span>  Opus 5.5 · Claude Max
+<span class="c">  ▘▘ ▝▝</span>    ~/code/hq-core/server
+
+<span class="d">&gt;</span> <span class="sel">run the e2e suite and fix whatever breaks</span>
+
+<span class="g">●</span> I'll run the end-to-end suite first.
+
+<span class="g">●</span> <span class="w">Bash</span>(npm run test:e2e)
+  <span class="d">└</span>  ✓ roster opens with Tab (212 ms)
+     ✓ Enter opens oldest blocked (148 ms)
+     <span class="r">✗ drawer keeps focus after fit (timeout)</span>
+     <span class="d">… +38 lines (ctrl+r to expand)</span>
+
+<span class="g">●</span> One failure in fit.settled. Reading the handler.
+
+<span class="g">●</span> <span class="w">Read</span>(renderer/src/ui/terminal/fit.ts)
+  <span class="d">└</span>  Read 184 lines
+
+<span class="y">╭────────────────────────────────────────────────────────────╮</span>
+<span class="y">│</span> <span class="w">Bash command</span>                                               <span class="y">│</span>
+<span class="y">│</span>   npm run test:e2e -- --grep "keeps focus" --retries 0     <span class="y">│</span>
+<span class="y">│</span>                                                            <span class="y">│</span>
+<span class="y">│</span> Do you want to proceed?                                    <span class="y">│</span>
+<span class="y">│</span> <span class="c">❯ 1. Yes</span>                                                   <span class="y">│</span>
+<span class="y">│</span>   2. Yes, and don't ask again for npm run in hq-core       <span class="y">│</span>
+<span class="y">│</span>   3. No, and tell Claude what to do differently <span class="d">(esc)</span>      <span class="y">│</span>
+<span class="y">╰────────────────────────────────────────────────────────────╯</span>
+</div>
+    </div>
+    <div class="d-foot">
+      <span class="mode"><svg class="k-lamp sm" style="color:var(--butter);filter:drop-shadow(0 0 3px rgba(241,198,110,.7))"><use href="#L-working"/></svg>Peek</span>
+      <span class="t3" style="font-size:12px;margin-left:-6px;white-space:nowrap">· type to take control</span>
+      <span class="k-legend" style="font-size:12px;gap:14px;margin-left:10px"><span class="h"><span class="k-key sm">Ctrl `</span></span><span class="then">then</span><span class="h"><span class="k-key sm">Z</span>full</span><span class="h"><span class="k-key sm">[</span>history</span></span>
+      <span class="sp"></span>
+      <!-- in-drawer toast: one-line ticket in the footer rail (never over glyphs) -->
+      <div class="k-ticket line done"><div class="in"><div class="stub"><svg class="k-lamp done sm"><use href="#L-done"/></svg><span class="mono">1:02</span></div><div class="body"><span class="what">tinker finished</span><span class="k-legend" style="font-size:12px"><span class="h"><span class="k-key sm">S</span>sign off</span></span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================== SCENE: WORLD (+ palette) -->
+<div class="scene s-world">
+  <div class="rod" style="left:846px"></div><div class="rod" style="left:1074px"></div>
+  <div class="k-board k-tally" style="left:752px" data-tally="1,4,2,3,2"></div>
+  <div class="k-plaque butter abs" style="left:22px;top:20px">Demo</div>
+  <div class="k-board k-rail" style="right:24px;top:18px">
+    <span class="k-ibtn" title="Sound"><svg viewBox="0 0 20 20"><path d="M3 8v4h3l4 3V5L6 8ZM13.5 7.5a3.5 3.5 0 0 1 0 5M15.5 5a7 7 0 0 1 0 10"/></svg></span>
+    <span class="k-ibtn" title="Help  H"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2M10 14h0"/></svg></span>
+    <span class="k-ibtn" title="Settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg></span>
+  </div>
+  <div class="k-minimap" style="left:24px;bottom:26px" data-map><span class="k-plaque sm">Lobby</span></div>
+  <div class="k-ticket" style="left:22px;bottom:214px">
+    <div class="in"><div class="stub"><svg class="k-lamp lg blocked"><use href="#L-blocked"/></svg><span class="mono">0:45</span></div>
+      <div class="body"><div class="cap">No. 0412 · 14:02 · infra › api</div><div class="what">lumen is blocked</div><div class="q">Allow this edit to server/http.ts?</div>
+        <hr class="k-stitch tear"><div class="k-legend"><span class="h"><span class="k-key">B</span>inbox</span><span class="h"><span class="k-key sm">Ctrl `</span><span class="k-key sm">U</span>jump</span></div></div></div>
+  </div>
+  <div class="k-chev" style="right:0;top:470px"><svg class="k-lamp blocked" style="filter:drop-shadow(0 0 2px #fff)"><use href="#L-blocked"/></svg>moss<span class="mono">2:31</span></div>
+  <div class="aim"><div class="xhair" style="left:1012px;top:560px"></div>
+    <div class="k-paper k-aimtag" style="left:1040px;top:574px"><span class="k-key">E</span><b>flint</b><span class="p3" style="font-size:12.5px">answer</span></div></div>
+  <!-- status card: clipboard sheet (blocked) -->
+  <div class="k-clip aim" style="right:26px;bottom:28px;width:404px">
+    <div class="k-paper static sheet">
+      <div class="clamp"></div>
+      <div class="who"><div class="k-port lg" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div>
+        <div><div class="nm">flint</div><div class="sub"><span class="k-shield" style="--ws:#1E7A74"></span>hq-core › claude · Bash</div></div>
+        <span class="k-stamp">Waiting<span class="mono">4:12</span></span></div>
+      <div class="k-q" style="margin:16px 0 8px">Run <code>npm run test:e2e --grep "keeps focus"</code>?</div>
+      <ul class="k-ledger">
+        <li class="k-hl"><span class="k-key">1</span>Yes</li>
+        <li><span class="k-key">2</span>Yes, don't ask again for npm run</li>
+        <li><span class="k-key">3</span>No, tell Claude what to do<span class="note">Esc</span></li>
+      </ul>
+      <div class="confirm"><span class="say">Send <b>“1. Yes”</b> to flint?</span><span class="sp"></span><span class="k-btn nokey" style="height:30px">Back</span><span class="k-btn primary"><span class="k-key sm">⏎</span>Send</span></div>
+      <div class="card-foot k-legend"><span class="h"><span class="k-key">O</span>terminal</span><span class="h"><span class="k-key">G</span>go there</span><span class="h"><span class="k-key">→</span>next</span><span class="sp"></span><span class="h"><span class="k-key">Esc</span></span></div>
+    </div>
+  </div>
+  <div class="k-hotbar" style="left:50%;bottom:22px;transform:translateX(-50%)" data-hotbar></div>
+</div>
+<div class="scene s-pal">
+  <div class="veil"></div>
+  <div class="k-paper k-index" style="left:640px;top:170px">
+    <div class="top"><svg viewBox="0 0 20 20" style="width:20px;height:20px;stroke:var(--p3);fill:none;stroke-width:1.9;stroke-linecap:round"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><span class="inp">fl<span class="caret"></span></span><span class="k-detent" style="width:150px;border:0"><span class="on">Find</span><span>Go</span><span>Do</span></span><span class="k-key">Esc</span></div>
+    <div class="sec">Agents</div>
+    <div class="it k-hl"><div class="k-port xs" style="--ws:#1E7A74;width:26px;height:26px"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div><span class="nm"><mark class="k-match">fl</mark>int</span><span class="ctx">hq-core › claude</span><span class="sp"></span><span class="k-state blocked"><svg class="k-lamp blocked still"><use href="#L-blocked"/></svg>Blocked 4:12</span><span class="k-legend" style="margin-left:14px;font-size:12px;gap:10px"><span class="h"><span class="k-key sm">⏎</span>open</span></span></div>
+    <div class="it"><div class="k-port xs" style="--ws:#A8385E;width:26px;height:26px"><div><svg><use href="#clawd"/><use href="#prop" style="color:#A8385E"/></svg></div></div><span class="nm"><mark class="k-match">fl</mark>ake-hunter</span><span class="ctx">tinker › ci</span><span class="sp"></span><span class="k-state working"><svg class="k-lamp working"><use href="#L-working"/></svg>Working</span></div>
+    <div class="sec">Places</div>
+    <div class="it"><span class="ic"><svg viewBox="0 0 20 20"><path d="M10 17s-5-4.6-5-8.5a5 5 0 0 1 10 0C15 12.4 10 17 10 17Z"/><circle cx="10" cy="8.5" r="1.8"/></svg></span><span class="nm"><mark class="k-match">Fl</mark>oor 1 — Lounge pit</span><span class="sp"></span></div>
+    <div class="sec">Actions</div>
+    <div class="it"><span class="ic"><svg viewBox="0 0 20 20"><path d="M4 10.5 8 14.5 16 6"/></svg></span><span class="nm">Sign off all done <span class="p3" style="font-weight:500">· 2 agents</span></span><span class="sp"></span></div>
+    <div class="it"><span class="ic"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="m6 8 2.5 2L6 12M10 12.5h4"/></svg></span><span class="nm">New shell…</span><span class="sp"></span></div>
+    <div class="foot k-legend"><span class="h"><span class="k-key">⏎</span>open</span><span class="h"><span class="k-key">⇧⏎</span>go to</span><span class="h"><span class="k-key">↑</span><span class="k-key">↓</span>select</span><span class="sp"></span><span class="h"><span class="k-key">Tab</span>scope</span></div>
+  </div>
+</div>
+
+<!-- ======================================================================== SCENE: CARDS (inbox, triage, away, prompt bar) -->
+<div class="scene s-cards">
+  <div class="veil" style="background:rgba(20,12,6,.5)"></div>
+  <!-- Inbox (B): one question per sheet, deck edges below -->
+  <div class="k-clip" style="left:60px;top:70px;width:470px">
+    <div class="deck"><div class="k-paper static sheet" style="padding-top:30px">
+      <div class="clamp"></div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><span class="k-plaque">Inbox</span><div class="k-detent" style="flex:1"><span class="on">Blocked 2</span><span>Done 1</span><span>Triage</span></div></div>
+      <div class="who"><div class="k-port lg" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div>
+        <div><div class="nm">flint</div><div class="sub"><span class="k-shield" style="--ws:#1E7A74"></span>hq-core › claude · 1 of 2</div></div>
+        <span class="k-stamp">Waiting<span class="mono">4:12</span></span></div>
+      <div class="k-q" style="margin:16px 0 8px">Run <code>npm run test:e2e --grep "keeps focus"</code>?</div>
+      <ul class="k-ledger"><li class="k-hl"><span class="k-key">1</span>Yes</li><li><span class="k-key">2</span>Yes, don't ask again for npm run</li><li><span class="k-key">3</span>No, tell Claude what to do<span class="note">Esc</span></li></ul>
+      <div class="card-foot k-legend"><span class="h"><span class="k-key">1</span>–<span class="k-key">3</span>answer</span><span class="h"><span class="k-key">→</span>next</span><span class="h"><span class="k-key">O</span>terminal</span><span class="h"><span class="k-key">G</span>go there</span><span class="sp"></span><span class="h"><span class="k-key">Esc</span></span></div>
+    </div></div>
+  </div>
+  <!-- Away recap: "While you were out" slip -->
+  <div class="k-paper k-slip" style="left:60px;top:640px;width:470px">
+    <div class="band"><h3>While you were out</h3><span class="mono p3" style="font-size:11.5px">14:02 – 14:39</span></div>
+    <div class="ln"><svg class="k-lamp blocked still"><use href="#L-blocked"/></svg><b>flint</b><span class="k-voice">asked to run the e2e suite</span><span class="mono p3">4:12</span></div>
+    <div class="ln"><svg class="k-lamp done"><use href="#L-done"/></svg><b>tinker</b><span class="k-voice">listed the files and said hello</span><span class="mono p3">1:02</span></div>
+    <div class="ln"><svg class="k-lamp done"><use href="#L-done"/></svg><b>gale</b><span class="k-voice">finished paginating the orders API</span><span class="mono p3">9:40</span></div>
+    <div style="display:flex;gap:10px;padding:12px 18px 14px;justify-content:flex-end"><span class="k-btn"><span class="k-key sm">Esc</span>Dismiss</span><span class="k-btn primary"><span class="k-key sm">⏎</span>Open oldest blocked</span></div>
+  </div>
+  <!-- Triage: board with a tractor-feed printout + the question on the board -->
+  <div class="k-board" style="left:590px;top:70px;width:1270px;padding:16px 18px 16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><span class="k-plaque">Triage</span><span class="k-readout"><canvas class="dm" data-dm="3/7" data-c="#F1C66E" data-p="2.2"></canvas></span><span class="sp"></span><span class="k-legend"><span class="h"><span class="k-key">1</span>–<span class="k-key">3</span>answer</span><span class="h"><span class="k-key">→</span>skip</span><span class="h"><span class="k-key">O</span>open terminal</span><span class="h"><span class="k-key">S</span>sign off</span><span class="h"><span class="k-key">Esc</span>done</span></span></div>
+    <div style="display:flex;gap:22px;align-items:flex-start">
+      <div class="k-printout" style="width:640px"><pre>● Update(server/http.ts)
+  └  Updated server/http.ts with 6 additions and 2 removals
+     41    app.get('/api/agents', auth, list)
+     42 -  app.post('/api/act', act)
+     42 +  app.post('/api/act', auth, rate(10), act)
+     43 +  app.use(json({ limit: '64kb' }))
+
+● Now I need to harden the websocket upgrade.
+
+● Edit(server/http.ts)
+  Do you want to make this edit to http.ts?
+  ❯ 1. Yes</pre></div>
+      <div style="flex:1;padding-top:4px">
+        <div class="who"><div class="k-port lg" style="--ws:#4B4FA6"><div><svg><use href="#worried"/><use href="#phones" style="color:#4B4FA6"/></svg></div></div>
+          <div><div style="font:800 21px/1.1 var(--font-sign)">lumen</div><div style="margin-top:4px;font-size:12.5px;color:var(--t2);display:flex;gap:6px;align-items:center"><span class="k-shield" style="--ws:#4B4FA6"></span>infra › api · waiting <span class="mono" style="color:var(--b-blocked)">0:47</span></div></div></div>
+        <div style="margin:16px 0 8px;padding-left:12px;border-left:3px solid var(--s-blocked);font:500 16px/1.35 var(--font-voice)">Allow this edit to server/http.ts?</div>
+        <ul class="k-ledger board" style="margin-left:4px"><li class="k-hl"><span class="k-key sm">1</span>Yes</li><li><span class="k-key sm">2</span>Yes, allow all edits this session</li><li><span class="k-key sm">3</span>No, tell Claude what to do<span class="note">Esc</span></li></ul>
+      </div>
+    </div>
+  </div>
+  <!-- T prompt bar -->
+  <div class="k-paper" style="left:640px;bottom:40px;width:640px;height:56px;display:flex;align-items:center;gap:12px;padding:0 14px">
+    <span class="k-plaque sm">To</span><div class="k-port xs" style="--ws:#1E7A74;width:28px;height:28px"><div><svg><use href="#clawd"/><use href="#beanie" style="color:#1E7A74"/></svg></div></div><b style="font-size:14px">claude·2</b>
+    <span style="flex:1;font:500 15px var(--font-voice);color:var(--p1);border-bottom:1.5px solid rgba(31,30,29,.4);padding:4px 2px">also cover the compact rows<span class="caret" style="height:17px;vertical-align:-3px"></span></span>
+    <span class="k-legend"><span class="h"><span class="k-key">⏎</span>send</span></span>
+  </div>
+  <!-- offline notice + post-it demo -->
+  <div class="k-paper" style="left:1380px;bottom:40px;width:480px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+    <svg class="k-lamp idle lg"><use href="#L-idle"/></svg><div style="flex:1"><b>herdr offline</b><div class="p2" style="font-size:12.5px">Agents are dozing. Start it, or run with <span class="mono">--demo</span>.</div></div><span class="k-btn"><span class="k-key sm">R</span>Retry</span>
+  </div>
+</div>
+
+<!-- ======================================================================== SCENE: DIALOGS (hire, settings, help, onboarding) -->
+<div class="scene s-dialogs">
+  <div class="veil" style="background:rgba(20,12,6,.55)"></div>
+  <!-- Hire: paper work order -->
+  <div class="k-clip" style="left:50px;top:60px;width:430px">
+    <div class="k-paper static sheet form" style="padding-top:30px"><div class="clamp"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between"><span class="k-plaque">Hire</span><span class="k-stamp ready">Ready</span></div>
+      <div class="fld"><span class="k-label">Kind</span><span class="k-circled"><span class="on">claude</span><span>codex</span><span>gemini</span><span>shell</span></span></div>
+      <div class="fld"><span class="k-label">Workspace</span>
+        <ul class="k-ledger"><li class="k-hl"><span class="k-shield" style="--ws:#1E7A74"></span>hq-core<span class="note p3" style="color:var(--p3)">4 agents</span></li><li><span class="k-shield" style="--ws:#4B4FA6"></span>infra<span class="note" style="color:var(--p3)">2 agents</span></li><li><span class="k-shield" style="--ws:#A8385E"></span>tinker<span class="note" style="color:var(--p3)">1 agent</span></li></ul></div>
+      <div class="fld"><span class="k-label">Task</span><div class="k-slot">fix the flaky fit test<span class="caret" style="height:17px"></span></div></div>
+      <div class="fld"><span class="k-tick on"><i></i>Open its terminal after hiring</span></div>
+      <div class="card-foot" style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><span class="k-btn"><span class="k-key sm">Esc</span>Cancel</span><span class="k-btn primary"><span class="k-key sm">⏎</span>Hire</span></div>
+    </div>
+  </div>
+  <!-- Settings: paper form -->
+  <div class="k-paper form" style="left:520px;top:60px;width:440px">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="k-plaque">Settings</span><span class="k-legend"><span class="h"><span class="k-key">Esc</span>close</span></span></div>
+    <div class="fld"><span class="k-label">Quality</span><span class="k-circled"><span>Low</span><span class="on">Medium</span><span>High</span></span></div>
+    <div class="fld"><span class="k-label">Terminal font</span><div style="display:flex;align-items:center;gap:12px"><div class="k-fader"><b style="width:45%"></b><i style="left:calc(45% - 7px)"></i></div><span class="mono">14 px</span></div></div>
+    <div class="fld"><span class="k-label">Master volume</span><div style="display:flex;align-items:center;gap:12px"><div class="k-fader"><b style="width:70%"></b><i style="left:calc(70% - 7px)"></i></div><span class="mono">70%</span></div></div>
+    <hr class="k-stitch" style="margin:16px 0 4px">
+    <div class="fld" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px">
+      <span class="k-tick on"><i></i>Copy on select</span><span class="k-tick on"><i></i>Confirm Ctrl+C in Peek</span>
+      <span class="k-tick"><i></i>Quick answer (Alt+1–9)</span><span class="k-tick"><i></i>Reduced motion</span>
+      <span class="k-tick"><i></i>Head bob</span><span class="k-tick on"><i></i>Sign off on open</span>
+    </div>
+    <hr class="k-stitch" style="margin:16px 0 4px">
+    <div class="fld"><span class="k-label">Leader key</span><div class="k-slot" style="width:140px">Ctrl+`</div></div>
+    <div class="fld"><span class="k-tick"><i></i>Allow mutations <span class="p3" style="font-weight:500">· server · set in server config</span></span></div>
+  </div>
+  <!-- Help: notice board holding paper sheets side by side -->
+  <div class="k-board" style="left:1000px;top:60px;width:870px">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 18px 14px"><span class="k-plaque">Keys · world</span><span class="sp"></span><span class="k-detent" style="width:360px"><span class="on">World</span><span>Roster</span><span>Serve</span><span>Terminal</span></span></div>
+    <div class="help-cols">
+      <div class="k-paper static"><h4>Move</h4><div class="kl"><span class="ks"><span class="k-key">W</span><span class="k-key">A</span><span class="k-key">S</span><span class="k-key">D</span></span>walk</div><div class="kl"><span class="ks"><span class="k-key">⇧</span></span>run</div><div class="kl"><span class="ks"><span class="k-key">M</span></span>map overview</div><div class="kl"><span class="ks"><span class="k-key">Ctrl</span><span class="k-key">K</span></span>palette</div></div>
+      <div class="k-paper static"><h4>Agents</h4><div class="kl"><span class="ks"><span class="k-key">E</span></span>open terminal</div><div class="kl"><span class="ks"><span class="k-key">B</span></span>inbox</div><div class="kl"><span class="ks"><span class="k-key">Tab</span></span>roster</div><div class="kl"><span class="ks"><span class="k-key">1</span>–<span class="k-key">9</span></span>pinned</div></div>
+      <div class="k-paper static"><h4>Terminal · Ctrl ` then</h4><div class="kl"><span class="ks"><span class="k-key">I</span></span>take control</div><div class="kl"><span class="ks"><span class="k-key">Z</span></span>fullscreen</div><div class="kl"><span class="ks"><span class="k-key">U</span></span>next blocked</div><div class="kl"><span class="ks"><span class="k-key">[</span></span>history</div></div>
+    </div>
+  </div>
+  <!-- Onboarding: Ada's card -->
+  <div class="k-paper" style="left:1000px;top:420px;width:520px;padding:18px 20px 16px">
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div class="k-port lg" style="--ws:#5E9EA0"><div><svg><use href="#ada"/></svg></div></div>
+      <div style="flex:1"><span class="k-plaque clay">Ada says</span>
+        <p class="k-voice" style="margin:12px 0 0;font-size:16px;line-height:1.4">When a Clawd raises a red flag, it's waiting on you. Press <span class="k-key">B</span> and answer it from anywhere — you never have to walk over.</p></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+      <svg class="k-lamp sm" style="color:var(--clay)"><use href="#L-working"/></svg><svg class="k-lamp sm" style="color:var(--clay)"><use href="#L-working"/></svg><svg class="k-lamp sm" style="color:var(--clay)"><use href="#L-working"/></svg><svg class="k-lamp sm idle"><use href="#L-idle"/></svg><svg class="k-lamp sm idle"><use href="#L-idle"/></svg>
+      <span class="sp"></span><span class="k-btn"><span class="k-key sm">Esc</span>Skip tour</span><span class="k-btn primary"><span class="k-key sm">⏎</span>Next</span></div>
+  </div>
+  <!-- drawer strip demo: post-it fit hint below the CRT -->
+  <div class="k-board" style="left:1000px;top:640px;width:870px;padding:14px">
+    <div class="crt" style="margin:0;height:170px"><div class="term" style="font-size:13px"><span class="g">●</span> Reading 3 files…
+  <span class="d">└</span>  renderer/src/ui/terminal/fit.ts
+     renderer/src/ui/terminal/drawer.ts
+     renderer/src/ui/terminal/lifecycle.ts
+
+<span class="d">&gt;</span> </div></div>
+    <div style="display:flex;gap:12px;margin-top:12px;align-items:center">
+      <div class="k-postit"><span>Pane is 120×44, drawer fits 96×38 — text is scaled to 11 px.</span><span class="link">Fit pane to drawer</span><span class="k-key sm">F</span></div>
+      <span class="sp"></span><span class="k-legend" style="font-size:12px"><span class="h"><span class="k-key sm">Esc</span>dismiss</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================== SCENE: KIT -->
+<div class="scene s-kit">
+  <div class="kit">
+    <div style="display:flex;align-items:center;gap:18px;margin-bottom:22px"><span class="k-plaque" style="font-size:17px;padding:8px 30px">Claude HQ · UI kit</span><span style="font:600 14px var(--font-ui);color:#5a4a3a">board for scanning · paper for deciding · lamps not pills · one clay per surface</span></div>
+    <div class="grid">
+      <div><h2>Materials</h2>
+        <div class="row2" style="align-items:stretch">
+          <div class="k-board static" style="width:104px;height:80px;padding:10px"><div class="cap" style="margin:0">k-board</div></div>
+          <div class="k-paper static" style="width:104px;height:80px;padding:10px"><div class="cap" style="margin:0">k-paper</div></div>
+          <div style="display:flex;flex-direction:column;gap:12px;justify-content:center"><span class="k-plaque">Plaque</span><span class="k-readout"><canvas class="dm" data-dm="1 BLOCKED" data-c="#EF5A4C" data-p="1.9"></canvas></span></div>
+        </div>
+      </div>
+      <div><h2>Lamps (shape + word)</h2>
+        <div class="k-board static sw">
+          <div class="row2" style="gap:16px"><span class="k-state blocked"><svg class="k-lamp lg blocked"><use href="#L-blocked"/></svg>Blocked</span><span class="k-state working"><svg class="k-lamp lg working"><use href="#L-working"/></svg>Working</span><span class="k-state done"><svg class="k-lamp lg done"><use href="#L-done"/></svg>Done</span></div>
+          <div class="row2" style="gap:16px;margin-top:12px"><span class="k-state idle"><svg class="k-lamp lg idle"><use href="#L-idle"/></svg>Idle</span><span class="k-state shell"><svg class="k-lamp lg shell"><use href="#L-shell"/></svg>Prompt</span><span class="k-state busy"><svg class="k-lamp lg busy"><use href="#L-shell"/></svg>Running</span><span class="k-state" style="color:#C9B6F0"><svg class="k-lamp lg unknown"><use href="#L-unknown"/></svg>Unknown</span></div>
+        </div>
+      </div>
+      <div><h2>Buttons, keys, legend</h2>
+        <div class="k-board static sw">
+          <div class="row2"><span class="k-btn primary"><span class="k-key sm">⏎</span>Send</span><span class="k-btn"><span class="k-key sm">N</span>New shell</span><span class="k-btn nokey">Back</span></div>
+          <div class="k-legend" style="margin-top:14px"><span class="h"><span class="k-key sm">Ctrl `</span></span><span class="then">then</span><span class="h"><span class="k-key sm">Z</span>full</span><span class="h"><span class="k-key sm">U</span>next blocked</span><span class="h"><span class="k-key">O</span><span class="k-key">0</span></span></div>
+        </div>
+      </div>
+      <div><h2>Tally (HUD)</h2>
+        <div style="position:relative;height:56px"><div class="k-board k-tally" style="left:6px;top:4px" data-tally="1,4,2,0,0"></div></div>
+        <div style="position:relative;height:56px;margin-top:10px"><div class="k-board k-tally" style="left:6px;top:4px" data-tally="0,4,0,3,0"></div></div>
+      </div>
+      <div><h2>Selectors (board)</h2>
+        <div class="k-board static sw" style="padding:14px 12px">
+          <div class="k-detent"><span class="on">State</span><span>Space</span><span>Tab</span><span>Proj</span></div>
+          <div class="row2" style="margin-top:12px"><div class="k-switch"><span class="lb on">Peek</span><span class="track"><i></i></span><span class="lb">Control</span></div><div class="k-switch right"><span class="lb">Peek</span><span class="track"><i></i></span><span class="lb on">Control</span></div></div>
+          <div class="row2" style="margin-top:12px"><span class="k-tick on"><i></i>Blocked</span><span class="k-tick"><i></i>Idle</span><div class="k-slot" style="flex:1;height:28px">search<span class="sp"></span><span class="k-key sm">/</span></div></div>
+        </div>
+      </div>
+      <div><h2>Selectors (paper)</h2>
+        <div class="k-paper static sw">
+          <div class="k-circled"><span>Low</span><span class="on">Medium</span><span>High</span></div>
+          <div class="k-detent" style="margin-top:12px"><span class="on">Blocked 2</span><span>Done 1</span><span>Triage</span></div>
+          <div class="row2" style="margin-top:12px"><span class="k-tick on"><i></i>Copy on select</span><span class="k-tick"><i></i>Head bob</span></div>
+        </div>
+      </div>
+      <div><h2>Ledger + stamp (paper)</h2>
+        <div class="k-paper static sw" style="padding-left:24px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start"><div class="k-q" style="font-size:15px">Trust this folder?</div><span class="k-stamp">Waiting<span class="mono">0:45</span></span></div>
+          <ul class="k-ledger" style="margin-top:6px"><li class="k-hl"><span class="k-key">1</span>Yes, I trust it</li><li><span class="k-key">2</span>No, exit<span class="note">Ends session</span></li></ul>
+        </div>
+      </div>
+      <div><h2>Portholes (workspace rim) · stamps</h2>
+        <div class="k-paper static sw">
+          <div class="row2"><div class="k-port lg" style="--ws:#1E7A74"><div><svg><use href="#clawd"/><use href="#beanie" style="color:#946A1C"/></svg></div></div><div class="k-port" style="--ws:#4B4FA6"><div><svg><use href="#clawd"/><use href="#phones" style="color:#4B4FA6"/></svg></div></div><div class="k-port" style="--ws:#A8385E"><div><svg><use href="#clawd"/><use href="#prop" style="color:#A8385E"/></svg></div></div><div class="k-port xs shell" style="--ws:#6B3F24"><div><svg><use href="#shelly"/></svg></div></div></div>
+          <div class="row2" style="margin-top:14px"><span class="k-stamp done">Signed off</span><span class="k-stamp locked">Locked</span><span class="k-stamp ready">Ready</span></div>
+        </div>
+      </div>
+      <div><h2>Roster rows (48 px)</h2>
+        <div class="k-board static" style="padding:6px 0">
+          <div class="k-gh alarm" style="margin-top:0"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp blocked"><use href="#L-blocked"/></svg><span class="name">Blocked</span><span class="cnt" style="color:var(--b-blocked)">1</span><span class="fill"></span><span class="k-legend" style="font-size:11.5px"><span class="h"><span class="k-key sm">B</span>inbox</span></span></div>
+          <div class="k-row sel"><div class="k-port" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div><div class="main"><div class="l1"><span class="nm">flint</span><span class="ctx">hq-core › claude</span></div><div class="l2">Bash · npm run test:e2e</div><div class="k-legend"><span class="h"><span class="k-key sm">⏎</span>open</span><span class="h"><span class="k-key sm">A</span>answer</span><span class="h"><span class="k-key sm">G</span>go</span></div></div><div class="side"><span class="age hot">4:12</span></div></div>
+          <div class="k-gh"><svg class="chev" viewBox="0 0 10 10" style="transform:rotate(-90deg)"><path d="M2 3.5 5 6.5 8 3.5"/></svg><svg class="k-lamp idle"><use href="#L-idle"/></svg><span class="name">Idle</span><span class="cnt">3</span><span class="sum">· moss · ledger · quill</span></div>
+        </div>
+      </div>
+      <div><h2>Ticket (toast)</h2>
+        <div class="k-ticket" style="position:relative;width:100%">
+          <div class="in"><div class="stub"><svg class="k-lamp lg blocked"><use href="#L-blocked"/></svg><span class="mono">0:03</span></div>
+            <div class="body"><div class="cap">No. 0413 · 14:05 · hq-core › ui</div><div class="what">claude·2 is blocked</div><div class="q">Can I delete the old roster styles?</div><hr class="k-stitch tear"><div class="k-legend"><span class="h"><span class="k-key">B</span>inbox</span><span class="h"><span class="k-key">⏎</span>open</span></div></div></div>
+        </div>
+      </div>
+      <div><h2>Drawer tabs + counter</h2>
+        <div class="k-board static" style="overflow:hidden;border-radius:12px">
+          <div class="tabs" style="border-radius:0;padding:0 10px"><div class="k-tab on"><div class="k-port xs" style="--ws:#1E7A74"><div><svg><use href="#worried"/><use href="#beanie" style="color:#946A1C"/></svg></div></div>flint<svg class="k-lamp blocked sm"><use href="#L-blocked"/></svg><svg class="x" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3 3 9"/></svg></div><div class="k-tab"><div class="k-port xs shell" style="--ws:#1E7A74"><div><svg><use href="#shelly"/></svg></div></div>dev<svg class="k-lamp shell sm"><use href="#L-shell"/></svg></div><span class="sp"></span></div>
+          <div class="d-head" style="padding:12px 14px"><div><div class="crumb" style="font-size:14px"><span class="k-shield" style="--ws:#1E7A74;margin-right:7px"></span><span class="dim">hq-core</span><span class="sep">›</span>flint</div></div><span class="sp"></span><div class="k-switch right"><span class="lb">Peek</span><span class="track"><i></i></span><span class="lb on">Control</span></div></div>
+        </div>
+      </div>
+      <div><h2>Post-it · printout</h2>
+        <div class="k-postit" style="margin-bottom:14px"><span>Fit pane to drawer?</span><span class="k-key sm">F</span></div>
+        <div class="k-printout" style="padding:8px 30px"><pre>● Edit(server/http.ts)
+  ❯ 1. Yes</pre></div>
+      </div>
+      <div style="grid-column:span 4"><h2>Never (review checklist — ui-kit.md §6)</h2>
+        <div class="k-paper static" style="padding:14px 18px">
+          <ul class="never">
+            <li><b>No pills.</b> No 999 px radius, no tinted capsule for status, filters, counts, badges or modes. Status = lamp (+ word).</li>
+            <li><b>No card in a card.</b> Paper never in paper; board never in paper. A board holds papers side by side, never stacked.</li>
+            <li><b>One clay per surface.</b> Clay = selection + the one primary button. No second accent, no status-coloured buttons.</li>
+            <li><b>Status colour only</b> on lamps, readouts, the alarm tally cell, stamps, the blocked group header and question margins.</li>
+            <li><b>No boxed rows or groups.</b> Dividers are the groove (board) or the dashed stitch (paper).</li>
+            <li><b>No buttons in rows.</b> Rows show a key legend on the selected row only.</li>
+            <li><b>No ALL CAPS</b> outside plaques, group headers, stamps and the dot-matrix. Buttons, states, labels: sentence case.</li>
+            <li><b>No backdrop-filter, no neutral-black shadows,</b> nothing drawn over terminal glyphs.</li>
+            <li><b>Blocked is said at most 3×</b> per view: HUD alarm cell, the blocked group header, the drawer counter (+ the world).</li>
+            <li><b>Keys are always keycaps</b> (no "[E]" text, no ⌘ on Linux); Leader shown once per legend.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ---- 5x7 dot matrix: GLYPHS subset copied from renderer/src/world/stats/dotfont.ts (the app imports drawDots) ----
+const G={'0':[14,17,19,21,25,17,14],'1':[4,12,4,4,4,4,14],'2':[14,17,1,2,4,8,31],'3':[31,2,4,2,1,17,14],'4':[2,6,10,18,31,2,2],'5':[31,16,30,1,1,17,14],'6':[6,8,16,30,17,17,14],'7':[31,1,2,4,8,8,8],'8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,2,12],
+A:[14,17,17,17,31,17,17],B:[30,17,17,30,17,17,30],C:[14,17,16,16,16,17,14],D:[28,18,17,17,17,18,28],E:[31,16,16,30,16,16,31],K:[17,18,20,24,20,18,17],L:[16,16,16,16,16,16,31],O:[14,17,17,17,17,17,14],' ':[0,0,0,0,0,0,0],':':[0,12,12,0,12,12,0],'/':[0,1,2,4,8,16,0]};
+function drawDM(cv){
+  const s=cv.dataset.dm.toUpperCase(), p=+cv.dataset.p||2.2, col=cv.dataset.c, dpr=2;
+  const w=Math.ceil((s.length*6-1)*p), h=Math.ceil(7*p);
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.width=w+'px'; cv.style.height=h+'px';
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); const r=p*.42;
+  [...s].forEach((ch,i)=>{const gl=G[ch]||G[' '];for(let y=0;y<7;y++)for(let x=0;x<5;x++){const on=gl[y]&(16>>x);
+    g.beginPath();g.arc((i*6+x)*p+p/2,y*p+p/2,r,0,7);
+    if(on){g.shadowColor=col;g.shadowBlur=p*1.4;g.fillStyle=col;}else{g.shadowBlur=0;g.fillStyle='rgba(255,236,210,.07)';}
+    g.fill();}});
+}
+// ---- HUD tally: [needs you, working, done, idle, shells]; zero cells hidden; 0 blocked -> "All clear" ----
+const KEY_B='<span class="k-key">B</span>';
+document.querySelectorAll('[data-tally]').forEach(t=>{const [b,w,d,i,s]=t.dataset.tally.split(',').map(Number);
+  const cell=(k,n,word)=>n?`<div class="cell"><svg class="k-lamp ${k}"><use href="#L-${k==='busy'?'shell':k}"/></svg><span class="n">${n}</span><span class="w">${word}</span></div>`:'';
+  t.innerHTML=(b?`<div class="cell alarm" aria-label="${b} needs you"><svg class="k-lamp blocked"><use href="#L-blocked"/></svg><canvas class="dm" data-dm="${b}" data-c="#FF6B5C" data-p="2.7"></canvas><span class="w">${b===1?'needs you':'need you'}</span>${KEY_B}</div>`
+    :`<div class="cell clear"><svg class="k-lamp done"><use href="#L-done"/></svg><span class="w">All clear</span></div>`)
+    +cell('working',w,'working')+cell('done',d,'done')+cell('idle',i,'idle')+cell('shell',s,'shells');});
+// ---- minimap: graph-paper floor plan, taped into a walnut frame ----
+document.querySelectorAll('[data-map]').forEach(m=>{m.insertAdjacentHTML('afterbegin',`<div class="map"><svg viewBox="0 0 180 140"><g fill="none" stroke="#3A3733" stroke-width="2" stroke-linecap="round">
+<rect x="6" y="6" width="168" height="128" rx="2"/><path d="M6 46h40M46 6v26M46 42v50M6 92h40M46 102v32M120 6v30M120 46v40M120 96v38M120 70h54M60 110h50"/><circle cx="84" cy="70" r="20" stroke="#5E9EA0" stroke-dasharray="3 3"/></g>
+<circle cx="30" cy="26" r="3.4" fill="#4FA3E8"/><circle cx="24" cy="66" r="3.4" fill="#4FA3E8"/><circle cx="148" cy="30" r="3.4" fill="#63C48A"/><circle cx="84" cy="64" r="3.4" fill="#B3AA9D"/><circle cx="92" cy="76" r="3.4" fill="#B3AA9D"/>
+<circle cx="140" cy="100" r="3.4" fill="#7FE3A0"/><circle cx="30" cy="112" r="6.5" fill="none" stroke="#EF5A4C" stroke-width="1.5" opacity=".6"/><circle cx="30" cy="112" r="3.6" fill="#EF5A4C"/>
+<path d="M78 118l6-14 6 14-6-4Z" fill="#D97757" stroke="#B8593B" stroke-width="1"/></svg></div><span class="tape" style="left:-6px;top:2px;transform:rotate(-32deg)"></span><span class="tape" style="right:-8px;top:4px;transform:rotate(30deg)"></span>`);});
+// ---- hotbar pigeonholes ----
+document.querySelectorAll('[data-hotbar]').forEach(h=>{const P=[['worried','beanie','#946A1C','blocked','#1E7A74'],['worried','phones','#4B4FA6','blocked','#4B4FA6'],['clawd','prop','#A8385E','working','#A8385E'],['shelly',null,null,'shell','#1E7A74'],['clawd','phones','#6B7A2A','done','#6B7A2A'],null,null,null,null];
+  h.innerHTML=P.map((p,i)=>p?`<div class="cubby ${i===0?'sel':''}"><span class="k-key">${i+1}</span><div class="k-port ${p[0]==='shelly'?'shell':''}" style="--ws:${p[4]}"><div><svg><use href="#${p[0]}"/>${p[1]?`<use href="#${p[1]}" style="color:${p[2]}"/>`:''}</svg></div></div><svg class="k-lamp ${p[3]}"><use href="#L-${p[3]}"/></svg></div>`:`<div class="cubby empty"><span class="k-key">${i+1}</span></div>`).join('');});
+document.querySelectorAll('canvas.dm').forEach(drawDM);
+const setScene=()=>{document.body.dataset.scene=(location.hash.slice(1)||'work');};
+addEventListener('hashchange',setScene); setScene();
+</script>
+</body>
+</html>

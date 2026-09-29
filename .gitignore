@@ -1,0 +1,76 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+/build/
+out/
+release/
+*.tsbuildinfo
+
+# logs, caches, scratch
+*.log
+logs/
+.cache/
+.vite/
+.eslintcache
+coverage/
+.nyc_output/
+scratch/
+tmp/
+.tmp/
+*.tmp
+
+# local config, secrets, tokens
+.env*
+*.pem
+*.key
+*.local.json
+.npmrc
+token
+*.token
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# stray root-level images (docs images handled below)
+/*.png
+
+# Screenshots: only a curated set is committed.
+# All review/fix/iteration rounds are machine-generated and huge.
+docs/shots/*
+!docs/shots/ui-final/
+docs/shots/ui-final/*/
+# m2: only the images referenced by README.md
+!docs/shots/m2/
+docs/shots/m2/*
+!docs/shots/m2/spawn-h13.png
+!docs/shots/m2/pitOverview-h18.png
+!docs/shots/m2/serve-h13.png
+!docs/shots/m2/engine-h22.png
+!docs/shots/m2/plan-h13.png
+!docs/shots/m2/cafe-h18.png
+!docs/shots/m2/library-h13.png
+# m3: the app-level shots (Electron / web / hire / rally), not the time-of-day matrix
+!docs/shots/m3/
+docs/shots/m3/*
+!docs/shots/m3/electron-pitOverview.png
+!docs/shots/m3/web-hqtest.png
+!docs/shots/m3/hire-crate-lobbyDesk.png
+!docs/shots/m3/rally-live-pitOverview.png
+# these frames show the machine's real hostname on the in-world stats board
+docs/shots/ui-final/10-inbox-confirm.png
+docs/shots/ui-final/13-talk.png
+docs/shots/ui-final/14-rename.png
+docs/shots/ui-final/15-hire.png
+docs/shots/ui-final/17-tour.png
+renderer/ui-lab/free-bg-lobby.png
+
+# Screenshots are not committed (regenerate with scripts/shoot.ts)
+docs/shots/
+docs/port/baseline/**/*.png
+renderer/ui-lab/*.png
