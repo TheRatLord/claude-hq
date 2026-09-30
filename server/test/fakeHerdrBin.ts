@@ -2,7 +2,7 @@
 /**
  * Fake `herdr` binary for tests (HERDR_BIN_PATH). Only `--session S terminal session {observe|control} <pane>
  * --cols C --rows R [--takeover]` is implemented; it attaches through the MockHerdr socket resolved exactly like
- * server/herdr/resolve.ts (HQ_HERDR_HOME), so a wrong `--session` fails. Behaves like herdr 0.9.0 (research §4.1):
+ * server/herdr/resolve.ts (HQ_HERDR_HOME), so a wrong `--session` fails. Behaves like herdr 0.9.0:
  *   - NDJSON `terminal.frame` (base64 ansi, full flag) / `terminal.closed {reason}` on stdout; exit code always 0
  *   - control: stdin `terminal.input|resize|scroll|release`; release or stdin EOF → closed "detached", exit
  *   - observe: ignores input, release AND stdin EOF (only a signal ends it)

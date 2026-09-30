@@ -1,5 +1,5 @@
 /**
- * Subagents enricher (DESIGN §4.5, research/herdr-api §6): every 2 s, `readdir` + `stat` on
+ * Subagents enricher: every 2 s, `readdir` + `stat` on
  * `<projects>/<slug(cwd)>/<session>/subagents/` → `agent-*.jsonl` (+ `.meta.json` {agentType, description}) and
  * `workflows/<wf>/agent-*.jsonl` (labels from `journal.jsonl` `started` lines). `active` = mtime < 30 s; ≤ 8 reported
  * (active first, then newest). Emits `subagent-spawned` for files that appear after the first scan and

@@ -1,5 +1,5 @@
 /**
- * Actions & safety gate (DESIGN §4.8): gate by ACTION_CLASS, then `source.request(...)`. Never knows live vs demo.
+ * Actions & safety gate: gate by ACTION_CLASS, then `source.request(...)`. Never knows live vs demo.
  * Handles every non-`term.*` renderer→server message after ws.ts validated it and checked the entity id.
  *
  *   always      screen.watch settings.set world.get done.ack agent.explain timeline.get note.set   (HQ-local / read-only)
@@ -7,7 +7,7 @@
  *   interact    agent.prompt agent.answer agent.keys
  *   structural  spawn pane.close — demo or a named, non-default herdr session only; NEVER the default session (there is no
  *               flag or setting that enables it there; a named session resolving to the default socket counts as default)
- * herdr/client.ts enforces its own method allowlist independently (§4.1): a bug in either alone cannot mutate the
+ * herdr/client.ts enforces its own method allowlist independently: a bug in either alone cannot mutate the
  * default session. Read-only herdr protocol → every class but `always` is refused with `readonly_protocol`.
  * Owner: BE. `timeline.get` is served by timeline.ts (M2); `note.set` by notes.ts (M3).
  */
@@ -149,13 +149,13 @@ export class Actions {
   /**
    * Structural gate: demo, or a named session that does not resolve to the default socket. Nothing opens it in the
    * default session: the `allowMutations` *setting* is never honoured (`settings.set` refuses it there) and there is
-   * no CLI flag, so one renderer message can never open both gates (§4.8 "two gates, not one").
+   * no CLI flag, so one renderer message can never open both gates ("two gates, not one").
    */
   get mutationsAllowed(): boolean {
     return this.demo || !this.isDefault;
   }
 
-  /** Gate (§4.8). Throws `{code}` when refused. */
+  /** Gate. Throws `{code}` when refused. */
   gate(t: ClientMsgType): ActionClass {
     const cls = ACTION_CLASS[t];
     if (cls === 'demo' && !this.demo) throw actionError(ERR.NOT_DEMO, `${t} is demo only`);
@@ -208,7 +208,7 @@ export class Actions {
         await req('pane.send_keys', { pane_id: msg.id, keys: msg.keys });
         return {};
       case 'agent.explain': {
-        // passthrough (read-only, §3.4) + a compact `why` line for the status card's "Why?" expander
+        // passthrough (read-only) + a compact `why` line for the status card's "Why?" expander
         const r = await req('agent.explain', { target: msg.id });
         const explain = isRecord(r) ? r.explain ?? r : r;
         return { explain, why: explainWhy(explain) };
@@ -236,7 +236,7 @@ export class Actions {
   }
 
   /**
-   * §4.8 answer algorithm: re-read the prompt NOW and re-hash; anything different → prompt_changed (nothing sent).
+   * Answer algorithm: re-read the prompt NOW and re-hash; anything different → prompt_changed (nothing sent).
    * Then the digit (numbered) or Up/Down × distance + Enter from the CURRENT cursor. Then poll (every ANSWER_POLL_MS,
    * up to ANSWER_RECHECK_MS) until the answer visibly took: status/stateSeq/kind changed, pane gone, or the prompt
    * text/cursor changed. Only the identical prompt with an unmoved cursor at the deadline → not_accepted.

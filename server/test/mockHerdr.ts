@@ -1,5 +1,5 @@
 /**
- * Mock herdr (DESIGN §9.3): a scripted NDJSON unix-socket server shaped like herdr 0.9.0 / protocol 22, plus a fake
+ * Mock herdr: a scripted NDJSON unix-socket server shaped like herdr 0.9.0 / protocol 22, plus a fake
  * `terminal session` binary (server/test/fakeHerdrBin.ts, used via HERDR_BIN_PATH) that attaches through this
  * socket. Every method call is logged (`calls`) so safety tests can assert what was — and was not — sent. Owner: BE.
  *
@@ -125,7 +125,7 @@ export class MockHerdr {
   server: net.Server | null = null;
   delayMs = 0;
   /**
-   * Chaos (§9.3 chaos harness): `{rng}` → every reply/event line is written in 1–4 byte-level pieces split at random
+   * Chaos (chaos harness): `{rng}` → every reply/event line is written in 1–4 byte-level pieces split at random
    * offsets (mid-UTF-8 included), each after a random 0–2 ms, so the client's NDJSON reader must reassemble them.
    */
   chaos: { rng: () => number } | null = null;

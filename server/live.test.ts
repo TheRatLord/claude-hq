@@ -1,4 +1,4 @@
-// Live wiring e2e against the mock herdr + fake terminal bin (DESIGN §9.3 mock-herdr / WS e2e).
+// Live wiring e2e against the mock herdr + fake terminal bin (mock-herdr / WS e2e).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';

@@ -1,5 +1,5 @@
 /**
- * Monitor text for watched panes (DESIGN §4.3 screens, M3.5 atlas feed). Not an enricher: writes `screen` messages.
+ * Monitor text for watched panes. Not an enricher: writes `screen` messages.
  * Owner: BE.
  * - Each client watches ≤ LIMITS.watchMax (8, VALIDATE) ids; the union of all clients is capped at LIMITS.watchUnionMax (16).
  * - ≤ 1 Hz per pane. Source: the live terminal mirror when one exists (no herdr call), else

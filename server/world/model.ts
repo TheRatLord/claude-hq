@@ -1,5 +1,5 @@
 /**
- * WorldModel (DESIGN §4.3, §4.0, §4.2): raw herdr snapshot + enrichers → Entity map; diff → `entity`/`gone`/`event`/
+ * WorldModel: raw herdr snapshot + enrichers → Entity map; diff → `entity`/`gone`/`event`/
  * `workspaces`/`herdr`. Emits 'msg' (a ServerMsg object) for WsHub to broadcast. Owner: BE.
  *
  *   raw snapshot → base entity (naming.ts, slots.ts, since.ts) → `update(id, base, prev)` on every enricher (synchronous)
@@ -8,11 +8,11 @@
  * - Ownership: patches outside `owns` throw in dev / drop in prod (checkPatch); events must pass `mayEmit(owner, kind,
  *   entity.kind)` (D3: `commit`/`news` split by pane kind) — dev throws, prod drops.
  * - Offline: the model freezes (no `gone`, no events, statuses unchanged) until the source reconnects.
- * - Reconnect grace (15 s, §4.2): panes missing from the new snapshots are kept; new panes are matched to them by
+ * - Reconnect grace (15 s): panes missing from the new snapshots are kept; new panes are matched to them by
  *   terminal_id → agent_session → place and RE-KEYED (`gone{reason:'rekeyed', newId}` + `entity`, no arrive/leave).
  *   `arrived`/`left`/`finished`/`blocked`/`unblocked` and enricher events are suppressed while grace runs. When it ends,
  *   still-unmatched old entities get `left` + `gone` in one tick.
- * - First snapshot: no `arrived` for panes that already exist (§6.4.3).
+ * - First snapshot: no `arrived` for panes that already exist.
  */
 import { EventEmitter } from 'node:events';
 import {
@@ -52,7 +52,7 @@ export interface WorldModelOptions {
   graceMs?: number;
 }
 
-/** Events a WorldModel emits: `msg` (every ServerMsg for WsHub to broadcast) and `status` (timeline.ts, §4.3.1). */
+/** Events a WorldModel emits: `msg` (every ServerMsg for WsHub to broadcast) and `status` (timeline.ts). */
 export interface WorldModelEvents {
   msg: [msg: ServerMsg];
   status: [id: string, from: Status, to: Status, identity: Identity];
@@ -289,7 +289,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
   _ctx(id: string): EnricherCtx {
     return {
       source: this.source, clock: this.clock, log: this.log, session: this.session,
-      // §4.3.1: accepts sinceHint(ms) or sinceHint(id, ms)
+      // accepts sinceHint(ms) or sinceHint(id, ms)
       sinceHint: (a: number | string, b?: number) => this._sinceHint(id, b === undefined ? a : b),
     };
   }
@@ -426,7 +426,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
 
   _statusEvents(id: string, prev: Base, base: Base): void {
     if (prev.status === base.status) return;
-    this.emit('status', id, prev.status, base.status, base.identity); // timeline.ts (§4.3.1): every transition
+    this.emit('status', id, prev.status, base.status, base.identity); // timeline.ts: every transition
     if (base.status === 'blocked') this._event(id, 'blocked');
     if (prev.status === 'blocked') this._event(id, 'unblocked');
     if (prev.status === 'working' && (base.status === 'done' || base.status === 'idle')) {
@@ -492,7 +492,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     }
     if (!isAssembledEntity(fields)) throw new Error(`entity ${id}: field assembly incomplete`);
     const out = fields;
-    // shells: a process.activity change is a status change for time purposes (§4.3.1)
+    // shells: a process.activity change is a status change for time purposes
     if (base.kind === 'shell' && out.process?.activity && this.since.activity(identityKey(base.identity), out.process.activity)) {
       base.statusSince = out.statusSince = this.clock.now();
       base.statusSinceApprox = out.statusSinceApprox = false;

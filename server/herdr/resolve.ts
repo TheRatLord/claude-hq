@@ -1,8 +1,8 @@
 /**
- * The ONE session → socket resolver (DESIGN §4.1). Every herdr socket path in the backend comes from `socketFor`;
+ * The ONE session → socket resolver. Every herdr socket path in the backend comes from `socketFor`;
  * every herdr child gets the same `--session <name>`. Owner: BE.
  *
- * Default-socket guard (§2.2): `dev:hq`, `hqtest-up.sh`, and the mock-herdr tests refuse to
+ * Default-socket guard: `dev:hq`, `hqtest-up.sh`, and the mock-herdr tests refuse to
  * start when `realpath(socketFor(session)) === realpath(socketFor('default'))`.
  */
 import fs from 'node:fs';
@@ -44,7 +44,7 @@ export function isDefaultSocket(session: string): boolean {
 }
 
 /**
- * THE default-session test for a live run (§4.1, §4.8): the name 'default', a named session whose socket realpath is
+ * THE default-session test for a live run: the name 'default', a named session whose socket realpath is
  * the default socket (symlinked sessions/<name> dir), or a socket override that resolves to the default socket.
  * Computed once in app.ts wireLive and handed to HerdrClient, Actions and hello — nothing else decides by name.
  * `socketOverride` is opts.herdrSocket.
@@ -63,7 +63,7 @@ export function refuseDefault(session: string, why = 'this run', socketOverride:
   }
 }
 
-/** Env for herdr children: HERDR_* scrubbed, reaper tags added (§4.1, §4.7.1): instance, session, config-dir tag. */
+/** Env for herdr children: HERDR_* scrubbed, reaper tags added: instance, session, config-dir tag. */
 export function childEnv(
   { instanceId, session, stateTag }: { instanceId?: string | null; session?: string | null; stateTag?: string | null },
   base: NodeJS.ProcessEnv = process.env,

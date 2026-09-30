@@ -1,5 +1,5 @@
 /**
- * HTTP server (DESIGN §4.11): loopback-only Host check, token → HttpOnly cookie, static `dist/` with CSP,
+ * HTTP server: loopback-only Host check, token → HttpOnly cookie, static `dist/` with CSP,
  * `/healthz`, `/debug/metrics` (--metrics/--dev, token auth), `/api/audit` (token auth), WS upgrade gate (path, Host, Origin, token).
  * Owner: BE. No compression or range requests: loopback only, hashed assets are served immutable.
  */
@@ -15,7 +15,7 @@ export const CSP = "default-src 'self'; connect-src 'self' ws://localhost:* ws:/
   "style-src 'self' 'unsafe-inline'; worker-src 'self' blob:";
 /**
  * The served CSP: connect-src narrowed to this server's own port (the only WS origin ws.ts accepts anyway), so a page
- * can never open a socket to another local service. `port` unknown → the §4.11 wildcard form above.
+ * can never open a socket to another local service. `port` unknown → the wildcard form above.
  */
 // [INT M2, cross-owner BE] no `ws://[::1]:port`: CSP host-sources cannot be IPv6 literals (Chromium logs a console error
 // "contains an invalid source" on every production load); a page served from [::1] is covered by 'self' (CSP3 ws match)
@@ -45,7 +45,7 @@ export const hostOk = (host: unknown): boolean => LOOPBACK.has(hostnameOf(host) 
  * WS Origin is required and must be a loopback http(s) origin on one of `ports` — this server's own listen port (plus
  * the vite port in --dev). Any loopback port is NOT enough: the hq_token cookie is SameSite=Strict, and "site" ignores
  * the port, so a page from some other local server (python -m http.server, another project's dev server) would carry
- * the cookie and could otherwise drive term.* / agent.* (§4.11).
+ * the cookie and could otherwise drive term.* / agent.*.
  */
 export function originOk(origin: unknown, ports?: Iterable<number> | null): boolean {
   if (typeof origin !== 'string') return false;
@@ -128,7 +128,7 @@ export function createHttpServer(o: HttpServerOpts): http.Server {
       if (!authed(req, url)) return send(401, 'unauthorized\n');
       return json(200, o.metricsFn?.() ?? {});
     }
-    // Recent HQ actions (§4.8, §8.5, M3): metadata-only audit entries for this session, newest last. Token/cookie auth.
+    // Recent HQ actions: metadata-only audit entries for this session, newest last. Token/cookie auth.
     if (url.pathname === '/api/audit') {
       if (!authed(req, url)) return send(401, 'unauthorized\n');
       if (!o.auditFn) return send(404, 'not found\n');

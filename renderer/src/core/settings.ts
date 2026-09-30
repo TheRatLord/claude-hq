@@ -1,5 +1,5 @@
 /**
- * Renderer view of the server-persisted settings (`hello.settings`, `settings.set {patch}`, §3.4).
+ * Renderer view of the server-persisted settings (`hello.settings`, `settings.set {patch}`).
  * Local-only overrides (URL params) never get written back. Owner: CORE.
  */
 import { DEFAULT_SETTINGS, SETTINGS_KEYS, R2S } from '../../../shared/protocol.ts';

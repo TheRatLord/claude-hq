@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from './main.ts';
 
-test('parseArgs: §2.2 flags', () => {
+test('parseArgs: flags', () => {
   assert.deepEqual(parseArgs([]), { port: 7462 });
   assert.deepEqual(parseArgs(['--demo']), { port: 7462, demo: 12 });
   assert.deepEqual(parseArgs(['--demo', '40', '--port', '0', '--dev']), { port: 0, demo: 40, dev: true });

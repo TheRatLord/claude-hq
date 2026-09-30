@@ -1,12 +1,12 @@
 /**
- * DemoWorld (DESIGN §4.9, §4.0): a seeded, scheduled fake herdr. Implements `HerdrSource` with herdr-shaped raw
+ * DemoWorld: a seeded, scheduled fake herdr. Implements `HerdrSource` with herdr-shaped raw
  * snapshots + status events and a herdr `request()` subset, so WorldModel, naming, event derivation, the blocked
  * parser (`pane.read detection` returns real Claude Code prompt text) and the procinfo enricher (`pane.process_info`)
  * all run unchanged. Transcript-only facts go through `DemoEnricher` (owner `demo`), which re-emits the schedule's
  * events via `emitEvent` like the live transcripts enricher.
  *
  * Working turns are phase-structured like real Claude sessions (explore → plan → edit → verify → git, with occasional
- * web/task phases; 70% of tools in a phase are the phase's class). Every timer runs on `clock` (§4.13): `--timescale`
+ * web/task phases; 70% of tools in a phase are the phase's class). Every timer runs on `clock`: `--timescale`
  * compresses a scenario and tests drive it with a FakeClock.
  *
  * Wire-up: `const {source, demo, enrichers} = createDemo({clock, n, seed, scenario})`; add blocked/acks; construct
@@ -180,7 +180,7 @@ interface Sim {
   ticks: number;
 }
 
-/** Phase table (§4.9): [class weights, duration range s]. */
+/** Phase table: [class weights, duration range s]. */
 const PHASES: Record<PhaseName, { cls: [ToolClass, number][]; dur: [number, number] }> = {
   explore: { cls: [['read', 3], ['search', 2]], dur: [20, 90] },
   plan: { cls: [['think', 3], ['todo', 1]], dur: [10, 30] },
@@ -198,7 +198,7 @@ const COVER: ToolClass[] = ['net', 'git', 'mcp', 'other', 'web', 'todo', 'build'
 const EXTRA_PHASES: PhaseName[][] = [['web'], ['task'], [], ['web', 'task'], [], ['task']];
 const SPREAD: Status[] = ['working', 'blocked', 'done', 'working', 'idle', 'unknown', 'working', 'working', 'done', 'working', 'idle', 'working'];
 const MODEL_OF = (R: Rng, kind: Kind): string => (kind === 'codex' ? 'gpt-5-codex' : R.weighted(MODELS));
-/** Lively scenarios: mid-turn permission prompts, trust prompts for newcomers (§4.9 "realistic prompts"). */
+/** Lively scenarios: mid-turn permission prompts, trust prompts for newcomers ("realistic prompts"). */
 const LIVELY = new Set(['mixed', 'crowd40', 'trio', 'churn']);
 /** Per risky tool step (bash/edit/fetch/mcp): chance Claude Code stops to ask permission first. */
 const MIDTURN_ASK = 0.03;
@@ -301,7 +301,7 @@ export class DemoWorld extends HerdrSource {
     this.removeAllListeners();
   }
 
-  /** Leak surface (§9.3 churn). */
+  /** Leak surface (churn). */
   metrics(): { scenario: string; panes: number; sims: number; facts: number; timers: number; connected: boolean } {
     let timers = this._globalTimers.size;
     for (const s of this.sims.values()) timers += s.timers.size;
@@ -309,7 +309,7 @@ export class DemoWorld extends HerdrSource {
   }
 
   /**
-   * Seed `since.json` records (§4.3.1) so longIdle's ages are honest (not approx). `store` = WorldModel's SinceStore.
+   * Seed `since.json` records so longIdle's ages are honest (not approx). `store` = WorldModel's SinceStore.
    */
   seedSince(store: { map: Record<string, SinceRecord>; doc?: { touch(): void } }): void {
     const now = this.clock.now();
@@ -479,7 +479,7 @@ export class DemoWorld extends HerdrSource {
         const blank = spec.fresh || (status === 'unknown' && !spec.frozen); // a fresh hire (agent.start) has no task yet
         f.title = blank ? null : title;
         f.lastPrompt = blank ? null : prompt;
-        // spread slot 3 starts near its context limit so compaction shows up early (§4.9 "grow contextTokens")
+        // spread slot 3 starts near its context limit so compaction shows up early ("grow contextTokens")
         f.contextTokens = spec.nearCompact ? R.int(148_000, 158_000) : R.int(18_000, 140_000);
         f.outputTokens = Math.round(f.contextTokens * R.range(0.08, 0.2));
         if (f.title) this._seedWork(rng(`text:${this.scenarioName}:${this.seed}:${id}`), f, status);
@@ -522,7 +522,7 @@ export class DemoWorld extends HerdrSource {
     f.lastText = demoText(R, status === 'working' ? (files ? 'talk' : 'explore') : status === 'blocked' ? 'plan' : 'done', { title: f.title, prompt: f.lastPrompt, file, work });
   }
 
-  /** Struggle (§4.4 + M3.5 detail/context) from the sim's fail streak and context, the same rules as live. */
+  /** Struggle (+ M3.5 detail/context) from the sim's fail streak and context, the same rules as live. */
   _struggle(sim: Sim): void {
     const f = this.facts.get(sim.id);
     if (!f || f.kind !== 'claude') return;
@@ -818,7 +818,7 @@ export class DemoWorld extends HerdrSource {
 
   /**
    * Next interjection class: while some class has not been shown yet, every other interjection surfaces one (so a
-   * fresh demo shows every ToolClass within ~3 min, §11 M1); otherwise alternate the common and rare decks.
+   * fresh demo shows every ToolClass within ~3 min); otherwise alternate the common and rare decks.
    */
   _interject(): ToolClass {
     const k = this._iSeq++;
@@ -910,7 +910,7 @@ export class DemoWorld extends HerdrSource {
     const R = sim.R;
     const f = this.facts.get(sim.id);
     if (!f) return;
-    // §8.9 M3.5: no news per step (one per turn end, `_endTurn`); assistant text updates lastText (M3.5)
+    // no news per step (one per turn end, `_endTurn`); assistant text updates lastText (M3.5)
     const phase = sim.turn?.phases[sim.turn.i]?.name;
     const say = (stage: DemoTextStage) => {
       if (f.kind !== 'claude') return;
@@ -974,7 +974,7 @@ export class DemoWorld extends HerdrSource {
     sim.fails = 0;
     if (!sim.answered && R.chance(0.18)) return this._block(sim, { ask: R.chance(0.35) });
     if (f.kind === 'claude') {
-      // the closing summary message; one meaningful `news` per finished turn (§8.9 M3.5)
+      // the closing summary message; one meaningful `news` per finished turn
       f.lastText = demoText(sim.T, 'done', { title: f.title, prompt: f.lastPrompt, work: f.work });
       this._event(sim.id, 'news', { src: 'turn', msgs: (sim.turnMsgs ?? 0) + 1, edits: sim.turnEdits ?? 0 });
     }
@@ -1213,7 +1213,7 @@ export class DemoWorld extends HerdrSource {
     loop();
   }
 
-  /** churn (§4.9): panes appear/vanish every 1–2 s, offline flaps every 20 s, re-keyed restarts, workspace renames. */
+  /** churn: panes appear/vanish every 1–2 s, offline flaps every 20 s, re-keyed restarts, workspace renames. */
   _startChurn(): void {
     const R = this._R;
     const base = this.raw.panes.length;
@@ -1260,7 +1260,7 @@ export class DemoWorld extends HerdrSource {
     this._globalTimers.add(h);
   }
 
-  /** herdr restart: pane ids re-keyed (new numbers), terminal ids + agent sessions kept (§4.2 rekey). */
+  /** herdr restart: pane ids re-keyed (new numbers), terminal ids + agent sessions kept (rekey). */
   _restart(): void {
     if (!this.connected) return;
     this.connected = false;
@@ -1297,7 +1297,7 @@ export class DemoWorld extends HerdrSource {
   }
 
   // ------------------------------------------------------------------------------------------
-  // herdr request subset (§4.0 demo list). Errors carry herdr's string `code`.
+  // herdr request subset (demo list). Errors carry herdr's string `code`.
 
   _err(code: string, message?: string): Error & { code: string } {
     return Object.assign(new Error(message ?? code), { code });
@@ -1539,7 +1539,7 @@ export function promptText(pr: DemoPrompt): string {
 // ------------------------------------------------------------------------------------------------
 
 /**
- * DemoEnricher (owner `demo` = the transcripts + subagents rows, §4.0): patches the schedule's facts and re-emits its
+ * DemoEnricher (owner `demo` = the transcripts + subagents rows): patches the schedule's facts and re-emits its
  * events through `emitEvent`. Reacts in update(): status ≠ working → activity null (or `ask` for a pending question),
  * struggle null. Non-Claude agents are herdr-status-only, like live.
  */
@@ -1616,7 +1616,7 @@ export class DemoEnricher extends Enricher {
     if (this._sent.get(id) === j) return;
     this._sent.set(id, j);
     this.onPatch(id, patch);
-    // `struggle` event on every level change (§4.4), like the live transcripts enricher (incl. the level-0 clear)
+    // `struggle` event on every level change, like the live transcripts enricher (incl. the level-0 clear)
     const level = patch.struggle?.level ?? 0;
     if (level !== (this._level.get(id) ?? 0)) {
       this._level.set(id, level);

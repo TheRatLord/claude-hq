@@ -4,7 +4,7 @@ import { toolClass, bashCategory, processActivity, processFromInfo, isGitCommit 
 import { TOOL_CLASSES, SHELL_ACTIVITIES } from './protocol.ts';
 import type { ShellActivity } from './protocol.ts';
 
-test('toolClass: §3.1 table', () => {
+test('toolClass: table', () => {
   const rows = [
     ['Edit', 'edit'], ['MultiEdit', 'edit'], ['NotebookEdit', 'edit'], ['Write', 'write'], ['Read', 'read'],
     ['Grep', 'search'], ['Glob', 'search'], ['LS', 'search'], ['WebSearch', 'web'], ['WebFetch', 'web'],
@@ -42,7 +42,7 @@ test('isGitCommit', () => {
   assert.ok(!isGitCommit('echo "git commit"'));
 });
 
-test('processActivity: §4.6 table', () => {
+test('processActivity: table', () => {
   const rows: [[string, string[]], ShellActivity][] = [
     [['bash', ['/bin/bash']], 'prompt'], [['zsh', ['-zsh']], 'prompt'], [['fish', ['fish']], 'prompt'],
     [['nvim', ['nvim', 'foo.js']], 'edit'], [['vim', ['vim']], 'edit'], [['hx', ['hx', '.']], 'edit'],

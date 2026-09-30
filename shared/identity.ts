@@ -1,6 +1,6 @@
 // @pure
 /**
- * Stable hashing, seeded RNG, workspace colour assignment and stable pane identity (DESIGN §3.1, §4.2, §8.10).
+ * Stable hashing, seeded RNG, workspace colour assignment and stable pane identity.
  * Owner: LEAD. Pure (no three, no node built-ins).
  */
 
@@ -37,7 +37,7 @@ export function hashHex(str: string): string {
 }
 
 /**
- * mulberry32 PRNG. `mulberry32(hash32(seedKey))` seeds personality (§6.3).
+ * mulberry32 PRNG. `mulberry32(hash32(seedKey))` seeds personality.
  * @returns a generator of uniform [0, 1)
  */
 export function mulberry32(seed: number): () => number {
@@ -52,7 +52,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 /**
- * Blocked-prompt hash (§4.3): hash32(stateSeq + '\n' + question + '\n' + labels.join('\n')) as hex.
+ * Blocked-prompt hash: hash32(stateSeq + '\n' + question + '\n' + labels.join('\n')) as hex.
  * `labels` are the option labels in order.
  */
 export function promptHash(stateSeq: number | null, question: string, labels: string[]): string {
@@ -75,7 +75,7 @@ export function workspaceColorIndex(label: string, taken: Iterable<number> = [])
 }
 
 /**
- * Assign {colorIndex, cycle} for a whole workspace list (§3.1). Order by `number`; the n-th workspace
+ * Assign {colorIndex, cycle} for a whole workspace list. Order by `number`; the n-th workspace
  * (0-based) gets `cycle = floor(n/8)` and probes only against lower-numbered workspaces of its cycle.
  * @returns colour + cycle by workspace id
  */
@@ -101,7 +101,7 @@ export function placeOf(wsLabel: string, tabLabel: string, paneIndex: number, cw
   return `${wsLabel ?? ''}/${tabLabel ?? ''}/${paneIndex ?? 0}/${cwd ?? ''}`;
 }
 
-/** Match strength order (§4.2 rekey order): terminalId → agentSession → place. */
+/** Match strength order (rekey order): terminalId → agentSession → place. */
 export const IDENTITY_MATCH_ORDER = Object.freeze(['terminalId', 'agentSession', 'place'] as const);
 export type IdentityKey = (typeof IDENTITY_MATCH_ORDER)[number];
 
@@ -123,7 +123,7 @@ export function identityMatch(saved: Identity | null | undefined, entityOrIdenti
 }
 
 /**
- * Re-bind a saved identity against a set of entities (pins, notes, tabs; §8.10). Tries each key in order
+ * Re-bind a saved identity against a set of entities (pins, notes, tabs). Tries each key in order
  * across ALL entities before falling back to the next key; a key matching several entities is ambiguous
  * and skipped.
  */

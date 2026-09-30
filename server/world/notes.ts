@@ -1,5 +1,5 @@
 /**
- * HQ-local sticky notes (DESIGN §8.10, M3), an Enricher (`notes`: owns `note`, emits nothing).
+ * HQ-local sticky notes, an Enricher (`notes`: owns `note`, emits nothing).
  * `note.set {id, text|null}` stores `{text, at}` per stable identity in `<session>/notes.json` (0600, debounced atomic
  * writes via persist.ts), so a note follows re-keys and survives backend restarts. `Entity.note` = `{text, at}|null`.
  * Never sent to herdr. Empty/whitespace text or null clears the note. Owner: BE.

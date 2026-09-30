@@ -1,6 +1,6 @@
 /**
- * The ONE WebSocket (§3.4, §4.11). Only store.ts uses this module.
- * - URL: same-origin `/ws?cid=…[&t=…]`; `cid` is random per tab (sessionStorage) for the terminal grace resume (§4.7).
+ * The ONE WebSocket. Only store.ts uses this module.
+ * - URL: same-origin `/ws?cid=…[&t=…]`; `cid` is random per tab (sessionStorage) for the terminal grace resume.
  * - Token: `?t=` is removed from the location at boot, kept in memory + sessionStorage (dev proxy path). Web mode
  *   also has the HttpOnly cookie, which the upgrade accepts.
  * - Reconnect: exponential backoff 0.5 s → 10 s with jitter; reset after a connection that lasted ≥ 5 s. While

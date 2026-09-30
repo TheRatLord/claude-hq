@@ -1,4 +1,4 @@
-// world/* pure-ish units: blocked parse + answer keys, naming, slots, since (DESIGN §4.3, §4.3.1, §6.4, §4.8).
+// world/* pure-ish units: blocked parse + answer keys, naming, slots, since.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

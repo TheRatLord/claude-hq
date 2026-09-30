@@ -1,4 +1,4 @@
-// §9.3 leaks: `churn` for 10 simulated minutes under FakeClock through the whole app (WorldModel, enrichers, fake
+// Leak test: `churn` for 10 simulated minutes under FakeClock through the whole app (WorldModel, enrichers, fake
 // terminals, WS hub), then quiesce → /debug/metrics gauges equal the pre-run baseline (cumulative counters excluded).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

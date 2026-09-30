@@ -1,8 +1,8 @@
 /**
- * Process-info enricher (DESIGN §4.5, §4.0): polls herdr `pane.process_info` every 2.5 s for shell panes and every 10 s
+ * Process-info enricher: polls herdr `pane.process_info` every 2.5 s for shell panes and every 10 s
  * for agent panes, and patches `process` = {name, argv, activity} (ShellActivity via shared/classify.ts). `res` stays
  * null until M4. Emits `commit` for shells whose foreground argv is a `git commit|push` (D3: shells only), and `news
- * {src:'shell', lines}` (§8.9): the tail of `pane.read recent_unwrapped` is diffed against the previous one each poll
+ * {src:'shell', lines}`: the tail of `pane.read recent_unwrapped` is diffed against the previous one each poll
  * (shellNews; the last line, the prompt / cursor line redrawn constantly, never counts) and new lines accumulate while a
  * command runs; ONE news fires when the shell is back at its prompt (M3.5 "meaningful news": a finished command, not
  * every chunk a dev server or `tail -f` prints). Full-screen activities (monitor, edit) are not news.
@@ -21,7 +21,7 @@ const NEWS_TAIL = 60;
 const NO_NEWS = new Set(['monitor', 'edit']); // full-screen TUIs redraw constantly
 
 /**
- * New output lines between two tails of a shell (§8.9). The final line of each tail is the live prompt/cursor line and
+ * New output lines between two tails of a shell. The final line of each tail is the live prompt/cursor line and
  * is ignored; the previous tail's last ≤ 4 settled lines anchor the overlap. No anchor found (cleared screen, a burst
  * bigger than the tail) → every settled line of the new tail counts. Blank lines never count.
  */
@@ -119,7 +119,7 @@ export class ProcInfoEnricher extends Enricher {
     }
   }
 
-  /** Shell output news (§8.9): diff the recent_unwrapped tail; emit `news {src:'shell', lines}` once back at the prompt. */
+  /** Shell output news: diff the recent_unwrapped tail; emit `news {src:'shell', lines}` once back at the prompt. */
   async _news(r: Rec, proc: ProcessInfo | null): Promise<void> {
     if (proc && NO_NEWS.has(proc.activity)) {
       r.tail = null; // re-baseline when the full-screen app exits

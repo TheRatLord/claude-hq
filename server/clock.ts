@@ -1,5 +1,5 @@
 /**
- * Injectable clock (DESIGN §4.13). EVERY server timer and timestamp goes through a clock; this is the only file allowed
+ * Injectable clock. EVERY server timer and timestamp goes through a clock; this is the only file allowed
  * to call Date.now()/setTimeout/setInterval directly. Owner: BE (M0.5 version written by BE2; complete as specified).
  */
 

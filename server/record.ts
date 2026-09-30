@@ -1,5 +1,5 @@
 /**
- * --record / --replay (DESIGN §4.9). Owner: BE2.
+ * --record / --replay. Owner: BE2.
  *
  * Recording (NDJSON, one object per line, `at` = server clock ms):
  *   {k:'header', v:1, at, session, demo, owners:[…]}

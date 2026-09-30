@@ -1,5 +1,5 @@
 /**
- * Backend internal seams (DESIGN §4.0). The ONLY way backend modules talk across WP boundaries.
+ * Backend internal seams. The ONLY way backend modules talk across WP boundaries.
  * Live and demo differ only in which implementations app.ts wires in.
  * Owner: LEAD. Tiny base classes + JSDoc; implementations live in herdr/, demo/, enrich/, world/, terminals/.
  */
@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { FIELD_OWNERS, EVENT_OWNERS, EVENT_KINDS } from '../shared/protocol.ts';
 import type { DemoConfig, Entity, EventKind, OwnerName, Status, TermState } from '../shared/protocol.ts';
 
-// ---- herdr wire shapes (research/herdr-api §2; the subset HQ reads. Add fields here when a module needs one.)
+// ---- herdr wire shapes (the subset HQ reads. Add fields here when a module needs one.)
 
 export interface RawWorkspace {
   workspace_id: string;
@@ -76,7 +76,7 @@ export interface RawSnapshot {
 export type TimerHandle = NodeJS.Timeout | number;
 
 /**
- * Injectable clock (server/clock.ts, §4.13). Never call Date.now()/setTimeout directly in server code.
+ * Injectable clock (server/clock.ts). Never call Date.now()/setTimeout directly in server code.
  */
 export interface Clock {
   now(): number;
@@ -100,7 +100,7 @@ export interface EnricherCtx {
   clock: Clock;
   log: Logger;
   session: string;
-  /** Offer the pane's true `statusSince` (ms): `sinceHint(ms)` or `sinceHint(paneId, ms)` (WorldModel accepts both, §4.3.1). */
+  /** Offer the pane's true `statusSince` (ms): `sinceHint(ms)` or `sinceHint(paneId, ms)` (WorldModel accepts both). */
   sinceHint(msOrId: number | string, ms?: number): void;
 }
 
@@ -124,7 +124,7 @@ export interface HerdrSourceEvents {
 }
 
 /**
- * HerdrSource: raw herdr truth. Implemented by HerdrLive (§4.2), DemoWorld (§4.9), Replay (§4.9).
+ * HerdrSource: raw herdr truth. Implemented by HerdrLive, DemoWorld, Replay.
  * Events: 'snapshot'(raw) · 'status'(pane_id, status, seq) · 'connected'(bool) · 'reconnected'({grace:true}).
  */
 export class HerdrSource extends EventEmitter<HerdrSourceEvents> {
@@ -215,7 +215,7 @@ export function checkPatch(e: Pick<Enricher, 'name' | 'owns'>, patch: Record<str
 
 /**
  * One terminal stream per pane. Implemented by HerdrTerminals (herdr CLI child) and FakeTerminals.
- * TerminalHub (§4.7) is the only caller.
+ * TerminalHub is the only caller.
  */
 export interface TerminalOpenOpts {
   mode: 'observe' | 'control';
@@ -281,7 +281,7 @@ export class TerminalHandle {
   }
 }
 
-/** Map a herdr `terminal.closed.reason` to a `term.state` (§4.7). */
+/** Map a herdr `terminal.closed.reason` to a `term.state`. */
 export function closedReasonToState(reason: string | null | undefined): Extract<TermState, 'busy' | 'taken' | 'gone' | 'released' | 'error'> {
   const r = String(reason ?? '').toLowerCase();
   if (r.includes('already has an attached client')) return 'busy';

@@ -1,4 +1,4 @@
-// Actions._answer post-send re-check (DESIGN §4.8): polls ~2 s; only an identical prompt with an unmoved cursor → not_accepted.
+// Actions._answer post-send re-check: polls ~2 s; only an identical prompt with an unmoved cursor → not_accepted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Actions, ANSWER_RECHECK_MS } from './actions.ts';

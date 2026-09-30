@@ -1,4 +1,4 @@
-// Golden replay (DESIGN §4.9, §9.3, M2): the scrubbed 10-minute hqtest recording replayed at --speed 20 under
+// Golden replay: the scrubbed 10-minute hqtest recording replayed at --speed 20 under
 // FakeClock must reproduce the committed WorldModel output stream (entity/gone/event, volatile fields removed).
 // A deliberate behaviour change: `node server/test/golden.ts --regen`, with the reason in the commit. Owner: BE2.
 import { test } from 'node:test';

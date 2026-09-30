@@ -1,11 +1,11 @@
 /**
- * WsHub (DESIGN §3, §4.11): authenticated sockets, `hello` → `hello.ack` handshake, VALIDATE enforcement before
+ * WsHub: authenticated sockets, `hello` → `hello.ack` handshake, VALIDATE enforcement before
  * routing, invalid-burst and frame-size closes, client cap, rid replies, model broadcasts, term.* → TerminalHub.
  *
  * Handshake: server sends `hello`; the renderer's first message must be `hello.ack {protocol}`; only then does the
  * server send `world` and start broadcasting. Anything before the ack → `reply {ok:false, error:'no_hello_ack'}`.
  *
- * Input paths (§3.4, D6): binary kind 2 = interactive (no rid, credit-windowed via term.ack; an observe viewer gets one
+ * Input paths: binary kind 2 = interactive (no rid, credit-windowed via term.ack; an observe viewer gets one
  * term.state resend). JSON `term.input {id, text, paste:true, rid}` = paste chunk: the reply is sent only after the
  * child's stdin drained; to an observe viewer → `{ok:false, error:'not_controller'}`. The server never auto-promotes.
  * WS drop → TerminalHub keeps the client's viewers for 10 s keyed by `cid` (grace resume on the next term.open).
@@ -58,7 +58,7 @@ export interface WsHubOpts {
   audit?: AuditLog | null;
 }
 
-/** Every message id must name a known entity (§4.8): the ids a message refers to. */
+/** Every message id must name a known entity: the ids a message refers to. */
 const idsOf = (msg: ClientMsg): string[] => (msg.t === 'screen.watch' ? msg.ids : 'id' in msg ? [msg.id] : []);
 
 export class WsHub {
@@ -168,7 +168,7 @@ export class WsHub {
       return;
     }
     if (msg.t === 'hello.ack') return client.sendJson(reply(rid, true));
-    // every id must name a known entity (§4.8)
+    // every id must name a known entity
     const unknown = idsOf(msg).find((id) => !this.model.has(id));
     if (unknown !== undefined) return client.sendJson(replyError(rid, ERR.UNKNOWN_ENTITY, { id: unknown }));
     const action = this.audit ? auditAction(msg) : null;
@@ -233,7 +233,7 @@ export class WsHub {
     if (!v.ok) return this._invalid(client, v.why);
     if (!this.model.has(f.id)) return this._invalid(client, 'unknown entity');
     const r = await this.hub.input(client, f.id, new Uint8Array(f.payload));
-    // Binary frames carry no rid: an observe viewer gets one term.state resend (§3.4).
+    // Binary frames carry no rid: an observe viewer gets one term.state resend.
     if (!r.ok) this.hub.resendState(client, f.id);
   }
 

@@ -1,7 +1,7 @@
 // @pure
 /**
  * taskLabel(entity): the one short "what is it working on" string shown by the roster, status card, desk
- * placard, ticket, pennant and storefront line (DESIGN §3.1, §6.7). 3–6 words, ≤ 28 chars.
+ * placard, ticket, pennant and storefront line. 3–6 words, ≤ 28 chars.
  * Source order (LEAD D2): agents: title → baseTitle → first clause of lastPrompt (stopwords trimmed) → null;
  *   shells: argv basename + first arg → baseTitle → null. Prompt-style titles (`user@host: ~/dir`, bare paths) are junk.
  * Owner: LEAD. Pure.

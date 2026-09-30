@@ -1,5 +1,5 @@
 /**
- * Demo content pools + scenario builders (DESIGN §4.9). Pure data/functions: no timers, no I/O. Owner: BE2.
+ * Demo content pools + scenario builders. Pure data/functions: no timers, no I/O. Owner: BE2.
  *
  * A scenario builds a list of pane specs; `DemoWorld` turns them into herdr-shaped raw snapshots and schedules.
  *   PaneSpec = {ws, tab, kind, name?, status, frozen?, cls?, proc?, prompt?, idleForMs?, model?, title?, ...}
@@ -301,7 +301,7 @@ export const mcpPrompt = (tool: string): PromptSpec => {
 };
 
 /**
- * The permission prompt Claude Code shows before THIS tool call (mid-turn blocks, §4.9), or null when the tool never
+ * The permission prompt Claude Code shows before THIS tool call (mid-turn blocks), or null when the tool never
  * asks (reads, searches, todos, thinking).
  */
 export function permissionFor(a: DemoActivity, cwd: string): PromptSpec | null {

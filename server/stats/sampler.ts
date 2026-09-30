@@ -1,5 +1,5 @@
 /**
- * Stats sampler (DESIGN §3.2, §4.10): 1 Hz `Stats` from /proc and /sys (disks via statfs every 30 s), a 300-sample
+ * Stats sampler: 1 Hz `Stats` from /proc and /sys (disks via statfs every 30 s), a 300-sample
  * ring for `hello.statsHistory`, and a 'stats' event per sample. Always real, even in --demo (read-only, harmless).
  * A missing source produces null, never a crash. Owner: BE2.
  *

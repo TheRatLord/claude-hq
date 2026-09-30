@@ -200,7 +200,7 @@ test('viewer cap: the 7th terminal of one client → terminal_limit', async () =
   assert.equal(rs[6]?.error, 'terminal_limit');
   await c.close();
   await sleep(20);
-  // dropping the socket keeps its viewers for the 10 s grace (cid-keyed resume, §4.7); expiry releases them
+  // dropping the socket keeps its viewers for the 10 s grace (cid-keyed resume); expiry releases them
   assert.equal(app.hub.orphans.has('cap'), true);
   app.hub._forgetOrphan('cap', true);
   assert.equal(app.hub.panes.size, 0, 'grace expiry releases its viewers');

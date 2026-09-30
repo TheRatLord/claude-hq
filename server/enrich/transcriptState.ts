@@ -1,11 +1,11 @@
 /**
- * Claude Code transcript derivations (DESIGN §4.4, research/herdr-api §6). Pure state machine over parsed JSONL lines:
+ * Claude Code transcript derivations. Pure state machine over parsed JSONL lines:
  * no fs, no timers. `transcripts.ts` feeds it lines; tests feed it fixtures. Owner: BE2.
  *
  * Derives: current tool (last tool_use without a tool_result), think/talk from the last block, model, context tokens
  * (input + cache_read + cache_creation of the latest assistant message.id), output tokens (Σ over unique message.id),
  * title (ai-title), lastPrompt (last-prompt / latest real user string), todos (latest TodoWrite), and one-shot events
- * (error, test-pass, test-fail, commit, compact, news) + struggle (§4.4).
+ * (error, test-pass, test-fail, commit, compact, news) + struggle.
  *
  * M3.5 (BE2): `lastText` = the last main-chain assistant text block (whitespace-collapsed, ≤ 280 chars); `work` =
  * {since, added, removed, files} for the current task (since the latest real user prompt; line counts from the inputs
@@ -13,7 +13,7 @@
  * maintained incrementally per line. Struggle carries a human `detail` line and a 4th reason, 'context' (> 85% of the
  * model window).
  *
- * `news` (§8.9, "meaningful news", M3.5): ONE event per finished assistant turn (stop_reason end_turn on the main
+ * `news` ("meaningful news", M3.5): ONE event per finished assistant turn (stop_reason end_turn on the main
  * chain; `system turn_duration` as a fallback), `{src:'turn', msgs, edits}` = assistant text blocks and successful edit
  * calls in that turn. Never per tool call: Claude's per-step chatter is not something the user has to read.
  */
@@ -54,7 +54,7 @@ export function modelTier(m: string | null): ModelTier | null {
 }
 
 /**
- * Short human detail for a tool_use (§4.4): a file basename, a command ≤ 60 chars, a pattern, a query, a host/path,
+ * Short human detail for a tool_use: a file basename, a command ≤ 60 chars, a pattern, a query, a host/path,
  * or a subagent description.
  */
 export function toolDetail(name: string | null | undefined, input: unknown): string {
@@ -104,7 +104,7 @@ const FAIL_WORD = /(^|\n)\s*(FAIL\b|FAILED\b|not ok \d)|✖|✗ \d|\bTest(s)? fa
 const PASS_WORD = /\b(passed|passing|pass \d|all tests pass|ok \d|✔|✓)\b|# pass [1-9]|ℹ pass [1-9]|\btests? \d+ passed/i;
 
 /**
- * Test verdict for a test-class Bash result: exit status (is_error) or output match (§4.3 table).
+ * Test verdict for a test-class Bash result: exit status (is_error) or output match (table).
  */
 export function testVerdict(isError: boolean, text: string): 'test-pass' | 'test-fail' {
   if (isError) return 'test-fail';
@@ -131,7 +131,7 @@ function realPromptText(msg: Record<string, unknown>): string | null {
   return clip(trimmed, MAX_PROMPT);
 }
 
-/** Struggle thresholds (§4.4). */
+/** Struggle thresholds. */
 type Level = 0 | 1 | 2 | 3;
 const FAIL_LEVELS: readonly (readonly [number, Level])[] = [[6, 3], [4, 2], [2, 1]];
 const NOEDIT_LEVELS: readonly (readonly [number, Level])[] = [[20 * 60_000, 2], [10 * 60_000, 1]];
@@ -140,7 +140,7 @@ const CONTEXT_LEVELS: readonly (readonly [number, Level])[] = [[0.95, 2], [0.85,
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /**
- * Struggle (§4.4 + M3.5 detail/context) from plain numbers, shared with the demo so both read the same.
+ * Struggle (+ M3.5 detail/context) from plain numbers, shared with the demo so both read the same.
  * Priority on a level tie: fails/errors > noEdits > context.
  */
 export interface StruggleInput {
@@ -271,7 +271,7 @@ export class TranscriptState {
     return work;
   }
 
-  /** Turn end (§8.9 meaningful news): one `news` per turn with its text/edit counts. */
+  /** Turn end (meaningful news): one `news` per turn with its text/edit counts. */
   _turnEnd(ev: TranscriptEvent[]): void {
     if (this.newsSent) return;
     // nothing to read yet (an interrupted turn, or a thinking line that carries end_turn before its text line): wait
@@ -465,7 +465,7 @@ export class TranscriptState {
   }
 
   /**
-   * Struggle (§4.4) given the working streak start (ms) and now; null when level 0.
+   * Struggle given the working streak start (ms) and now; null when level 0.
    */
   struggle(workingSince: number | null, now: number): StruggleOf | null {
     return struggleOf({

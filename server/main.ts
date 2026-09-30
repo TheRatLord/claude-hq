@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Backend CLI (DESIGN §2.2):
+ * Backend CLI:
  *   node server/main.ts [--port 7462] [--session <name>|default] [--demo [N]] [--scenario <name>] [--seed S]
  *     [--dev [--vite-port P]] [--record f.ndjson] [--replay f.ndjson [--speed K]] [--new-instance] [--metrics]
  *     [--timescale K]
  * Prints the URL (with token) on stdout. SIGINT/SIGTERM/SIGHUP → clean close; a second signal exits immediately.
  *
- * Single instance (§4.12): a live backend for the same session → print its URL and exit 0 (`--new-instance` refuses
+ * Single instance: a live backend for the same session → print its URL and exit 0 (`--new-instance` refuses
  * instead). Owner: BE. --record/--replay: record.ts (BE2), wired in app.ts.
  */
 import { createApp } from './app.ts';

@@ -1,5 +1,5 @@
 /**
- * Store-driven attention signals that must work in a hidden tab (§3.4, GP §5.4 channel 7): the `document.title` badge
+ * Store-driven attention signals that must work in a hidden tab (channel 7): the `document.title` badge
  * and, when the window is unfocused and permission was already granted, one OS notification per new block
  * (rate limit 1 per agent per 10 s, bursts merge into one notification). Runs entirely off store listeners, never the
  * frame loop (rAF stops in hidden tabs).

@@ -1,8 +1,8 @@
 /**
- * Timeline ring (DESIGN §4.3.1, M2): every status transition and every `event` per pane for 24 h (≤ 20k items),
+ * Timeline ring: every status transition and every `event` per pane for 24 h (≤ 20k items),
  * persisted to `~/.config/claude-hq/<session>/timeline.ndjson` (0600, rotated at 2 MB into `timeline.1.ndjson`) and
  * served by `timeline.get {since}` → `{t:'timeline', since, items, truncated}` (≤ LIMITS.timelineMax, newest kept).
- * Feeds the away recap (§6.4.5), roster sparklines, Daily Diff and unread after a reload (§8.9).
+ * Feeds the away recap, roster sparklines, Daily Diff and unread after a reload.
  *
  *   item = {at, id, identity, kind:'status'|EventKind, from?, to?, detail?}
  *

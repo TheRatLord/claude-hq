@@ -1,4 +1,4 @@
-// Safety e2e (DESIGN §9.3): two gates (actions.ts + client.ts allowlist), read-only protocol mode, resolver guard.
+// Safety e2e: two gates (actions.ts + client.ts allowlist), read-only protocol mode, resolver guard.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -154,7 +154,7 @@ test('read-only mode: herdr protocol 21 → hello.herdr.readOnly; zero CONTROL/I
     assert.equal((await c.call({ t: 'spawn' })).error, 'readonly_protocol');
     const o = await c.call({ t: 'term.open', id: 'w1:p2', cols: 80, rows: 24 });
     assert.equal(o.mode, 'observe');
-    await c.wait((m) => m.t === 'term.state' && m.id === 'w1:p2' && m.state === 'readonly', 3000); // Peek only (§8.4)
+    await c.wait((m) => m.t === 'term.state' && m.id === 'w1:p2' && m.state === 'readonly', 3000); // Peek only
     assert.equal((await c.call({ t: 'term.promote', id: 'w1:p2', cols: 80, rows: 24 })).error, 'readonly_protocol');
     await c.call({ t: 'term.close', id: 'w1:p2' });
     const bad = L.mock.calls.filter((x) => !READ.has(x.method));

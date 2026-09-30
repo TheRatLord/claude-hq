@@ -1,5 +1,5 @@
 /**
- * Single instance per session (DESIGN §4.12). Lock `~/.config/claude-hq/<session>.lock` (0600):
+ * Single instance per session. Lock `~/.config/claude-hq/<session>.lock` (0600):
  * `{pid, port, instanceId, startedAt}`, written after `listen` succeeds, removed on clean exit. A lock is LIVE when its
  * pid is alive and `GET http://127.0.0.1:<port>/healthz` returns the same `{instanceId, session}`; otherwise stale.
  * Owner: BE.

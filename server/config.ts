@@ -1,5 +1,5 @@
 /**
- * Resolved options + paths (DESIGN §2.1, §2.2, §4.11, §4.9 D8). Owner: BE.
+ * Resolved options + paths. Owner: BE.
  *   session: --session → CLAUDE_HQ_SESSION → 'default'; in --demo, 'demo' unless --session is given (D8).
  *   ~/.config/claude-hq/{token, config.json (settings), <session>/ (since, slots, acks, children.json), <session>.lock}
  */
@@ -125,7 +125,7 @@ export function sessionDir(configDir: string, session: string): string {
 
 /**
  * Settings that are NEVER written to or read from the global `config.json`: `allowMutations` is a per-run safety
- * decision (§4.8), so persisting it would leak one run's (or one session's) permission into the next — e.g. into the
+ * decision, so persisting it would leak one run's (or one session's) permission into the next — e.g. into the
  * default session.
  */
 export const UNPERSISTED_SETTINGS: readonly string[] = Object.freeze(['allowMutations']);

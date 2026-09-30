@@ -1,5 +1,5 @@
 // Store + socket against a fake WebSocket (no browser): eager apply, hello.ack gating, coalescing, reconnect,
-// interactive credit window, paste chunking (D6), protocol-skew reload guard (§4.11).
+// interactive credit window, paste chunking (D6), protocol-skew reload guard.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROTOCOL_VERSION, decodeFrame, encodeTermData, BIN } from '../../../shared/protocol.ts';

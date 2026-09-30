@@ -42,7 +42,7 @@ test('state: basic session derivations', () => {
   assert.equal(st.outputTokens, 220 + 90 + 180 + 70 + 300 + 40 + 30 + 60 + 45 + 12 + 50);
   assert.deepEqual(st.todos?.map((t) => t.status), ['completed', 'in_progress', 'pending']);
   assert.deepEqual(ev.filter((e) => e.kind !== 'news').map((e) => e.kind), ['test-fail', 'test-pass', 'error', 'commit']);
-  // news (§8.9, M3.5): one per finished turn (the fixture has one end_turn), never per tool result
+  // news: one per finished turn (the fixture has one end_turn), never per tool result
   assert.deepEqual(ev.filter((e) => e.kind === 'news'), [{ kind: 'news', detail: { src: 'turn', msgs: 1, edits: 1 } }]);
   assert.equal(st.lastText, 'Done: the store now coalesces entity messages per id.');
   // the second prompt started a new task: its work is empty (the first task's Edit does not carry over)
@@ -331,7 +331,7 @@ test('state: work with no prompt in view (512 KB backfill mid-task) starts at th
   assert.deepEqual(st.work, { since: T0 + 5000, added: 2, removed: 0, files: 1 });
 });
 
-test('state: news = one per finished turn, none per tool call (§8.9 M3.5)', () => {
+test('state: news = one per finished turn, none per tool call', () => {
   const st = new TranscriptState();
   const objs: Rec[] = [prompt(0, 'run the tests')];
   for (let i = 0; i < 6; i++) objs.push(use(1 + i * 2, `b${i}`, 'Bash', { command: `ls ${i}` }), result(2 + i * 2, `b${i}`));

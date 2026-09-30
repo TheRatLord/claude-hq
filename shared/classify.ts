@@ -1,6 +1,6 @@
 // @pure
 /**
- * Tool / command / process classification (DESIGN §4.6, §3.1 ToolClass, ShellActivity). Owner: BE2.
+ * Tool / command / process classification (ToolClass, ShellActivity). Owner: BE2.
  * Pure: imported by the backend enrichers and by renderer @pure modules. No node built-ins, no three.
  */
 
@@ -130,7 +130,7 @@ export function bashCategory(cmd: string | null | undefined): BashCategory {
   return PRIORITY.find((p) => cats.has(p)) ?? 'bash';
 }
 
-/** Is this Bash command a git commit/push (the `commit` event trigger, §4.3)? */
+/** Is this Bash command a git commit/push (the `commit` event trigger)? */
 export function isGitCommit(cmd: string | null | undefined): boolean {
   return segments(String(cmd ?? '')).some((s) => /^git\s+(-\S+\s+(\S+\s+)?)*(commit|push)\b/.test(core(s)));
 }
@@ -157,7 +157,7 @@ const SERVE_RE = [
 const base = (p: unknown): string => String(p ?? '').split('/').pop() ?? '';
 
 /**
- * Classify a pane's foreground process (§4.6). `nameOrProc` = process name (comm) or {name, argv}; `argvIn` = argv
+ * Classify a pane's foreground process. `nameOrProc` = process name (comm) or {name, argv}; `argvIn` = argv
  * array or command line string.
  */
 export function processActivity(nameOrProc: string | { name?: string; argv?: string | string[] }, argvIn?: string | string[]): ShellActivity {
@@ -185,7 +185,7 @@ export function processActivity(nameOrProc: string | { name?: string; argv?: str
   return 'run';
 }
 
-/** herdr `pane.process_info` (research/herdr-api). */
+/** herdr `pane.process_info`. */
 export interface HerdrProcessInfo {
   shell_pid?: number;
   foreground_process_group_id?: number;
@@ -235,7 +235,7 @@ export function replaceStats(oldS: unknown, newS: unknown): { added: number; rem
 }
 
 /**
- * Work done by one Edit / MultiEdit / Write tool input (DESIGN M3.5 `Entity.work`): Edit = replaceStats(old_string,
+ * Work done by one Edit / MultiEdit / Write tool input (`Entity.work`): Edit = replaceStats(old_string,
  * new_string), MultiEdit = Σ over its edits, Write = lineCount(content) added. null for any other tool.
  */
 export function editStats(name: string, input: ToolInput | null | undefined): { added: number; removed: number; file: string | null } | null {

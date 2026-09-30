@@ -1,6 +1,6 @@
 // @pure
 /**
- * Claude HQ wire protocol (DESIGN §3, §4.0, §4.11). The single contract between server/ and renderer/.
+ * Claude HQ wire protocol. The single contract between server/ and renderer/.
  * Owner: LEAD. Pure: no three, no node built-ins (TextEncoder/TextDecoder are web-standard globals).
  *
  * Add optional fields; never break shapes.
@@ -32,14 +32,14 @@ export type ShellActivity = (typeof SHELL_ACTIVITIES)[number];
 export const MODEL_TIERS = Object.freeze(['opus', 'sonnet', 'haiku', 'other'] as const);
 export type ModelTier = (typeof MODEL_TIERS)[number];
 
-/** One-shot `event` kinds (§3.3). */
+/** One-shot `event` kinds. */
 export const EVENT_KINDS = Object.freeze([
   'arrived', 'left', 'blocked', 'unblocked', 'finished', 'error', 'test-pass', 'test-fail', 'commit',
   'subagent-spawned', 'subagent-done', 'compact', 'tool', 'acked', 'struggle', 'news',
 ] as const);
 export type EventKind = (typeof EVENT_KINDS)[number];
 
-/** Drawer lifecycle states carried by `term.state` (§3.3, §8.4). */
+/** Drawer lifecycle states carried by `term.state`. */
 export const TERM_STATES = Object.freeze([
   'connecting', 'live', 'busy', 'taken', 'gone', 'offline', 'reconnecting', 'released', 'error', 'readonly',
 ] as const);
@@ -70,13 +70,13 @@ export const ERR = Object.freeze({
 
 export type ErrorCode = (typeof ERR)[keyof typeof ERR];
 
-/** WebSocket close codes (§4.7, §4.11). */
+/** WebSocket close codes. */
 export const CLOSE = Object.freeze({ POLICY: 1008, TRY_AGAIN_LATER: 1013 });
 
 // ---------------------------------------------------------------------------------------------
 // Message type constants
 
-/** Server → renderer `t` values (§3.3). Binary `term.data` has no `t`. */
+/** Server → renderer `t` values. Binary `term.data` has no `t`. */
 export const S2R = Object.freeze({
   HELLO: 'hello',
   WORLD: 'world',
@@ -95,7 +95,7 @@ export const S2R = Object.freeze({
 });
 export type ServerMsgType = (typeof S2R)[keyof typeof S2R];
 
-/** Renderer → server `t` values (§3.4). Binary `term.input` has no `t`. */
+/** Renderer → server `t` values. Binary `term.input` has no `t`. */
 export const R2S = Object.freeze({
   HELLO_ACK: 'hello.ack',
   TERM_OPEN: 'term.open',
@@ -132,7 +132,7 @@ export type ClientMsgType = (typeof R2S)[keyof typeof R2S];
 export type ActionClass = 'always' | 'explicit' | 'interact' | 'structural' | 'demo';
 
 /**
- * Action class per renderer→server `t` (§4.8 safety gate). `actions.ts` gates on this;
+ * Action class per renderer→server `t` (safety gate). `actions.ts` gates on this;
  * `herdr/client.ts` independently enforces its method allowlist.
  */
 export const ACTION_CLASS: Readonly<Record<ClientMsgType, ActionClass>> = Object.freeze({
@@ -168,7 +168,7 @@ export const ACTION_CLASS: Readonly<Record<ClientMsgType, ActionClass>> = Object
 });
 
 // ---------------------------------------------------------------------------------------------
-// Limits (§3.4, §4.7, §4.8, §4.11). `hello.limits` = DEFAULT_LIMITS unless the server overrides.
+// Limits. `hello.limits` = DEFAULT_LIMITS unless the server overrides.
 
 export const LIMITS = Object.freeze({
   maxTextFrame: 64 * 1024, // bigger text frame → close 1008
@@ -189,7 +189,7 @@ export const LIMITS = Object.freeze({
   noteMax: 280,
   settingsPatchMax: 4 * 1024,
   historyLinesMax: 5000,
-  watchMax: 8, // M3.5 LEAD: 6 → 8 for the monitor atlas (8 nearest live desks, §5.3)
+  watchMax: 8, // M3.5 LEAD: 6 → 8 for the monitor atlas (8 nearest live desks)
   watchUnionMax: 16,
   cols: Object.freeze([10, 500] as const),
   rows: Object.freeze([4, 200] as const),
@@ -223,7 +223,7 @@ export const DEFAULT_LIMITS: Readonly<HelloLimits> = Object.freeze({
 });
 
 // ---------------------------------------------------------------------------------------------
-// Settings (§8 settings panel). `settings.set {patch}` keys must be in SETTINGS_KEYS.
+// Settings (settings panel). `settings.set {patch}` keys must be in SETTINGS_KEYS.
 
 /** Persisted user settings (the `settings.set` patch keys and the `hello.settings` value). */
 export interface Settings {
@@ -250,9 +250,8 @@ export interface Settings {
   /** 0 = off */
   awayRecapMin: number;
   peekCtrlCConfirm: boolean;
-  /** §4.7 release control after 10 min idle */
+  /** Release control after 10 min idle */
   idleDemotion: boolean;
-  /** §8.2.2 */
   platform: 'auto' | 'mac' | 'other';
 }
 
@@ -260,9 +259,9 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   volumeMaster: 0.8,
   volumeSfx: 0.8,
   volumeAmbient: 0.5,
-  volumeNotify: 0.9, // [AUD M3] blocked/done chimes + dings (GP §5.4 per-category volume)
+  volumeNotify: 0.9, // [AUD M3] blocked/done chimes + dings (per-category volume)
   volumeVoices: 0.7, // [AUD M3] Clawd vocal blips
-  audioMuted: false, // [AUD M3] mute toggle (GP §5.4)
+  audioMuted: false, // [AUD M3] mute toggle
   quality: 'auto',
   fov: 60,
   quickAnswer: false,
@@ -277,14 +276,14 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   headBob: true,
   awayRecapMin: 10, // 0 = off
   peekCtrlCConfirm: true,
-  idleDemotion: true, // §4.7 release control after 10 min idle
+  idleDemotion: true, // release control after 10 min idle
   platform: 'auto',
 });
 // Object.keys() is string[]; the keys of a frozen Settings literal are exactly keyof Settings.
 export const SETTINGS_KEYS: readonly (keyof Settings)[] = Object.freeze(Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]);
 
 // ---------------------------------------------------------------------------------------------
-// Wire types (§3.1–3.3)
+// Wire types
 
 /** place = `${ws.label}/${tab.label}/${paneIndex}/${cwd}`; match order terminalId → agentSession → place. */
 export interface Identity { terminalId: string | null; agentSession: string | null; place: string }
@@ -342,10 +341,10 @@ export interface ProcessInfo {
   ports?: number[];
 }
 export interface Ack { at: number; by: 'hq' }
-/** Sticky note (§8.10), `Entity.note`. */
+/** Sticky note, `Entity.note`. */
 export interface Note { text: string; at: number }
 
-/** One per herdr pane; key = pane_id (§3.1). */
+/** One per herdr pane; key = pane_id. */
 export interface Entity {
   /** pane_id ('w1:p3'; demo 'd1:p3') */
   id: string;
@@ -409,7 +408,7 @@ export interface Workspace {
   tabs: WorkspaceTab[];
 }
 
-/** Stats (§3.2), 1 Hz; `disks` every 30 s. */
+/** Stats, 1 Hz; `disks` every 30 s. */
 export interface Stats {
   at: number;
   host: string;
@@ -549,9 +548,9 @@ export function replyError(rid: number | string | null, error: string, extra: Re
 }
 
 // ---------------------------------------------------------------------------------------------
-// Field & event ownership (§4.0). A field has exactly one writer. `demo` replaces transcripts+subagents.
+// Field & event ownership. A field has exactly one writer. `demo` replaces transcripts+subagents.
 
-/** The writers of Entity fields / events (§4.0). */
+/** The writers of Entity fields / events. */
 export type OwnerName = 'base' | 'transcripts' | 'subagents' | 'procinfo' | 'blocked' | 'acks' | 'notes' | 'demo';
 type EntityField = keyof Entity;
 
@@ -571,7 +570,7 @@ export const FIELD_OWNERS: Readonly<Record<OwnerName, readonly EntityField[]>> =
   procinfo: Object.freeze(['process', 'res'] as const),
   blocked: Object.freeze(['prompt'] as const),
   acks: Object.freeze(['ack'] as const),
-  notes: Object.freeze(['note'] as const), // [BE M3.5 cross-owner] world/notes.ts (§8.10 sticky notes): Entity.note {text, at}|null
+  notes: Object.freeze(['note'] as const), // [BE M3.5 cross-owner] world/notes.ts (sticky notes): Entity.note {text, at}|null
   demo: Object.freeze([...TRANSCRIPT_FIELDS, 'subagents'] as const),
 });
 
@@ -608,7 +607,7 @@ export function mayEmit(owner: OwnerName, kind: EventKind, entityKind: Kind): bo
 export const LIVE_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'transcripts', 'subagents', 'procinfo', 'blocked', 'acks', 'notes'] as const);
 export const DEMO_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'demo', 'procinfo', 'blocked', 'acks', 'notes'] as const);
 
-/** Every Entity field, in §3.1 order-ish. */
+/** Every Entity field, in declaration order-ish. */
 export const ENTITY_FIELDS: readonly EntityField[] = Object.freeze([
   ...BASE_FIELDS, 'ack', 'title', 'activity', 'model', 'modelTier', 'contextTokens', 'outputTokens', 'subagents',
   'todos', 'struggle', 'lastPrompt', 'prompt', 'process', 'res', 'lastText', 'work', 'note', // note: [BE M3.5 cross-owner]
@@ -638,11 +637,11 @@ export const FIELD_DEFAULTS: FieldDefaults = Object.freeze({
 });
 
 // ---------------------------------------------------------------------------------------------
-// Binary frames (§3): [u8 kind][u8 idLen][id utf8][u8 flags][payload]
+// Binary frames: [u8 kind][u8 idLen][id utf8][u8 flags][payload]
 
 export const BIN = Object.freeze({
   TERM_DATA: 1, // server → renderer; flags bit0 = full snapshot
-  TERM_INPUT: 2, // renderer → server; interactive bytes only, flags must be 0 (paste = JSON term.input, §3.4)
+  TERM_INPUT: 2, // renderer → server; interactive bytes only, flags must be 0 (paste = JSON term.input)
 });
 export const BIN_FLAG = Object.freeze({ FULL: 1 });
 
@@ -693,7 +692,7 @@ export function decodeFrame(buf: ArrayBuffer | ArrayBufferView): Frame | null {
 export const encodeTermData = (id: string, bytes: Uint8Array | string, full = false): Uint8Array<ArrayBuffer> => encodeFrame(BIN.TERM_DATA, id, full ? BIN_FLAG.FULL : 0, bytes);
 /**
  * Interactive-path input frame (no rid, credit-windowed). Paste chunks never use this: they are JSON
- * `{t:'term.input', id, text, paste:true, rid}` so each chunk gets a reply (§3.4, LEAD M1 decision D6).
+ * `{t:'term.input', id, text, paste:true, rid}` so each chunk gets a reply (LEAD M1 decision D6).
  */
 export const encodeTermInput = (id: string, bytes: Uint8Array | string): Uint8Array<ArrayBuffer> => encodeFrame(BIN.TERM_INPUT, id, 0, bytes);
 
@@ -708,7 +707,7 @@ export function validateBinaryInput(f: Frame | null): { ok: true; paste: false }
 }
 
 // ---------------------------------------------------------------------------------------------
-// VALIDATE (§4.11): one row per renderer→server `t`. Enforced in server/ws.ts before routing.
+// VALIDATE: one row per renderer→server `t`. Enforced in server/ws.ts before routing.
 // Rules check shape/type/range only; "known entity" is checked by ws.ts against the WorldModel.
 
 /** A rule validates one field value; `check` returns an error string or null. */

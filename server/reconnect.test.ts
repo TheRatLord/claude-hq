@@ -1,5 +1,5 @@
-// herdr restarts (DESIGN §4.2 reconnect grace + rekey), honest time across backend restarts (§4.3.1 since), and the
-// reaper (§4.7.1) — all against the mock herdr + fake terminal bin.
+// herdr restarts (reconnect grace + rekey), honest time across backend restarts, and the
+// reaper — all against the mock herdr + fake terminal bin.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

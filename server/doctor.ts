@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run doctor [-- --session S] [--port P]` (DESIGN §9.3): the first thing to run when "it's broken over ssh".
+ * `npm run doctor [-- --session S] [--port P]`: the first thing to run when "it's broken over ssh".
  * Strictly read-only: resolves the session socket (path + realpath), pings it (protocol 22?), lists live HQ children
  * from /proc by instance tag (flags stale ones), checks the lock file, checks env gotchas (HERDR_* inherited,
  * CLAUDECODE → transcripts warning), prints the ssh -L command and URL.
@@ -83,7 +83,7 @@ export async function doctor({ session, port }: DoctorArgs, env: NodeJS.ProcessE
     }
   }
 
-  // --- mode: what HQ may do here (§4.8)
+  // --- mode: what HQ may do here
   if (protoOk === false) say(WARN, 'mode: READ-ONLY (herdr protocol mismatch): view + observe terminals only');
   else if (isDef) say(OK, 'mode: DEFAULT session → read-only-safe: nothing opens until you click, prompts/answers go through a confirm, hire/close refused (use --session <name> for full actions)');
   else say(OK, `mode: named session "${session}" → full actions (hire with a first prompt, answer, prompt, close panes)`);

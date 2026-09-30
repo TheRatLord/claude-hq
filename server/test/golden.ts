@@ -1,5 +1,5 @@
 /**
- * Golden replay fixture tooling (DESIGN §4.9, §9.3, M2). Owner: BE2 (record/replay).
+ * Golden replay fixture tooling. Owner: BE2 (record/replay).
  *
  *   node server/test/golden.ts <recording.ndjson>     # scrub → server/test/fixtures/hqtest-10min.ndjson
  *                                                     # and regenerate …golden.ndjson (the WorldModel output stream)
@@ -11,7 +11,7 @@
  * the model never reads (`revision`, `scroll`) are dropped, and snapshots identical to the previous one (after
  * scrubbing) are dropped. The golden stream is the replay at `--speed 20` under FakeClock: `entity`/`gone`/`event`
  * messages with the volatile fields removed (`statusSince`, `activity.since`, ack `at`), times relative to the start.
- * A deliberate behaviour change regenerates the golden file with the reason in the commit (§4.9).
+ * A deliberate behaviour change regenerates the golden file with the reason in the commit.
  */
 import fs from 'node:fs';
 import path from 'node:path';

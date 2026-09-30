@@ -1,5 +1,5 @@
 /**
- * Honest `statusSince` across restarts (DESIGN §4.3.1), persisted in `since.json`:
+ * Honest `statusSince` across restarts, persisted in `since.json`:
  *   {[stableKey]: {stateSeq, status, since, approx, activity?, seen, hinted?}}   stableKey = identityKey(identity)
  * On sighting: same stateSeq + status → reuse since/approx. Changed stateSeq or status (shells: status or
  * process.activity) → since = now, approx = false. First-ever sighting → since = now, approx = true, then ONE

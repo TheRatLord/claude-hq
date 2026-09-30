@@ -1,5 +1,5 @@
 /**
- * HQ action audit log (DESIGN §4.8, M2; read endpoint `GET /api/audit?n=50` for the Recent HQ actions panel, M3). Every promote, takeover, answer, prompt, keys,
+ * HQ action audit log (read endpoint `GET /api/audit?n=50` for the Recent HQ actions panel). Every promote, takeover, answer, prompt, keys,
  * focus, resize, spawn and close appends `{at, session, cid, action, paneId, ok, error?}` to
  * `~/.config/claude-hq/<session>/audit.ndjson` (0600, rotated at 1 MB into `audit.1.ndjson`).
  * **Metadata only: never bytes, prompt text, keys or answers.** `dir = null` (demo/replay/tests) keeps only the

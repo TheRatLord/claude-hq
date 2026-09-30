@@ -1,5 +1,5 @@
 /**
- * Blocked prompt detection (DESIGN §4.3, M1), an Enricher (`blocked`: owns `prompt`). Owner: BE.
+ * Blocked prompt detection, an Enricher (`blocked`: owns `prompt`). Owner: BE.
  * While a pane is blocked: `pane.read {source:'detection', format:'text'}` every 2 s → `parsePrompt` → `prompt`.
  * Leaving blocked stops the poll and clears `prompt` in the same entity update. stateSeq change → re-hash.
  *
@@ -93,7 +93,7 @@ export function parsePrompt(text: string, stateSeq: number | null): Prompt | nul
 }
 
 /**
- * Keys that answer `prompt` with option `key` (§4.8 step 2): the digit when numbered, else Up/Down × distance + Enter.
+ * Keys that answer `prompt` with option `key` (step 2): the digit when numbered, else Up/Down × distance + Enter.
  * Returns null if `key` is not an option.
  */
 export function answerKeys(prompt: Prompt | null, key: string): string[] | null {

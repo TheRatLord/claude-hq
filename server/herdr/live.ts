@@ -1,5 +1,5 @@
 /**
- * HerdrLive (DESIGN §4.2): the live-model recipe (research/herdr-api §3) as a `HerdrSource`. Owner: BE.
+ * HerdrLive: the live-model recipe as a `HerdrSource`. Owner: BE.
  *   1. ping → structural subscription (all global types, buffered) → session.snapshot → apply.
  *   2. one status subscription per agent pane (a closed pane poisons a whole subscription), rebuilt on every snapshot.
  *   3. reconcile: snapshot 80 ms (debounced) after any structural event, plus every 1.5 s. The snapshot is the truth.

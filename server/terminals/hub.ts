@@ -1,5 +1,5 @@
 /**
- * TerminalHub (DESIGN §4.7): one child per (pane, mode) shared by every viewer on this backend, observe first,
+ * TerminalHub: one child per (pane, mode) shared by every viewer on this backend, observe first,
  * control only on `term.promote` (which mints the one-shot promoteToken client.ts requires), a headless screen mirror
  * for `full` frames, writer/sizer rules, interactive input credit (`term.ack`), paste drain gate, WS backpressure
  * (`needsFull`), caps, WS-drop grace resume keyed by cid, paused-viewer drop, idle demotion. Owner: BE.
@@ -275,7 +275,7 @@ export class TerminalHub {
     if (child !== P.child) return;
     this.clock.clearTimeout(P.idleTimer);
     if (child.mode === 'control' && (state === 'taken' || state === 'released') && P.viewers.size) {
-      // Another client took control (or herdr detached us): stay in Peek on a fresh observe stream (§8.4 taken).
+      // Another client took control (or herdr detached us): stay in Peek on a fresh observe stream (taken).
       P.writer = null;
       P.sticky = state === 'taken' ? 'taken' : null;
       P.state = state;
@@ -477,7 +477,7 @@ export class TerminalHub {
     }
     if (!P.pending) {
       if (this._children() >= LIMITS.childrenPerBackend + 1) throw hubError(ERR.TERMINAL_LIMIT, 'children per backend');
-      // control size policy (§4.7): layoutRect if it fits in the writer's grid, else the writer's grid
+      // control size policy: layoutRect if it fits in the writer's grid, else the writer's grid
       const lr = this.layoutRect(id);
       const [c, r] = lr && lr.cols <= cols && lr.rows <= rows ? [lr.cols, lr.rows] : [cols, rows];
       this.counters.promotes++;
@@ -527,7 +527,7 @@ export class TerminalHub {
     } else if (!v.ackTimer) v.ackTimer = this.clock.setTimeout(send, LIMITS.ackEveryMs);
   }
 
-  /** Resend term.state to a viewer (interactive input from an observe viewer, §3.4). */
+  /** Resend term.state to a viewer (interactive input from an observe viewer). */
   resendState(client: HubClient, id: string): void {
     const P = this.panes.get(id);
     if (P?.viewers.has(client)) this._sendState(P, client);

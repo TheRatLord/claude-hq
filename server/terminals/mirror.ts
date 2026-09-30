@@ -1,5 +1,5 @@
 /**
- * Screen mirror (DESIGN §4.7): one `@xterm/headless` terminal per live child at the child's grid, fed with every
+ * Screen mirror: one `@xterm/headless` terminal per live child at the child's grid, fed with every
  * frame; `serialize()` produces the `full` frame for late joiners / resumed tabs / needsFull clients.
  * Owner: BE. `lines()` feeds `screen` messages for panes with a live child (world/screens.ts via hub.mirrorOf).
  */

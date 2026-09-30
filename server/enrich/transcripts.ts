@@ -1,10 +1,10 @@
 /**
- * Transcripts enricher (DESIGN §4.4, §4.0): tails each Claude pane's JSONL transcript and patches
+ * Transcripts enricher: tails each Claude pane's JSONL transcript and patches
  * activity / model / modelTier / contextTokens / outputTokens / todos / lastPrompt / title / struggle / lastText / work,
- * and emits error / test-pass / test-fail / commit / compact / struggle / news (one per finished turn, §8.9 M3.5).
+ * and emits error / test-pass / test-fail / commit / compact / struggle / news (one per finished turn).
  * Claude panes only. Owner: BE2.
  *
- * Load shaping (§4.4): initial 512 KB tails are staggered (≤ 1 new tail per 50 ms) and parsed in ≤ 64 KB chunks with
+ * Load shaping: initial 512 KB tails are staggered (≤ 1 new tail per 50 ms) and parsed in ≤ 64 KB chunks with
  * a ≤ 4 ms budget per event-loop turn (yielding via setImmediate), so 40 agents × 22 MB files never stall the WS loop.
  * Backfill never emits events; only lines that arrive while tailing do.
  */
@@ -155,7 +155,7 @@ export class TranscriptsEnricher extends Enricher {
     this._queue = [];
   }
 
-  /** Leak/metrics surface (§9.3 churn test). */
+  /** Leak/metrics surface (churn test). */
   metrics(): { panes: number; queued: number; watchers: number; polls: number; ticks: number } {
     let watchers = 0, polls = 0, ticks = 0;
     for (const r of this.recs.values()) {

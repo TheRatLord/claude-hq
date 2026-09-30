@@ -3,7 +3,7 @@ import { S2R } from './protocol.ts';
 import type { ServerMsg } from './protocol.ts';
 import { isRecord } from './guards.ts';
 
-/** Every `t` the server sends as a text frame (§3.3). */
+/** Every `t` the server sends as a text frame. */
 const SERVER_TYPES: ReadonlySet<string> = new Set(Object.values(S2R));
 
 const isStr = (v: unknown): v is string => typeof v === 'string';

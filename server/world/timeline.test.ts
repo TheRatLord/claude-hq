@@ -1,4 +1,4 @@
-// timeline.ts (§4.3.1) + audit.ts (§4.8): ring, persistence, scrubbing, news coalescing, timeline.get / audit over WS.
+// timeline.ts + audit.ts: ring, persistence, scrubbing, news coalescing, timeline.get / audit over WS.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

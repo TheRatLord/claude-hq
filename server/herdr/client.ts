@@ -1,7 +1,7 @@
 /**
- * herdr client (DESIGN §4.1): one unix-socket connection per request, long-lived subscriptions, `terminal session`
+ * herdr client: one unix-socket connection per request, long-lived subscriptions, `terminal session`
  * children with a scrubbed env. Defence in depth: a per-session METHOD ALLOWLIST and a read-only mode live HERE,
- * independent of actions.ts (§4.8 "two gates"). Owner: BE.
+ * independent of actions.ts ("two gates"). Owner: BE.
  *
  *   READ        ping session.snapshot events.subscribe workspace.list tab.list pane.list pane.get pane.read
  *               pane.process_info agent.list agent.get agent.read agent.explain; spawn `observe`     default ✓ named ✓
@@ -12,7 +12,7 @@
  *                                                                           default: never (no override); named ✓
  *   NEVER       server.stop session.stop/delete, anything unknown                                   throws everywhere
  * Read-only mode (ping protocol ≠ 22): only READ (incl. observe) works; everything else throws `readonly_protocol`.
- * No child is spawned before a successful `ping` (§4.1 ping-before-spawn).
+ * No child is spawned before a successful `ping` (ping-before-spawn).
  */
 import net from 'node:net';
 import type { Readable } from 'node:stream';

@@ -1,13 +1,13 @@
 /**
- * HerdrTerminals: the live `TerminalBackend` (DESIGN §4.0, §4.7). One `herdr terminal session {observe|control}`
+ * HerdrTerminals: the live `TerminalBackend`. One `herdr terminal session {observe|control}`
  * child per handle, NDJSON over plain pipes (no PTY). Owner: BE.
  *
  *   - stdin stays open for the child's life (EOF detaches a control child).
- *   - the exit code is always 0: only `terminal.closed.reason` is trusted (§4.7 table → closedReasonToState).
+ *   - the exit code is always 0: only `terminal.closed.reason` is trusted (table → closedReasonToState).
  *   - observe children ignore `terminal.release` and stdin EOF (verified): release = SIGTERM, SIGKILL after 1 s.
  *   - control release = `terminal.release`, SIGTERM after 1 s if still alive, SIGKILL 1 s later.
  *   - spawns are rate limited to LIMITS.spawnsPerSec per backend (the handle exists at once; the child follows).
- *   - `input()` resolves when the child's stdin has drained (paste gate, §8.6).
+ *   - `input()` resolves when the child's stdin has drained (paste gate).
  */
 import type { ChildProcess } from 'node:child_process';
 import { TerminalBackend, TerminalHandle } from '../interfaces.ts';

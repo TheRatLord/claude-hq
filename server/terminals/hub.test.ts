@@ -1,4 +1,4 @@
-// TerminalHub rules under FakeClock with a scripted backend (DESIGN §4.7): backpressure (needsFull), paused-viewer
+// TerminalHub rules under FakeClock with a scripted backend: backpressure (needsFull), paused-viewer
 // drop, idle demotion, sizer hand-over hysteresis, promote timeout, ack coalescing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

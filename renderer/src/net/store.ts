@@ -1,9 +1,9 @@
 /**
- * Renderer store (§3.4): the ONLY module that touches the WebSocket.
+ * Renderer store: the ONLY module that touches the WebSocket.
  * - Applies every message eagerly in `ws.onmessage` (never in the frame loop: rAF stops in hidden tabs).
  * - `entity`/`screen` are coalesced per id; listeners fire on a microtask, in arrival order, once per id per flush.
  * - Binary `term.data` goes straight to the writer registered with `onTermData(id, fn)`.
- * - Protocol skew (§4.11): `hello.protocol` is checked before anything else; mismatch → banner + one guarded reload.
+ * - Protocol skew: `hello.protocol` is checked before anything else; mismatch → banner + one guarded reload.
  * The frame loop only READS `store.*`.
  * Owner: CORE.
  */
@@ -84,10 +84,10 @@ let queue: string[] = [];
 /** The store singleton's shape. */
 export interface Store {
   entities: Map<string, Entity>;
-  /** workspace list (§3.1) */
+  /** workspace list */
   workspaces: Workspace[];
   focusedPaneId: string | null;
-  /** latest Stats (§3.2) */
+  /** latest Stats */
   stats: Stats | null;
   /** ring of the last ≤ 300 Stats, oldest first */
   statsHistory: Stats[];
@@ -104,7 +104,7 @@ export interface Store {
   limits: HelloLimits;
   /** true when the backend runs --demo */
   demo: boolean;
-  /** hello.timescale: the server clock runs K× wall under `--timescale K` (demo/replay, §4.13) */
+  /** hello.timescale: the server clock runs K× wall under `--timescale K` (demo/replay) */
   timescale: number;
   /** local Date.now() when skewMs was measured */
   skewAt: number;
@@ -202,7 +202,7 @@ const banner = (text: string) => {
 };
 
 /**
- * Protocol-skew decision (§4.11), pure. `tried` = the sessionStorage guard from an earlier reload in this tab.
+ * Protocol-skew decision, pure. `tried` = the sessionStorage guard from an earlier reload in this tab.
  */
 export function skewAction(bundled: number, server: number, tried: string | null): { action: 'ok' | 'reload' | 'stuck'; tag: string } {
   const tag = `${bundled}->${server}`;
@@ -414,7 +414,7 @@ export function call(msg: OutMsg, { timeoutMs = CALL_TIMEOUT_MS }: { timeoutMs?:
 }
 
 // ---------------------------------------------------------------------------------------------
-// Terminal input (§3.4, D6). Interactive: binary kind 2, no rid, ≤ creditWindow un-acked bytes per pane, queued locally
+// Terminal input. Interactive: binary kind 2, no rid, ≤ creditWindow un-acked bytes per pane, queued locally
 // beyond that. Paste: JSON `term.input {paste:true, rid}` chunks, each awaited (the hub replies after stdin drain).
 // The hub's `term.ack.upTo` counts every byte written for this (client, pane) viewer since `term.open`, paste
 // included, so paste bytes are added to `sent` too (they just never wait for credit).
@@ -498,7 +498,7 @@ export function chunkUtf8(text: string, maxBytes: number): string[] {
 }
 
 /**
- * Paste path (§3.4, D6): JSON `{t:'term.input', id, text, paste:true, rid}` in ≤ `limits.pasteChunk`-byte UTF-8-safe
+ * Paste path: JSON `{t:'term.input', id, text, paste:true, rid}` in ≤ `limits.pasteChunk`-byte UTF-8-safe
  * chunks; the next chunk is sent only after the previous reply (hub awaits stdin drain). Stops at the first error.
  */
 export async function sendPaste(

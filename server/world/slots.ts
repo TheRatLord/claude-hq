@@ -1,5 +1,5 @@
 /**
- * Stable per-workspace `slot` ordinal (DESIGN §6.4; bay allocation input), persisted per session in `slots.json`.
+ * Stable per-workspace `slot` ordinal (bay allocation input), persisted per session in `slots.json`.
  * Keyed by workspace label + number so it survives herdr restarts (re-keyed ids). A slot is freed 5 min after its
  * workspace was last seen; new workspaces take the smallest free slot. Owner: BE.
  */

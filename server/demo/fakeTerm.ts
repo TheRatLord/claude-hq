@@ -1,9 +1,9 @@
 /**
- * FakeTerminals: the demo `TerminalBackend` (DESIGN §4.9, §4.0, §4.7). One fake PTY per pane, rendered into an
+ * FakeTerminals: the demo `TerminalBackend`. One fake PTY per pane, rendered into an
  * `@xterm/headless` screen so frames look like herdr's: rendered-screen ANSI wrapped in synchronized-output markers,
  * the first frame of every handle (and every frame after a resize) is `full` (`ESC[2J` + serialized screen).
  *
- * Behaviour mirrors herdr (research/herdr-api §4):
+ * Behaviour mirrors herdr:
  *   - observe handles ignore input and never resize the PTY; control handles type and resize.
  *   - a second control open without `takeover` closes with "already has an attached client"; with `takeover` the old
  *     controller closes with "terminal attach taken over".

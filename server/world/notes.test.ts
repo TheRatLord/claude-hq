@@ -1,4 +1,4 @@
-// Sticky notes (§8.10, M3): stored by stable identity, follow re-keys, persist per session, never reach herdr.
+// Sticky notes: stored by stable identity, follow re-keys, persist per session, never reach herdr.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
