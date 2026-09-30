@@ -1,6 +1,6 @@
 # Claude HQ
 
-Backend and reusable browser modules for a 3D agent frontend. The original fixed office, mascot rigs, art pipeline, office UI, and Electron application have been removed on this branch. There is no bundled application page or replacement setting.
+Backend, reusable browser modules, and a developer workbench for a 3D agent frontend. The original fixed office, mascot rigs, art pipeline, office UI, and Electron application have been removed. The workbench is a plain reference consumer, not a replacement 3D setting.
 
 ## Requirements
 
@@ -13,10 +13,23 @@ Backend and reusable browser modules for a 3D agent frontend. The original fixed
 
 ```sh
 npm ci
+npm run dev
+```
+
+Open the token-bearing workbench URL printed by the command. This starts Vite on `127.0.0.1:7461` and an isolated demo backend on an available port, using temporary settings/token storage. No herdr or live agent processes are used. Ctrl+C closes both servers and removes temporary state.
+
+```sh
+# Reproduce a specific demo; --port 0 also chooses an available frontend port.
+npm run dev -- --demo 12 --scenario allStates --seed 7 --port 0
+
+# Build and serve the same workbench through the production backend.
+npm run build
 npm start -- --demo 12 --port 7462
 ```
 
-The backend listens on `127.0.0.1` and prints a token-bearing URL. `/healthz` and the authenticated WebSocket at `/ws` work without any frontend. Requesting `/` without a frontend bundle returns **503** with an explicit explanation.
+The workbench provides an agent list, local entity inspector, observe-first terminal with explicit control, reconnect controls, scenario/seed reset, and opt-in interaction tracing. Scenario changes discard old viewers and simulation-local state. Some scenarios prescribe their own population instead of the `--demo` count.
+
+The backend can also run alone. `/healthz` and the authenticated WebSocket at `/ws` work without a frontend; `/` returns **503** when no frontend bundle exists.
 
 ```sh
 # Live session; the default session never allows creation/closure of panes.
@@ -34,7 +47,7 @@ npm start -- --demo --dev --vite-port 7461
 npm run doctor -- --session hqtest
 ```
 
-`--dev` does not start a frontend development server. It permits the configured loopback frontend origin and leaves page serving to that frontend. This repository has no frontend build or development-page command.
+The backend's `--dev` flag only permits the configured loopback frontend origin; it does not start Vite. Use `npm run dev` for the integrated demo workbench. Its seed is an unsigned 32-bit integer and demo population is 1–64.
 
 Other backend flags:
 
@@ -57,7 +70,8 @@ The CLI demo population is limited to 64. This is not a verified capacity limit 
 |---|---|
 | `server/` | herdr integration, enrichment, state, actions, terminal hub, HTTP/WS security, persistence, demo, record/replay, and machine stats |
 | `shared/` | Wire protocol, validation, identity/hashing, task labels, classification, and clock helpers |
-| `renderer/src/net/` | Browser WebSocket/reconnect handling and eagerly updated agent state store |
+| `renderer/workbench/` | Runnable reference frontend: entity inspection, real terminal integration, demo controls, and trace export |
+| `renderer/src/net/` | Browser WebSocket/reconnect handling, eagerly updated agent state store, and bounded metadata-only interaction trace |
 | `renderer/src/core/` | Math, RNG, clock, settings, attention notifications, caller-typed event bus and frame loop |
 | `renderer/src/render/renderer.ts` | Standalone Three.js renderer setup; no office postprocessing stack |
 | `renderer/src/world/nav/` | Occupancy grids, A*, route smoothing, portals, slot reservations, and collision queries |
@@ -65,7 +79,7 @@ The CLI demo population is limited to 64. This is not a verified capacity limit 
 | `renderer/src/player/` | Movement/camera-feel math, camera paths, and soft-collision helpers; no assembled player controller |
 | `renderer/src/ui/terminal/` | Standalone terminal widget and input, lifecycle, fitting, history, clipboard, and glyph handling |
 
-The browser modules are reusable source, not a bootable scene. There is no global scene context, office event schema, character director, workspace-building allocator, or character rig left in the repository.
+The browser modules remain reusable source, not a bootable 3D scene. The workbench composes the network/settings/terminal modules without a global scene context, office event schema, character director, workspace-building allocator, or character rig.
 
 Navigation is a snapshot of its input geometry. Mutating a layout after creating navigation does not rebuild occupancy or invalidate cached paths. Consumers must replace navigation and reconcile routes/reservations when geometry changes.
 
@@ -82,6 +96,18 @@ Navigation is a snapshot of its input geometry. Mutating a layout after creating
 The existing browser store implements this handshake, binary delivery, request/reply calls, coalescing, and reconnect handling. State updates do not depend on animation frames.
 
 A frontend must handle `gone {reason: 'rekeyed', newId}` and migrate its identity-keyed state. Presentation of an agent does not own the agent's process lifetime.
+
+## Reproducing interaction bugs
+
+1. Start a demo with a known scenario and seed; the workbench shows the clean-start command using authoritative backend metadata.
+2. Enable **Record interaction trace** before reproducing the interaction.
+3. Use **Export trace** to download `hq-interaction-trace.json`. Include the relevant visible failure and reproduction steps with the file.
+
+Tracing is off by default and stays in browser memory until explicitly exported. It retains the latest 512 entries, at most 128 pending correlations and 256 identity aliases. It records request/reply outcomes and timing, queued/sent/dropped delivery, connection and terminal transitions, byte/credit counts, identity migrations, protocol information, and scenario/seed changes. Pane and request IDs are aliased; raw payloads, tokens, paths, prompts, terminal text, and free-form error strings are excluded. The export reports dropped entries. Clearing or disabling tracing releases retained entries and correlations.
+
+This is a diagnostic sequence, **not an executable interaction replay**: deliberately omitted input cannot be reconstructed. Reproduce the starting world with the displayed command, then follow the recorded action sequence and your reproduction steps. Existing `--record`/`--replay` separately capture source/enricher inputs; those recordings can contain prompts and paths and must be scrubbed before sharing.
+
+The local entity inspector is sensitive and separate from trace export. Browser automation screenshots, videos, and Playwright traces can also contain visible content; CI only captures isolated synthetic demo sessions.
 
 ## Safety
 
@@ -104,6 +130,11 @@ ssh -N -L 7462:127.0.0.1:7462 user@backend-host
 ```sh
 npm run typecheck
 npm test
+npm run build
+npx playwright install chromium
+npm run test:browser
 ```
 
-Type checking covers backend/tooling, browser libraries, tests, and source-file coverage separately. Tests exercise retained behavior, not the deleted office presentation. Run the full backend suite on Linux/macOS with LF checkout line endings: its live fixtures use executable shebangs, Unix sockets, POSIX signals, and file permissions. Demo/API scenarios can be exercised without herdr.
+Type checking covers backend/tooling, browser libraries/workbench, unit/browser tests, and source-file coverage separately. Run the full backend suite on Linux/macOS with LF checkout line endings: its live fixtures use executable shebangs, Unix sockets, POSIX signals, and file permissions. The Chromium smoke suite runs against the built workbench and actual backend CLI with temporary demo state; it checks authentication, terminal output/control, reconnect, viewer cleanup, scenario reset, and trace privacy/correlation without herdr.
+
+`.github/workflows/ci.yml` runs the typecheck, full unit suite, production build, and Chromium smoke on Linux/Node 24 for pushes and pull requests. Browser failures retain reports, screenshots, video, and Playwright traces for seven days. To enforce merging policy, require the workflow's `linux` check in repository branch protection.

@@ -5,6 +5,6 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["**/*.test.ts", "server/test"],
+  "include": ["**/*.test.ts", "server/test", "browser-tests", "playwright.config.ts"],
   "exclude": ["node_modules", "dist", "scratch", "docs"]
 }

@@ -79,6 +79,41 @@ for (const sc of ['mixed', 'churn']) test(`replay at 1× reproduces the WorldMod
   assert.deepEqual(b, a);
 });
 
+test('replay preserves same-ID scenario resets, including new seeds and offline transitions', async () => {
+  const clock = new FakeClock();
+  const { source, enrichers } = createDemo({ clock, scenario: 'allStates', seed: 3 });
+  let text = '';
+  const recorder = attachRecorder({ source, enrichers, clock, demo: true, write: (line) => { text += line; } });
+  const model = new WorldModel({ source, enrichers, clock, demo: true, dev: true });
+  recorder.ready();
+  const stream: Stamped[] = [];
+  model.on('msg', (m) => stream.push({ at: clock.now(), m: structuredClone(m) }));
+  const initial = structuredClone(model.worldMsg());
+  const ids = [...model.entities.keys()];
+  try {
+    source.start();
+    await run(clock, 1000);
+    source.setScenario('allStates', 3);
+    await run(clock, 1000);
+    source.setScenario('allStates', 4);
+    await run(clock, 1000);
+    source.setScenario('offline');
+    await run(clock, 1000);
+    source.setScenario('allStates');
+    await run(clock, 1000);
+    model.flush();
+    const resets = stream.filter(({ m }) => m.t === 'gone');
+    assert.equal(resets.length, ids.length * 3, 'each populated simulation is torn down, even with reused pane IDs');
+    const rep = await replay(text, 1, 5000);
+    assert.deepEqual(rep.world0, initial);
+    assert.deepEqual(rep.stream, stream, 'reset replay reproduces removals, fresh enrichments, ages and identity changes');
+  } finally {
+    await recorder.close();
+    model.close();
+    await source.close();
+  }
+});
+
 test('replay at 20×: same entity states and enricher events, 20× faster', async () => {
   const rec = await record('mixed', 120_000);
   const rep = await replay(rec.text, 20, 6500);
@@ -115,6 +150,8 @@ test('record to a file, replay from the file', async (t) => {
   await source.close();
   const r = createReplay({ file, clock: new FakeClock(), speed: 5 });
   assert.equal(r.demo, true);
+  assert.equal(r.source.demoConfig, undefined, 'recorded demo owners are not an active simulation');
+  assert.equal(r.source.scenario, undefined, 'replay has no reset mutation capability');
   assert.equal(r.source.snapshot()?.panes.length, 4);
   await assert.rejects(r.source.request('pane.close', { pane_id: 'd1:p1' }), { code: 'readonly_replay' });
   await r.source.close();

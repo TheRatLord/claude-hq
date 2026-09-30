@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'node:events';
 import { FIELD_OWNERS, EVENT_OWNERS, EVENT_KINDS } from '../shared/protocol.ts';
-import type { Entity, EventKind, OwnerName, Status, TermState } from '../shared/protocol.ts';
+import type { DemoConfig, Entity, EventKind, OwnerName, Status, TermState } from '../shared/protocol.ts';
 
 // ---- herdr wire shapes (research/herdr-api §2; the subset HQ reads. Add fields here when a module needs one.)
 
@@ -117,6 +117,8 @@ export interface HerdrSourceEvents {
   facts: [id: string];
   /** DemoWorld only: a schedule event for DemoEnricher to re-emit */
   'demo-event': [id: string, kind: EventKind, detail: unknown];
+  /** DemoWorld only: discard the previous simulation, even while offline or in reconnect grace. */
+  'demo-reset': [];
   /** ReplaySource only: the recording ended */
   done: [];
 }
@@ -127,6 +129,9 @@ export interface HerdrSourceEvents {
  */
 export class HerdrSource extends EventEmitter<HerdrSourceEvents> {
   connected: boolean;
+  /** Only real simulated sources expose reset controls and current reproducibility metadata. */
+  declare scenario?: (name: string, seed?: number) => DemoConfig | Promise<DemoConfig>;
+  get demoConfig(): DemoConfig | undefined { return undefined; }
   constructor() {
     super();
     this.connected = false;

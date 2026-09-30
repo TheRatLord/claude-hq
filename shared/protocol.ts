@@ -425,6 +425,17 @@ export interface Stats {
 
 // ---- server → renderer (JSON text frames, discriminated on `t`)
 
+export const SCENARIOS: readonly string[] = Object.freeze(['mixed', 'allStates', 'crowd40', 'trio', 'longIdle', 'queue', 'churn', 'empty', 'offline']);
+
+/** Active simulated world; absent for live sources and recordings, including demo recordings. */
+export interface DemoConfig {
+  scenario: string;
+  /** Unsigned 32-bit seed used to build and schedule the simulation. */
+  seed: number;
+  /** Configured population; fixed-size scenarios may override it. */
+  population: number;
+}
+
 export interface Hello {
   t: 'hello';
   protocol: number;
@@ -432,6 +443,7 @@ export interface Hello {
   session: string;
   instanceId: string;
   demo: boolean | number;
+  demoConfig?: DemoConfig;
   timescale: number;
   herdr: { connected: boolean; protocol: number | null; readOnly: boolean };
   /** authoritative "structural actions (spawn, pane.close) allowed": the UI gates on this */
@@ -519,7 +531,7 @@ export interface ClientPayloads {
   'timeline.get': { since: number };
   'note.set': { id: string; text: string | null };
   'demo.force': { id: string; patch: Record<string, unknown> };
-  'demo.scenario': { name: string };
+  'demo.scenario': { name: string; seed?: number };
   'demo.event': { id: string; kind: EventKind };
 }
 export type ClientMsg = { [K in keyof ClientPayloads]: { t: K; rid?: number | string } & ClientPayloads[K] }[keyof ClientPayloads];
@@ -787,7 +799,7 @@ export const VALIDATE: Readonly<{ [K in keyof ClientPayloads]: Readonly<Record<k
   'timeline.get': { since: R.int(0, Number.MAX_SAFE_INTEGER) },
   'note.set': { id, text: R.nullable(R.str(LIMITS.noteMax * 4)) }, // ≤ 280 chars checked below
   'demo.force': { id, patch: R.obj(LIMITS.textMax) },
-  'demo.scenario': { name: R.str(LIMITS.labelMax, { min: 1, re: /^[A-Za-z0-9_-]+$/ }) },
+  'demo.scenario': { name: R.str(LIMITS.labelMax, { min: 1, re: /^[A-Za-z0-9_-]+$/ }), seed: R.int(0, 0xffff_ffff, true) },
   'demo.event': { id, kind: R.oneOf(EVENT_KINDS) },
 });
 

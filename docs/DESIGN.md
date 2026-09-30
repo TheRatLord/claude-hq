@@ -1,6 +1,6 @@
 # Claude HQ: retained contracts
 
-This branch removes the original fixed-office frontend. The backend and wire contract remain independent of any character design, environment, or workspace-building layout. Browser modules are reusable libraries; there is no application entrypoint or bundled scene.
+This branch removes the original fixed-office frontend. The backend and wire contract remain independent of any character design, environment, or workspace-building layout. Browser modules are reusable libraries; `renderer/workbench/` is a runnable reference consumer, not a bundled 3D scene.
 
 ## 2. Processes and repository layout
 
@@ -14,12 +14,16 @@ herdr owns agent execution. HQ observes and controls it through the backend, whi
 - `renderer/src/world/nav/` and `world/layout/schema.ts`: navigation algorithms and their spatial input types.
 - `renderer/src/player/`: camera/movement-feel and soft-collision math, not an assembled controller.
 - `renderer/src/ui/terminal/`: standalone xterm widget and its helper modules.
+- `renderer/workbench/`: developer page composing the existing network, settings, platform and terminal APIs.
+- `browser-tests/`: real Chromium smoke scenarios against the built workbench and backend CLI.
 
 ### 2.2 Commands and frontend serving
 
-`npm start` runs `server/main.ts` directly. `--demo` never constructs a herdr client. `--replay FILE` replaces live inputs with recorded ones. `--dist DIR` serves a separately built static frontend. There is no automatic frontend build.
+`npm start` runs `server/main.ts` directly. `--demo` never constructs a herdr client. `--replay FILE` replaces live inputs with recorded ones. `--dist DIR` serves a static frontend. `npm run build` bundles the workbench into `dist/`; backend startup itself does not build.
 
 `--dev --vite-port P` permits a separate loopback frontend origin at port P and disables backend static-page serving. It does not launch Vite or any other frontend server. API and WebSocket routes remain available.
+
+`npm run dev` runs `scripts/workbench.ts`: Vite on loopback (default 7461, `--port 0` supported), an ephemeral-port demo backend, same-origin API/WS proxies, and a temporary config directory. It prints the browser token URL and shuts down both servers on signals. `--demo [N]`, `--scenario NAME`, and `--seed UINT32` select the simulation. Dev token adoption uses the existing browser memory/sessionStorage path; production serving bootstraps an HttpOnly cookie.
 
 Without a bundle, `/` returns 503; `/healthz` and authenticated API/WS routes remain usable. The CLI reports the absent bundle without treating it as a backend failure.
 
@@ -49,11 +53,15 @@ The server sends `hello`; the client checks its version and replies `hello.ack`.
 
 Messages cover terminal open/promotion/input/history/resize/pause/close, screen subscriptions, prompts/answers/keys, focus, spawn/close, notes, done acknowledgements, settings, timeline/world reads, and demo controls. Central validation rejects malformed/unknown fields and oversized frames. Actions referring to unknown entities are rejected before routing.
 
+`demo.scenario {name, seed?}` accepts an optional unsigned 32-bit integer; omitting it retains the current seed. A successful reply includes `demoConfig {scenario, seed, population}`. Active demo sources include the same metadata in `hello`; live and recording-replay sources omit it. `population` is the configured reset count, not necessarily the current pane count. `SCENARIOS` in `shared/protocol.ts` is the common name registry. These optional fields are compatible additions to protocol 1.
+
 Terminal viewers are explicit, observe-first resources. The current limits distinguish entity population from terminal viewers: six viewers per client, sixteen children per backend, eight screen watches per client, and sixteen watched panes across clients. Showing an agent does not require opening its terminal.
 
 ### 3.5 Browser state boundary
 
 `renderer/src/net/store.ts` applies messages as they arrive rather than in animation frames. It owns request/reply calls, binary delivery, entity coalescing, clock skew, protocol mismatch handling, and terminal writers. `net/socket.ts` owns the single socket, token adoption, per-tab identity, and reconnect/health probing.
+
+`net/trace.ts` provides opt-in metadata instrumentation at this boundary, before message coalescing. It keeps a 512-entry ring, 128 pending request correlations, and 256 bounded identity aliases; snapshots copy only allowlisted metadata. Entries distinguish actual transmission from queueing, retain outcomes/timing and terminal byte/credit counts, and connect rekey aliases without retaining raw identity values in exports. Clear/disable discard recorder state. The recorder never stores raw messages, terminal bytes, prompts, tokens, paths, or free-form error text. It is not an action replay engine.
 
 ## 4. Backend
 
@@ -98,6 +106,10 @@ Protocol mismatch makes herdr read-only. The action gate and herdr method gate a
 ### 4.9 Demo and replay
 
 Demo/replay use the same world/action/terminal contracts as live mode without accessing real agent processes. Demo task data and terminal content are fixtures, not an alternate visual world. The CLI caps demo population at 64; no larger-swarm performance claim follows from that value.
+
+A scenario reset is an internal `demo-reset` lifecycle event: the model cancels reconnect grace and removes old entities through normal `gone` teardown before rebuilding. Owned terminal viewers and fake terminal content, since ages, notes and acknowledgements are discarded; long-idle fixture ages are reseeded. This makes same-seed resets clean even when the old simulation was offline or IDs are reused.
+
+Source recordings retain `demo-reset` as an additive version-1 record kind. Replay emits that lifecycle event before subsequent snapshots, preserving departure/detach behavior for same-ID resets; earlier recordings remain readable.
 
 ### 4.10 Stats sampler
 
@@ -150,10 +162,10 @@ Use `createTermView({id, net, settings, platform, hooks, grid, observeGrid?})` f
 - Implement leave/focus, confirmation, notifications, viewer eviction, and font-setting actions in the consumer.
 - `dispose()` closes the viewer and releases its DOM/resources.
 
-There is no drawer, roster, command palette, office keymap, UI kit, or Electron bridge. Styling is limited to the standalone widget's readable defaults.
+The workbench supplies a plain agent list, entity inspector, one terminal panel and scenario/trace controls. It waits for the initial world before opening/reopening terminals, waits for the replacement entity before rekeying, and disposes views on ordinary departure. It deliberately gates typing/paste in observe mode until explicit promotion, although the reusable widget supports type-to-promote for other consumers. Entity inspection remains local and is not copied into trace export. There is no office drawer, command palette, office keymap, scene UI kit, or Electron bridge.
 
 ## 9. Verification
 
-`npm run typecheck` checks backend/tooling, browser modules, and tests separately and verifies source-file coverage. `npm test` runs retained behavioral tests. Platform-specific live tests need the OS facilities used by herdr.
+`npm run typecheck` checks backend/tooling, browser modules/workbench, and unit/browser tests separately and verifies source-file coverage. `npm test` runs behavioral tests; platform-specific live tests need Linux/macOS facilities. `npm run build` followed by `npm run test:browser` exercises the production CLI, authentication, real DOM/xterm, control gating, reconnect, viewer cleanup, seeded scenarios, and trace export in Chromium. Each browser test owns an isolated temporary backend. The Linux/Node 24 CI workflow runs these checks and uploads browser failure artifacts; merge enforcement additionally requires the `linux` status check in repository branch protection.
 
 The old screenshot matrices, office pose probes, art/colour assertions, performance baseline, work-package briefs, and source-text/wiring tests are removed. A new setting's rendering or swarm capacity must be measured against that actual setting, not inferred from the former office's measurements.

@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeClock } from '../clock.ts';
 import { createDemo, DemoWorld, promptText } from './world.ts';
-import { SCENARIOS, PROMPTS } from './scenarios.ts';
+import { PROMPTS } from './scenarios.ts';
 import { WorldModel } from '../world/model.ts';
 import { BlockedEnricher, parsePrompt } from '../world/blocked.ts';
 import { need } from '../test/need.ts';
 import { isRecord } from '../../shared/guards.ts';
 import { ProcInfoEnricher } from '../enrich/procinfo.ts';
 import type { EventMsg, ServerMsg } from '../../shared/protocol.ts';
-import { STATUSES, ENTITY_FIELDS, SHELL_ACTIVITIES, TOOL_CLASSES, S2R } from '../../shared/protocol.ts';
+import { SCENARIOS, STATUSES, ENTITY_FIELDS, SHELL_ACTIVITIES, TOOL_CLASSES, S2R } from '../../shared/protocol.ts';
 
 /** DemoWorld + DemoEnricher + procinfo + the real blocked parser → WorldModel, all on a FakeClock. */
 function setup({ n = 12, seed = 1, scenario = 'mixed' } = {}) {
@@ -86,6 +86,62 @@ test('allStates: frozen, deterministic, 1 per status + 1 per ToolClass + 1 shell
   assert.ok(blocked.prompt?.options.length === 3 && blocked.prompt.numbered, 'real parser on demo detection text');
   await a.close();
   await b.close();
+});
+
+test('scenario reset repeats seeded initial facts and rejects invalid inputs without mutation', async () => {
+  const { source, clock, close } = setup({ scenario: 'mixed', seed: 7 });
+  try {
+    const initial = source.snapshot();
+    const facts = structuredClone([...source.facts]);
+    source.force('d1:p1', { title: 'mutated', status: 'idle' });
+    assert.deepEqual(source.setScenario('mixed', 7), { scenario: 'mixed', seed: 7, population: 12 });
+    assert.deepEqual(source.snapshot(), initial);
+    assert.deepEqual([...source.facts], facts);
+    source.setScenario('mixed', 8);
+    const changed = source.snapshot();
+    const changedFacts = structuredClone([...source.facts]);
+    assert.notDeepEqual(changedFacts, facts, 'new seed changes simulated output, not just metadata');
+    source.setScenario('mixed');
+    assert.equal(source.demoConfig.seed, 8, 'omission retains the active seed');
+    assert.deepEqual(source.snapshot(), changed);
+    assert.deepEqual([...source.facts], changedFacts);
+    const timers = clock.pending;
+    for (const seed of [-1, 0x1_0000_0000, 1.5, NaN, Infinity]) {
+      assert.throws(() => source.setScenario('allStates', seed), { code: 'bad_message' });
+      assert.deepEqual(source.demoConfig, { scenario: 'mixed', seed: 8, population: 12 });
+      assert.deepEqual(source.snapshot(), changed);
+      assert.deepEqual([...source.facts], changedFacts);
+      assert.equal(clock.pending, timers);
+    }
+    assert.throws(() => source.setScenario('invalid', 9), { code: 'not_accepted' });
+    assert.deepEqual(source.snapshot(), changed);
+    source.setScenario('mixed', 0);
+    assert.equal(source.demoConfig.seed, 0);
+    source.setScenario('mixed', 0xffff_ffff);
+    assert.equal(source.demoConfig.seed, 0xffff_ffff);
+  } finally {
+    await close();
+  }
+});
+
+test('scenario reset detaches old entities during reconnect grace and while offline', async () => {
+  const { source, model, msgs, close } = setup({ scenario: 'mixed' });
+  try {
+    const ids = [...model.entities.keys()];
+    source.emit('reconnected', { grace: true });
+    assert.equal(model.inGrace, true);
+    source.setScenario('offline', 4);
+    assert.equal(model.inGrace, false);
+    assert.equal(model.entities.size, 0);
+    assert.deepEqual(msgs.filter((m) => m.t === 'gone').map((m) => m.id).sort(), ids.sort());
+    source.setScenario('mixed', 4);
+    assert.equal(model.connected, true);
+    assert.equal(model.inGrace, false);
+    assert.equal(model.entities.size, 12);
+    assert.equal(model.get('d1:p1')?.identity.terminalId, source.snapshot()?.panes[0]?.terminal_id);
+  } finally {
+    await close();
+  }
 });
 
 for (const seed of [1, 2, 3, 4, 5]) test(`mixed (seed ${seed}): every status and every ToolClass within 3 simulated minutes; events flow through emitEvent`, async () => {

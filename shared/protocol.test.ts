@@ -105,6 +105,16 @@ test('validateMessage: generic rejections', () => {
   assert.equal(validateMessage({ t: 'term.open', id: 'a', cols: 80.5, rows: 24 }).ok, false);
 });
 
+test('demo.scenario accepts only unsigned 32-bit seeds, with omission retaining compatibility', () => {
+  for (const seed of [0, 1, 0xffff_ffff]) {
+    assert.equal(validateMessage({ t: 'demo.scenario', name: 'mixed', seed }).ok, true);
+  }
+  assert.equal(validateMessage({ t: 'demo.scenario', name: 'mixed' }).ok, true);
+  for (const seed of [-1, 0x1_0000_0000, Number.MAX_SAFE_INTEGER, 1.5, NaN, Infinity, '1', null]) {
+    assert.equal(validateMessage({ t: 'demo.scenario', name: 'mixed', seed }).ok, false, String(seed));
+  }
+});
+
 test('parseClientText: size cap closes, bad JSON rejects, rid echoed', () => {
   const big = parseClientText(JSON.stringify({ t: 'agent.prompt', id: 'a', text: 'x'.repeat(70_000) }));
   assert.ok(!big.ok);

@@ -34,7 +34,7 @@ export interface ActionClient {
 /** What the demo source adds to the herdr socket surface. */
 export interface DemoControls {
   force(id: string, patch: Record<string, unknown>): void;
-  scenario(name: string): Promise<void> | void;
+  scenario: NonNullable<HerdrSource['scenario']>;
 }
 /** The herdr-shaped source; `force`/`scenario` exist on the demo source only. */
 export type ActionSource = Pick<HerdrSource, 'request'> & Partial<DemoControls>;
@@ -225,12 +225,8 @@ export class Actions {
         this.source.force(msg.id, msg.patch);
         return {};
       case 'demo.scenario':
-        if (typeof this.source.scenario === 'function') {
-          await this.source.scenario(msg.name);
-          return {};
-        }
-        if (msg.name !== 'allStates' && msg.name !== 'mixed') throw actionError(ERR.NOT_ACCEPTED, `scenario ${msg.name}: not in the static demo`);
-        return {};
+        if (!this.source.scenario) throw actionError(ERR.NOT_DEMO, 'demo.scenario: this source cannot reset scenarios');
+        return { demoConfig: await this.source.scenario(msg.name, msg.seed) };
       case 'demo.event':
         if (!this.demoEnricher?.fire(msg.id, msg.kind)) this.model.event(msg.id, msg.kind); // demo convenience
         return {};

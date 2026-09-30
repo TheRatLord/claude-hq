@@ -18,6 +18,7 @@ import { isRecord } from '../../../shared/guards.ts';
 import { isServerMsg } from '../../../shared/serverMsg.ts';
 import { createSocket, adoptToken, clientId } from './socket.ts';
 import type { HqSocket } from './socket.ts';
+import { interactionTrace } from './trace.ts';
 
 export type ConnState = 'connecting' | 'open' | 'closed' | 'mismatch';
 export interface ConnInfo {
@@ -188,6 +189,7 @@ function fire(evt: StoreTopic, payload: AnyPayload) {
 
 function setConn(state: ConnState, retryInMs: number | null = null) {
   store.conn = { ...store.conn, state, since: performance.now(), retryInMs };
+  interactionTrace.connection(state, retryInMs);
   dispatch('conn', store.conn, 'conn');
 }
 
@@ -249,6 +251,7 @@ function onText(text: string) {
   try { raw = JSON.parse(text); } catch { console.warn('[store] bad JSON from server'); return; }
   if (!isServerMsg(raw)) { console.warn('[store] unknown message', isRecord(raw) ? raw.t : undefined); return; }
   const m: ServerMsg = raw;
+  interactionTrace.message('in', m);
   switch (m.t) {
     case S2R.HELLO: {
       if (!checkProtocol(m)) return;
@@ -263,9 +266,13 @@ function onText(text: string) {
         store.statsHistory = m.statsHistory.slice(-STATS_RING);
         store.stats = store.statsHistory.at(-1) ?? store.stats;
       }
-      sock?.send(JSON.stringify({ t: R2S.HELLO_ACK, protocol: PROTOCOL_VERSION }));
+      const helloAck = { t: R2S.HELLO_ACK, protocol: PROTOCOL_VERSION };
+      if (sock?.send(JSON.stringify(helloAck))) interactionTrace.message('out', helloAck, 'sent');
       acked = true;
-      for (const q of queue) sock?.send(q);
+      for (const q of queue) {
+        const sent = sock?.send(q);
+        if (interactionTrace.enabled) interactionTrace.message(sent ? 'out' : 'local', JSON.parse(q), sent ? 'sent' : 'dropped');
+      }
       queue = [];
       store.conn.connects++;
       setConn('open');
@@ -335,6 +342,7 @@ function onText(text: string) {
 function onBinary(buf: ArrayBuffer) {
   const f = decodeFrame(buf);
   if (!f || f.kind !== BIN.TERM_DATA) return;
+  interactionTrace.binary('in', f.id, f.payload.byteLength, (f.flags & BIN_FLAG.FULL) !== 0);
   const set = termWriters.get(f.id);
   if (!set) return;
   const full = (f.flags & BIN_FLAG.FULL) !== 0;
@@ -358,11 +366,12 @@ export function connect({ token = null, url }: { token?: string | null; url?: st
     cid: clientId(),
     url,
     handlers: {
-      onOpen: () => { acked = false; },
+      onOpen: () => { acked = false; interactionTrace.connection('connecting', null); },
       onText,
       onBinary,
       onClose: ({ retryInMs }) => {
         acked = false;
+        interactionTrace.disconnect();
         credits.clear(); // un-acked/queued keystrokes are stale after a drop; term.open (re)starts the count
         for (const [rid, p] of pending) { clearTimeout(p.timer); p.resolve({ t: 'reply', rid, ok: false, error: 'disconnected' }); }
         pending.clear();
@@ -378,9 +387,10 @@ export function connect({ token = null, url }: { token?: string | null; url?: st
 export function send(msg: OutMsg): boolean {
   if ((msg.t === R2S.TERM_OPEN || msg.t === R2S.TERM_CLOSE) && typeof msg.id === 'string') resetCredit(msg.id);
   const text = JSON.stringify(msg);
-  if (sock && acked && sock.send(text)) return true;
-  if (store.conn.state === 'mismatch') return false;
-  if (queue.length < QUEUE_MAX) queue.push(text);
+  if (sock && acked && sock.send(text)) { interactionTrace.message('out', msg, 'sent'); return true; }
+  if (store.conn.state === 'mismatch') { interactionTrace.message('local', msg, 'dropped'); return false; }
+  if (queue.length < QUEUE_MAX) { queue.push(text); interactionTrace.message('local', msg, 'queued'); }
+  else interactionTrace.message('local', msg, 'dropped');
   return false;
 }
 
@@ -390,10 +400,16 @@ export function send(msg: OutMsg): boolean {
  */
 export function call(msg: OutMsg, { timeoutMs = CALL_TIMEOUT_MS }: { timeoutMs?: number } = {}): Promise<ReplyMsg> {
   const rid = ridSeq++;
+  const request = { ...msg, rid };
+  interactionTrace.beginCall(request);
   return new Promise<ReplyMsg>((resolve) => {
-    const timer = setTimeout(() => { pending.delete(rid); resolve({ t: 'reply', rid, ok: false, error: 'timeout' }); }, timeoutMs);
+    const timer = setTimeout(() => {
+      pending.delete(rid);
+      interactionTrace.finishCall(rid, 'timeout');
+      resolve({ t: 'reply', rid, ok: false, error: 'timeout' });
+    }, timeoutMs);
     pending.set(rid, { resolve, timer });
-    send({ ...msg, rid });
+    send(request);
   });
 }
 
@@ -411,7 +427,10 @@ const creditOf = (id: string): Credit => {
   if (!c) credits.set(id, (c = { sent: 0, acked: 0, q: [], qBytes: 0 }));
   return c;
 };
-const resetCredit = (id: string) => credits.delete(id);
+const resetCredit = (id: string) => {
+  credits.delete(id);
+  interactionTrace.credit(id, 0, 0, 0);
+};
 
 function drainCredit(id: string) {
   const c = credits.get(id);
@@ -421,9 +440,15 @@ function drainCredit(id: string) {
     const b = c.q.shift();
     if (!b) break; // unreachable: the loop condition just saw an element
     c.qBytes -= b.length;
-    if (!sock.send(encodeTermInput(id, b))) { c.q.unshift(b); c.qBytes += b.length; return; }
+    if (!sock.send(encodeTermInput(id, b))) {
+      c.q.unshift(b); c.qBytes += b.length;
+      interactionTrace.binary('local', id, b.length, false, 'queued');
+      return;
+    }
+    interactionTrace.binary('out', id, b.length, false, 'sent');
     c.sent += b.length;
   }
+  interactionTrace.credit(id, c.sent, c.acked, c.qBytes);
 }
 
 /**
@@ -432,15 +457,22 @@ function drainCredit(id: string) {
  * Returns false (dropped) when not connected or the local queue is full: the UI outbox owns retry.
  */
 export function sendBytes(id: string, bytes: Uint8Array): boolean {
-  if (!sock || !acked || !bytes.length) return false;
+  if (!sock || !acked || !bytes.length) {
+    interactionTrace.binary('local', id, bytes.length, false, 'dropped');
+    return false;
+  }
   const c = creditOf(id);
   const max = store.limits.termInputMax;
-  if (c.qBytes + bytes.length > LOCAL_QUEUE_MAX) return false;
+  if (c.qBytes + bytes.length > LOCAL_QUEUE_MAX) {
+    interactionTrace.binary('local', id, bytes.length, false, 'dropped');
+    return false;
+  }
   for (let o = 0; o < bytes.length; o += max) {
     const part = bytes.subarray(o, o + max);
     c.q.push(part);
     c.qBytes += part.length;
   }
+  interactionTrace.binary('local', id, bytes.length, false, 'queued');
   drainCredit(id);
   return true;
 }
@@ -478,7 +510,9 @@ export async function sendPaste(
   for (const chunk of chunks) {
     const r = await call({ t: R2S.TERM_INPUT, id, text: chunk, paste: true });
     if (!r.ok) return { ok: false, error: r.error, chunks: chunks.length, sent };
-    creditOf(id).sent += te.encode(chunk).length;
+    const c = creditOf(id);
+    c.sent += te.encode(chunk).length;
+    interactionTrace.credit(id, c.sent, c.acked, c.qBytes);
     sent++;
     onProgress?.(sent, chunks.length);
   }

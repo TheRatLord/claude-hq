@@ -15,8 +15,8 @@
  */
 import { HerdrSource, Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, Logger, RawAgent, RawLayout, RawPane, RawTab, RawWorkspace, TimerHandle } from '../interfaces.ts';
-import { FIELD_OWNERS, KINDS, STATUSES, TOOL_CLASSES, mayEmit } from '../../shared/protocol.ts';
-import type { Activity, Entity, EventKind, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, WorkStats } from '../../shared/protocol.ts';
+import { FIELD_OWNERS, KINDS, SCENARIOS, STATUSES, TOOL_CLASSES, VALIDATE, mayEmit } from '../../shared/protocol.ts';
+import type { Activity, DemoConfig, Entity, EventKind, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, WorkStats } from '../../shared/protocol.ts';
 import { hashHex, identityKey, placeOf } from '../../shared/identity.ts';
 import { ProcInfoEnricher } from '../enrich/procinfo.ts';
 import { modelTier, struggleOf } from '../enrich/transcriptState.ts';
@@ -25,7 +25,7 @@ import { isRecord } from '../../shared/guards.ts';
 import type { SinceRecord } from '../world/since.ts';
 import type { OutLine, ReadOpts, ReadResult } from './fakeTerm.ts';
 import {
-  SCENARIOS, WORKSPACES, RENAMES, NAMES, TASKS, MODELS, SHELL_PROCS, buildScenario, rng, activityFor, pickSubagent,
+  WORKSPACES, RENAMES, NAMES, TASKS, MODELS, SHELL_PROCS, buildScenario, rng, activityFor, pickSubagent,
   randomPrompt, permissionFor, PROMPTS, shellTick, shellEnd, SHELL_TICK_S, demoText,
 } from './scenarios.ts';
 import type { DemoActivity, DemoTextStage, NewPaneSpec, PromptSpec, Rng, Scenario, ShellLine } from './scenarios.ts';
@@ -338,24 +338,28 @@ export class DemoWorld extends HerdrSource {
     return { terminalId: p.terminal_id, agentSession: p.agent_session?.value ?? null, place: placeOf(w?.label ?? '', t?.label ?? '', Math.max(0, idx), p.foreground_cwd ?? p.cwd) };
   }
 
-  /** `demo.scenario {name}` (actions.ts calls `source.scenario(name)`). */
-  scenario(name: string): void {
-    this.setScenario(name);
+  override get demoConfig(): DemoConfig {
+    return { scenario: this.scenarioName, seed: this.seed, population: this.n };
   }
 
-  /** Switch scenario at runtime (`demo.scenario`): every pane leaves, the new set arrives. */
-  setScenario(name: string): void {
+  /** Reset the active scenario, retaining its seed when none was supplied. */
+  override scenario = (name: string, seed?: number): DemoConfig => this.setScenario(name, seed);
+
+  /** Switch scenario at runtime: every old pane leaves before the new set arrives. */
+  setScenario(name: string, seed = this.seed): DemoConfig {
     if (!SCENARIOS.includes(name)) throw Object.assign(new Error(`unknown scenario ${name}`), { code: 'not_accepted' });
+    const invalidSeed = VALIDATE['demo.scenario'].seed.check(seed);
+    if (invalidSeed) throw Object.assign(new Error(`seed: ${invalidSeed}`), { code: 'bad_message' });
     const wasConnected = this.connected;
     this._stopAll();
+    this.seed = seed;
     this._build(name);
-    if (!this._started) return;
+    this.emit('demo-reset');
+    if (!this._started) return this.demoConfig;
     if (this.connected !== wasConnected) this.emit('connected', this.connected);
-    if (this.connected) {
-      if (!wasConnected) this.emit('reconnected', { grace: true });
-      this._emitSnapshot();
-    }
+    if (this.connected) this._emitSnapshot();
     this._startSchedules();
+    return this.demoConfig;
   }
 
   // ------------------------------------------------------------------------------------------

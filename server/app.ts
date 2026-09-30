@@ -152,11 +152,15 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
   const wsHub = new WsHub({
     model, hub, actions, source, screens, clock, log: log.child('ws'), audit,
     statsHistory: () => stats?.history() ?? [],
-    helloInfo: () => ({
-      session: cfg.session, instanceId, demo: cfg.demo, timescale: clock.timescale, defaultSession: !!w.isDefault,
-      herdr: herdrInfo(),
-      allowMutations: actions.mutationsAllowed, settings: { ...settings },
-    }),
+    helloInfo: () => {
+      const demoConfig = source.demoConfig;
+      return {
+        session: cfg.session, instanceId, demo: cfg.demo, timescale: clock.timescale, defaultSession: !!w.isDefault,
+        ...(demoConfig ? { demoConfig } : {}),
+        herdr: herdrInfo(),
+        allowMutations: actions.mutationsAllowed, settings: { ...settings },
+      };
+    },
   });
   stats?.on('stats', (s) => wsHub.broadcast({ t: S2R.STATS, stats: s }));
   // M1 integ: demo/replay expose metrics(), live a plain object
@@ -253,6 +257,14 @@ async function wireDemo(n: number, cfg: ResolvedConfig, { clock, log }: WireCtx)
     herdrInfo: () => ({ connected: source.connected, protocol: null, readOnly: false }),
     bindModel: (m) => {
       model = m;
+      source.on('demo-reset', () => {
+        for (const e of enrichers) {
+          if (e instanceof AcksEnricher || e instanceof NotesEnricher) {
+            for (const key of Object.keys(e.map)) delete e.map[key];
+          }
+        }
+        source.seedSince(m.since);
+      });
       source.seedSince(m.since); // longIdle's honest ages (§4.3.1)
       source.start();
     },

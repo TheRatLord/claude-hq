@@ -5,6 +5,7 @@
  *   {k:'header', v:1, at, session, demo, owners:[…]}
  *   {k:'snapshot', at, raw} · {k:'status', at, id, status, seq, raw} · {k:'connected', at, connected} · {k:'reconnected', at}
  *   {k:'patch', at, owner, id, patch} · {k:'event', at, owner, id, kind, detail?}
+ *   {k:'demo-reset', at} clears the previous simulated world before its replacement snapshot.
  * i.e. every HerdrSource snapshot/status, every enricher patch AND every emitEvent. Source listeners are prepended so a
  * snapshot line precedes the patches its application triggers.
  *
@@ -29,6 +30,7 @@ export type RecordItem =
   | { k: 'status'; id: string; status: Status; seq: number | null; raw: RawSnapshot | null }
   | { k: 'connected'; connected: boolean }
   | { k: 'reconnected' }
+  | { k: 'demo-reset' }
   | { k: 'ready' }
   | { k: 'patch'; owner: OwnerName; id: string; patch: Partial<Entity> }
   | { k: 'event'; owner: OwnerName; id: string; kind: EventKind; detail?: unknown };
@@ -41,7 +43,7 @@ type HeaderLine = Extract<RecordLine, { k: 'header' }>;
 /** A recorded enricher output. */
 export type ReplayItem = Extract<RecordLine, { k: 'patch' | 'event' }>;
 
-const RECORD_KINDS: readonly string[] = ['header', 'snapshot', 'status', 'connected', 'reconnected', 'ready', 'patch', 'event'];
+const RECORD_KINDS: readonly string[] = ['header', 'snapshot', 'status', 'connected', 'reconnected', 'demo-reset', 'ready', 'patch', 'event'];
 // A line of our own recordings: only the discriminant is checked (a garbled line is dropped by parseRecording).
 const isRecordLine = (v: unknown): v is RecordLine => isRecord(v) && typeof v.k === 'string' && RECORD_KINDS.includes(v.k);
 
@@ -87,12 +89,14 @@ export function attachRecorder({ file, source, enrichers, clock, session = null,
     status: (id: string, status: Status, seq: number | null) => open({ k: 'status', id, status, seq: seq ?? null, raw: source.snapshot() }),
     connected: (c: boolean) => open({ k: 'connected', connected: !!c }),
     reconnected: () => open({ k: 'reconnected' }),
+    demoReset: () => open({ k: 'demo-reset' }),
   };
   const closeWin = () => (cur = null);
   source.prependListener('snapshot', on.snapshot);
   source.prependListener('status', on.status);
   source.prependListener('connected', on.connected);
   source.prependListener('reconnected', on.reconnected);
+  source.prependListener('demo-reset', on.demoReset);
   const restore: (() => void)[] = [];
   let live = true;
   for (const e of enrichers) {
@@ -124,6 +128,7 @@ export function attachRecorder({ file, source, enrichers, clock, session = null,
       source.on('status', closeWin);
       source.on('connected', closeWin);
       source.on('reconnected', closeWin);
+      source.on('demo-reset', closeWin);
       rec({ k: 'ready' });
     },
     close: () =>
@@ -133,10 +138,12 @@ export function attachRecorder({ file, source, enrichers, clock, session = null,
         source.off('status', on.status);
         source.off('connected', on.connected);
         source.off('reconnected', on.reconnected);
+        source.off('demo-reset', on.demoReset);
         source.off('snapshot', closeWin);
         source.off('status', closeWin);
         source.off('connected', closeWin);
         source.off('reconnected', closeWin);
+        source.off('demo-reset', closeWin);
         for (const r of restore) r();
         if (out) out.end(resolve);
         else resolve();
@@ -336,6 +343,10 @@ export class ReplaySource extends HerdrSource {
         break;
       case 'reconnected':
         this.emit('reconnected', { grace: true });
+        break;
+      case 'demo-reset':
+        this._raw = null;
+        this.emit('demo-reset');
         break;
       case 'ready':
         break;

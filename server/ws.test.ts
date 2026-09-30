@@ -37,6 +37,54 @@ test('hello → hello.ack → world; nothing accepted before the ack; protocol m
   await c.close();
 });
 
+test('demo reset replies and reconnect hello report active config and discard old terminal content', async () => {
+  const demo = await startApp({ scenario: 'allStates', seed: 7, demo: 9 });
+  const c = await connect(demo.port);
+  try {
+    assert.deepEqual(helloOf(c).demoConfig, { scenario: 'allStates', seed: 7, population: 9 });
+    const shell = need(worldOf(c).entities.find((e) => e.kind === 'shell' && e.process?.activity === 'prompt'));
+    const id = shell.id;
+    const done = need(worldOf(c).entities.find((e) => e.status === 'done'));
+    assert.equal((await c.call({ t: 'done.ack', id: done.id, stateSeq: done.stateSeq })).ok, true);
+    assert.equal((await c.call({ t: 'note.set', id, text: 'previous simulation' })).ok, true);
+    assert.equal((await c.call({ t: 'term.open', id, cols: 80, rows: 24 })).ok, true);
+    assert.equal((await c.call({ t: 'term.promote', id, cols: 80, rows: 24 })).ok, true);
+    assert.equal((await c.call({ t: 'term.input', id, text: 'echo old-reset-content\r' })).ok, true);
+    await c.waitFrame(() => c.text(id).includes('old-reset-content'));
+
+    const before = demo.source.snapshot();
+    assert.equal((await c.call({ t: 'demo.scenario', name: 'mixed', seed: -1 })).error, 'bad_message');
+    assert.deepEqual(demo.source.snapshot(), before, 'invalid seed leaves the running scenario intact');
+    const reset = await c.call({ t: 'demo.scenario', name: 'allStates', seed: 7 });
+    assert.equal(reset.ok, true);
+    assert.deepEqual(reset.demoConfig, { scenario: 'allStates', seed: 7, population: 9 });
+    await c.wait((m) => m.t === 'term.state' && m.id === id && m.state === 'gone');
+    assert.equal(demo.model.get(id)?.note, null, 'notes do not survive a simulation reset');
+    assert.equal(demo.model.get(done.id)?.ack, null, 'acknowledgements do not survive a simulation reset');
+    c.frames.length = 0;
+    assert.equal((await c.call({ t: 'term.open', id, cols: 80, rows: 24 })).ok, true);
+    await c.waitFrame((f) => f.id === id && f.full);
+    assert.doesNotMatch(c.text(id), /old-reset-content/, 'same identity does not revive the previous PTY');
+
+    const changed = await c.call({ t: 'demo.scenario', name: 'longIdle', seed: 0xffff_ffff });
+    assert.equal(changed.ok, true);
+    assert.deepEqual(changed.demoConfig, { scenario: 'longIdle', seed: 0xffff_ffff, population: 9 });
+    const retained = await c.call({ t: 'demo.scenario', name: 'queue' });
+    assert.equal(retained.ok, true);
+    assert.deepEqual(retained.demoConfig, { scenario: 'queue', seed: 0xffff_ffff, population: 9 });
+    const reconnected = await connect(demo.port, { cid: 'reset-reconnect' });
+    try {
+      assert.deepEqual(helloOf(reconnected).demoConfig, retained.demoConfig);
+      assert.equal(worldOf(reconnected).entities.length, 6);
+    } finally {
+      await reconnected.close();
+    }
+  } finally {
+    await c.close();
+    await demo.close();
+  }
+});
+
 test('VALIDATE: one reject case per row (unknown field) + typed rejects; nothing executed', async () => {
   const keys = Object.keys(VALIDATE);
   for (let i = 0; i < keys.length; i += 15) {

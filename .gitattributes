@@ -1,0 +1,3 @@
+# POSIX executable fixture and byte-compared golden recordings require LF.
+server/test/fakeHerdrBin.ts text eol=lf
+server/test/fixtures/*.ndjson text eol=lf

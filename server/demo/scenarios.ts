@@ -58,8 +58,6 @@ export interface DemoActivity { tool: string | null; cls: ToolClass; detail: str
 /** One printed line of a demo shell; `kind` colours it in fakeTerm (out | ok | err | dim | cmd). */
 export interface ShellLine { text: string; kind: string }
 
-export const SCENARIOS: readonly string[] = Object.freeze(['mixed', 'allStates', 'crowd40', 'trio', 'longIdle', 'queue', 'churn', 'empty', 'offline']);
-
 export const HOME = '/home/demo';
 
 export const WORKSPACES = Object.freeze([

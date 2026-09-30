@@ -1,10 +1,10 @@
 {
-  // Reusable browser libraries and shared contracts; no scene or application entrypoint.
+  // Browser libraries, development workbench, and shared contracts.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
-  "include": ["renderer/src", "shared"],
+  "include": ["renderer/src", "renderer/workbench", "shared"],
   "exclude": ["**/*.test.ts", "node_modules"]
 }

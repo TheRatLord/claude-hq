@@ -18,6 +18,8 @@ test('hello/world from the live source: entities, names, D2 baseTitle, slots, he
   const hello = helloOf(c);
   assert.equal(hello.session, 'hqtest');
   assert.equal(hello.demo, false);
+  assert.equal(hello.demoConfig, undefined);
+  assert.equal((await c.call({ t: 'demo.scenario', name: 'mixed', seed: 42 })).error, 'not_demo');
   assert.deepEqual(hello.herdr, { connected: true, protocol: 22, readOnly: false });
   const w = worldOf(c);
   const byId = new Map(w.entities.map((e) => [e.id, e]));

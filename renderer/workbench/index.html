@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Claude HQ · Developer workbench</title>
+</head>
+<body>
+  <header class="app-header">
+    <div><p class="eyebrow">Claude HQ / Development</p><h1>Interaction workbench</h1><p class="muted">Real store, socket and terminal. No office UI. No live process creation.</p></div>
+    <div class="connection-panel"><span class="badge" data-testid="connection" id="connection">connecting</span><span class="badge" data-testid="herdr" id="herdr">herdr offline</span><button id="reconnect" type="button">Reconnect</button></div>
+  </header>
+  <div id="hq-banner" role="alert"></div>
+  <section class="notices" aria-label="Workbench notices"><div id="notice" role="status" aria-live="polite">Waiting for the initial world handshake.</div><div id="errors" role="alert"></div></section>
+  <section class="panel scenario-panel" aria-labelledby="scenario-heading">
+    <div><h2 id="scenario-heading">Demo laboratory</h2><p id="demo-state" class="muted">Controls become available after the demo handshake.</p></div>
+    <form id="scenario-form"><label><span id="scenario-label">Scenario</span><select id="scenario" aria-labelledby="scenario-label" disabled></select></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" step="1" required disabled></label><button id="apply-scenario" type="submit" disabled>Apply scenario</button></form>
+    <p class="reproduce"><span class="muted">Reproduce from a clean start</span><code id="reproduce"></code></p>
+  </section>
+  <main class="workspace">
+    <aside class="panel agents-panel" aria-labelledby="agents-heading"><div class="panel-heading"><h2 id="agents-heading">Agents &amp; panes</h2><span class="badge" id="agent-count" data-testid="agent-count">0</span></div><p class="muted compact">Select to inspect. Opening a terminal is always observe-first.</p><div id="agents" aria-label="Agents"></div><p id="empty-agents" class="empty">Waiting for world…</p></aside>
+    <section class="panel terminal-panel" aria-labelledby="terminal-heading">
+      <div class="panel-heading"><div><h2 id="terminal-heading">Terminal</h2><p id="terminal-name" class="muted compact">No terminal open</p></div><span id="terminal-state" data-testid="terminal-state" class="badge">closed · observe</span></div>
+      <div class="toolbar"><button id="open-terminal" type="button" disabled>Open terminal</button><button id="close-terminal" type="button" disabled>Close terminal</button><span class="toolbar-divider"></span><button id="take-control" class="primary" type="button" disabled>Take control</button><button id="observe" type="button" disabled>Observe</button><span class="toolbar-divider"></span><button id="font-down" type="button" aria-label="Decrease terminal font">A−</button><button id="font-reset" type="button" aria-label="Reset terminal font">14px</button><button id="font-up" type="button" aria-label="Increase terminal font">A+</button></div>
+      <div id="terminal-notices"></div><div id="terminal-host" data-testid="terminal-host"><div id="terminal-empty" class="terminal-empty"><h3>A real terminal, without a live herdr</h3><p>Select a demo pane, then open its terminal.</p><p class="muted">Observe mode never sends keystrokes. Take control explicitly to interact.</p></div></div>
+      <div class="terminal-footer"><span id="terminal-hint">Observe-first · explicit control · reconnect-safe</span><span id="terminal-grid"></span></div>
+    </section>
+    <section class="panel inspector-panel" aria-labelledby="inspector-heading"><div class="panel-heading"><h2 id="inspector-heading">Entity inspector</h2><span class="badge warning">Local / sensitive</span></div><p class="muted compact">Current entity data can include paths, prompts and terminal details. It stays in this inspector and is never automatically copied into the interaction trace.</p><pre id="entity-inspector" tabindex="0">Select an agent or pane to inspect its current entity.</pre></section>
+    <section class="panel trace-panel" aria-labelledby="trace-heading"><div class="panel-heading"><div><h2 id="trace-heading">Interaction trace</h2><p class="muted compact">Opt-in, bounded, metadata-only. No tokens, prompts, paths or terminal text.</p></div><label class="checkbox"><input id="record-trace" type="checkbox">Record interaction trace</label></div><div class="toolbar"><button id="export-trace" type="button">Export trace</button><button id="clear-trace" type="button">Clear trace</button><span id="trace-count" class="muted">Recording disabled</span></div><p id="trace-outcome" class="compact muted">Request outcomes appear here with their safe correlation metadata.</p><pre id="trace-inspector" tabindex="0" aria-label="Interaction trace JSON"></pre></section>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

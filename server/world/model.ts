@@ -113,6 +113,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
   _onStatus: () => void;
   _onConnected: (c: boolean, info?: { retryInMs?: number }) => void;
   _onReconnected: () => void;
+  _onDemoReset: () => void;
 
   constructor({ source, enrichers = [], clock, log, session = 'default', demo = false, dev = false, stateDir = null, graceMs = RECONNECT_GRACE_MS }: WorldModelOptions) {
     super();
@@ -151,10 +152,20 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     this._onStatus = () => this.apply(this.source.snapshot());
     this._onConnected = (c, info = {}) => this._setConnected(!!c, info);
     this._onReconnected = () => this._startGrace();
+    this._onDemoReset = () => {
+      if (!demo) return;
+      this.clock.clearTimeout(this._graceTimer);
+      this._graceTimer = null;
+      this.graceUntil = 0;
+      // A scenario reset is not a reconnect: reused pane IDs must detach enrichers and terminals.
+      this._apply({ workspaces: [], tabs: [], panes: [], agents: [], layouts: [] });
+      for (const key of Object.keys(this.since.map)) delete this.since.map[key];
+    };
     source.on('snapshot', this._onSnapshot);
     source.on('status', this._onStatus);
     source.on('connected', this._onConnected);
     source.on('reconnected', this._onReconnected);
+    source.on('demo-reset', this._onDemoReset);
     const raw = source.snapshot();
     if (raw) this.apply(raw);
   }
@@ -529,6 +540,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     this.source.off('status', this._onStatus);
     this.source.off('connected', this._onConnected);
     this.source.off('reconnected', this._onReconnected);
+    this.source.off('demo-reset', this._onDemoReset);
     for (const e of this.enrichers) e.close?.();
     this.slots.close();
     this.since.close();

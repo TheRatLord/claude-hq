@@ -16,6 +16,9 @@ logs/
 .eslintcache
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
+hq-interaction-trace*.json
 scratch/
 tmp/
 .tmp/
