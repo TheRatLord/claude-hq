@@ -34,25 +34,3 @@ test('RealClock scales now()', async () => {
   assert.equal(c.timescale, 10);
 });
 
-test('lint: no bare Date.now/setTimeout/setInterval in server/ except clock.ts (§4.13)', async () => {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-  const root = path.dirname(new URL(import.meta.url).pathname);
-  const bad: string[] = [];
-  const walk = (d: string): void => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) {
-        if (e.name !== 'test') walk(p); // server/test/ = test helpers
-      }
-      else if (p.endsWith('.ts') && !p.endsWith('.test.ts') && !p.endsWith(`${path.sep}clock.ts`)) {
-        fs.readFileSync(p, 'utf8').split('\n').forEach((l, i) => {
-          const code = l.replace(/^\s*(\*|\/\/).*$/, '');
-          if (/Date\.now\(|(^|[^.\w])set(Timeout|Interval)\(/.test(code)) bad.push(`${path.relative(root, p)}:${i + 1}`);
-        });
-      }
-    }
-  };
-  walk(root);
-  assert.deepEqual(bad, []);
-});

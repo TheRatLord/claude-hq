@@ -144,7 +144,7 @@ export function createHttpServer(o: HttpServerOpts): http.Server {
         'Set-Cookie': `hq_token=${o.token}; HttpOnly; SameSite=Strict; Path=/`,
       });
     }
-    if (o.dev) return send(404, 'dev mode: the renderer is served by vite (npm run dev)\n');
+    if (o.dev) return send(404, 'dev mode: serve the frontend separately on the configured --vite-port\n');
     return serveStatic(req, res, url, o, base, send, authed(req, url));
   });
 
@@ -192,7 +192,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: U
   }
   const isIndex = path.basename(file) === 'index.html';
   if (!st) {
-    if (!fs.existsSync(path.join(root, 'index.html'))) return send(503, 'renderer not built: run `npm run build` (or `npm run dev`)\n');
+    if (!fs.existsSync(path.join(root, 'index.html'))) return send(503, 'no frontend bundle: supply one with --dist DIR; backend API remains available\n');
     return send(404, 'not found\n');
   }
   if (isIndex && !isAuthed) {

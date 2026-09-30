@@ -1,5 +1,4 @@
-// Runtime guard for a parsed text frame from the backend (§3.3): shared by the renderer store and the node-side test
-// clients (scripts/hqtest-realuse.ts), so neither needs a double cast to reach `ServerMsg`.
+// Runtime guard for backend text frames, shared by browser state consumers and node-side clients.
 import { S2R } from './protocol.ts';
 import type { ServerMsg } from './protocol.ts';
 import { isRecord } from './guards.ts';

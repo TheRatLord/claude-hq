@@ -18,7 +18,7 @@ export const DEFAULT_PORT = 7462;
 export const ALLOW_MUTATIONS_REMOVED = '--allow-mutations was removed: a named session (--session hqtest) already allows hire/close, ' +
   'and nothing enables them in the default herdr session. Drop the flag.';
 
-/** createApp / resolveConfig options (all optional; the CLI fills them from argv, tests and Electron pass them directly). */
+/** createApp / resolveConfig options; the CLI and programmatic consumers share this contract. */
 export interface AppOptions {
   port?: number;
   session?: string;
@@ -105,7 +105,7 @@ export function resolveConfig(o: AppOptions = {}): ResolvedConfig {
     scenario: o.scenario ?? 'mixed',
     seed: o.seed ?? 1,
     dev: !!o.dev,
-    // --dev: the vite port whose pages may open /ws (http.ts originOk). scripts/dev.ts exports HQ_VITE_PORT.
+    // --dev permits a separately served frontend on this loopback port (http.ts originOk).
     vitePort: o.dev ? Number(o.vitePort ?? process.env.HQ_VITE_PORT ?? 7461) || null : null,
     metrics: !!(o.metrics || o.dev),
     timescale: o.timescale ?? 1,
@@ -159,34 +159,3 @@ export function saveSettings(configDir: string, settings: object): void {
   fs.renameSync(tmp, file);
 }
 
-export interface DistStatus { built: boolean; stale: boolean; builtAt: number | null; newestSrc: number; newestFile: string | null }
-
-/**
- * Is `dist/` older than the renderer sources? (`npm run serve` / `npm start` rebuild first; a bare
- * `node server/main.ts` or `electron .` would serve a stale renderer after a pull.) Newest mtime over renderer/,
- * shared/ and vite.config.ts vs dist/index.html. Cheap (stat only, a few hundred files).
- */
-export function distStatus(distDir: string): DistStatus {
-  let builtAt: number | null = null;
-  try {
-    builtAt = fs.statSync(path.join(distDir, 'index.html')).mtimeMs;
-  } catch {}
-  let newestSrc = 0, newestFile: string | null = null;
-  const visit = (p: string): void => {
-    let st: fs.Stats;
-    try {
-      st = fs.statSync(p);
-    } catch {
-      return;
-    }
-    if (st.isDirectory()) {
-      if (path.basename(p) === 'node_modules') return;
-      for (const n of fs.readdirSync(p)) visit(path.join(p, n));
-    } else if (!/\.test\.ts$/.test(p) && st.mtimeMs > newestSrc) {
-      newestSrc = st.mtimeMs;
-      newestFile = p;
-    }
-  };
-  for (const d of ['renderer', 'shared', 'vite.config.ts']) visit(path.join(REPO_ROOT, d));
-  return { built: builtAt !== null, stale: builtAt !== null && newestSrc > builtAt, builtAt, newestSrc, newestFile };
-}

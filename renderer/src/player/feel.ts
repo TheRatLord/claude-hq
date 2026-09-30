@@ -1,13 +1,13 @@
 // @pure
 /**
- * Player-feel maths (§6.10) shared by the controller and `__hq.feelTrace` (§9.1): head-bob shape phase-locked to
- * footsteps, the landing-dip spring impulse, and the trace analysis the gameplay reviewer reads. Owner: PLY.
+ * Movement-feel maths: head bob phase-locked to footsteps, exact underdamped landing springs,
+ * and sampled camera-motion analysis. These helpers do not own a controller or emit events.
  *
  * Bob phase φ advances at stepHz·π rad/s, so one footstep = Δφ of π:
  *   vertical  y = −amp·(1 − cos 2φ)/2 + amp/2   → full cycle per step (walk 1.9 Hz), trough (foot plant) at φ = kπ
  *   lateral   x = lateral·cos φ                  → half the step rate (0.95 Hz), extreme over the planted foot
  *   roll      r = roll·cos φ
- * A `player.step` fires when ⌊φ/π⌋ changes, i.e. exactly at the vertical trough.
+ * A footstep occurs when ⌊φ/π⌋ changes, exactly at the vertical trough.
  */
 
 /** Phase advance (rad) for dt seconds at a footstep rate of hz. */
@@ -50,15 +50,15 @@ export function landDipImpulse(vFall: number, d: { k: number; max: number; min: 
 
 /**
  * One sampled frame of a feel trace: `t` in ms; `bobY` = applied vertical bob (m), `bobN` = its normalised shape,
- * `bobAmp` = 0…1 envelope; `mode` 'walk' (default) | 'sit' | 'glide' (sit-down / stand-up / slide mount) | 'ride';
+ * `bobAmp` = 0…1 envelope; optional `mode` separates walking, gliding transitions, and rides;
  * `ex`/`ey`/`ez` = final camera position, `roll` in radians.
  */
 export interface FeelFrame {
   t: number; camY: number; dip: number; bobY: number; bobN: number; bobAmp: number; fov: number; speed: number; grounded: boolean;
   mode?: string; ex?: number; ey?: number; ez?: number; roll?: number;
 }
-/** `type`: 'step' | 'land' | 'bump' | 'sit' | 'stand' | 'ride' | 'rideEnd' | … (+ whatever detail the controller adds). */
-export interface FeelEvent { t: number; type: string; speed?: number; v?: number; depth?: number; tag?: string; id?: string | null; phase?: string; on?: boolean }
+/** Trace event with optional motion details supplied by the consumer. */
+export interface FeelEvent { t: number; type: string; speed?: number; v?: number; depth?: number; tag?: string }
 
 /** Analyse a feel trace. */
 export function analyseFeel(frames: FeelFrame[], events: FeelEvent[]) {
@@ -95,7 +95,7 @@ export function analyseFeel(frames: FeelFrame[], events: FeelEvent[]) {
         ride.maxJerk = Math.max(ride.maxJerk, Math.hypot(f.ex - 2 * at(p.ex) + at(q.ex), at(f.ey) - 2 * at(p.ey) + at(q.ey), at(f.ez) - 2 * at(p.ez) + at(q.ez)));
       }
     } else if (mf !== mp && (mf === 'ride' || mp === 'ride')) {
-      // entering / leaving the slide: the ride's own motion meets the exit landing (the dip is excluded by design)
+      // A ride transition meets the landing; the landing dip is excluded from ride motion.
       ride.maxDy = Math.max(ride.maxDy, Math.abs(eyeY(f) - eyeY(p)));
     } else if (mf === 'glide' || mp === 'glide') {
       maxDyGlide = Math.max(maxDyGlide, Math.abs(eyeY(f) - eyeY(p)));

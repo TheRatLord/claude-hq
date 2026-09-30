@@ -1,8 +1,8 @@
 // @pure
 /**
- * Baked camera paths (§6.10 "ride the slide"; the M4 zipline reuses it): a uniform Catmull-Rom spline through the
- * layout's control points, densely sampled once and reparameterised by arc length, so a ride can move at a chosen
- * speed profile along it. `sample(s, out)` is allocation-free. Owner: PLY.
+ * Baked camera paths: a uniform Catmull-Rom spline through control points, densely sampled once
+ * and reparameterised by arc length so traversal can use a chosen speed profile.
+ * `sample(s, out)` reuses the caller's output object.
  */
 
 export interface P3 { x: number; y: number; z: number }
@@ -11,9 +11,8 @@ export interface PathSample { x: number; y: number; z: number; tx: number; ty: n
 export interface CamPath { length: number; sample(s: number, out?: PathSample): PathSample; heading(s: number): number }
 
 /**
- * `pts` = control points (≥ 2). `perSeg`: dense samples per segment; `smooth`: corner rounding (m of arc length, a
- * two-pass box filter over a uniform resample, ends pinned). A camera riding inside a 0.32 m tube can round a baked
- * corner by a few cm without anyone seeing it, and a corner is a lateral jerk everyone feels.
+ * `pts` = control points (≥ 2). `perSeg`: dense samples per segment; `smooth`: corner rounding
+ * in metres of arc length, using a two-pass box filter over a uniform resample with pinned ends.
  */
 export function createCamPath(pts: readonly P3[], o: { perSeg?: number; smooth?: number } = {}): CamPath {
   const perSeg = o.perSeg ?? 12;
@@ -70,7 +69,7 @@ export function createCamPath(pts: readonly P3[], o: { perSeg?: number; smooth?:
       out.tx = tx; out.ty = ty; out.tz = tz;
       return out;
     },
-    /** Camera yaw (§ yawTo convention: forward = (−sin, −cos)) of the horizontal tangent at s. */
+    /** Horizontal camera yaw: forward = (−sin yaw, −cos yaw). */
     heading(s: number) { const [tx, , tz] = tangent(s); return Math.atan2(-tx, -tz); },
   };
 }

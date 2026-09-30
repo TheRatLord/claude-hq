@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBus } from './bus.ts';
-import { parseParams } from './params.ts';
 import { createClock } from './time.ts';
 import { clamp, damp, wrapAngle, yawTo, forwardX, forwardZ } from './math.ts';
 import { setSeed, rng, seeded } from './rng.ts';
 import { createSettings } from './settings.ts';
 import type { Settings as WireSettings } from '../../../shared/protocol.ts';
 import type { ClientMsg } from '../../../shared/protocol.ts';
+import { createLoop, type LoopState } from './loop.ts';
 
 test('bus: on/emit/off/once, listener errors contained', () => {
   const bus = createBus<{ a: number }>();
@@ -24,25 +24,6 @@ test('bus: on/emit/off/once, listener errors contained', () => {
   assert.deepEqual(got, [1, 'once:1', 2]);
 });
 
-test('params: defaults, clamps, flags', () => {
-  const p = parseParams('?t=abc&pose=proto&hour=13.5&quality=high&layout=hq&nohud&fov=90&timescale=4&seed=x');
-  assert.equal(p.token, 'abc');
-  assert.equal(p.pose, 'proto');
-  assert.equal(p.hour, 13.5);
-  assert.equal(p.quality, 'high');
-  assert.equal(p.layout, 'hq');
-  assert.equal(p.nohud, true);
-  assert.equal(p.fov, 75);
-  assert.equal(p.timescale, 4);
-  const d = parseParams('');
-  assert.equal(d.quality, null);
-  assert.equal(d.layout, null); // [LVL M1.5] no default in params: main.ts picks hq (proto for a proto pose)
-  assert.equal(parseParams('?layout=proto').layout, 'proto');
-  assert.equal(d.fov, 60);
-  assert.equal(d.hour, null);
-  assert.equal(d.nohud, false);
-  assert.equal(parseParams('?quality=ultra').quality, null);
-});
 
 test('clock: scale, freeze, clamp, hour pin', () => {
   const c = createClock({ scale: 2 });
@@ -62,7 +43,7 @@ test('clock: scale, freeze, clamp, hour pin', () => {
   assert.ok(c.hour() >= 0 && c.hour() < 24);
 });
 
-test('math: yaw convention (§7): yaw 0 faces −z', () => {
+test('math: yaw 0 faces −z', () => {
   assert.equal(forwardX(0), -0);
   assert.equal(forwardZ(0), -1);
   assert.ok(Math.abs(yawTo(0, -1)) < 1e-12);
@@ -90,4 +71,48 @@ test('settings: known keys only, optimistic apply sends settings.set', () => {
   assert.deepEqual(sent, [{ t: 'settings.set', patch: { fov: 70 } }]);
   s._applyServer({ fov: 70, termFontPx: 16 });
   assert.deepEqual(changes, [{ fov: 70 }, { termFontPx: 16 }]);
+});
+
+test('loop advances caller state and contains callback errors', () => {
+  const q: FrameRequestCallback[] = [];
+  const saved = {
+    raf: globalThis.requestAnimationFrame,
+    caf: globalThis.cancelAnimationFrame,
+    doc: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+    err: console.error,
+  };
+  globalThis.requestAnimationFrame = (fn) => { q.push(fn); return q.length; };
+  globalThis.cancelAnimationFrame = () => {};
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { hidden: false, addEventListener() {}, removeEventListener() {} },
+  });
+  console.error = () => {};
+  const ctx: LoopState & { calls: number } = {
+    clock: createClock({ hour: 12 }),
+    perf: { fps: 0, frameMs: 0, cpuMs: 0, frameErrors: 0 },
+    dt: 0, rawDt: 0, time: 0, now: 0, hour: 0, frame: 0, hidden: false, calls: 0,
+  };
+  const loop = createLoop(ctx, (state) => {
+    state.calls++;
+    if (state.calls % 2) throw new Error('boom');
+  }, () => 1234);
+  try {
+    loop.start();
+    for (let t = 1; t <= 4; t++) q.shift()?.(t * 16.7);
+    assert.equal(ctx.calls, 4);
+    assert.equal(ctx.frame, 4);
+    assert.equal(ctx.perf.frameErrors, 2);
+    assert.equal(ctx.now, 1234);
+    assert.equal(ctx.hour, 12);
+    assert.equal(ctx.dt, ctx.clock.dt);
+    assert.equal(ctx.time, ctx.clock.time);
+  } finally {
+    loop.stop();
+    globalThis.requestAnimationFrame = saved.raf;
+    globalThis.cancelAnimationFrame = saved.caf;
+    if (saved.doc) Object.defineProperty(globalThis, 'document', saved.doc);
+    else Reflect.deleteProperty(globalThis, 'document');
+    console.error = saved.err;
+  }
 });

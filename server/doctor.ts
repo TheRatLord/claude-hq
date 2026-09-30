@@ -3,7 +3,7 @@
  * `npm run doctor [-- --session S] [--port P]` (DESIGN §9.3): the first thing to run when "it's broken over ssh".
  * Strictly read-only: resolves the session socket (path + realpath), pings it (protocol 22?), lists live HQ children
  * from /proc by instance tag (flags stale ones), checks the lock file, checks env gotchas (HERDR_* inherited,
- * CLAUDECODE → transcripts warning), probes the GPU bits Electron would use, prints the ssh -L command and URL.
+ * CLAUDECODE → transcripts warning), prints the ssh -L command and URL.
  * Never spawns herdr, never writes to a socket beyond `ping`, never modifies anything. Owner: BE.
  */
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import path from 'node:path';
 import { socketFor, herdrBin, isDefaultSocket } from './herdr/resolve.ts';
 import { HerdrClient, HERDR_PROTOCOL } from './herdr/client.ts';
 import { RealClock } from './clock.ts';
-import { defaultConfigDir, DEFAULT_PORT, distStatus, REPO_ROOT } from './config.ts';
+import { defaultConfigDir, DEFAULT_PORT } from './config.ts';
 import { findLive, liveInstanceIds, lockPath } from './instance.ts';
 import { scanTagged } from './reaper.ts';
 import type { TaggedProcess } from './reaper.ts';
@@ -88,12 +88,6 @@ export async function doctor({ session, port }: DoctorArgs, env: NodeJS.ProcessE
   else if (isDef) say(OK, 'mode: DEFAULT session → read-only-safe: nothing opens until you click, prompts/answers go through a confirm, hire/close refused (use --session <name> for full actions)');
   else say(OK, `mode: named session "${session}" → full actions (hire with a first prompt, answer, prompt, close panes)`);
 
-  // --- renderer build
-  const dist = distStatus(path.join(REPO_ROOT, 'dist'));
-  if (!dist.built) say(WARN, 'renderer not built: `npm run serve` / `npm start` build it (or `npm run build`)');
-  else if (dist.stale) say(WARN, `dist/ is older than ${path.relative(REPO_ROOT, dist.newestFile ?? '')}: \`npm run serve\` / \`npm start\` rebuild it; a bare \`node server/main.ts\` serves the stale one`);
-  else say(OK, 'renderer build (dist/) is up to date');
-
   // --- lock + live children
   const configDir = defaultConfigDir();
   const live = await findLive(configDir, session);
@@ -117,27 +111,8 @@ export async function doctor({ session, port }: DoctorArgs, env: NodeJS.ProcessE
   if (herdrEnv.length) say(WARN, `inherited ${herdrEnv.join(' ')} (harmless: HQ scrubs them from every herdr child and passes --session)`);
   else say(OK, 'no HERDR_* socket variables inherited');
   if (env.CLAUDECODE || env.CLAUDE_CODE_CHILD_SESSION) {
-    say(WARN, 'running inside Claude Code (CLAUDECODE set): a herdr server started from here spawns agents that save NO transcripts (use env -i, see scripts/hqtest-up.sh)');
+    say(WARN, 'running inside Claude Code (CLAUDECODE set): a herdr server started from here may save no transcripts; start herdr outside that inherited agent environment');
   }
-
-  // --- GPU bits Electron would use (--use-angle=vulkan)
-  const dri = (() => {
-    try {
-      return fs.readdirSync('/dev/dri').filter((n) => n.startsWith('renderD'));
-    } catch {
-      return [];
-    }
-  })();
-  say(dri.length ? OK : WARN, `render nodes: ${dri.join(' ') || 'none (software GL only)'}`);
-  const icd = ['/usr/share/vulkan/icd.d', '/etc/vulkan/icd.d'].flatMap((d) => {
-    try {
-      return fs.readdirSync(d).map((n) => n);
-    } catch {
-      return [];
-    }
-  });
-  say(icd.length ? OK : WARN, `vulkan ICDs: ${icd.join(' ') || 'none'} → Electron flags: --no-sandbox --ignore-gpu-blocklist --use-angle=vulkan --enable-features=Vulkan`);
-  if (!env.DISPLAY && !env.WAYLAND_DISPLAY) say(OK, 'headless: web mode is the primary surface (Electron needs xvfb-run here)');
 
   // --- how to reach it
   let token = '<token>';
@@ -150,8 +125,7 @@ export async function doctor({ session, port }: DoctorArgs, env: NodeJS.ProcessE
   lines.push(`open:    http://127.0.0.1:${p}/?t=${token}`);
   if (!live.live) {
     const sess = session !== 'default' ? ` --session ${session}` : '';
-    lines.push(`start:   npm run serve -- --port ${p}${sess}      (web)`);
-    lines.push(`         npm start -- --port ${p}${sess}          (Electron, on a machine with a display)`);
+    lines.push(`start:   npm start -- --port ${p}${sess}`);
   }
   return { lines, problems };
 }

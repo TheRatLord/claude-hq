@@ -1,14 +1,13 @@
 // @pure
 /**
- * Terminal input pipeline (§3.4, §8.6) for one drawer tab.
+ * Terminal input pipeline for one viewer.
  * - Interactive (xterm onData from typing, ≤ 4 KB): binary `term.input`, no rid, fire-and-forget; ≤ 64 KB un-acked
  *   (credit window, `term.ack {upTo}` = cumulative bytes the hub wrote for this viewer); beyond that it queues locally.
  * - Paste (xterm.paste or a single onData > 4 KB): JSON `term.input {id, text, paste:true, rid}` in UTF-8-safe chunks
  *   of ≤ 16 KB, the next only after the previous reply (hub awaits stdin drain). Interactive data typed during a
  *   paste queues behind it (order kept).
- * - Hold: while promoting (auto-flush when control is live) or while the terminal is not writable (the outbox, §8.4:
- *   ≤ 4 KB, always visible, flushed or discarded by the user).
- * Owner: UI.
+ * - Hold: while promoting (auto-flush when control is live) or while the terminal is not writable (the outbox:
+ *   ≤ 4 KB, flushed or discarded by the consumer).
  */
 
 import type { ClientMsgOf } from '../../../../shared/protocol.ts';

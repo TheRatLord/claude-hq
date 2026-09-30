@@ -15,7 +15,7 @@ export function setSeed(seed: number | string): void {
 }
 /** [0,1) from the global cosmetic stream */
 export const rng = (): number => stream();
-/** Deterministic per-key stream, independent of `?seed` (personality, §6.3). */
+/** Deterministic per-key stream, independent of the global seed. */
 export const seeded = (key: string): (() => number) => mulberry32(hash32(key));
 export const range = (a: number, b: number, r: () => number = rng): number => a + (b - a) * r();
 export const pick = <T>(arr: readonly T[], r: () => number = rng): T => arr[Math.floor(r() * arr.length)];

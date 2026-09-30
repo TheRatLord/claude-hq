@@ -4,8 +4,10 @@
  * Owner: LEAD. Pure (no three, no node built-ins).
  */
 
-import { WORKSPACE_COUNT } from './palette.ts';
 import type { Identity } from './protocol.ts';
+
+/** Number of workspace colour indices in the wire contract; actual colours belong to the frontend. */
+const WORKSPACE_COUNT = 8;
 
 const enc = new TextEncoder();
 

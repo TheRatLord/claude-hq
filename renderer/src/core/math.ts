@@ -1,5 +1,5 @@
 // @pure
-/** Small math helpers (no three). Yaw convention §7: forward = (−sin yaw, 0, −cos yaw), yaw 0 faces −z. Owner: CORE. */
+/** Small math helpers. Forward = (−sin yaw, 0, −cos yaw); yaw 0 faces −z. */
 
 export const TAU = Math.PI * 2;
 export const clamp = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
@@ -11,7 +11,7 @@ export const damp = (cur: number, target: number, rate: number, dt: number): num
 /** Wrap an angle to (−π, π]. */
 export const wrapAngle = (a: number): number => { const r = (((a + Math.PI) % TAU) + TAU) % TAU - Math.PI; return r <= -Math.PI ? r + TAU : r; };
 export const dampAngle = (cur: number, target: number, rate: number, dt: number): number => cur + wrapAngle(target - cur) * (1 - Math.exp(-rate * dt));
-/** yaw that faces along (dx, dz) (same as layout/schema.ts yawTo). */
+/** Yaw that faces along (dx, dz). */
 export const yawTo = (dx: number, dz: number): number => Math.atan2(-dx, -dz);
 export const forwardX = (yaw: number): number => -Math.sin(yaw);
 export const forwardZ = (yaw: number): number => -Math.cos(yaw);

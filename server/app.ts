@@ -1,6 +1,6 @@
 /**
- * createApp(opts) → {port, url, token, instanceId, session, close(), kill()} (DESIGN §2, §4.0). Electron main imports
- * this in-process; `server/main.ts` is the CLI around it. Live and demo differ ONLY in which implementations are wired:
+ * createApp(opts) → {port, url, token, instanceId, session, close(), kill()} (DESIGN §2, §4.0).
+ * `server/main.ts` is the CLI around it. Live and demo differ ONLY in which implementations are wired:
  *
  *   live:  HerdrClient (allowlist, read-only) → HerdrLive (HerdrSource) + transcripts/subagents/procinfo/blocked/acks
  *          enrichers → WorldModel; HerdrTerminals (TerminalBackend) → TerminalHub. Reaper scan before the first spawn.
@@ -65,7 +65,7 @@ interface Wiring {
 
 interface WireCtx { clock: Clock; log: ScopedLogger }
 
-/** The running backend (see the header). Tests and Electron main reach into the parts. */
+/** The running backend, also exposed to its integration tests. */
 export interface App {
   port: number;
   url: string;

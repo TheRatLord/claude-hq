@@ -1,11 +1,10 @@
 {
-  // every *.test.ts plus server/test/ helpers: node:test on node types, with the DOM lib because renderer tests import
-  // renderer modules (and fake the DOM). Run only these: npx tsc -p tsconfig.test.json | grep '^renderer/'
+  // Behavioral tests and backend helpers; browser-library tests use the DOM types.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"]
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": ["node"]
   },
-  "include": ["**/*.test.ts", "server/test", "renderer/src/stubs"],
+  "include": ["**/*.test.ts", "server/test"],
   "exclude": ["node_modules", "dist", "scratch", "docs"]
 }

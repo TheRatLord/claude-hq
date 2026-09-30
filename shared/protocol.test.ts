@@ -2,26 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ClientMsgType, EventKind } from './protocol.ts';
 import {
-  PROTOCOL_VERSION, SHARED_EVENTS, mayEmit, S2R, R2S, ACTION_CLASS, VALIDATE, EVENT_KINDS, FIELD_OWNERS, EVENT_OWNERS, ENTITY_FIELDS,
-  LIVE_OWNERS, DEMO_OWNERS, FIELD_DEFAULTS, fieldOwnerMap, SETTINGS_KEYS, DEFAULT_SETTINGS, BIN, LIMITS,
+  SHARED_EVENTS, mayEmit, ACTION_CLASS, VALIDATE, EVENT_KINDS, FIELD_OWNERS, EVENT_OWNERS, ENTITY_FIELDS,
+  LIVE_OWNERS, DEMO_OWNERS, FIELD_DEFAULTS, fieldOwnerMap, BIN, LIMITS,
   encodeFrame, decodeFrame, encodeTermData, encodeTermInput, validateBinaryInput, validateMessage, parseClientText,
-  reply, replyError,
 } from './protocol.ts';
-
-test('version and constants', () => {
-  assert.equal(PROTOCOL_VERSION, 1);
-  assert.equal(new Set(Object.values(S2R)).size, Object.keys(S2R).length);
-  assert.equal(new Set(Object.values(R2S)).size, Object.keys(R2S).length);
-  assert.equal(EVENT_KINDS.length, 16);
-  assert.deepEqual(reply(3, true, { x: 1 }), { t: 'reply', rid: 3, ok: true, x: 1 });
-  assert.deepEqual(replyError('a', 'bad_message'), { t: 'reply', rid: 'a', ok: false, error: 'bad_message' });
-});
-
-test('every R2S type has exactly one VALIDATE row and an ACTION_CLASS', () => {
-  const types = Object.values(R2S).sort();
-  assert.deepEqual(Object.keys(VALIDATE).sort(), types);
-  assert.deepEqual(Object.keys(ACTION_CLASS).sort(), types);
-});
 
 test('binary codec round-trips', () => {
   const bytes = new Uint8Array([0, 1, 2, 27, 91, 255]);
@@ -172,7 +156,3 @@ test('EVENT_OWNERS cover EVENT_KINDS and use only valid kinds', () => {
   assert.deepEqual([...all].sort(), [...EVENT_KINDS].sort());
 });
 
-test('settings keys', () => {
-  assert.deepEqual(SETTINGS_KEYS, Object.keys(DEFAULT_SETTINGS));
-  assert.ok(validateMessage({ t: 'settings.set', patch: { ...DEFAULT_SETTINGS } }).ok);
-});

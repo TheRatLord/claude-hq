@@ -1,7 +1,6 @@
 // @pure
 /**
- * String pulling (§6.6): greedy line-of-sight simplification of a cell path on the (inflated) grid.
- * Owner: LVL.
+ * Greedy line-of-sight simplification of a cell path on an inflated grid.
  */
 import type { Grid } from './grid.ts';
 
@@ -16,13 +15,13 @@ export function lineOfSight(g: Grid, ax: number, az: number, bx: number, bz: num
   return true;
 }
 
-/** [BRN fix m3-r3, cross-owner LVL] the grid's soft cost at a world point (0 without a cost field / outside) */
+/** Extra step cost at a world point (0 without a cost field or outside the grid). */
 export function costAt(g: Grid, x: number, z: number): number {
   if (!g.cost) return 0;
   const c = g.col(x), r = g.row(z);
   return g.inside(c, r) ? g.cost[r * g.cols + c] : 0;
 }
-/** [BRN fix m3-r3, cross-owner LVL] the highest soft cost along a straight line (¼-cell samples) */
+/** Highest extra step cost along a straight line, sampled at quarter-cell intervals. */
 export function lineCost(g: Grid, ax: number, az: number, bx: number, bz: number): number {
   if (!g.cost) return 0;
   const d = Math.hypot(bx - ax, bz - az);
@@ -31,7 +30,7 @@ export function lineCost(g: Grid, ax: number, az: number, bx: number, bz: number
   for (let i = 0; i <= n; i++) { const t = i / n, k = costAt(g, ax + (bx - ax) * t, az + (bz - az) * t); if (k > m) m = k; }
   return m;
 }
-/** [BRN fix m3-r3, cross-owner LVL] a straight walk a → b needs no search: open AND no deeper into a soft cone than its ends */
+/** A search-free straight leg: unblocked, with no higher cost than either endpoint. */
 export function freeLine(g: Grid, ax: number, az: number, bx: number, bz: number): boolean {
   if (!lineOfSight(g, ax, az, bx, bz)) return false;
   return !g.cost || lineCost(g, ax, az, bx, bz) <= Math.max(costAt(g, ax, az), costAt(g, bx, bz)) + 1e-3;
@@ -40,9 +39,8 @@ export function freeLine(g: Grid, ax: number, az: number, bx: number, bz: number
 export function pull<P extends { x: number; z: number }>(g: Grid, pts: P[]): P[] {
   if (pts.length <= 2) return pts;
   const out = [pts[0]];
-  // [BRN fix m3-r3, cross-owner LVL] with a soft cost field a shortcut may not cut deeper into it than its own ends (a
-  // cell path hugging a corridor's far wall past a view keeps its corners instead of being pulled across the frame)
-  // (each sample of the shortcut vs the cell path at the same fraction of the way, + 0.3 slack)
+  // With weighted cells, a shortcut must not cross a higher-cost region than the original path
+  // at the corresponding fraction, allowing 0.3 slack for discretisation.
   const ok = !g.cost ? null : (i: number, j: number) => {
     const a = pts[i], b = pts[j], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / (g.cell * 0.5)));
     for (let k = 1; k < n; k++) {

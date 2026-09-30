@@ -1,9 +1,9 @@
 {
-  // renderer/src (browser, bundled by vite) + the shared/ modules it imports. DOM lib, vite client types, no node types.
+  // Reusable browser libraries and shared contracts; no scene or application entrypoint.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": []
   },
   "include": ["renderer/src", "shared"],
   "exclude": ["**/*.test.ts", "node_modules"]

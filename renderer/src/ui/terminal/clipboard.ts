@@ -1,8 +1,7 @@
 /**
- * Clipboard paths (§8.6). Copy: `navigator.clipboard.writeText` in a user-activation handler, falling back to a hidden
- * textarea + execCommand. Keyboard paste always uses the native `paste` event (no permission prompts); only the
- * context menu / Leader Y use `readText()`. Middle-click uses HQ's internal last-selection buffer (PRIMARY emulation).
- * Owner: UI.
+ * Copy with the Clipboard API, falling back to a hidden textarea + execCommand.
+ * Keyboard paste uses the native paste event; explicit clipboard reads may be refused.
+ * Middle-click uses an internal last-selection buffer (PRIMARY emulation).
  */
 
 let primary = '';
@@ -11,7 +10,7 @@ let primary = '';
 export function setPrimary(text: string) { if (text) primary = text; }
 export function getPrimary() { return primary; }
 
-/** TUI rows are padded to the grid width: drop trailing blanks per line (reviewer: ~36 spaces per copied line). */
+/** Drop grid-padding blanks from each copied terminal row. */
 export const trimRows = (text: string) => String(text).replace(/[ \t\u00a0]+$/gm, '');
 
 /** `raw` keeps the padding. */
@@ -41,7 +40,7 @@ export async function copyText(text: string, o: { raw?: boolean } = {}): Promise
   }
 }
 
-/** Clipboard API read (context menu / Leader Y). Resolves null when refused. */
+/** Clipboard API read. Resolves null when refused. */
 export async function readClipboard() {
   try {
     return await navigator.clipboard.readText();

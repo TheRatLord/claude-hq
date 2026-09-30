@@ -1,8 +1,7 @@
 // @pure
 /**
- * Level portals (§6.6): the stairs (two-way, walked as a ramp) and the slide (one-way, ridden). A portal hop is
- * `a → b` (and `b → a` when two-way). Routes chain: leg on the start level → portal → leg on the goal level.
- * Owner: LVL.
+ * Directed level connections: `a → b`, and `b → a` when two-way.
+ * A hop joins a same-level entry leg to a same-level exit leg.
  */
 import type { NavPointRef, Portal, Vec3 } from '../layout/schema.ts';
 

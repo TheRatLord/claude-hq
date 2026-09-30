@@ -1,13 +1,30 @@
 /**
- * Frame loop driver (§8.1, §5.2 throttling). main.ts supplies `frame(ctx)` which calls the systems in the §8.1 order.
- * - Visible: requestAnimationFrame, optionally capped (`setFpsCap`: drawer open 30, fullscreen 10).
- * - Hidden tab: rAF stops, so a 10 fps setTimeout tick runs with `ctx.hidden = true` (main skips post).
- * Nothing that must happen while hidden (notifications, terminal bytes, store updates) lives here.
- * Owner: CORE.
+ * Browser frame loop with optional FPS capping and a 10 FPS hidden-tab timer.
+ * The caller owns the complete frame state and supplies the frame callback.
  */
 
 import { errMessage } from '../../../shared/guards.ts';
-import type { Ctx } from './ctx.ts';
+import type { AnimClock } from './time.ts';
+
+export interface LoopPerf {
+  fps: number;
+  frameMs: number;
+  cpuMs: number;
+  frameErrors: number;
+}
+
+export interface LoopState {
+  clock: AnimClock;
+  perf: LoopPerf;
+  dt: number;
+  rawDt: number;
+  time: number;
+  /** Milliseconds sampled from the caller's time source at frame start. */
+  now: number;
+  hour: number;
+  frame: number;
+  hidden: boolean;
+}
 
 export interface Loop {
   start(): void;
@@ -17,7 +34,7 @@ export interface Loop {
   fpsCap(): number | null;
 }
 
-export function createLoop(ctx: Ctx, frame: (ctx: Ctx) => void): Loop {
+export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void, now: () => number = Date.now): Loop {
   let running = false;
   let raf = 0;
   let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
@@ -35,7 +52,7 @@ export function createLoop(ctx: Ctx, frame: (ctx: Ctx) => void): Loop {
     ctx.dt = ctx.clock.dt;
     ctx.rawDt = ctx.clock.rawDt;
     ctx.time = ctx.clock.time;
-    ctx.now = ctx.store ? ctx.store.now() : Date.now();
+    ctx.now = now();
     ctx.hour = ctx.clock.hour();
     ctx.frame++;
     const t0 = performance.now();
@@ -45,7 +62,7 @@ export function createLoop(ctx: Ctx, frame: (ctx: Ctx) => void): Loop {
       // Log each distinct error once (with its stack): a throwing system must not flood the console at 60 Hz.
       const key = errMessage(e);
       if (!errSeen.has(key)) { errSeen.add(key); console.error(`[loop] frame threw: ${e instanceof Error ? (e.stack ?? e) : e}`); }
-      ctx.perf.frameErrors = (ctx.perf.frameErrors ?? 0) + 1;
+      perf.frameErrors++;
     }
     const cpu = performance.now() - t0;
     const k = 0.05;

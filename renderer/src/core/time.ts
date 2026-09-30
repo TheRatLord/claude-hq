@@ -1,8 +1,7 @@
 // @pure
 /**
- * Animation clock: `?timescale` / `hello.timescale`, `__hq.freeze`, `?hour` pin. Owner: CORE.
- * - `time` = scaled animation seconds (frozen → stops). `dt` = scaled, clamped to 0.1 s.
- * - `now()` = server-clock ms (store skew applied) for status-age maths; never scaled locally (server scales).
+ * Animation clock with configurable scale, freezing, and a pinned hour.
+ * `time` is scaled animation seconds; `dt` is clamped to 0.1 s.
  */
 
 export interface AnimClock {

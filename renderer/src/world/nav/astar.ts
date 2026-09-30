@@ -1,12 +1,9 @@
 // @pure
 /**
- * Octile A* on an occupancy grid (§6.6), no corner cutting, binary heap. Returns cell indices start → goal.
- * Owner: LVL.
- *
- * [BRN fix m2-r1, cross-owner] Allocation-free (§5.3): the per-search `gScore`/`came`/`closed` arrays (~170 KB on the
- * 168×112 grid) and the `[f, idx]` pair heap were the largest allocator at crowd40 (27 KB/frame averaged). Now one
- * scratch set per grid size, validated by a search generation stamp (no fill), and a typed-array heap with the same
- * comparisons as before (identical paths). Single-threaded, non-reentrant: fine for the renderer and node tests.
+ * Octile A* on an occupancy grid, with a binary heap and no diagonal corner cutting.
+ * Returns cell indices start → goal. Scratch arrays and the heap are retained per grid cell count,
+ * validated by generation stamps rather than cleared per search. The returned path still allocates.
+ * Single-threaded and non-reentrant.
  */
 import type { Grid } from './grid.ts';
 
@@ -28,7 +25,7 @@ function scratchFor(N: number): Scratch {
 /** Cell indices start → goal, or null when unreachable. */
 export function astar(g: Grid, sc: number, sr: number, gc: number, gr: number, maxIter = 60000): number[] | null {
   const { cols, rows } = g;
-  const cost = g.cost ?? null; // [BRN fix m3-r3, cross-owner LVL] soft cells (view cones): step × (1 + cost)
+  const cost = g.cost ?? null; // Optional cell weights: step distance × (1 + cost).
   const N = cols * rows;
   const start = sr * cols + sc, goal = gr * cols + gc;
   if (start === goal) return [start];

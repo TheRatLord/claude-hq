@@ -1,7 +1,7 @@
 // @pure
 /**
- * Slot reservations (§6.6): `reserve(tag, actorId, near?)` → the actor's held slot of that tag, else the nearest free
- * one (or the first free in id order). Owner: LVL.
+ * `reserve(tag, actorId, near?)` returns the actor's held slot of that tag, otherwise the nearest free
+ * slot in horizontal distance (or the first free in input order). Ties retain input order.
  */
 import type { Slot } from '../layout/schema.ts';
 

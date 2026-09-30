@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { softStep } from './soft.ts';
 import type { BumpEvent, Contact } from './soft.ts';
-import { TUNING as T } from './tuning.ts';
+
+const T = {
+  radius: 0.28, walk: 3.6,
+  soft: { actorRadius: 0.32, pushThroughS: 0.3, throughSpeedMul: 0.45, releaseGap: 0.15, squeezeOut: 5, maxDy: 1.2 },
+};
 
 const O = { radius: T.radius, ...T.soft };
 const R = T.radius + T.soft.actorRadius;
@@ -10,7 +14,7 @@ const R = T.radius + T.soft.actorRadius;
 /** Walk straight at `speed` along -z into an actor at the origin; returns the per-frame trace. */
 function walkInto({ seconds = 1, speed = T.walk, dt = 1 / 60, startZ = 2, blocked = null, actorX = 0 }: { seconds?: number; speed?: number; dt?: number; startZ?: number; blocked?: ((x: number, z: number) => boolean) | null; actorX?: number } = {}) {
   const pos = { x: 0, y: 0, z: startZ }, contacts = new Map<string, Contact>();
-  const actor = { id: 'd3:p5', pos: { x: actorX, y: 0, z: 0 } };
+  const actor = { id: 'actor', pos: { x: actorX, y: 0, z: 0 } };
   const frames: { t: number; z: number; x: number; d: number }[] = [], events: (BumpEvent & { t: number })[] = [];
   let mul = 1;
   for (let i = 0, t = 0; t < seconds; i++, t += dt) {
@@ -28,7 +32,7 @@ test('soft collider blocks head-on, then lets the player squeeze through after p
   const { frames, events } = walkInto({ seconds: 1.4 });
   const hit = events.find((e) => e.phase === 'hit'), thr = events.find((e) => e.phase === 'through');
   assert.ok(hit && thr, 'hit and through events');
-  assert.equal(hit.id, 'd3:p5');
+  assert.equal(hit.id, 'actor');
   const held = thr.t - hit.t;
   assert.ok(Math.abs(held - T.soft.pushThroughS) < 1 / 30, `held ${held.toFixed(3)} s`);
   // while blocked the player never gets inside the combined radius
@@ -39,7 +43,7 @@ test('soft collider blocks head-on, then lets the player squeeze through after p
   assert.ok(last.z < -R, `came out the far side: z ${last.z}`);
 });
 
-test('the reviewer case: 0.4 s into the actor no longer moves the camera 1.7 m', () => {
+test('short contact limits forward progress before passage is allowed', () => {
   const { frames } = walkInto({ seconds: 0.4, startZ: 1.0 });
   const last = frames.at(-1);
   assert.ok(last, 'frames');
@@ -69,7 +73,7 @@ test('contact re-arms after leaving; actors on another floor and vanished actors
   const up = { x: 0, y: 2.9, z: 0.1 };
   r = softStep(up, vel, [{ id: 'b', pos: { x: 0, y: 0, z: 0 } }], contacts, 1 / 60, O, null, 3);
   assert.equal(r.events.length, 0);
-  assert.equal(up.z, 0.1, 'mezzanine player not pushed by a ground-floor actor');
+  assert.equal(up.z, 0.1, 'vertically separated player is not pushed');
   softStep({ x: 0, y: 0, z: 0.2 }, vel, [{ id: 'c', pos: { x: 0, y: 0, z: 0 } }], contacts, 1 / 60, O, null, 4);
   softStep({ x: 0, y: 0, z: 0.2 }, vel, [], contacts, 1 / 60, O, null, 5);
   assert.equal(contacts.size, 0, 'vanished actor forgotten');
@@ -83,7 +87,7 @@ test('push-out never shoves the player into a wall', () => {
 });
 
 test('an actor with its back to a wall stays solid: no push-through into its head', () => {
-  const wall = (_x: number, z: number) => z < -0.3; // wall right behind the actor (like the proto window queue)
+  const wall = (_x: number, z: number) => z < -0.3; // Wall right behind the actor.
   const { frames, events } = walkInto({ seconds: 2, blocked: wall });
   assert.equal(events.filter((e) => e.phase === 'through').length, 0);
   const last = frames.at(-1);

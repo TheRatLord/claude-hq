@@ -14,8 +14,9 @@ import type { App } from './app.ts';
 import type { AppOptions } from './config.ts';
 import { errMessage } from '../shared/guards.ts';
 import os from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_PORT, ALLOW_MUTATIONS_REMOVED, resolveConfig, loadOrCreateToken, distStatus, REPO_ROOT } from './config.ts';
+import { DEFAULT_PORT, ALLOW_MUTATIONS_REMOVED, resolveConfig, loadOrCreateToken } from './config.ts';
 import { findLive } from './instance.ts';
 
 export type CliOptions = AppOptions & { port: number; help?: boolean };
@@ -73,7 +74,7 @@ async function main() {
   }
   if (opts.help) {
     process.stdout.write('usage: node server/main.ts [--port 7462] [--session S] [--demo [N]] [--scenario NAME] [--seed S] ' +
-      '[--dev [--vite-port P]] [--metrics] [--timescale K] [--new-instance] [--record F] [--replay F [--speed K]]\n');
+      '[--dev [--vite-port P]] [--dist DIR] [--config-dir DIR] [--metrics] [--timescale K] [--new-instance] [--record F] [--replay F [--speed K]]\n');
     return;
   }
   const cfg = resolveConfig(opts);
@@ -110,9 +111,9 @@ async function main() {
     process.stdout.write(`remote: ssh -L ${app.port}:127.0.0.1:${app.port} ${os.hostname()}   (on your laptop), then open the URL above\n`);
     const mode = modeLine(app, opts);
     if (mode) process.stdout.write(`${mode}\n`);
-    const d = distStatus(cfg.distDir);
-    if (!d.built) process.stderr.write('claude-hq: the renderer is not built: run `npm run build` (or use `npm run serve`)\n');
-    else if (d.stale) process.stderr.write(`claude-hq: warning: dist/ is older than ${path.relative(REPO_ROOT, d.newestFile ?? '')}: run \`npm run build\` (npm run serve builds first)\n`);
+    if (!fs.existsSync(path.join(cfg.distDir, 'index.html'))) {
+      process.stderr.write(`claude-hq: no frontend bundle at ${cfg.distDir}; backend API is available. Use --dist DIR to serve a frontend.\n`);
+    }
   }
 
 }
@@ -127,7 +128,7 @@ export function modeLine(app: Pick<App, 'client' | 'actions' | 'session'>, opts:
   return `mode: named session "${app.session}": full actions (hire, prompt, answer, close)`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('/server/main.ts')) {
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.replaceAll('\\', '/').endsWith('/server/main.ts')) {
   main().catch((e: unknown) => {
     process.stderr.write(`claude-hq: ${errMessage(e)}\n`);
     process.exit(1);

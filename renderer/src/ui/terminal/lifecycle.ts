@@ -1,8 +1,5 @@
 // @pure
-/**
- * Drawer lifecycle (§8.4): `term.state` → what the tab shows and where input goes.
- * Owner: UI.
- */
+/** Terminal lifecycle state determines notices and where input is routed. */
 
 export interface LifeView {
   badge: 'peek' | 'control' | 'readonly' | 'none';
@@ -14,11 +11,11 @@ export interface LifeView {
   input: 'promote' | 'send' | 'outbox' | 'disabled';
   spinner: boolean;
   dim: boolean;
-  /** state chip key (for tab dots) */
+  /** State identifier for consumer status indicators. */
   chip: string;
 }
 
-/** `gone` reasons (protocol §3.3) in words. */
+/** Human-readable reasons for a gone pane. */
 const GONE_WHY: Partial<Record<string, string>> = { closed: 'was closed in herdr', exited: 'exited (its process ended)', rekeyed: 'moved (new pane id)' };
 
 /**
@@ -35,7 +32,7 @@ export function lifeView(ts: { state: string; mode?: string; writer?: boolean; d
     case 'released':
       if (ts?.mode === 'control') {
         if (ts.writer) return { ...base, badge: 'control', input: 'send', chip: 'control' };
-        return { ...base, badge: 'peek', input: 'outbox', banner: 'Another HQ window is typing.', actions: [{ label: 'Take the keyboard', action: 'writer' }], chip: 'peek' };
+        return { ...base, badge: 'peek', input: 'outbox', banner: 'Another window is typing.', actions: [{ label: 'Take the keyboard', action: 'writer' }], chip: 'peek' };
       }
       return { ...base, badge: 'peek', input: 'promote', chip: 'peek' };
     case 'busy':
@@ -43,8 +40,7 @@ export function lifeView(ts: { state: string; mode?: string; writer?: boolean; d
     case 'taken':
       return { ...base, badge: 'peek', banner: 'Another client took control.', actions: [{ label: 'Reclaim', action: 'takeover' }, { label: 'Stay in Peek', action: 'peek' }] };
     case 'gone':
-      // [UI fix r1, playtest "Pane closed (closed)."] say what happened, in words
-      return { ...base, dim: true, banner: `${ctx.name || 'This pane'} ${GONE_WHY[ts?.detail ?? ''] ?? `closed${ts?.detail ? ` (${ts.detail})` : ''}`}.`, actions: [{ label: 'Close tab', action: 'closeTab' }], input: 'disabled' };
+      return { ...base, dim: true, banner: `${ctx.name || 'This pane'} ${GONE_WHY[ts?.detail ?? ''] ?? `closed${ts?.detail ? ` (${ts.detail})` : ''}`}.`, actions: [{ label: 'Close', action: 'close' }], input: 'disabled' };
     case 'offline':
       return { ...base, dim: true, banner: 'herdr is offline. Waiting to reconnect…' };
     case 'reconnecting':
@@ -59,7 +55,7 @@ export function lifeView(ts: { state: string; mode?: string; writer?: boolean; d
 }
 
 /**
- * Peek-mode key classification (§8.4): which keys promote, which are swallowed.
+ * Peek-mode key classification: which keys promote and which are swallowed.
  */
 export function peekKey(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey' | 'code'>): 'promote' | 'esc' | 'ctrlc' | 'swallow' {
   if (e.key === 'Escape') return 'esc';

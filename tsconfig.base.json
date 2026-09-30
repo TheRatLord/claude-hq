@@ -1,5 +1,5 @@
 {
-  // Shared compiler options. Every project extends this; none of them emits (`tsc --noEmit`) except tsconfig.preload.json.
+  // Shared compiler options. Projects are checked without emitting.
   // Node 24 strips types natively, so sources must stay erasable: no enums, namespaces, parameter properties, `import x = require()`.
   "compilerOptions": {
     "target": "ES2023",

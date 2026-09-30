@@ -1,16 +1,12 @@
 // @pure
 /**
- * Soft actor collision (§6.10 "agents are soft: push-through after 0.3 s; the agent plays `bump`").
+ * Soft actor collision: circular actors initially push the player out radially and remove inward velocity.
+ * After `pushThroughS` of contact, passage is allowed at `throughSpeedMul` speed if the far side is free.
+ * A stopped player inside a passable actor is eased back out by `squeezeOut`.
+ * Leaving contact beyond `releaseGap` re-arms the collider.
  *
- * Each actor is a circle of `actorRadius` around its feet. On contact the player's circle is pushed back out
- * radially (so walking into a Clawd slides you around it, and a Clawd walking into you nudges you), and the contact
- * timer starts. Once the player has been in contact with that actor for `pushThroughS`, the collider lets go and the
- * player squeezes through at `throughSpeedMul` speed until clear (only when the far side is free of walls; a player
- * who stops halfway is eased back out by `squeezeOut`, so the camera never rests inside a character).
- * Leaving contact (gap > `releaseGap`) re-arms it.
- *
- * `softStep` mutates `pos`/`vel` and returns the contact transitions of this frame (the controller emits them as
- * `player.bump` for the actor to react to) plus the speed multiplier for the next frame's walk target. Owner: PLY.
+ * `softStep` mutates position, velocity, and persistent contacts, returning contact transitions and
+ * the speed multiplier for the next movement target. It does not own actors, controllers, or events.
  */
 
 export interface SoftCollider { id: string; pos: { x: number; y: number; z: number }; radius?: number }
@@ -33,7 +29,7 @@ export function softStep(
   let slow = 1;
   for (const c of colliders) {
     const cp = c?.pos;
-    if (!cp || Math.abs(cp.y - pos.y) > o.maxDy) continue; // other floor (mezzanine), or a flying debug pose
+    if (!cp || Math.abs(cp.y - pos.y) > o.maxDy) continue; // Vertically separated actors do not collide.
     const R = o.radius + (c.radius ?? o.actorRadius);
     let dx = pos.x - cp.x, dz = pos.z - cp.z;
     let d = Math.hypot(dx, dz);

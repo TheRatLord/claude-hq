@@ -1,11 +1,8 @@
 /**
- * Tofu guard for the drawer xterm (ART §9.3). Claude Code draws its UI with glyphs from the Misc-Technical block
- * (⎿ ⏺ ⏵ ⏸ ⎯ ⏎) that most monospace fonts, and often no installed font at all, cover; xterm then paints a ▯.
- * The font stack (styles.ts TERM_FONT) appends system symbol fonts; whatever still has no glyph on this machine is swapped
- * for a box-drawing / geometric look-alike that the stack does cover. Every pair is a 3-byte UTF-8 sequence, so
- * the swap happens in place on the binary `term.data` bytes (no decode/encode round trip). Owner: UI.
+ * Missing-glyph guard for terminal output. Unsupported symbols are replaced with geometric look-alikes.
+ * Three-byte replacements are mapped directly in binary term.data; unsupported pictographs retain two-cell width.
  */
-import { TERM_FONT } from '../styles.ts';
+import { TERM_FONT } from './styles.ts';
 
 /** source → candidate replacements (first one that renders wins). */
 export const GLYPH_FALLBACKS: Readonly<Record<string, readonly string[]>> = Object.freeze({
@@ -40,9 +37,7 @@ export function buildGlyphTable(has: (ch: string) => boolean): Map<number, Uint8
   return table;
 }
 
-/** [UI fix r3, playtest "'Hi! 👋' draws as 'Hi! □'"] a pictograph (U+1F000–U+1FAFF, 4-byte UTF-8, 2 cells wide) that no
- *  font in the stack — including the system colour-emoji fonts TERM_FONT now lists — renders becomes this 2-cell,
- *  4-byte stand-in ('◆' + space), so the grid never shifts and no tofu box shows. */
+/** A missing four-byte, two-cell pictograph becomes '◆ ' without shifting the terminal grid. */
 export const EMOJI_STANDIN = new Uint8Array([0xe2, 0x97, 0x86, 0x20]);
 
 /**
@@ -105,7 +100,7 @@ function canvasHas(): (ch: string) => boolean {
   return (ch) => { const p = px(ch); return !blank(p) && !tofu.some((t) => same(p, t)); };
 }
 
-/** per-code-point emoji coverage, probed once each on this machine (shared by every drawer). */
+/** Per-code-point emoji coverage, probed once and shared by terminal instances. */
 let emojiProbe: ((ch: string) => boolean) | null = null;
 const emojiSeen = new Map<number, boolean>();
 function emojiHas(cp: number) {
@@ -129,7 +124,7 @@ export function createGlyphMapper() {
   return glyphMapper(shared, emojiProbe ? emojiHas : null);
 }
 
-/** String form (history overlay, copy-recent never: copies keep the original characters). */
+/** String form for the history overlay. Clipboard copies retain the original characters. */
 export function mapGlyphText(text: string) {
   createGlyphMapper();
   const dec = new TextDecoder();
@@ -137,11 +132,4 @@ export function mapGlyphText(text: string) {
   if (!shared?.size) return out;
   for (const [k, v] of shared) out = out.replaceAll(dec.decode(new Uint8Array([k >> 16, (k >> 8) & 255, k & 255])), dec.decode(v));
   return out;
-}
-
-/** Debug / tests: the characters swapped on this machine. */
-export function glyphSwaps(): [string, string][] {
-  createGlyphMapper();
-  const dec = new TextDecoder();
-  return [...(shared ?? new Map()).entries()].map(([k, v]) => [dec.decode(new Uint8Array([k >> 16, (k >> 8) & 255, k & 255])), dec.decode(v)]);
 }

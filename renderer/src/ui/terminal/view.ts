@@ -1,7 +1,6 @@
 /**
- * One drawer tab's terminal (§8.4–8.6): an xterm at exactly the child's grid, letterboxed in the drawer, fed by
- * binary `term.data`, with the Peek → Control promotion, the outbox, clipboard paths and the local history overlay.
- * Owner: UI.
+ * Standalone xterm viewer at the child's exact grid, with input gating, Peek → Control promotion,
+ * clipboard support, backpressure and a local history overlay. The consumer owns network state and host UI.
  */
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -11,23 +10,27 @@ import { h } from '../dom.ts';
 import type { ClientMsg, Entity, ReplyMsg, TermMode, TermStateMsg, ToastLevel } from '../../../../shared/protocol.ts';
 import type { Settings } from '../../core/settings.ts';
 import type { Platform } from '../platform.ts';
-import { XTERM } from '../../../../shared/palette.ts';
-import { keys as kitKeys } from '../kit/index.ts';
-import { TERM_FONT as MONO } from '../styles.ts';
+import { TERM_FONT as MONO, injectTerminalStyles } from './styles.ts';
 import { createInputPipe, PASTE_HARD_CAP } from './input.ts';
 import { lifeView, peekKey, type LifeView } from './lifecycle.ts';
 import { gridFor, letterbox, hardMinPx, type Grid } from './fit.ts';
 
 import { copyText, readClipboard, setPrimary, getPrimary } from './clipboard.ts';
-import { resolveKey } from '../keymap.ts';
+import { terminalKey, type TerminalKeyAction } from './keys.ts';
 import { createGlyphMapper, mapGlyphText } from './glyphs.ts';
 
-/** A plain Enter this soon after an Enter opened the terminal is swallowed (double-tap guard, M3.5). */
+/** Swallow a double-tapped Enter immediately after an Enter opened the terminal. */
 export const ENTER_GUARD_MS = 250;
-/** ART §9.3 xterm theme (matches the in-world monitors); the values live in shared/palette.ts XTERM (no hex in ui/**). */
-export const XTERM_THEME = XTERM;
+/** Readable neutral terminal defaults, independent of the surrounding application. */
+export const XTERM_THEME = {
+  background: '#181818', foreground: '#e5e5e5', cursor: '#e5e5e5', cursorAccent: '#181818',
+  selectionBackground: '#555555', black: '#242424', red: '#e06c75', green: '#98c379',
+  yellow: '#e5c07b', blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#dcdcdc',
+  brightBlack: '#767676', brightRed: '#f099a0', brightGreen: '#b5d99c', brightYellow: '#f2d49a',
+  brightBlue: '#91c9f5', brightMagenta: '#d9a1e7', brightCyan: '#8dd4db', brightWhite: '#ffffff',
+};
 export const LINE_HEIGHT = 1.15;
-/** .hq-thost padding (terminal/styles.ts: 10 8 8 12): the glass margin around the grid, in the fit math */
+/** Host padding (terminal/styles.ts: 10 8 8 12), accounted for in fit math. */
 const PAD_W = 20, PAD_H = 18;
 
 // ---- cell metrics (canvas estimate, calibrated against xterm's real render dimensions) ----
@@ -45,12 +48,7 @@ interface XtermInternals {
 /** The one cast onto xterm's private `_core` (a real API boundary: the letterbox must match xterm's actual cell size). */
 const internals = (t: Terminal) => t as Terminal & XtermInternals;
 
-/**
- * [drawer fix r1] the char height the way xterm measures it (a DOM span of 'W's at line-height normal, ceil'd in device
- * px); the cell height is then floor(charHeight × lineHeight). The canvas font box differed from it by a pixel at some
- * sizes, and a ratio calibrated at 14 px then under-estimated 11 px rows (the observe cap asked for 46 rows where 42
- * fit, so the frame panned).
- */
+/** Measure xterm's DOM font height, rounded in device pixels before applying line height. */
 const charH = new Map<number, number>();
 function domCharH(px: number): number | null {
   let v = charH.get(px);
@@ -75,12 +73,7 @@ function estimate(px: number) {
   const asc = m.fontBoundingBoxAscent ?? px * 0.8, desc = m.fontBoundingBoxDescent ?? px * 0.25;
   return { w: m.width, h: Math.ceil(asc + desc) * LINE_HEIGHT };
 }
-/**
- * [UI fix r2] xterm snaps a cell's width to whole device pixels (floor of the glyph advance): 13 px → 7, 14 px → 8
- * here. A plain ratio calibrated at one size under-estimated the next (7.54 for a real 8 at 14 px), so every fit to
- * "the drawer at 14 px" overflowed and drew at 13 ('13px (scaled from 14)', a hired shell). Snap first, then calibrate
- * the small remainder.
- */
+/** xterm floors glyph advances to whole device pixels; snap before calibrating the remainder. */
 const snapW = (w: number) => { const r = (typeof devicePixelRatio === 'number' && devicePixelRatio > 0) ? devicePixelRatio : 1; return Math.max(1, Math.floor(w * r + 1e-3)) / r; };
 /** CSS px cell size at a font size. */
 export function cellSize(px: number) {
@@ -93,29 +86,27 @@ function calibrate(term: Terminal) {
   try { d = internals(term)._core?._renderService?.dimensions?.css?.cell; } catch { return; }
   if (!d || !d.width || !d.height) return;
   const e = estimate(term.options.fontSize ?? 14);
-  // the cell height is snapped to whole device pixels too (floor of char height × lineHeight), [drawer fix r1]:
-  // an unsnapped estimate over-counted at small sizes and the observe cap lost a row ('Cropped' by one line)
+  // xterm also floors cell height to whole device pixels.
   calib = { w: d.width / snapW(e.w), h: d.height / snapW(e.h) };
 }
 
 export interface ViewHooks {
   /** current entity (null when gone) */
   entity: () => Entity | null;
-  /** the pane grid the drawer can vouch for (fit.paneGridSeen) */
+  /** Actual pane grid when it differs from the observed child grid. */
   paneGrid?: () => Grid | null;
-  /** Esc in Peek / Leader tap */
-  toWorld: () => void;
+  /** Escape in Peek returns focus to the consumer's surrounding UI. */
+  leave: () => void;
   toast: (level: ToastLevel, text: string) => void;
   confirm: (text: string) => Promise<boolean>;
-  /** badge/state/outbox changed → drawer re-renders its header */
+  /** State, notices, history or outbox changed. */
   changed: () => void;
-  /** terminal_limit → drawer evicts its LRU tab */
+  /** Release another viewer when the server reports terminal_limit. */
   evict: () => void;
-  /** user input reached the pane (auto-ack, unread clear) */
+  /** User input reached the pane. */
   typed: () => void;
-  /** xterm-scope table actions (palette, font…) */
-  keyAction: (action: string) => void;
-  active: () => boolean;
+  /** Browser-local font actions; the consumer applies its settings and calls setFont(). */
+  keyAction: (action: Exclude<TerminalKeyAction, 'copy' | 'pasteNative'>) => void;
 }
 
 /** The slice of the net store a terminal view drives. */
@@ -129,9 +120,9 @@ export interface TermNet {
 /** The latest `term.state` (or the local stand-in while promoting / after a failed open). */
 export type TermInfo = Pick<TermStateMsg, 'state'> & Partial<Omit<TermStateMsg, 't' | 'id' | 'state'>>;
 
-/** A notice post-it button. */
+/** A notice button. */
 export interface ChipAction { label: string; fn: () => void; key?: string | string[]; primary?: boolean; title?: string }
-/** A notice (strip post-it) or a flash (footer text): see `chip()`. */
+/** Persistent notices or short transient confirmations. */
 export interface ChipSpec { kind?: string; text: string; sub?: string; key?: string | string[]; title?: string; ttl?: number; actions?: ChipAction[] }
 interface ChipEl extends HTMLDivElement { _sig: string; _acts: ChipAction[] }
 
@@ -143,9 +134,9 @@ const replyGrid = (r: ReplyMsg): Grid | null => { const cols = num(r.cols), rows
 
 export interface TermView {
   el: HTMLDivElement;
-  /** this tab's notice post-its (drawer.ts mounts the active tab's in the footer's notice strip) */
+  /** Mount separately beside the terminal; kept out of its glyph grid. */
   notices: HTMLDivElement;
-  /** a short confirmation for the footer ('Copied', a Peek hint), or null */
+  /** Short transient confirmation; render from the changed hook if desired. */
   readonly flash: string | null;
   term: Terminal;
   readonly id: string;
@@ -160,9 +151,9 @@ export interface TermView {
   readonly fontPx: number;
   /** True when the grid does not fit even at the minimum scale and the frame pans (Cropped). */
   readonly panning: boolean;
-  onCloseTab: (() => void) | null;
+  onClose: (() => void) | null;
   onContextMenu: ((x: number, y: number) => void) | null;
-  /** Mount into the DOM (first activation) and open the server viewer. */
+  /** Mount into the DOM and initialize xterm; call open() to open the server viewer. */
   attach(parent: HTMLElement): void;
   /** `term.open` (also after WS reconnect / drop / demotion); always observe first. */
   open(): Promise<ReplyMsg>;
@@ -187,29 +178,27 @@ export interface TermView {
   pasteText(text: string): Promise<void>;
   pasteFromClipboard(): Promise<void>;
   copySelection(): void;
-  /** Literal bytes from Leader (`;` letter, Leader Leader). */
+  /** Send explicitly supplied terminal input through normal lifecycle gating. */
   sendLiteral(data: string): void;
   sendOutbox(): Promise<void>;
   discardOutbox(): void;
-  /** Rekey: the same view continues on the new pane id (re-open in the same mode, §8.10). */
+  /** Continue this view on a new pane id, reopening its viewer. */
   rekey(newId: string): void;
   /** Close the server viewer and dispose everything. */
   dispose(): void;
   grid(): Grid;
-  /** Drawer-owned chips (resize policy notices). */
+  /** Consumer-owned notices, such as fit/resize hints. */
   chip(key: string, spec: ChipSpec | null): void;
 }
 
 export function createTermView(o: { id: string; net: TermNet; settings: Settings; platform: Platform; hooks: ViewHooks; grid: () => Grid | null; observeGrid?: () => Grid | null }): TermView {
   const { net, settings, platform, hooks } = o;
+  injectTerminalStyles();
   let id = o.id;
   const fontPx = () => settings.get('termFontPx') || 14;
 
   // ---- DOM ----
-  // ui-kit.md §5.3: the xterm sits alone in the CRT glass. Nothing is drawn over its glyphs: lifecycle banners, the
-  // outbox, the Ctrl+C confirm and fit/resize hints are post-its in the drawer's notice strip (`notices`, one at a
-  // time, mounted by drawer.ts in the footer rail); short confirmations ('Copied', Peek hints) are `flash` text the
-  // drawer shows beside the mode word; history mode swaps the header's mode switch for a butter History plaque.
+  // Notices are a separate element so they never cover the terminal's glyph grid.
   const mount = h('div.frame');
   const notices = h('div.hq-notices', { role: 'status' });
   const histHost = h('div.hq-hist');
@@ -260,11 +249,11 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
   };
   let offData = net.onTermData(id, onBytes);
 
-  // ---- notices (post-its in the strip: banner, outbox, ctrl-c, resize/fit…) and flashes (footer text) ----
-  /** strip order: the first one present is the one shown (one at a time, ui-kit.md §5.3) */
+  // ---- notices and transient confirmations ----
+  /** Highest-priority notice first; the stylesheet shows one at a time. */
   const NOTICE_RANK = ['banner', 'ctrlc', 'outbox', 'paste', 'resize', 'crop', 'fit'];
   const rank = (k: string | undefined) => { const i = NOTICE_RANK.indexOf(k ?? ''); return i < 0 ? NOTICE_RANK.length : i; };
-  /** transient confirmations: footer flash text, not a post-it */
+  /** Transient confirmations are exposed as flash text, not persistent notices. */
   const FLASH_KEYS = new Set(['hint', 'copied', 'promote', 'peek']);
   let flash: string | null = null;
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -277,20 +266,16 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
   function chip(key: string, spec: ChipSpec | null) {
     if (FLASH_KEYS.has(key)) { if (spec) setFlash(spec.text, spec.ttl ?? 1600); else if (key !== 'peek') setFlash(null); return; }
     const old = chips.get(key);
-    // [UI fix r2] the same notice re-sent at 10 Hz keeps its element (no re-created post-it / replayed entry animation)
+    // Keep an unchanged notice element while refreshing its action callbacks.
     const sig = spec ? `${spec.kind}|${spec.text}|${spec.sub ?? ''}|${spec.key ?? ''}|${spec.title ?? ''}|${(spec.actions ?? []).map((a) => `${a.label}/${a.key ?? ''}/${a.primary ? 1 : 0}`).join(',')}` : '';
     if (old && spec && !spec.ttl && old._sig === sig) { old._acts = spec.actions ?? []; return; }
     if (old) { old.remove(); chips.delete(key); }
     if (!spec) { hooks.changed(); return; }
-    // [drawer fix r1, reviewer "the butter slab with underlined web links is the loudest thing in the drawer"] a notice
-    // is a LEDGER LINE on the board (ui-kit.md §5.3 notice strip): a small post-it tab, the text, a quieter
-    // sub-clause, then kit buttons (key tile on the left), never underlined links.
     const c: ChipEl = Object.assign(h(`div.hq-notice${spec.kind ? `.${spec.kind}` : ''}`, { 'data-key': key, title: spec.title ?? null },
-      h('span.k-note.mk', { 'aria-hidden': 'true' }),
       h('span.tx', null, spec.text, spec.sub ? h('span.sub', { text: ` · ${spec.sub}` }) : null),
-      spec.key ? kitKeys(spec.key, { small: true }) : null,
-      ...(spec.actions ?? []).map((a, i) => h(`button.k-btn.sm${a.primary ? '.primary' : ''}${a.key ? '' : '.nokey'}`, { type: 'button', title: a.title ?? null, onclick: (e: Event) => { e.stopPropagation(); (c._acts[i] ?? a).fn(); term.focus(); } },
-        a.key ? kitKeys(a.key, { small: true }) : null, a.label))), { _sig: sig, _acts: spec.actions ?? [] });
+      spec.key ? h('span.term-keys', null, ...[spec.key].flat().map((key) => h('kbd', null, key))) : null,
+      ...(spec.actions ?? []).map((a, i) => h(`button${a.primary ? '.primary' : ''}`, { type: 'button', title: a.title ?? null, onclick: (e: Event) => { e.stopPropagation(); (c._acts[i] ?? a).fn(); term.focus(); } },
+        a.key ? h('span.term-keys', null, ...[a.key].flat().map((key) => h('kbd', null, key))) : null, a.label))), { _sig: sig, _acts: spec.actions ?? [] });
     chips.set(key, c);
     const after = [...notices.children].find((n) => rank(n instanceof HTMLElement ? n.dataset.key : undefined) > rank(key));
     notices.insertBefore(c, after ?? null);
@@ -310,13 +295,13 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     else hooks.toast('warn', 'This terminal cannot take input right now.');
   }
 
-  /** Flash a Peek hint beside the footer's mode word. */
+  /** Flash a short Peek hint. */
   function hint(text: string) { setFlash(text); }
 
   // ---- lifecycle ----
   function applyLife() {
     const e = hooks.entity();
-    if (e?.name) lastName = e.name; // [UI fix r1] a closed pane keeps its name in the banner
+    if (e?.name) lastName = e.name; // Preserve the name after a pane disappears.
     life = lifeView(ts, { name: e?.name ?? lastName });
     el.classList.toggle('dim', life.dim);
     const bsig = life.banner ? `${life.banner}|${life.actions.map((a) => a.action).join(',')}` : null;
@@ -332,11 +317,11 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     if (a === 'takeover') void promote({ takeover: true });
     else if (a === 'peek') { bannerDismissed = sig; chip('banner', null); }
     else if (a === 'writer') void net.call({ t: 'term.writer', id }).then((r) => { if (!r.ok) hooks.toast('warn', `Could not take the keyboard: ${r.error}`); });
-    else if (a === 'closeTab') view.onCloseTab?.();
+    else if (a === 'close') view.onClose?.();
     else if (a === 'retry') void view.open();
   }
 
-  // ---- promotion (§4.7) ----
+  // ---- promotion ----
   async function promote({ takeover = false }: { takeover?: boolean } = {}): Promise<ReplyMsg> {
     if (promoting) return promoting;
     pipe.hold();
@@ -360,7 +345,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     return promoting;
   }
 
-  /** Explicit demotion (Leader I in Control, background demotion): release control, re-observe. */
+  /** Explicit demotion releases control and reopens in observe mode. */
   async function demote(): Promise<void> {
     if (ts?.mode !== 'control') return;
     net.send({ t: 'term.close', id });
@@ -432,7 +417,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     ev.preventDefault();
     view.onContextMenu?.(ev.clientX, ev.clientY);
   });
-  // Wheel-up (when the app has not enabled mouse tracking) opens the local history overlay (§8.6).
+  // Wheel-up opens local history unless the child has enabled mouse tracking.
   el.addEventListener('wheel', (ev) => {
     if (hist?.open) return;
     if (ev.deltaY < 0 && term.modes.mouseTrackingMode === 'none') {
@@ -442,37 +427,32 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     }
   }, { capture: true, passive: false });
 
-  // ---- keyboard (§8.2, §8.4) ----
+  // ---- keyboard ----
   term.attachCustomKeyEventHandler((ev) => {
     if (ev.type !== 'keydown') return !(ev.type === 'keypress' && swallowPress);
     swallowPress = false;
-    // M3.5 carryover: the Enter that opened this terminal is often double-tapped (Tab, Enter, Enter): a second plain
-    // Enter within ENTER_GUARD_MS of the open is swallowed instead of submitting the pane's input line
+    // Do not submit input because the Enter that opened this viewer was double-tapped.
     if (ev.key === 'Enter' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && performance.now() - enterOpenAt < ENTER_GUARD_MS) {
       ev.preventDefault();
       swallowPress = true;
       enterOpenAt = -1e9;
       return false;
     }
-    // Leader is handled in the window capture handler (ui/keys.ts) and never reaches here.
-    const tbl = resolveKey('xterm', ev, platform.mac);
-    if (tbl) {
+    const action = terminalKey(ev, platform.mac);
+    if (action) {
+      if (action === 'pasteNative') return false; // Native paste is captured above; do not preventDefault.
       ev.preventDefault();
-      if (tbl.action === 'copy') {
+      if (action === 'copy') {
         if (term.hasSelection()) void copyText(term.getSelection()).then((ok) => chip('copied', { kind: 'peek', text: ok ? 'Copied' : 'Copy failed', ttl: 900 }));
         return false;
       }
-      if (tbl.action === 'pasteNative') {
-        // Let the browser run its native paste → our capture 'paste' handler. Don't preventDefault.
-        return false;
-      }
-      hooks.keyAction(tbl.action);
+      hooks.keyAction(action);
       return false;
     }
     if (platform.mac && ev.metaKey) return false; // Cmd chords never reach the pane
     if (life.input === 'promote') {
       const k = peekKey(ev);
-      if (k === 'esc') { ev.preventDefault(); hooks.toWorld(); return false; }
+      if (k === 'esc') { ev.preventDefault(); hooks.leave(); return false; }
       if (k === 'ctrlc') {
         ev.preventDefault();
         const e = hooks.entity();
@@ -490,7 +470,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
       if (k === 'swallow') {
         ev.preventDefault();
         swallowPress = true;
-        hint('Peek: type to take control · Esc to the world');
+        hint('Peek: type to take control · Esc to leave');
         return false;
       }
       lastKeyAt = performance.now();
@@ -503,7 +483,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
   let swallowPress = false;
   let enterOpenAt = -1e9;
 
-  // ---- history overlay (§8.6) ----
+  // ---- history overlay ----
   async function openHistory(): Promise<void> {
     if (!hist) {
       const t = new Terminal({ cols: term.cols, rows: term.rows, scrollback: 5000, fontFamily: MONO, fontSize: term.options.fontSize, lineHeight: LINE_HEIGHT, theme: XTERM_THEME, disableStdin: true, cursorBlink: false, allowProposedApi: true });
@@ -570,12 +550,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     if (cols && rows && (cols !== term.cols || rows !== term.rows)) term.resize(cols, rows);
     relayout();
   }
-  /**
-   * [drawer fix r2, reviewer "'pane ‹' cut at the glass's right edge"] the edge tag takes the longest wording that fits
-   * the glass right of the line ('pane edge · 100×50' → '100×50'), else none (the footer notice names the size anyway).
-   * A cropped view says so instead of calling its edge the pane's.
-   * `room` = px between the grid's right edge and the glass's.
-   */
+  /** Label the pane's right edge when spare host space would otherwise look like missing output. */
   function edgeLabel(room: number) {
     const lr = hooks.paneGrid?.() ?? hooks.entity?.()?.layoutRect;
     const crop = lr && (lr.cols > term.cols || lr.rows > term.rows);
@@ -602,11 +577,8 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     mount.style.width = `${Math.ceil(term.cols * c.w)}px`;
     mount.style.height = `${Math.ceil(term.rows * c.h)}px`;
     el.classList.toggle('pan', lb.pan);
-    // [m3 reviewer idea] a grid much narrower than the glass (a 60-col pane in a 120-col drawer) wraps at half width:
-    // a faint edge line marks where the pane ends, so the wrap reads as the pane's width and not as broken output
+    // Mark a grid narrower than its host so line wrapping remains visibly tied to the pane's width.
     el.classList.toggle('edge', !lb.pan && boxW - term.cols * c.w > 6 * c.w);
-    // [drawer fix r1] …and a small dimension tag at its top names it ('pane edge · 100×50'), so the empty glass reads as
-    // the pane's own size (the footer notice carries the fit)
     mount.dataset.dim = edgeLabel(boxW - term.cols * c.w);
     if (hist?.open) { hist.mount.style.width = mount.style.width; hist.mount.style.height = mount.style.height; }
     // xterm snaps cells to device pixels, so the real cell at a new font size can be wider than the calibrated
@@ -646,12 +618,8 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     repaintRaf = requestAnimationFrame(() => { repaintRaf = 0; if (!closed && el.isConnected) { try { term.refresh(0, term.rows - 1); } catch { /* disposed */ } } });
   }
 
-  // [drawer fix r2, reviewer "half a row cut off at the top of the glass"] the WebGL addon sizes its canvas bitmap from
-  // a device-pixel-content-box ResizeObserver, meant to absorb sub-pixel rounding. Where that box reports CSS px at a
-  // devicePixelRatio > 1 (Chromium's emulated scale factor; some zoom paths) the bitmap is half its device size and GL
-  // draws the grid 2× from the bottom-left: the bottom half of the rows, the top one cut through the middle. Our observer
-  // runs after the addon's in each delivery and snaps a bitmap that is off by more than rounding back to the renderer's
-  // device grid (an exact multiple of the cell), so only whole rows are ever drawn.
+  // Some zoom paths report CSS pixels for a device-pixel ResizeObserver. Keep the WebGL bitmap at its
+  // renderer's device grid so the top and bottom rows cannot be cut through.
   let glGuard: ResizeObserver | null = null;
   function glCanvas(): HTMLCanvasElement | null {
     const scr = internals(term)._core?.screenElement;
@@ -676,8 +644,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     glGuard = new ResizeObserver(() => { fixGlCanvas(); });
     glGuard.observe(c);
   }
-  // A cropped grid pans (overflow: auto); the glass scrolls in whole rows so its top edge never cuts a row in half
-  // (a wheel/trackpad or the browser keeping the focused cursor in view both land on arbitrary pixels).
+  // Snap panning to whole rows so a wheel/trackpad cannot leave a half-visible top row.
   el.addEventListener('scroll', () => {
     if (!el.classList.contains('pan')) { if (el.scrollTop) el.scrollTop = 0; return; }
     const d = cellDims();
@@ -704,7 +671,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     get hasWebgl() { return !!webgl; },
     get fontPx() { return term.options.fontSize ?? fontPx(); },
     get panning() { return el.classList.contains('pan'); },
-    onCloseTab: null,
+    onClose: null,
     onContextMenu: null,
 
     attach(parent) {
@@ -715,9 +682,11 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
         opened = true;
         calibrate(term);
       }
+      applyLife();
+      relayout();
     },
     async open() {
-      // observe child grid: max(drawer, layoutRect) so Peek never crops a wide pane (§4.7, fit.observeGrid)
+      // The consumer supplies the observe grid separately when it differs from the control grid.
       const g = (o.observeGrid ?? o.grid)() ?? { cols: term.cols, rows: term.rows };
       pipe.reset(id);
       paused = false;
@@ -749,11 +718,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     hasFocus() { return el.contains(document.activeElement); },
     relayout,
     setFont() { if (hist) hist.term.options.fontSize = term.options.fontSize; relayout(); },
-    /**
-     * Show / hide (tab switch). `defer`: the fit (letterbox → font size → xterm re-measure / WebGL atlas rebuild, ≈ 180 ms
-     * on hqtest when the drawer width changed) runs on the next frame, after the caller focused the xterm; the key →
-     * focus path stays a few ms (m2-r3 p2 'Leader L → Enter' 189.8 ms, show = 180.7 ms of it).
-     */
+    /** Show/hide; defer expensive fit work until after the consumer's focus path. */
     show(on, o = {}) {
       el.classList.toggle('active', on);
       cancelAnimationFrame(showRaf);
@@ -810,6 +775,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
       if (closed) return;
       closed = true;
       cancelAnimationFrame(verifyRaf);
+      cancelAnimationFrame(showRaf);
       cancelAnimationFrame(repaintRaf);
       clearTimeout(flashTimer);
       net.send({ t: 'term.close', id });
@@ -818,6 +784,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
       hist?.term.dispose();
       term.dispose();
       el.remove();
+      notices.remove();
     },
     grid() { return { cols: term.cols, rows: term.rows }; },
     chip(key, spec) { if (!!spec !== chips.has(key) || (spec && chips.get(key)?.firstChild?.textContent !== spec.text)) chip(key, spec); },
@@ -826,9 +793,9 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
 }
 
 /**
- * Best grid for a drawer body box at the user's font size (the settled-fit measure).
+ * Best grid for a terminal host box at the user's font size.
  */
-export function drawerGrid(box: HTMLElement, px: number): Grid | null {
+export function terminalGrid(box: HTMLElement, px: number): Grid | null {
   const c = cellSize(px);
   const w = box.clientWidth - PAD_W, hh = box.clientHeight - PAD_H;
   if (w <= 0 || hh <= 0) return null;

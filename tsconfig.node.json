@@ -1,7 +1,7 @@
 {
-  // shared/ server/ scripts/ electron/ (main) + vite.config.ts: run directly by node / electron (type stripping).
+  // Backend, shared wire contracts, and Node tooling.
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2023"], "types": ["node"], "moduleResolution": "Bundler" },
-  "include": ["shared", "server", "scripts", "electron", "vite.config.ts"],
-  "exclude": ["**/*.test.ts", "server/test", "electron/preload.cts", "node_modules"]
+  "include": ["shared", "server", "scripts"],
+  "exclude": ["**/*.test.ts", "server/test", "node_modules"]
 }
