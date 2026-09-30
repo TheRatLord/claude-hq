@@ -3,7 +3,7 @@
  * Claude HQ wire protocol (DESIGN §3, §4.0, §4.11). The single contract between server/ and renderer/.
  * Owner: LEAD. Pure: no three, no node built-ins (TextEncoder/TextDecoder are web-standard globals).
  *
- * Changing anything here = editing DESIGN.md in the same commit. Add optional fields; never break shapes.
+ * Add optional fields; never break shapes.
  */
 import { isRecord } from './guards.ts';
 
