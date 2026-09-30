@@ -1,0 +1,331 @@
+// @pure
+/**
+ * The valley model: reduces a ValleySource (entities, workspaces, stats, events) to a ValleyState the presentation
+ * reads. Pure and clock-injected: node tests drive it with plain objects, the game drives it from the store.
+ */
+import type { Entity, EventMsg, Stats, Workspace } from '../../../../shared/protocol.ts';
+import { hash32 } from '../../../../shared/identity.ts';
+import { SITES } from '../world/map.ts';
+import { createJobSmoother, rawJob, JOB_BUSY, shortDetail } from './jobs.ts';
+import type { JobSmoother } from './jobs.ts';
+import { skyAt } from './sky.ts';
+import type { SkyOverrides } from './sky.ts';
+import { PLOT_KINDS } from './types.ts';
+import type {
+  FarmerView, Gauges, HelperView, Job, Letter, LetterKind, LinkState, Mood, PlotKind, PlotStage, PlotView, ValleyEvent, ValleyState,
+} from './types.ts';
+
+/** Where the model reads from. The store adapter lives in main; tests and the gallery use plain objects. */
+export interface ValleySource {
+  entities(): Iterable<Entity>;
+  workspaces(): readonly Workspace[];
+  stats(): Stats | null;
+  /** server-clock ms */
+  now(): number;
+  link(): LinkState;
+  demo(): boolean;
+}
+
+export const TILL_MS = 6_000;
+export const HARVEST_MS = 6_000;
+/** matches server/world/slots.ts SLOT_FREE_MS: the slot (and so the site) is reclaimable after this */
+export const FALLOW_MS = 5 * 60_000;
+const THRIVE_MS = 3 * 60_000;
+const REST_MS = 60 * 60_000;
+const LETTERS_MAX = 80;
+const HISTORY = 120;
+
+interface PlotRec { view: PlotView; seen: boolean; growthLines: number }
+interface FarmerRec { smoother: JobSmoother; since: number }
+
+export interface Valley {
+  readonly state: ValleyState;
+  /** rebuild views from the source (call a few times a second, and on store changes) */
+  tick(): void;
+  /** feed a wire event (store `event` topic) */
+  ingest(e: EventMsg): void;
+  /** subscribe to one-shot reactions */
+  on(fn: (e: ValleyEvent) => void): () => void;
+  markRead(letterId: string): void;
+  markAllRead(): void;
+  /** debug: pin the hour / weather (null clears) */
+  setSky(o: SkyOverrides): void;
+  /** for the local clock (sky); defaults to Date.now */
+  wallNow?: () => number;
+}
+
+export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNow?: () => number } = {}): Valley {
+  const listeners = new Set<(e: ValleyEvent) => void>();
+  const emit = (e: ValleyEvent) => { for (const f of [...listeners]) { try { f(e); } catch (err) { console.error('[valley] listener threw', err); } } };
+  const farmerRecs = new Map<string, FarmerRec>();
+  const plotRecs = new Map<string, PlotRec>();
+  const cpuHist: number[] = [], memHist: number[] = [];
+  let lastStatsAt = 0;
+  let skyO: SkyOverrides = {};
+  let primed = false;
+  let liveTicks = 0;
+  let commitDay = new Date(wallNow()).toDateString();
+  let letterSeq = 0;
+  const prevStatus = new Map<string, Entity['status']>();
+
+  const state: ValleyState = {
+    now: src.now(), link: src.link(), demo: src.demo(),
+    farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
+    sky: skyAt(new Date(wallNow())),
+  };
+
+  const letter = (kind: LetterKind, e: Entity | undefined, id: string, title: string, body = '') => {
+    // coalesce chatty kinds per farmer within a minute
+    const recent = state.letters.find((l) => l.farmerId === id && l.kind === kind && !l.read && state.now - l.at < 60_000);
+    if (recent && (kind === 'test-pass' || kind === 'subagents' || kind === 'news' || kind === 'commit')) {
+      recent.at = state.now; recent.title = title; recent.body = body || recent.body;
+      return;
+    }
+    const plot = e ? state.plots.get(e.workspace.id)?.label ?? e.workspace.label : '';
+    state.letters.unshift({
+      id: `L${++letterSeq}`, at: state.now, kind, farmerId: id, farmerName: e?.name ?? id, plotLabel: plot, title, body, read: false,
+      resolved: false,
+    });
+    if (state.letters.length > LETTERS_MAX) state.letters.length = LETTERS_MAX;
+  };
+
+  const kindFor = (w: Workspace, taken: Set<PlotKind>): PlotKind => {
+    const h = hash32(`${w.label}#${w.number}`);
+    for (let k = 0; k < PLOT_KINDS.length; k++) {
+      const c = PLOT_KINDS[(h + k) % PLOT_KINDS.length];
+      if (!taken.has(c)) return c;
+    }
+    return PLOT_KINDS[h % PLOT_KINDS.length];
+  };
+
+  function tickPlots(now: number, entities: Entity[]) {
+    const wss = src.workspaces();
+    const live = new Set(wss.map((w) => w.id));
+    for (const r of plotRecs.values()) r.seen = false;
+    const takenKinds = new Set<PlotKind>([...plotRecs.values()].filter((r) => live.has(r.view.id)).map((r) => r.view.kind));
+    const bySite = new Map<number, PlotRec>();
+    for (const r of plotRecs.values()) bySite.set(r.view.site, r);
+    for (const w of [...wss].sort((a, b) => a.slot - b.slot)) {
+      let r = plotRecs.get(w.id);
+      if (!r) {
+        const site = w.slot % SITES.length;
+        // a new workspace reclaims its site from any fallow plot still resting there
+        const prior = bySite.get(site);
+        if (prior && !live.has(prior.view.id)) plotRecs.delete(prior.view.id);
+        const kind = kindFor(w, takenKinds);
+        takenKinds.add(kind);
+        r = {
+          seen: true, growthLines: 0,
+          view: {
+            id: w.id, label: w.label, site, kind, colorIndex: w.colorIndex, stage: primed ? 'tilling' : 'growing', stageSince: now,
+            growth: 0.25, vigor: 0, status: w.status, farmers: [], helpers: [],
+          },
+        };
+        plotRecs.set(w.id, r);
+        if (primed) emit({ kind: 'plot-opened', id: w.id });
+      }
+      r.seen = true;
+      r.view.label = w.label;
+      r.view.colorIndex = w.colorIndex;
+      r.view.status = w.status;
+    }
+    // activity per workspace
+    const lastActive = new Map<string, number>();
+    const lines = new Map<string, number>();
+    for (const e of entities) {
+      const t = e.status === 'working' || e.status === 'blocked' ? now : Math.max(e.statusSince, e.activity?.since ?? 0);
+      lastActive.set(e.workspace.id, Math.max(lastActive.get(e.workspace.id) ?? 0, t));
+      if (e.work) lines.set(e.workspace.id, (lines.get(e.workspace.id) ?? 0) + e.work.added + e.work.removed * 0.5);
+    }
+    for (const [id, r] of plotRecs) {
+      const v = r.view;
+      if (!r.seen) {
+        if (v.stage !== 'harvest' && v.stage !== 'fallow') { v.stage = 'harvest'; v.stageSince = now; emit({ kind: 'plot-closed', id }); }
+        else if (v.stage === 'harvest' && now - v.stageSince > HARVEST_MS) { v.stage = 'fallow'; v.stageSince = now; }
+        else if (v.stage === 'fallow' && now - v.stageSince > FALLOW_MS) plotRecs.delete(id);
+        v.vigor = Math.max(0, v.vigor - 0.02);
+        v.farmers = []; v.helpers = [];
+        continue;
+      }
+      const la = lastActive.get(id) ?? 0;
+      const idle = la ? now - la : Infinity;
+      v.vigor = la ? Math.exp(-idle / (15 * 60_000)) : 0;
+      r.growthLines = Math.max(r.growthLines, lines.get(id) ?? 0);
+      v.growth = Math.max(v.growth, 0.25 + 0.75 * (1 - Math.exp(-r.growthLines / 500)));
+      let stage: PlotStage = idle < THRIVE_MS ? 'thriving' : idle < REST_MS ? 'growing' : 'resting';
+      if (v.stage === 'tilling' && now - v.stageSince < TILL_MS) stage = 'tilling';
+      if (v.stage === 'harvest' || v.stage === 'fallow') { stage = 'tilling'; emit({ kind: 'plot-opened', id }); } // reopened
+      if (stage !== v.stage) { v.stage = stage; v.stageSince = now; }
+    }
+  }
+
+  function farmerView(e: Entity, now: number, spot: number): FarmerView {
+    const raw = rawJob(e);
+    let rec = farmerRecs.get(e.id);
+    const t = now / 1000;
+    if (!rec) { rec = { smoother: createJobSmoother(raw, t), since: now }; farmerRecs.set(e.id, rec); }
+    const job: Job = rec.smoother.step(raw, t);
+    const struggle = (e.struggle?.level ?? 0) as 0 | 1 | 2 | 3;
+    const needsYou = e.status === 'blocked';
+    const unseenDone = e.status === 'done' && !e.ack;
+    const mood: Mood = needsYou ? 'worried' : struggle >= 2 ? 'stuck' : e.status === 'done' ? 'proud' : e.status === 'unknown' ? 'sleepy'
+      : e.status === 'idle' ? 'happy' : 'focused';
+    const subs = e.subagents.map((s) => ({ id: s.id, label: s.label, type: s.type, active: s.active }));
+    for (const [i, label] of (e.activity?.subs ?? []).entries()) {
+      if (!subs.some((s) => s.label === label)) subs.push({ id: `${e.id}:s${i}`, label, type: 'sub', active: true });
+    }
+    const todos = e.todos && e.todos.length
+      ? { done: e.todos.filter((x) => x.status === 'completed').length, total: e.todos.length, current: e.todos.find((x) => x.status === 'in_progress')?.activeForm ?? null }
+      : null;
+    const ctxMax = e.modelTier === 'haiku' ? 200_000 : 200_000;
+    return {
+      id: e.id, name: e.name, kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
+      status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw,
+      detail: needsYou ? shortDetail(e.prompt?.subject?.arg ?? e.prompt?.question ?? e.activity?.detail) : shortDetail(e.activity?.detail),
+      title: e.title, needsYou, unseenDone, struggle, mood,
+      busy: Math.min(1, JOB_BUSY[job] + struggle * 0.05),
+      ducklings: subs.slice(0, 8),
+      said: e.lastText, question: needsYou ? e.prompt?.question ?? e.activity?.detail ?? 'Needs your input' : null,
+      options: needsYou ? (e.prompt?.options ?? []).map((o) => ({ key: o.key, label: o.label })) : [],
+      todos, work: e.work ? { added: e.work.added, removed: e.work.removed, files: e.work.files } : null,
+      context: e.contextTokens ? Math.min(1, e.contextTokens / ctxMax) : null,
+      lastActive: Math.max(e.statusSince, e.activity?.since ?? 0),
+    };
+  }
+
+  function helperView(e: Entity, spot: number): HelperView {
+    const p = e.process;
+    const exit = p?.exit ? (p.exit.code === 0 ? 'ok' : 'fail') : null;
+    const running = !!p && p.activity !== 'prompt';
+    return {
+      id: e.id, name: e.name, plotId: e.workspace.id, spot, activity: p?.activity ?? 'prompt', running, exit,
+      label: shortDetail(p?.argv ?? e.baseTitle ?? e.name, 32), ports: p?.ports ?? [],
+    };
+  }
+
+  function tickGauges(s: Stats | null) {
+    if (!s) return;
+    const mem = s.mem.total ? s.mem.used / s.mem.total : 0;
+    const cpu = Math.min(1, s.cpu.total / 100);
+    if (s.at !== lastStatsAt) {
+      lastStatsAt = s.at;
+      cpuHist.push(cpu); memHist.push(mem);
+      if (cpuHist.length > HISTORY) cpuHist.shift();
+      if (memHist.length > HISTORY) memHist.shift();
+    }
+    const root = s.disks.find((d) => d.mount === '/') ?? s.disks[0];
+    const temps = [s.temps.cpu, s.temps.gpu, s.temps.nvme].filter((t): t is number => typeof t === 'number');
+    const GB = 1024 ** 3;
+    const g: Gauges = {
+      at: s.at, host: s.host, cpu, cores: s.cpu.cores.map((c) => Math.min(1, c / 100)), load1: s.cpu.load[0] ?? 0,
+      mem, memUsedGB: s.mem.used / GB, memTotalGB: s.mem.total / GB, swap: s.mem.swapTotal ? s.mem.swapUsed / s.mem.swapTotal : 0,
+      disk: root && root.total ? root.used / root.total : 0, diskUsedGB: root ? root.used / GB : 0, diskTotalGB: root ? root.total / GB : 0,
+      ioRead: s.io.readBps, ioWrite: s.io.writeBps, netRx: s.net.rxBps, netTx: s.net.txBps,
+      gpu: s.gpu ? Math.min(1, s.gpu.busy / 100) : null, tempC: temps.length ? Math.max(...temps) : null,
+      cpuHistory: cpuHist.slice(), memHistory: memHist.slice(),
+    };
+    state.gauges = g;
+  }
+
+  function tick() {
+    const now = src.now();
+    state.now = now;
+    state.link = src.link();
+    state.demo = src.demo();
+    state.sky = skyAt(new Date(wallNow()), skyO);
+    const entities = [...src.entities()];
+    tickPlots(now, entities);
+    const farmers = new Map<string, FarmerView>();
+    const helpers = new Map<string, HelperView>();
+    const spots = new Map<string, number>();
+    const hspots = new Map<string, number>();
+    const ordered = entities.sort((a, b) => a.tab.index - b.tab.index || a.paneIndex - b.paneIndex || a.id.localeCompare(b.id));
+    for (const e of ordered) {
+      const plot = plotRecs.get(e.workspace.id)?.view;
+      if (e.kind === 'shell') {
+        const s = hspots.get(e.workspace.id) ?? 0;
+        hspots.set(e.workspace.id, s + 1);
+        helpers.set(e.id, helperView(e, s));
+      } else {
+        const s = spots.get(e.workspace.id) ?? 0;
+        spots.set(e.workspace.id, s + 1);
+        farmers.set(e.id, farmerView(e, now, s));
+      }
+      // letters seeded on connect: agents already waiting on you
+      const was = prevStatus.get(e.id);
+      if (!primed && e.status === 'blocked') letter('needs-you', e, e.id, `${e.name} needs you`, e.prompt?.question ?? '');
+      if (was !== undefined && was !== e.status) {
+        if (e.status === 'blocked') emit({ kind: 'blocked', id: e.id });
+        if (was === 'blocked') emit({ kind: 'unblocked', id: e.id });
+      }
+      prevStatus.set(e.id, e.status);
+      void plot;
+    }
+    for (const id of [...prevStatus.keys()]) if (!farmers.has(id) && !helpers.has(id)) { prevStatus.delete(id); farmerRecs.delete(id); }
+    for (const p of plotRecs.values()) { p.view.farmers = []; p.view.helpers = []; }
+    for (const f of farmers.values()) plotRecs.get(f.plotId)?.view.farmers.push(f.id);
+    for (const h of helpers.values()) plotRecs.get(h.plotId)?.view.helpers.push(h.id);
+    state.farmers = farmers;
+    state.helpers = helpers;
+    state.plots = new Map([...plotRecs].map(([id, r]) => [id, r.view]));
+    for (const l of state.letters) {
+      if (l.kind === 'needs-you' && !l.resolved) {
+        const f = farmers.get(l.farmerId);
+        if (!f || !f.needsYou) l.resolved = true;
+      }
+    }
+    tickGauges(src.stats());
+    // prime once the first real world arrived (a tick before that must not swallow the on-connect letters)
+    if (entities.length || src.workspaces().length || (state.link === 'live' && ++liveTicks > 8)) primed = true;
+  }
+
+  const detailText = (d: unknown, ...keys: string[]): string => {
+    if (!d || typeof d !== 'object') return '';
+    for (const k of keys) { const v = (d as Record<string, unknown>)[k]; if (typeof v === 'string' && v) return v; }
+    return '';
+  };
+
+  function ingest(m: EventMsg) {
+    const e = [...src.entities()].find((x) => x.id === m.id);
+    const name = e?.name ?? m.id;
+    state.now = src.now();
+    switch (m.kind) {
+      case 'blocked': letter('needs-you', e, m.id, `${name} needs you`, e?.prompt?.question ?? e?.activity?.detail ?? ''); break;
+      case 'finished': letter('finished', e, m.id, `${name} finished`, e?.title ?? e?.lastText ?? ''); emit({ kind: 'finished', id: m.id }); break;
+      case 'error': letter('error', e, m.id, `${name} hit an error`, detailText(m.detail, 'tool', 'message')); emit({ kind: 'oops', id: m.id }); break;
+      case 'test-fail': letter('test-fail', e, m.id, `Tests failed for ${name}`, detailText(m.detail, 'cmd', 'summary')); emit({ kind: 'oops', id: m.id }); break;
+      case 'test-pass': letter('test-pass', e, m.id, `Tests passed for ${name}`, detailText(m.detail, 'cmd')); emit({ kind: 'celebrate', id: m.id }); break;
+      case 'commit': {
+        const day = new Date(wallNow()).toDateString();
+        if (day !== commitDay) { commitDay = day; state.commitsToday = 0; }
+        state.commitsToday++;
+      }
+        letter('commit', e, m.id, `${name} shipped a commit`, detailText(m.detail, 'msg', 'message', 'subject')); emit({ kind: 'ship', id: m.id }); break;
+      case 'struggle': {
+        const lvl = typeof (m.detail as { level?: unknown } | undefined)?.level === 'number' ? (m.detail as { level: number }).level : 0;
+        if (lvl >= 2) letter('struggle', e, m.id, `${name} is struggling`, detailText(m.detail, 'detail', 'reason'));
+        emit({ kind: 'struggle', id: m.id });
+        break;
+      }
+      case 'arrived': if (primed) { letter('arrived', e, m.id, `${name} arrived in the valley`, e?.workspace.label ?? ''); emit({ kind: 'arrived', id: m.id }); } break;
+      case 'left': letter('left', e, m.id, `${name} went home`, ''); emit({ kind: 'left', id: m.id }); break;
+      case 'subagent-spawned': letter('subagents', e, m.id, `${name} hatched helpers`, detailText(m.detail, 'label', 'type')); emit({ kind: 'duckling-hatched', id: m.id, detail: detailText(m.detail, 'label') }); break;
+      case 'subagent-done': emit({ kind: 'duckling-home', id: m.id, detail: detailText(m.detail, 'label') }); break;
+      case 'compact': emit({ kind: 'compact', id: m.id }); break;
+      default: break;
+    }
+  }
+
+  return {
+    state, tick, ingest,
+    on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    markRead(id) { const l = state.letters.find((x) => x.id === id); if (l) l.read = true; },
+    markAllRead() { for (const l of state.letters) l.read = true; },
+    setSky(o) { skyO = { ...skyO, ...o }; state.sky = skyAt(new Date(wallNow()), skyO); },
+  };
+}
+
+/** Letters the player hasn't read that still matter (unresolved asks count double in the badge). */
+export function unreadCount(letters: readonly Letter[]): number {
+  return letters.filter((l) => !l.read && !(l.kind === 'needs-you' && l.resolved)).length;
+}

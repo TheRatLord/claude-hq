@@ -54,7 +54,8 @@ export const test = base.extend<{ demoServer: DemoServer }>({
       const parsed = new URL(url);
       const token = parsed.searchParams.get('t');
       if (!token) throw new Error('Demo server URL omitted bootstrap token');
-      await use({ url, origin: parsed.origin, token });
+      parsed.pathname = '/workbench/';
+      await use({ url: parsed.toString(), origin: parsed.origin, token });
     } finally {
       try {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');

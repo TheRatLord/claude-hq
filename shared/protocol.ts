@@ -232,6 +232,8 @@ export interface Settings {
   volumeAmbient: number;
   volumeNotify: number;
   volumeVoices: number;
+  /** background music (valley frontend) */
+  volumeMusic: number;
   audioMuted: boolean;
   quality: 'auto' | 'low' | 'medium' | 'high' | 'photo';
   /** 55–75 */
@@ -261,6 +263,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   volumeAmbient: 0.5,
   volumeNotify: 0.9, // blocked/done chimes + dings (per-category volume)
   volumeVoices: 0.7, // Clawd vocal blips
+  volumeMusic: 0.4,
   audioMuted: false, // mute toggle
   quality: 'auto',
   fov: 60,

@@ -5,6 +5,6 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["shared", "server", "scripts", "renderer/src"],
+  "include": ["shared", "server", "scripts", "electron", "renderer/src"],
   "exclude": ["node_modules", "dist", "out", "scratch", "docs"]
 }

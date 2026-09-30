@@ -2,6 +2,6 @@
   // Backend, shared wire contracts, and Node tooling.
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2023"], "types": ["node"], "moduleResolution": "Bundler" },
-  "include": ["shared", "server", "scripts"],
+  "include": ["shared", "server", "scripts", "electron"],
   "exclude": ["**/*.test.ts", "server/test", "node_modules"]
 }

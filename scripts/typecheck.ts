@@ -49,7 +49,7 @@ function sources(dir: string): string[] {
   }
   return files;
 }
-const sourceFiles = ['shared', 'server', 'scripts', 'renderer', 'browser-tests'].flatMap((dir) => sources(path.join(REPO, dir)));
+const sourceFiles = ['shared', 'server', 'scripts', 'electron', 'renderer', 'browser-tests'].flatMap((dir) => sources(path.join(REPO, dir)));
 sourceFiles.push('playwright.config.ts');
 const orphans = sourceFiles.filter((file) => !covered.has(file));
 console.log(`${'coverage'.padEnd(12)} ${orphans.length} file(s) outside every project`);

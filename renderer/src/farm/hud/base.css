@@ -1,0 +1,8 @@
+/* Page frame for the game: full-bleed canvas under the HUD layer. The HUD work package owns hud/*.css. */
+:root { color-scheme: light; --ink: #3b2a1e; --paper: #f7ecd2; --wood: #a0703f; --wood-dark: #6e4a2a; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd3ff; font-family: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI", system-ui, sans-serif; }
+#valley { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud > * { pointer-events: auto; }
+#hq-banner { display: none; position: fixed; top: 0; left: 0; right: 0; padding: 8px; background: #c2533e; color: #fff; text-align: center; z-index: 100; }
+#hq-banner.show { display: block; }
