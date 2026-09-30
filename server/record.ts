@@ -1,5 +1,5 @@
 /**
- * --record / --replay. Owner: BE2.
+ * --record / --replay.
  *
  * Recording (NDJSON, one object per line, `at` = server clock ms):
  *   {k:'header', v:1, at, session, demo, owners:[…]}
@@ -11,9 +11,9 @@
  *
  * Replay: `ReplaySource` (a HerdrSource) re-emits snapshots/status/connectivity on the clock (÷ speed), and one
  * `ReplayEnricher` per recorded owner re-emits patches and events through the same onPatch/emitEvent seams, so the
- * WorldModel output stream is reproduced (the golden test, M2, diffs it).
+ * WorldModel output stream is reproduced (the golden test diffs it).
  *
- * Recordings may contain prompts and paths: they stay local (git-ignored), except the scrubbed golden fixture (M2).
+ * Recordings may contain prompts and paths: they stay local (git-ignored), except the scrubbed golden fixture.
  */
 import fs from 'node:fs';
 import { HerdrSource, Enricher } from './interfaces.ts';
@@ -289,7 +289,7 @@ export class ReplaySource extends HerdrSource {
     const now = this.clock.now();
     let end = this._i;
     while (end < this.items.length && this._due(this.items[end]) <= now) end++;
-    // Arm the NEXT batch's timer before applying this one (M3.5 BE2): live, the source's timers were armed long before
+    // Arm the NEXT batch's timer before applying this one: live, the source's timers were armed long before
     // the model's coalesce timer this batch arms, so on an equal due time they fired first; keep that order.
     if (end < this.items.length) this._arm(end);
     while (this._i < end) {

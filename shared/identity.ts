@@ -1,7 +1,7 @@
 // @pure
 /**
  * Stable hashing, seeded RNG, workspace colour assignment and stable pane identity.
- * Owner: LEAD. Pure (no three, no node built-ins).
+ * Pure (no three, no node built-ins).
  */
 
 import type { Identity } from './protocol.ts';

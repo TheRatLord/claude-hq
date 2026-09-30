@@ -22,7 +22,7 @@ test('binary codec round-trips', () => {
   assert.ok(f);
   assert.equal(new TextDecoder().decode(f.payload), 'hello');
   assert.deepEqual(validateBinaryInput(f), { ok: true, paste: false });
-  // D6: the old binary paste flag is rejected (paste chunks are JSON term.input with a rid)
+  // the old binary paste flag is rejected (paste chunks are JSON term.input with a rid)
   assert.equal(validateBinaryInput(decodeFrame(encodeFrame(2, 'a', 1, 'x'))).ok, false, 'paste flag');
   // Node Buffer + ArrayBuffer + offset views
   const enc = encodeFrame(2, 'x', 0, new Uint8Array([9]));
@@ -138,7 +138,7 @@ test('FIELD_OWNERS: exactly one writer per field in live and in demo wiring', ()
   assert.equal(new Set(ENTITY_FIELDS).size, ENTITY_FIELDS.length);
 });
 
-test('mayEmit: shared events (commit, news) split by pane kind (D3)', () => {
+test('mayEmit: shared events (commit, news) split by pane kind', () => {
   assert.equal(mayEmit('transcripts', 'commit', 'claude'), true);
   assert.equal(mayEmit('procinfo', 'commit', 'claude'), false);
   assert.equal(mayEmit('procinfo', 'commit', 'shell'), true);

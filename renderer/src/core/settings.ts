@@ -1,6 +1,6 @@
 /**
  * Renderer view of the server-persisted settings (`hello.settings`, `settings.set {patch}`).
- * Local-only overrides (URL params) never get written back. Owner: CORE.
+ * Local-only overrides (URL params) never get written back.
  */
 import { DEFAULT_SETTINGS, SETTINGS_KEYS, R2S } from '../../../shared/protocol.ts';
 import type { Settings as WireSettings, ClientMsgOf } from '../../../shared/protocol.ts';

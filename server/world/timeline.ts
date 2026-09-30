@@ -10,7 +10,6 @@
  * type, level, reason, src, n, preTokens, trigger); commands, labels, paths and questions are dropped.
  * Volume shaping: `tool` events are not recorded (the entity stream carries them; ~1 per 3 s per agent), and `news`
  * is coalesced per pane into ≤ 1 item per NEWS_BUCKET_MS carrying `detail.n` (so unread counts survive a reload).
- * Owner: BE.
  */
 import fs from 'node:fs';
 import path from 'node:path';

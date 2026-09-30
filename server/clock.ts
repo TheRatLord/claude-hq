@@ -1,6 +1,6 @@
 /**
  * Injectable clock. EVERY server timer and timestamp goes through a clock; this is the only file allowed
- * to call Date.now()/setTimeout/setInterval directly. Owner: BE (M0.5 version written by BE2; complete as specified).
+ * to call Date.now()/setTimeout/setInterval directly.
  */
 
 import type { Clock, TimerHandle } from './interfaces.ts';

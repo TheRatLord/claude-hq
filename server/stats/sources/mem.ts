@@ -1,4 +1,4 @@
-/** Memory: /proc/meminfo, bytes. used = MemTotal − MemAvailable; cache = Buffers + Cached + SReclaimable (free's buff/cache). Owner: BE2. */
+/** Memory: /proc/meminfo, bytes. used = MemTotal − MemAvailable; cache = Buffers + Cached + SReclaimable (free's buff/cache). */
 import type { Stats } from '../../../shared/protocol.ts';
 import { read } from './util.ts';
 

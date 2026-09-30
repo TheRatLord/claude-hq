@@ -9,7 +9,6 @@
  * term.state resend). JSON `term.input {id, text, paste:true, rid}` = paste chunk: the reply is sent only after the
  * child's stdin drained; to an observe viewer → `{ok:false, error:'not_controller'}`. The server never auto-promotes.
  * WS drop → TerminalHub keeps the client's viewers for 10 s keyed by `cid` (grace resume on the next term.open).
- * Owner: BE.
  */
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -202,7 +201,7 @@ export class WsHub {
         }
         return this.hub.scroll(client, msg);
       case 'term.input': {
-        // JSON form {id, text, paste?, rid?}: the paste path (D6; reply after stdin drain) and tools/tests.
+        // JSON form {id, text, paste?, rid?}: the paste path (reply after stdin drain) and tools/tests.
         const bytes = new TextEncoder().encode(msg.text);
         const r = await this.hub.input(client, msg.id, bytes);
         if (!r.ok) {

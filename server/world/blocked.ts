@@ -1,5 +1,5 @@
 /**
- * Blocked prompt detection, an Enricher (`blocked`: owns `prompt`). Owner: BE.
+ * Blocked prompt detection, an Enricher (`blocked`: owns `prompt`).
  * While a pane is blocked: `pane.read {source:'detection', format:'text'}` every 2 s → `parsePrompt` → `prompt`.
  * Leaving blocked stops the poll and clears `prompt` in the same entity update. stateSeq change → re-hash.
  *

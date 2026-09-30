@@ -3,7 +3,7 @@
  * focus, resize, spawn and close appends `{at, session, cid, action, paneId, ok, error?}` to
  * `~/.config/claude-hq/<session>/audit.ndjson` (0600, rotated at 1 MB into `audit.1.ndjson`).
  * **Metadata only: never bytes, prompt text, keys or answers.** `dir = null` (demo/replay/tests) keeps only the
- * in-memory ring that `recent()` serves. Owner: BE.
+ * in-memory ring that `recent()` serves.
  */
 import fs from 'node:fs';
 import path from 'node:path';

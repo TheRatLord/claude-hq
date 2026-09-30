@@ -11,7 +11,6 @@
  *
  * Wire-up: `const {source, demo, enrichers} = createDemo({clock, n, seed, scenario})`; add blocked/acks; construct
  * the WorldModel; optionally `source.seedSince(model.since)` (longIdle's dust ladder); then `source.start()`.
- * Owner: BE2.
  */
 import { HerdrSource, Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, Logger, RawAgent, RawLayout, RawPane, RawTab, RawWorkspace, TimerHandle } from '../interfaces.ts';
@@ -161,7 +160,7 @@ interface Sim {
   kind: Kind;
   spec: NewPaneSpec;
   R: Rng;
-  /** a separate stream for lastText/work (M3.5), so they never shift the schedule's own random sequence */
+  /** a separate stream for lastText/work, so they never shift the schedule's own random sequence */
   T: Rng;
   timers: Set<TimerHandle>;
   turn: Turn | null;
@@ -492,7 +491,7 @@ export class DemoWorld extends HerdrSource {
     }
     this.raw.panes.push(pane);
     this.facts.set(id, f);
-    // T: a separate stream for lastText/work (M3.5), so they never shift the schedule's own random sequence (R)
+    // T: a separate stream for lastText/work, so they never shift the schedule's own random sequence (R)
     const sim: Sim = { id, kind, spec, R, T: rng(`text:${this.scenarioName}:${this.seed}:${id}:${this._termSeq}`), timers: new Set(), turn: null,
       frozen: !!spec.frozen, focusedAt: null, ticks: 0 };
     this.sims.set(id, sim);
@@ -507,7 +506,7 @@ export class DemoWorld extends HerdrSource {
   }
 
   /**
-   * Starting lastText + work for a Claude that already has a task (M3.5): a working one is mid-task (some edits so far),
+   * Starting lastText + work for a Claude that already has a task: a working one is mid-task (some edits so far),
    * idle/done ones show their finished task, a blocked one is waiting mid-task.
    */
   _seedWork(R: Rng, f: Facts, status: Status): void {
@@ -522,7 +521,7 @@ export class DemoWorld extends HerdrSource {
     f.lastText = demoText(R, status === 'working' ? (files ? 'talk' : 'explore') : status === 'blocked' ? 'plan' : 'done', { title: f.title, prompt: f.lastPrompt, file, work });
   }
 
-  /** Struggle (+ M3.5 detail/context) from the sim's fail streak and context, the same rules as live. */
+  /** Struggle (+ detail/context) from the sim's fail streak and context, the same rules as live. */
   _struggle(sim: Sim): void {
     const f = this.facts.get(sim.id);
     if (!f || f.kind !== 'claude') return;
@@ -777,7 +776,7 @@ export class DemoWorld extends HerdrSource {
       }
       f.todos = null;
       f.subagents = f.subagents.map((s) => ({ ...s, active: false }));
-      // M3.5: a new task → fresh work counters (lastText stays until Claude says something new)
+      // a new task → fresh work counters (lastText stays until Claude says something new)
       f.work = { since: this.clock.now(), added: 0, removed: 0, files: 0 };
       sim.files = new Set();
       sim.turnMsgs = 1;
@@ -910,7 +909,7 @@ export class DemoWorld extends HerdrSource {
     const R = sim.R;
     const f = this.facts.get(sim.id);
     if (!f) return;
-    // no news per step (one per turn end, `_endTurn`); assistant text updates lastText (M3.5)
+    // no news per step (one per turn end, `_endTurn`); assistant text updates lastText
     const phase = sim.turn?.phases[sim.turn.i]?.name;
     const say = (stage: DemoTextStage) => {
       if (f.kind !== 'claude') return;
@@ -942,7 +941,7 @@ export class DemoWorld extends HerdrSource {
     }
   }
 
-  /** An Edit/MultiEdit/Write landed: grow the task's work counters (M3.5). */
+  /** An Edit/MultiEdit/Write landed: grow the task's work counters. */
   _addWork(sim: Sim, cls: ToolClass, a: DemoActivity): void {
     const f = this.facts.get(sim.id);
     if (!f || f.kind !== 'claude') return;
@@ -1414,7 +1413,7 @@ export class DemoWorld extends HerdrSource {
         const kind = params.kind === 'codex' ? 'codex' : 'claude';
         const t = this.raw.tabs.find((x) => x.tab_id === p.tab_id);
         const ws = p.workspace_id;
-        // [INT M3.5 cross-owner] herdr starts the agent in the pane's place; removing the only pane of a brand-new
+        // herdr starts the agent in the pane's place; removing the only pane of a brand-new
         // workspace (hire → "new workspace") dropped the workspace too and _addPane crashed (`_tabSeq` of null)
         const wsObj = this._ws(ws);
         this._removePane(p.pane_id, { silent: true });
@@ -1635,7 +1634,7 @@ export class DemoEnricher extends Enricher {
 
 /**
  * Wire-up helper (app.ts): DemoWorld + DemoEnricher + the real ProcInfoEnricher (polls the demo's `pane.process_info`).
- * blocked/acks (BE) are added by the caller. Call `source.start()` after the WorldModel is constructed.
+ * blocked/acks are added by the caller. Call `source.start()` after the WorldModel is constructed.
  */
 export function createDemo({ clock, n = 12, seed = 1, scenario = 'mixed', log }: DemoWorldOpts & { log?: Logger & { child?: (scope: string) => Logger } }): { source: DemoWorld; demo: DemoEnricher; enrichers: Enricher[] } {
   const source = new DemoWorld({ clock, n, seed, scenario, log });

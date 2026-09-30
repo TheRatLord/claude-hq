@@ -1,5 +1,5 @@
 /**
- * Display name / project / seedKey rules. Pure. Owner: BE.
+ * Display name / project / seedKey rules. Pure.
  *   name    = herdr agent `name` → non-numeric tab label → basename(cwd); `·2`, `·3` for duplicates within a workspace.
  *             The title is never a name (it churns every task).
  *   seedKey = herdr `name` ?? pane_id (stable for the pane's life).

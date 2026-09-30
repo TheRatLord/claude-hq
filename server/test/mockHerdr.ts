@@ -1,7 +1,7 @@
 /**
  * Mock herdr: a scripted NDJSON unix-socket server shaped like herdr 0.9.0 / protocol 22, plus a fake
  * `terminal session` binary (server/test/fakeHerdrBin.ts, used via HERDR_BIN_PATH) that attaches through this
- * socket. Every method call is logged (`calls`) so safety tests can assert what was — and was not — sent. Owner: BE.
+ * socket. Every method call is logged (`calls`) so safety tests can assert what was — and was not — sent.
  *
  *   const m = await MockHerdr.start({ home, session: 'hqtest' });   // socket = <home>/sessions/hqtest/herdr.sock
  *   m.addPane({...}); m.setStatus('w1:p1', 'working'); await m.stop(); await m.restart({ rekey: true });

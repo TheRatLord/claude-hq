@@ -5,7 +5,6 @@
  * - Binary `term.data` goes straight to the writer registered with `onTermData(id, fn)`.
  * - Protocol skew: `hello.protocol` is checked before anything else; mismatch → banner + one guarded reload.
  * The frame loop only READS `store.*`.
- * Owner: CORE.
  */
 import {
   PROTOCOL_VERSION, S2R, R2S, BIN, BIN_FLAG, DEFAULT_LIMITS, decodeFrame, encodeTermInput,
@@ -137,8 +136,8 @@ export const store: Store = {
 
   /**
    * Server-clock ms now (use for statusSince ages). Extrapolates at the server's rate (hello.timescale), so ages stay
-   * honest under a demo time-lapse: server now = serverNow + K·(local − skewAt). [BE fix r3: minimal cross-owner edit in
-   * CORE's store — with K≠1 a 1× extrapolation fell behind the scaled stamps and every age read 0s.]
+   * honest under a demo time-lapse: server now = serverNow + K·(local − skewAt).
+   * A plain 1× extrapolation would fall behind the scaled stamps when K≠1, and every age would read 0s.
    */
   now: () => { const l = Date.now(); return l + store.skewMs + (store.timescale - 1) * (l - store.skewAt); },
 
@@ -452,7 +451,7 @@ function drainCredit(id: string) {
 }
 
 /**
- * Interactive `term.input` (binary, fire-and-forget; typing only, D6). Payloads above `limits.termInputMax` are split.
+ * Interactive `term.input` (binary, fire-and-forget; typing only). Payloads above `limits.termInputMax` are split.
  * Beyond the un-acked credit window the bytes wait in a local FIFO (≤ 1 MB) and flush as `term.ack` arrives.
  * Returns false (dropped) when not connected or the local queue is full: the UI outbox owns retry.
  */

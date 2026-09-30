@@ -254,7 +254,7 @@ test('state: real (scrubbed) Claude Code transcript from the hqtest fixture agen
 });
 
 // ----------------------------------------------------------------------------------------------
-// M3.5 (BE2): lastText, work, struggle detail/context, turn-granular news
+// lastText, work, struggle detail/context, turn-granular news
 
 const T0 = Date.parse('2026-09-28T09:00:00.000Z');
 const iso = (s: number): string => new Date(T0 + s * 1000).toISOString();

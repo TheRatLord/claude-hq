@@ -26,7 +26,7 @@ const cases: [Partial<Entity> | null, string | null][] = [
   [{ kind: 'claude', process: { name: 'node', argv: 'node server.js', activity: 'run' } }, null],
   [{ kind: 'shell', process: null }, null],
   [null, null],
-  // D2: baseTitle (herdr terminal title) fallback
+  // baseTitle (herdr terminal title) fallback
   [{ kind: 'codex', title: null, baseTitle: 'Review protocol codec', lastPrompt: 'hi there' }, 'Review protocol codec'],
   [{ kind: 'claude', title: null, baseTitle: 'Claude Code', lastPrompt: 'fix the reaper' }, 'Fix the reaper'],
   [{ kind: 'shell', baseTitle: 'david@box: ~/claude-hq', process: { name: 'zsh', argv: 'zsh', activity: 'prompt' } }, null],

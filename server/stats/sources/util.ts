@@ -1,4 +1,4 @@
-/** Shared helpers for stats sources: every read is sync, tiny, and returns null on any error. Owner: BE2. */
+/** Shared helpers for stats sources: every read is sync, tiny, and returns null on any error. */
 import fs from 'node:fs';
 import path from 'node:path';
 

@@ -279,7 +279,7 @@ test('churn: 10 simulated minutes, then quiesce → timers/entities/enricher sta
 });
 
 // ------------------------------------------------------------------------------------------------
-// M3.5 (BE2) demo parity: lastText, work, struggle detail, prompt/spawn → working, meaningful news
+// Demo parity: lastText, work, struggle detail, prompt/spawn → working, meaningful news
 
 test('mixed: every working Claude shows lastText + work, and work grows while it works', async () => {
   const { clock, model, close } = setup({ scenario: 'mixed', seed: 3, n: 16 });
@@ -324,7 +324,7 @@ test('demo: agent.prompt turns idle/done → working within 2 s with a fresh tas
     assert.equal(now.title, 'Make the lobby sign blink when');
     assert.ok(now.work && now.work.since >= t0 && now.work.added === 0, 'work restarts with the new task');
   }
-  // spawn {kind:'claude', prompt}: BE runs agent.start, then agent.prompt once the agent reports idle
+  // spawn {kind:'claude', prompt}: the backend runs agent.start, then agent.prompt once the agent reports idle
   const shell = need([...model.entities.values()].find((x) => x.kind === 'shell'));
   msgs.length = 0;
   const agent = agentOf(await source.request('agent.start', { pane_id: shell.id, kind: 'claude', name: 'hire' }));
@@ -389,7 +389,7 @@ test('mixed: meaningful news volume — one per finished turn / finished shell c
   }
 });
 
-// [INT M3.5] hire into a brand-new workspace: workspace.create → agent.start on its only pane must keep the workspace
+// hire into a brand-new workspace: workspace.create → agent.start on its only pane must keep the workspace
 test('demo: agent.start in a fresh workspace (its only pane) keeps the workspace and starts the agent', async () => {
   const { clock, source, model, close } = setup({ scenario: 'mixed', seed: 3 });
   await run(clock, 1000);

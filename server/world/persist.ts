@@ -1,6 +1,6 @@
 /**
  * Tiny persisted JSON document per session (`~/.config/claude-hq/<session>/<name>.json`, 0600): debounced atomic
- * writes through the injectable clock, flush on close. `dir = null` → memory only (tests, --demo). Owner: BE.
+ * writes through the injectable clock, flush on close. `dir = null` → memory only (tests, --demo).
  */
 import fs from 'node:fs';
 import path from 'node:path';

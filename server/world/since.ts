@@ -3,7 +3,7 @@
  *   {[stableKey]: {stateSeq, status, since, approx, activity?, seen, hinted?}}   stableKey = identityKey(identity)
  * On sighting: same stateSeq + status → reuse since/approx. Changed stateSeq or status (shells: status or
  * process.activity) → since = now, approx = false. First-ever sighting → since = now, approx = true, then ONE
- * `hint(ms)` is accepted (since = min(now, hint), still approx). Entries unseen for 24 h are pruned. Owner: BE.
+ * `hint(ms)` is accepted (since = min(now, hint), still approx). Entries unseen for 24 h are pruned.
  */
 import { JsonFile } from './persist.ts';
 import type { Clock, Logger } from '../interfaces.ts';

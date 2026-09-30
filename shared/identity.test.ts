@@ -21,7 +21,7 @@ test('hash32 is stable, unsigned and spreads', () => {
 });
 
 test('hash32 golden values (do not change)', () => {
-  // Recorded at M0. If this fails, you changed the hash: every colour/personality changes.
+  // Recorded once. If this fails, you changed the hash: every colour/personality changes.
   assert.deepEqual(['', 'scout', 'hq-core'].map(hashHex), GOLDEN);
 });
 const GOLDEN = ['ab3e7c0b', '58a2e8cd', '64f5265a'];

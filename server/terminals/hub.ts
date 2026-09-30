@@ -2,7 +2,7 @@
  * TerminalHub: one child per (pane, mode) shared by every viewer on this backend, observe first,
  * control only on `term.promote` (which mints the one-shot promoteToken client.ts requires), a headless screen mirror
  * for `full` frames, writer/sizer rules, interactive input credit (`term.ack`), paste drain gate, WS backpressure
- * (`needsFull`), caps, WS-drop grace resume keyed by cid, paused-viewer drop, idle demotion. Owner: BE.
+ * (`needsFull`), caps, WS-drop grace resume keyed by cid, paused-viewer drop, idle demotion.
  *
  * A "client" is `{cid, sendJson(msg), sendBinary(u8), bufferedAmount(): number}` (ws.ts).
  *

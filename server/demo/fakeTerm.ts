@@ -12,7 +12,7 @@
  * `help`, `ls`, `clear`, `pwd`, `echo …`, `seq N` (scrollback for scroll tests).
  *
  * Agent panes also run a live mock TUI fed from the pane's entity (tool lines, thinking, the blocked menu, a "worked
- * for" footer); shells print the foreground command DemoWorld runs. Owner: BE2.
+ * for" footer); shells print the foreground command DemoWorld runs.
  */
 import xtermHeadless from '@xterm/headless';
 import serializePkg from '@xterm/addon-serialize';

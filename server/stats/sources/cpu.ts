@@ -1,4 +1,4 @@
-/** CPU: /proc/stat deltas (total + per core; idle = idle + iowait), /proc/loadavg, cpufreq, PSI. Owner: BE2. */
+/** CPU: /proc/stat deltas (total + per core; idle = idle + iowait), /proc/loadavg, cpufreq, PSI. */
 import type { Stats } from '../../../shared/protocol.ts';
 import { read, list, num } from './util.ts';
 

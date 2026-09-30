@@ -154,7 +154,7 @@ test('answer: guard released after a failure (not_accepted) so the user can retr
   assert.equal(R.source.sent.length, 2);
 });
 
-// ---- spawn (M3.5): shell → new tab's pane; claude + first prompt → wait until interactive-ready, prompt once ----
+// ---- spawn: shell → new tab's pane; claude + first prompt → wait until interactive-ready, prompt once ----
 
 /** Fake herdr for spawn: agent.get reports `states[i]` on the i-th poll (last one repeats). */
 function spawnRig({ states = [{ agent_status: 'idle', interactive_ready: true }], session = 'hqtest', isDefault, getErr, workspaces, busy = 0 }: {

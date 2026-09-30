@@ -1,19 +1,19 @@
 /**
  * Claude Code transcript derivations. Pure state machine over parsed JSONL lines:
- * no fs, no timers. `transcripts.ts` feeds it lines; tests feed it fixtures. Owner: BE2.
+ * no fs, no timers. `transcripts.ts` feeds it lines; tests feed it fixtures.
  *
  * Derives: current tool (last tool_use without a tool_result), think/talk from the last block, model, context tokens
  * (input + cache_read + cache_creation of the latest assistant message.id), output tokens (Σ over unique message.id),
  * title (ai-title), lastPrompt (last-prompt / latest real user string), todos (latest TodoWrite), and one-shot events
  * (error, test-pass, test-fail, commit, compact, news) + struggle.
  *
- * M3.5 (BE2): `lastText` = the last main-chain assistant text block (whitespace-collapsed, ≤ 280 chars); `work` =
+ * `lastText` = the last main-chain assistant text block (whitespace-collapsed, ≤ 280 chars); `work` =
  * {since, added, removed, files} for the current task (since the latest real user prompt; line counts from the inputs
  * of Edit / MultiEdit / Write calls whose result came back without an error, files = distinct file_path). Both are
  * maintained incrementally per line. Struggle carries a human `detail` line and a 4th reason, 'context' (> 85% of the
  * model window).
  *
- * `news` ("meaningful news", M3.5): ONE event per finished assistant turn (stop_reason end_turn on the main
+ * `news` ("meaningful news"): ONE event per finished assistant turn (stop_reason end_turn on the main
  * chain; `system turn_duration` as a fallback), `{src:'turn', msgs, edits}` = assistant text blocks and successful edit
  * calls in that turn. Never per tool call: Claude's per-step chatter is not something the user has to read.
  */
@@ -41,7 +41,7 @@ export interface TranscriptEvent { kind: EventKind; detail?: unknown }
 export interface TranscriptActivity { tool: string | null; cls: ToolClass; detail: string; at: number }
 /** A `tool_use` without its `tool_result` yet. */
 interface OpenTool { name: string | null; input: ToolInput; cls: ToolClass; detail: string; at: number }
-/** Struggle with the human detail line always present (M3.5). */
+/** Struggle with the human detail line always present. */
 export type StruggleOf = Struggle & { level: 1 | 2 | 3; detail: string };
 
 /** Model id → tier. */
@@ -140,7 +140,7 @@ const CONTEXT_LEVELS: readonly (readonly [number, Level])[] = [[0.95, 2], [0.85,
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /**
- * Struggle (+ M3.5 detail/context) from plain numbers, shared with the demo so both read the same.
+ * Struggle (+ detail/context) from plain numbers, shared with the demo so both read the same.
  * Priority on a level tie: fails/errors > noEdits > context.
  */
 export interface StruggleInput {

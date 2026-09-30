@@ -6,7 +6,6 @@
  * - Reconnect: exponential backoff 0.5 s → 10 s with jitter; reset after a connection that lasted ≥ 5 s. While
  *   waiting, a cheap `/healthz` probe (1 s) short-circuits the backoff as soon as the backend is back, and so do the
  *   tab becoming visible and the browser coming `online` (a restarted backend is picked up within ≈ 1 s).
- * Owner: CORE.
  */
 
 import { isRecord } from '../../../shared/guards.ts';

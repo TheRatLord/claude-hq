@@ -1,5 +1,5 @@
 // Store + socket against a fake WebSocket (no browser): eager apply, hello.ack gating, coalescing, reconnect,
-// interactive credit window, paste chunking (D6), protocol-skew reload guard.
+// interactive credit window, paste chunking, protocol-skew reload guard.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROTOCOL_VERSION, decodeFrame, encodeTermData, BIN } from '../../../shared/protocol.ts';
@@ -86,7 +86,7 @@ test('store end to end on a fake socket', async (t) => {
     assert.equal(store.conn.connects, 1);
   });
 
-  // [BE fix r3] under --timescale K the server clock runs K× wall; store.now() must follow it or ages go negative.
+  // under --timescale K the server clock runs K× wall; store.now() must follow it or ages go negative.
   await t.test('store.now() extrapolates at hello.timescale', () => {
     assert.equal(store.timescale, 1);
     const saved = { skewMs: store.skewMs, skewAt: store.skewAt };

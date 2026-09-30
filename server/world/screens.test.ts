@@ -1,4 +1,4 @@
-// Monitor screens (screens, M2 atlas feed): watched panes get `screen` messages ≤ 1 Hz from pane.read (demo: the
+// Monitor screens (atlas feed): watched panes get `screen` messages ≤ 1 Hz from pane.read (demo: the
 // pane's live mock TUI, even when no drawer ever opened it) or from the terminal mirror once a terminal is open.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

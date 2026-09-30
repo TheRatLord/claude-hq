@@ -1,7 +1,7 @@
 // @pure
 /**
  * Renderer cosmetic RNG (`?seed=`). Anything identity-bound uses `seeded(key)` so every window agrees;
- * `rng()` is for cosmetics only (particles, jitter). Owner: CORE.
+ * `rng()` is for cosmetics only (particles, jitter).
  */
 import { hash32, mulberry32 } from '../../../shared/identity.ts';
 

@@ -1,6 +1,6 @@
 /**
- * Resolved options + paths. Owner: BE.
- *   session: --session → CLAUDE_HQ_SESSION → 'default'; in --demo, 'demo' unless --session is given (D8).
+ * Resolved options + paths.
+ *   session: --session → CLAUDE_HQ_SESSION → 'default'; in --demo, 'demo' unless --session is given.
  *   ~/.config/claude-hq/{token, config.json (settings), <session>/ (since, slots, acks, children.json), <session>.lock}
  */
 import fs from 'node:fs';

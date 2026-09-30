@@ -1,7 +1,7 @@
 /**
  * Screen mirror: one `@xterm/headless` terminal per live child at the child's grid, fed with every
  * frame; `serialize()` produces the `full` frame for late joiners / resumed tabs / needsFull clients.
- * Owner: BE. `lines()` feeds `screen` messages for panes with a live child (world/screens.ts via hub.mirrorOf).
+ * `lines()` feeds `screen` messages for panes with a live child (world/screens.ts via hub.mirrorOf).
  */
 import xtermHeadless from '@xterm/headless';
 import serializePkg from '@xterm/addon-serialize';
@@ -42,7 +42,7 @@ export class Mirror {
   }
   /** Serialized screen as a `full` frame payload. */
   full(): Promise<Uint8Array> {
-    // M1 integ: a full() racing dispose() must not serialize a disposed terminal (xterm throws "DisposableStore
+    // a full() racing dispose() must not serialize a disposed terminal (xterm throws "DisposableStore
     // already disposed"); it resolves an empty clear-screen frame instead.
     const empty = (): Uint8Array => te.encode('\x1b[H\x1b[2J');
     if (this.dead) return Promise.resolve(empty());
@@ -59,8 +59,8 @@ export class Mirror {
     return out;
   }
   /**
-   * Visible lines with SGR colour escapes only (fg, bg, bold, inverse) for tinted monitors (`screen.watch {ansi:true}`,
-   * M3.5). Trailing default-coloured blanks are trimmed; a coloured line ends with one reset.
+   * Visible lines with SGR colour escapes only (fg, bg, bold, inverse) for tinted monitors (`screen.watch {ansi:true}`).
+   * Trailing default-coloured blanks are trimmed; a coloured line ends with one reset.
    */
   ansiLines(): string[] {
     if (this.dead) return [];

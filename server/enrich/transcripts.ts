@@ -2,7 +2,7 @@
  * Transcripts enricher: tails each Claude pane's JSONL transcript and patches
  * activity / model / modelTier / contextTokens / outputTokens / todos / lastPrompt / title / struggle / lastText / work,
  * and emits error / test-pass / test-fail / commit / compact / struggle / news (one per finished turn).
- * Claude panes only. Owner: BE2.
+ * Claude panes only.
  *
  * Load shaping: initial 512 KB tails are staggered (≤ 1 new tail per 50 ms) and parsed in ≤ 64 KB chunks with
  * a ≤ 4 ms budget per event-loop turn (yielding via setImmediate), so 40 agents × 22 MB files never stall the WS loop.

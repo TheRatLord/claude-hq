@@ -1,12 +1,12 @@
 /**
  * Process-info enricher: polls herdr `pane.process_info` every 2.5 s for shell panes and every 10 s
  * for agent panes, and patches `process` = {name, argv, activity} (ShellActivity via shared/classify.ts). `res` stays
- * null until M4. Emits `commit` for shells whose foreground argv is a `git commit|push` (D3: shells only), and `news
+ * null for now. Emits `commit` for shells whose foreground argv is a `git commit|push` (shells only), and `news
  * {src:'shell', lines}`: the tail of `pane.read recent_unwrapped` is diffed against the previous one each poll
  * (shellNews; the last line, the prompt / cursor line redrawn constantly, never counts) and new lines accumulate while a
- * command runs; ONE news fires when the shell is back at its prompt (M3.5 "meaningful news": a finished command, not
+ * command runs; ONE news fires when the shell is back at its prompt ("meaningful news": a finished command, not
  * every chunk a dev server or `tail -f` prints). Full-screen activities (monitor, edit) are not news.
- * Works unchanged against HerdrLive, DemoWorld and Replay (it only calls `source.request`). Owner: BE2.
+ * Works unchanged against HerdrLive, DemoWorld and Replay (it only calls `source.request`).
  */
 import { Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, HerdrSource, Logger, TimerHandle } from '../interfaces.ts';

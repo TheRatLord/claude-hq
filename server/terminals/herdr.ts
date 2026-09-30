@@ -1,6 +1,6 @@
 /**
  * HerdrTerminals: the live `TerminalBackend`. One `herdr terminal session {observe|control}`
- * child per handle, NDJSON over plain pipes (no PTY). Owner: BE.
+ * child per handle, NDJSON over plain pipes (no PTY).
  *
  *   - stdin stays open for the child's life (EOF detaches a control child).
  *   - the exit code is always 0: only `terminal.closed.reason` is trusted (table → closedReasonToState).

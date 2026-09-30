@@ -1,6 +1,6 @@
 // @pure
 /**
- * Tool / command / process classification (ToolClass, ShellActivity). Owner: BE2.
+ * Tool / command / process classification (ToolClass, ShellActivity).
  * Pure: imported by the backend enrichers and by renderer @pure modules. No node built-ins, no three.
  */
 
@@ -210,7 +210,7 @@ export function processFromInfo(info: HerdrProcessInfo | null): { name: string; 
 }
 
 // ------------------------------------------------------------------------------------------------
-// M3.5 (BE2): work stats + context window, shared by the transcripts enricher, the demo and the UI.
+// work stats + context window, shared by the transcripts enricher, the demo and the UI.
 
 /** Lines in a string ('' → 0; a trailing newline does not start a line). */
 export function lineCount(s: unknown): number {

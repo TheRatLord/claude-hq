@@ -1,7 +1,7 @@
 // Chaos harness. On the mock herdr, under FakeClock (timers fake, socket IO real), 20 seeds of
 // randomised herdr restarts (re-keyed ids), pane churn, status flips, subscription EOFs and reply/event lines split
 // into random byte pieces (mid-UTF-8 included) → no exodus, no duplicate entities, the model converges to herdr's
-// truth, no leaked terminal children, and the DEFAULT-session method log holds nothing but READ calls. Owner: BE.
+// truth, no leaked terminal children, and the DEFAULT-session method log holds nothing but READ calls.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeClock } from '../clock.ts';

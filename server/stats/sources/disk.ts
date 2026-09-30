@@ -1,6 +1,6 @@
 /**
  * Disks: `fs.statfsSync` on `/` and real mounts from /proc/mounts (ext4, xfs, btrfs; vfat only on /boot*). Never `df`.
- * I/O: /proc/diskstats sector deltas × 512 over whole disks. Owner: BE2.
+ * I/O: /proc/diskstats sector deltas × 512 over whole disks.
  */
 import fs from 'node:fs';
 import type { Stats } from '../../../shared/protocol.ts';

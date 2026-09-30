@@ -1,6 +1,6 @@
 /**
- * Per-process scan (M4 `res`): CPU% and RSS of a process tree from /proc/<pid>/{stat,statm}. Sampled every 3 s by the
- * sampler when a caller asks for trees (none in M1). Owner: BE2.
+ * Per-process scan (`res`): CPU% and RSS of a process tree from /proc/<pid>/{stat,statm}. Sampled every 3 s by the
+ * sampler when a caller asks for trees (none yet).
  */
 import { read, list } from './util.ts';
 

@@ -1,6 +1,6 @@
 /**
  * Test-support: typed stand-ins for large interfaces (the DOM, three's renderer, the socket store) in `*.test.ts`.
- * Owner: CORE. Never imported by app code.
+ * Never imported by app code.
  */
 
 /**

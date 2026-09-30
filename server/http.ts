@@ -1,7 +1,7 @@
 /**
  * HTTP server: loopback-only Host check, token → HttpOnly cookie, static `dist/` with CSP,
  * `/healthz`, `/debug/metrics` (--metrics/--dev, token auth), `/api/audit` (token auth), WS upgrade gate (path, Host, Origin, token).
- * Owner: BE. No compression or range requests: loopback only, hashed assets are served immutable.
+ * No compression or range requests: loopback only, hashed assets are served immutable.
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -17,7 +17,7 @@ export const CSP = "default-src 'self'; connect-src 'self' ws://localhost:* ws:/
  * The served CSP: connect-src narrowed to this server's own port (the only WS origin ws.ts accepts anyway), so a page
  * can never open a socket to another local service. `port` unknown → the wildcard form above.
  */
-// [INT M2, cross-owner BE] no `ws://[::1]:port`: CSP host-sources cannot be IPv6 literals (Chromium logs a console error
+// no `ws://[::1]:port`: CSP host-sources cannot be IPv6 literals (Chromium logs a console error
 // "contains an invalid source" on every production load); a page served from [::1] is covered by 'self' (CSP3 ws match)
 export const cspFor = (port: number | null | undefined): string => (port ? CSP.replace('ws://localhost:* ws://127.0.0.1:*', `ws://localhost:${port} ws://127.0.0.1:${port}`) : CSP);
 

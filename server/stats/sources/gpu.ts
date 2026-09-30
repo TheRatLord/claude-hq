@@ -1,6 +1,6 @@
 /**
  * amdgpu: gpu_busy_percent, mem_info_{vram,gtt}_{used,total} from the DRM card, clock/power/temp from the amdgpu hwmon.
- * No amdgpu → null. Owner: BE2.
+ * No amdgpu → null.
  */
 import type { Stats } from '../../../shared/protocol.ts';
 import { num, read, list, hwmonByName } from './util.ts';

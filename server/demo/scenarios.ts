@@ -1,5 +1,5 @@
 /**
- * Demo content pools + scenario builders. Pure data/functions: no timers, no I/O. Owner: BE2.
+ * Demo content pools + scenario builders. Pure data/functions: no timers, no I/O.
  *
  * A scenario builds a list of pane specs; `DemoWorld` turns them into herdr-shaped raw snapshots and schedules.
  *   PaneSpec = {ws, tab, kind, name?, status, frozen?, cls?, proc?, prompt?, idleForMs?, model?, title?, ...}
@@ -105,7 +105,7 @@ export const TASKS = Object.freeze([
 ]);
 
 /**
- * What a Claude says while on each TASKS entry (M3.5 `lastText`): [finding, fix]. `demoText()` phrases them per stage.
+ * What a Claude says while on each TASKS entry (`lastText`): [finding, fix]. `demoText()` phrases them per stage.
  */
 export const TASK_NOTES: Readonly<Record<string, readonly [string, string]>> = Object.freeze({
   'Route stops display': ['the route card only reads `stops[0]` from the store', 'slice the next three stops and render them as a list'],
@@ -135,7 +135,7 @@ const GENERIC_NOTES: readonly [string, string] = Object.freeze(['where this is h
 export type DemoTextStage = 'explore' | 'plan' | 'talk' | 'fail' | 'pass' | 'done' | 'refused';
 
 /**
- * A plausible assistant text for a demo agent (M3.5 `lastText`). `prompt` is unused, kept for callers.
+ * A plausible assistant text for a demo agent (`lastText`). `prompt` is unused, kept for callers.
  */
 export function demoText(R: Pick<Rng, 'next'>, stage: DemoTextStage,
   { title = null, file = 'the code', work = null }: { title?: string | null; prompt?: string | null; file?: string; work?: { added: number; removed: number; files: number } | null } = {}): string {
@@ -482,7 +482,7 @@ export function buildScenario(scenario: string, { n = 12, seed = 1 }: { n?: numb
         specs.push({ ws: ws(), tab: 'status', kind: 'claude', status, frozen: true, cls: status === 'working' ? 'edit' : null,
           prompt: status === 'blocked' ? PROMPTS.edit('config.toml') : null });
       }
-      // [CORE edit, M1 review gate] 'task' swaps places with 'build' so the cls:task agent lands among the first 12
+      // 'task' swaps places with 'build' so the cls:task agent lands among the first 12
       // panes, i.e. at a desk (renderer assignDesks), instead of the packed overflow floor grid where no clear hero
       // shot of it exists. 'build' (same bashPound look as 'test') takes the floor spot.
       const toolOrder = TOOL_CLASSES.map((c) => (c === 'task' ? 'build' : c === 'build' ? 'task' : c));

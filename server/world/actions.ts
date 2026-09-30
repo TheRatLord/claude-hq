@@ -9,7 +9,7 @@
  *               flag or setting that enables it there; a named session resolving to the default socket counts as default)
  * herdr/client.ts enforces its own method allowlist independently: a bug in either alone cannot mutate the
  * default session. Read-only herdr protocol → every class but `always` is refused with `readonly_protocol`.
- * Owner: BE. `timeline.get` is served by timeline.ts (M2); `note.set` by notes.ts (M3).
+ * `timeline.get` is served by timeline.ts; `note.set` by notes.ts.
  */
 import { ACTION_CLASS, ERR, S2R, DEFAULT_SETTINGS } from '../../shared/protocol.ts';
 import type { ActionClass, ClientMsg, ClientMsgOf, ClientMsgType, EventKind, Prompt, ServerMsg, Settings } from '../../shared/protocol.ts';
@@ -81,7 +81,7 @@ export interface ExplainWhy { state: string | null; rule: string | null; region:
  * agent can take ~0.3-1 s to show: herdr keeps reporting blocked at the same stateSeq and the screen keeps the prompt). */
 export const ANSWER_RECHECK_MS = 2000;
 export const ANSWER_POLL_MS = 200;
-/** spawn with a first prompt: wait at most this long for the new agent to become interactive-ready (M3.5). */
+/** spawn with a first prompt: wait at most this long for the new agent to become interactive-ready. */
 export const SPAWN_READY_MS = 20_000;
 export const SPAWN_POLL_MS = 400;
 /** …and at most this long for a new tab's shell to accept `agent.start`. */
@@ -301,7 +301,7 @@ export class Actions {
    * - No kind = a shell: a new tab in `workspaceId` (or a new workspace) → its root pane id, so the renderer's shell
    *   character appears at once.
    * - kind claude/codex: `agent.start` in that pane; herdr's socket call returns at once (`launch_pending`). With a first
-   *   `prompt` (M3.5): poll `agent.get` (≤ SPAWN_READY_MS, every SPAWN_POLL_MS) until the agent is interactive-ready and
+   *   `prompt`: poll `agent.get` (≤ SPAWN_READY_MS, every SPAWN_POLL_MS) until the agent is interactive-ready and
    *   idle, then `agent.prompt` exactly once → `prompted:true`. A startup dialog (folder trust → blocked), a timeout or a
    *   vanished pane → `prompted:false` + `why` (the agent stays up; the user answers the dialog like any block).
    *   The prompt text is never logged or audited (only `{action:'prompt', paneId, ok}`).

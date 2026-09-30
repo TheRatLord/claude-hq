@@ -1,5 +1,5 @@
 /**
- * Child reaping: no orphaned herdr children on the user's default session. Owner: BE.
+ * Child reaping: no orphaned herdr children on the user's default session.
  *  - every herdr child's env carries CLAUDE_HQ_INSTANCE=<instanceId>, CLAUDE_HQ_SESSION=<session> (herdr/resolve.ts);
  *  - pids are recorded in `~/.config/claude-hq/<session>/children.json` ({instanceId, pids:[{pid, mode, paneId,
  *    startedAt}]}), rewritten on every spawn/exit;

@@ -1,7 +1,7 @@
 // @pure
 /**
  * Claude HQ wire protocol. The single contract between server/ and renderer/.
- * Owner: LEAD. Pure: no three, no node built-ins (TextEncoder/TextDecoder are web-standard globals).
+ * Pure: no three, no node built-ins (TextEncoder/TextDecoder are web-standard globals).
  *
  * Add optional fields; never break shapes.
  */
@@ -189,7 +189,7 @@ export const LIMITS = Object.freeze({
   noteMax: 280,
   settingsPatchMax: 4 * 1024,
   historyLinesMax: 5000,
-  watchMax: 8, // M3.5 LEAD: 6 → 8 for the monitor atlas (8 nearest live desks)
+  watchMax: 8, // 6 → 8 for the monitor atlas (8 nearest live desks)
   watchUnionMax: 16,
   cols: Object.freeze([10, 500] as const),
   rows: Object.freeze([4, 200] as const),
@@ -259,9 +259,9 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   volumeMaster: 0.8,
   volumeSfx: 0.8,
   volumeAmbient: 0.5,
-  volumeNotify: 0.9, // [AUD M3] blocked/done chimes + dings (per-category volume)
-  volumeVoices: 0.7, // [AUD M3] Clawd vocal blips
-  audioMuted: false, // [AUD M3] mute toggle
+  volumeNotify: 0.9, // blocked/done chimes + dings (per-category volume)
+  volumeVoices: 0.7, // Clawd vocal blips
+  audioMuted: false, // mute toggle
   quality: 'auto',
   fov: 60,
   quickAnswer: false,
@@ -295,7 +295,7 @@ export interface Activity {
   detail: string;
   since: number;
   /**
-   * (M4 LEAD) labels of subagents running under a long Task/Agent/Workflow tool (≤ 4, e.g. 'ideate:daily'); the
+   * labels of subagents running under a long Task/Agent/Workflow tool (≤ 4, e.g. 'ideate:daily'); the
    * activity stays non-null for the whole run of such a tool (sidechain transcripts count as progress)
    */
   subs?: string[];
@@ -305,14 +305,14 @@ export interface Todo { content: string; status: 'pending' | 'in_progress' | 'co
 export interface Struggle {
   level: 0 | 1 | 2 | 3;
   reason: 'fails' | 'errors' | 'noEdits' | 'context';
-  /** short human reason line, e.g. '3 test fails in a row' (M3.5 LEAD) */
+  /** short human reason line, e.g. '3 test fails in a row' */
   detail?: string;
 }
-/** current task (since the latest real user prompt): start time ms epoch + line/file counts from Edit/MultiEdit/Write tool inputs (M3.5 LEAD) */
+/** current task (since the latest real user prompt): start time ms epoch + line/file counts from Edit/MultiEdit/Write tool inputs */
 export interface WorkStats { since: number; added: number; removed: number; files: number }
 export interface PromptOption { key: string; label: string; index: number }
 /**
- * (M4 LEAD; BE blocked.ts) what a permission prompt approves: tool 'Bash'|'Edit'|'Write'|'WebFetch'|'Workflow'|'MCP'|'Trust'|…,
+ * (blocked.ts) what a permission prompt approves: tool 'Bash'|'Edit'|'Write'|'WebFetch'|'Workflow'|'MCP'|'Trust'|…,
  * arg = command / path / host / name (≤ 120 chars), detail e.g. '+12 −3', scope = the "don't ask again for ___" text of the
  * always-option
  */
@@ -327,7 +327,7 @@ export interface Prompt {
   subject?: PromptSubject | null;
 }
 /**
- * (M4 LEAD; BE2 procinfo) since = foreground command start (ms epoch); lastLine = last non-blank output line (≤ 120,
+ * (procinfo) since = foreground command start (ms epoch); lastLine = last non-blank output line (≤ 120,
  * ANSI-stripped, from read-only pane.read); exit = last finished command's code (+ '3 failed' summary); ports = TCP
  * listen ports owned by the foreground process tree
  */
@@ -382,14 +382,13 @@ export interface Entity {
   todos: Todo[] | null;
   struggle: Struggle | null;
   lastPrompt: string | null;
-  /** last assistant text block, whitespace-collapsed, ≤ 280 chars (M3.5 LEAD; BE2) */
+  /** last assistant text block, whitespace-collapsed, ≤ 280 chars */
   lastText: string | null;
-  /** current-task counters (M3.5 LEAD; BE2) */
+  /** current-task counters */
   work: WorkStats | null;
   /** only while blocked */
   prompt: Prompt | null;
   process: ProcessInfo | null;
-  /** M4 */
   res: { cpu: number; rssMB: number } | null;
   note: Note | null;
 }
@@ -447,7 +446,7 @@ export interface Hello {
   herdr: { connected: boolean; protocol: number | null; readOnly: boolean };
   /** authoritative "structural actions (spawn, pane.close) allowed": the UI gates on this */
   allowMutations: boolean;
-  /** the session resolves (by realpath) to herdr's default socket (BE, app.ts) */
+  /** the session resolves (by realpath) to herdr's default socket (app.ts) */
   defaultSession?: boolean;
   settings: Settings;
   statsHistory: Stats[];
@@ -570,7 +569,7 @@ export const FIELD_OWNERS: Readonly<Record<OwnerName, readonly EntityField[]>> =
   procinfo: Object.freeze(['process', 'res'] as const),
   blocked: Object.freeze(['prompt'] as const),
   acks: Object.freeze(['ack'] as const),
-  notes: Object.freeze(['note'] as const), // [BE M3.5 cross-owner] world/notes.ts (sticky notes): Entity.note {text, at}|null
+  notes: Object.freeze(['note'] as const), // world/notes.ts (sticky notes): Entity.note {text, at}|null
   demo: Object.freeze([...TRANSCRIPT_FIELDS, 'subagents'] as const),
 });
 
@@ -582,19 +581,19 @@ export const EVENT_OWNERS: Readonly<Record<OwnerName, readonly EventKind[]>> = O
   procinfo: Object.freeze(['commit', 'news'] as const),
   blocked: Object.freeze([] as const),
   acks: Object.freeze(['acked'] as const),
-  notes: Object.freeze([] as const), // [BE M3.5 cross-owner]
+  notes: Object.freeze([] as const),
   demo: Object.freeze(['error', 'test-pass', 'test-fail', 'commit', 'compact', 'struggle', 'news', 'subagent-spawned', 'subagent-done'] as const),
 });
 
 /**
- * Event kinds with more than one possible emitter (D3): the pane's kind picks exactly one. Agent panes (any kind but
+ * Event kinds with more than one possible emitter: the pane's kind picks exactly one. Agent panes (any kind but
  * 'shell') → the transcript-side owner (`transcripts` live, `demo` in --demo); shells → `procinfo`. WorldModel drops
  * (dev: throws) an emit from the other owner. Every other kind has exactly one owner in any wiring.
  */
 export const SHARED_EVENTS: readonly EventKind[] = Object.freeze(['commit', 'news'] as const);
 
 /**
- * May `owner` emit event `kind` for a pane of `entityKind`? (EVENT_OWNERS + the D3 split for SHARED_EVENTS.)
+ * May `owner` emit event `kind` for a pane of `entityKind`? (EVENT_OWNERS + the pane-kind split for SHARED_EVENTS.)
  */
 export function mayEmit(owner: OwnerName, kind: EventKind, entityKind: Kind): boolean {
   if (!EVENT_OWNERS[owner]?.includes(kind)) return false;
@@ -603,14 +602,14 @@ export function mayEmit(owner: OwnerName, kind: EventKind, entityKind: Kind): bo
 }
 
 /** Owners wired in live mode vs demo mode (demo replaces transcripts + subagents). */
-// [BE M3.5 cross-owner] + 'notes' (world/notes.ts)
+// + 'notes' (world/notes.ts)
 export const LIVE_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'transcripts', 'subagents', 'procinfo', 'blocked', 'acks', 'notes'] as const);
 export const DEMO_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'demo', 'procinfo', 'blocked', 'acks', 'notes'] as const);
 
 /** Every Entity field, in declaration order-ish. */
 export const ENTITY_FIELDS: readonly EntityField[] = Object.freeze([
   ...BASE_FIELDS, 'ack', 'title', 'activity', 'model', 'modelTier', 'contextTokens', 'outputTokens', 'subagents',
-  'todos', 'struggle', 'lastPrompt', 'prompt', 'process', 'res', 'lastText', 'work', 'note', // note: [BE M3.5 cross-owner]
+  'todos', 'struggle', 'lastPrompt', 'prompt', 'process', 'res', 'lastText', 'work', 'note',
 ]);
 
 /**
@@ -633,7 +632,7 @@ export type FieldDefaults = Readonly<{ [K in EnricherField]: K extends 'subagent
 export const FIELD_DEFAULTS: FieldDefaults = Object.freeze({
   ack: null, title: null, activity: null, model: null, modelTier: null, contextTokens: null, outputTokens: null,
   subagents: Object.freeze([]), todos: null, struggle: null, lastPrompt: null, prompt: null, process: null, res: null,
-  lastText: null, work: null, note: null, // note: [BE M3.5 cross-owner]
+  lastText: null, work: null, note: null,
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -692,7 +691,7 @@ export function decodeFrame(buf: ArrayBuffer | ArrayBufferView): Frame | null {
 export const encodeTermData = (id: string, bytes: Uint8Array | string, full = false): Uint8Array<ArrayBuffer> => encodeFrame(BIN.TERM_DATA, id, full ? BIN_FLAG.FULL : 0, bytes);
 /**
  * Interactive-path input frame (no rid, credit-windowed). Paste chunks never use this: they are JSON
- * `{t:'term.input', id, text, paste:true, rid}` so each chunk gets a reply (LEAD M1 decision D6).
+ * `{t:'term.input', id, text, paste:true, rid}` so each chunk gets a reply.
  */
 export const encodeTermInput = (id: string, bytes: Uint8Array | string): Uint8Array<ArrayBuffer> => encodeFrame(BIN.TERM_INPUT, id, 0, bytes);
 
@@ -776,7 +775,7 @@ export const VALIDATE: Readonly<{ [K in keyof ClientPayloads]: Readonly<Record<k
   'term.scroll': { id, dir: R.oneOf(['up', 'down', 'bottom']), lines: R.int(0, 10_000, true) },
   'term.copyRecent': { id, lines: R.int(1, LIMITS.historyLinesMax) },
   'term.close': { id },
-  // [BE M3.5 cross-owner] ansi:true → this client's `screen` lines keep SGR colour escapes (+ `ansi:true` on the msg)
+  // ansi:true → this client's `screen` lines keep SGR colour escapes (+ `ansi:true` on the msg)
   'screen.watch': { ids: R.arr(R.paneId(), LIMITS.watchMax), ansi: R.bool(true) },
   'done.ack': { id, stateSeq: R.nullable(R.int(0, Number.MAX_SAFE_INTEGER)) },
   'herdr.focus': { id },
@@ -790,7 +789,7 @@ export const VALIDATE: Readonly<{ [K in keyof ClientPayloads]: Readonly<Record<k
     kind: R.oneOf(['claude', 'codex'], true),
     label: opt(R.str(LIMITS.labelMax, { min: 1 })),
     name: opt(R.str(LIMITS.labelMax, { min: 1 })),
-    prompt: opt(R.str(LIMITS.textMax, { min: 1 })), // M3.5 LEAD: first prompt for kind 'claude'/'codex' (BE sends it once the agent is ready)
+    prompt: opt(R.str(LIMITS.textMax, { min: 1 })), // first prompt for kind 'claude'/'codex' (the backend sends it once the agent is ready)
   },
   'pane.close': { id },
   'settings.set': { patch: R.obj(LIMITS.settingsPatchMax, SETTINGS_KEYS) },

@@ -5,7 +5,6 @@
  * frame loop (rAF stops in hidden tabs).
  * The UI's `ui/notify.ts` (chime, toasts, chevrons) subscribes to the same store events and can read `attention.state()`;
  * it never needs to write the title itself.
- * Owner: CORE.
  */
 
 import type { Entity, Status } from '../../../shared/protocol.ts';

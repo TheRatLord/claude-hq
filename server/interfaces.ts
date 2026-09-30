@@ -1,7 +1,7 @@
 /**
- * Backend internal seams. The ONLY way backend modules talk across WP boundaries.
+ * Backend internal seams. The ONLY way backend modules talk across module boundaries.
  * Live and demo differ only in which implementations app.ts wires in.
- * Owner: LEAD. Tiny base classes + JSDoc; implementations live in herdr/, demo/, enrich/, world/, terminals/.
+ * Tiny base classes + JSDoc; implementations live in herdr/, demo/, enrich/, world/, terminals/.
  */
 
 import { EventEmitter } from 'node:events';

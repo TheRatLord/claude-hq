@@ -1,12 +1,12 @@
 /**
  * WorldModel: raw herdr snapshot + enrichers → Entity map; diff → `entity`/`gone`/`event`/
- * `workspaces`/`herdr`. Emits 'msg' (a ServerMsg object) for WsHub to broadcast. Owner: BE.
+ * `workspaces`/`herdr`. Emits 'msg' (a ServerMsg object) for WsHub to broadcast.
  *
  *   raw snapshot → base entity (naming.ts, slots.ts, since.ts) → `update(id, base, prev)` on every enricher (synchronous)
  *   → shallow-merge each enricher's latest patch by field ownership → diff → one `entity` per id per 50 ms.
  *
  * - Ownership: patches outside `owns` throw in dev / drop in prod (checkPatch); events must pass `mayEmit(owner, kind,
- *   entity.kind)` (D3: `commit`/`news` split by pane kind) — dev throws, prod drops.
+ *   entity.kind)` (`commit`/`news` split by pane kind) — dev throws, prod drops.
  * - Offline: the model freezes (no `gone`, no events, statuses unchanged) until the source reconnects.
  * - Reconnect grace (15 s): panes missing from the new snapshots are kept; new panes are matched to them by
  *   terminal_id → agent_session → place and RE-KEYED (`gone{reason:'rekeyed', newId}` + `entity`, no arrive/leave).
@@ -403,7 +403,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
         project: projectOf({ repoName: w.worktree?.repo_name, foregroundCwd: p.foreground_cwd, cwd: p.cwd }),
         repo: w.worktree?.repo_name ?? null,
         focused: !!p.focused && raw.focused_pane_id === id,
-        baseTitle: p.terminal_title_stripped || null, // D2: herdr title, base-owned; display only via taskLabel()
+        baseTitle: p.terminal_title_stripped || null, // herdr title, base-owned; display only via taskLabel()
       });
     }
     const workspaces = sortedWs.map((w) => {
@@ -453,7 +453,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     if (!ent) return;
     if (!mayEmit(e.name, kind, ent.kind)) {
       this.counters.dropped++;
-      if (this.dev) throw new Error(`enricher ${e.name} may not emit ${kind} for a ${ent.kind} pane (mayEmit, D3)`);
+      if (this.dev) throw new Error(`enricher ${e.name} may not emit ${kind} for a ${ent.kind} pane (mayEmit)`);
       return;
     }
     if (this.inGrace || !this.connected && this.source.connected === false) return;

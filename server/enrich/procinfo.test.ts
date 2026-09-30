@@ -77,7 +77,7 @@ test('procinfo: shells emit news {src:shell, lines} for new output; full-screen 
   await tick(2500);
   text = 'demo$ npm test\n> test\n✔ one\n✔ two\n✔ three\n';
   await tick(2500);
-  assert.deepEqual([...events], [], 'output while the command runs accumulates (M3.5: news once the prompt returns)');
+  assert.deepEqual([...events], [], 'output while the command runs accumulates (news once the prompt returns)');
   argv = ['bash'];
   text = 'demo$ npm test\n> test\n✔ one\n✔ two\n✔ three\n# pass 3\ndemo$ ';
   await tick(2500);

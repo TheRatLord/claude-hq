@@ -2,7 +2,7 @@
  * HQ-local sticky notes, an Enricher (`notes`: owns `note`, emits nothing).
  * `note.set {id, text|null}` stores `{text, at}` per stable identity in `<session>/notes.json` (0600, debounced atomic
  * writes via persist.ts), so a note follows re-keys and survives backend restarts. `Entity.note` = `{text, at}|null`.
- * Never sent to herdr. Empty/whitespace text or null clears the note. Owner: BE.
+ * Never sent to herdr. Empty/whitespace text or null clears the note.
  */
 import { Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, Logger } from '../interfaces.ts';

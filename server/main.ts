@@ -7,7 +7,7 @@
  * Prints the URL (with token) on stdout. SIGINT/SIGTERM/SIGHUP → clean close; a second signal exits immediately.
  *
  * Single instance: a live backend for the same session → print its URL and exit 0 (`--new-instance` refuses
- * instead). Owner: BE. --record/--replay: record.ts (BE2), wired in app.ts.
+ * instead). --record/--replay: record.ts, wired in app.ts.
  */
 import { createApp } from './app.ts';
 import type { App } from './app.ts';
@@ -90,7 +90,7 @@ async function main() {
     process.exit(0);
   }
   const app = await createApp(opts);
-  // M1 integ: handlers before the URL is printed (callers signal as soon as they see it).
+  // handlers before the URL is printed (callers signal as soon as they see it).
   let stopping = false;
   const stop = (sig: string): void => {
     if (stopping) {

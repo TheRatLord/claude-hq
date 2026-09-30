@@ -1,7 +1,7 @@
 /**
  * herdr client: one unix-socket connection per request, long-lived subscriptions, `terminal session`
  * children with a scrubbed env. Defence in depth: a per-session METHOD ALLOWLIST and a read-only mode live HERE,
- * independent of actions.ts ("two gates"). Owner: BE.
+ * independent of actions.ts ("two gates").
  *
  *   READ        ping session.snapshot events.subscribe workspace.list tab.list pane.list pane.get pane.read
  *               pane.process_info agent.list agent.get agent.read agent.explain; spawn `observe`     default ✓ named ✓

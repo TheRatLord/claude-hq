@@ -1,5 +1,5 @@
 /**
- * Tiny leveled logger to stderr. Never log terminal bytes. Owner: BE.
+ * Tiny leveled logger to stderr. Never log terminal bytes.
  * Level from HQ_LOG (debug|info|warn|error|silent), default info.
  */
 import type { Logger } from './interfaces.ts';

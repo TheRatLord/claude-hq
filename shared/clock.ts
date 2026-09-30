@@ -1,10 +1,9 @@
 // @pure
 /**
- * One wait-clock formatter for every surface that shows how long an agent has been waiting (FX alert bubble, Blocked
- * Inbox card + mini card, roster row / inbox card, recap) [FX fix r1]: `m:ss` under an hour, then `h:mm:ss`.
+ * One wait-clock formatter for every surface that shows how long an agent has been waiting (alert bubble, Blocked
+ * Inbox card + mini card, roster row / inbox card, recap): `m:ss` under an hour, then `h:mm:ss`.
  * `approx` (entity.statusSinceApprox: the status predates this server's first sight of the pane) prefixes an honest
  * `≥ ` everywhere, so no surface claims an exact age it cannot know.
- * Owner: LEAD (added by FX, fix round 1; proposed contract addition).
  */
 
 /**

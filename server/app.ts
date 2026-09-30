@@ -4,9 +4,8 @@
  *
  *   live:  HerdrClient (allowlist, read-only) → HerdrLive (HerdrSource) + transcripts/subagents/procinfo/blocked/acks
  *          enrichers → WorldModel; HerdrTerminals (TerminalBackend) → TerminalHub. Reaper scan before the first spawn.
- *   demo:  static demo source + DemoEnricher/procinfo (BE2) + blocked/acks (BE) → WorldModel; FakeTerminals → hub.
+ *   demo:  static demo source + DemoEnricher/procinfo + blocked/acks → WorldModel; FakeTerminals → hub.
  *          `--demo` never constructs a herdr client.
- * Owner: BE.
  */
 import crypto from 'node:crypto';
 import { resolveConfig, loadOrCreateToken, sessionDir, loadSettings, saveSettings } from './config.ts';
@@ -99,17 +98,17 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
   const startedAt = clock.now();
   const settings = loadSettings(cfg.configDir, DEFAULT_SETTINGS);
   // the `allowMutations` setting is never honoured (config.ts UNPERSISTED_SETTINGS; actions.ts gates on the session)
-  if (opts.replay && !opts.session) cfg.session = 'replay'; // BE2: a replay never claims a real session's name or lock
+  if (opts.replay && !opts.session) cfg.session = 'replay'; // a replay never claims a real session's name or lock
   const useLock = opts.lock !== false && !cfg.demo && !opts.replay; // demo/replay backends may coexist (no herdr children)
 
-  const w: Wiring = opts.replay ? await wireReplay(opts.replay, opts.speed ?? 1, { clock, log }) // BE2: --replay (record.ts)
+  const w: Wiring = opts.replay ? await wireReplay(opts.replay, opts.speed ?? 1, { clock, log }) // --replay (record.ts)
     : cfg.demo ? await wireDemo(cfg.demo, cfg, { clock, log }) : await wireLive(cfg, { clock, log, instanceId, opts });
   const { source, enrichers, terminals, stateDir, readOnly, herdrInfo } = w;
   const blocked = enrichers.find((e) => e instanceof BlockedEnricher) ?? null;
   const acks = enrichers.find((e) => e instanceof AcksEnricher) ?? null;
   const notes = enrichers.find((e) => e instanceof NotesEnricher) ?? null;
 
-  // BE2: --record F appends every source snapshot/status + enricher patch/event (record.ts); attached before the model
+  // --record F appends every source snapshot/status + enricher patch/event (record.ts); attached before the model
   const recorder = opts.record ? (await import('./record.ts')).attachRecorder({ file: opts.record, source, enrichers, clock, session: cfg.session, demo: !!cfg.demo }) : null;
   const model = new WorldModel({ source, enrichers, clock, log: log.child('world'), session: cfg.session, demo: w.demoOwners ?? !!cfg.demo, dev: cfg.dev, stateDir,
     ...(opts.graceMs ? { graceMs: opts.graceMs } : {}) }); // graceMs: tests only
@@ -163,7 +162,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
     },
   });
   stats?.on('stats', (s) => wsHub.broadcast({ t: S2R.STATS, stats: s }));
-  // M1 integ: demo/replay expose metrics(), live a plain object
+  // demo/replay expose metrics(), live a plain object
   const sourceMetrics = (): unknown => {
     if (!('metrics' in source)) return null;
     const m = source.metrics;
@@ -171,7 +170,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
   };
   const server = createHttpServer({
     token, distDir: cfg.distDir, dev: cfg.dev, vitePort: cfg.vitePort, metrics: cfg.metrics, instanceId, session: cfg.session, demo: cfg.demo, wsHub, log,
-    auditFn: (n) => audit.read(n), // GET /api/audit (M3: the drawer's Recent HQ actions panel)
+    auditFn: (n) => audit.read(n), // GET /api/audit (the drawer's Recent HQ actions panel)
     metricsFn: () => ({
       instanceId, session: cfg.session, demo: cfg.demo,
       herdr: { ...herdrInfo(), client: w.client?.stats ?? null, live: sourceMetrics() },
@@ -236,11 +235,11 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
 }
 
 async function wireDemo(n: number, cfg: ResolvedConfig, { clock, log }: WireCtx): Promise<Wiring> {
-  // BE2 (M1): DemoWorld (seeded schedules, scenarios) replaces the M0.5 static demo.
+  // DemoWorld (seeded schedules, scenarios) replaces the old static demo.
   const { createDemo } = await import('./demo/world.ts');
   const { FakeTerminals } = await import('./demo/fakeTerm.ts');
   const { source, demo, enrichers: demoEnrichers } = createDemo({ clock, n, seed: cfg.seed, scenario: cfg.scenario, log: log.child('demo') });
-  // BE owns the blocked path: the real parser runs on the demo's `pane.read detection` text.
+  // The blocked path is shared with live: the real parser runs on the demo's `pane.read detection` text.
   const enrichers = [...demoEnrichers, new BlockedEnricher({ clock, log: log.child('blocked') }), new AcksEnricher({ dir: null, clock, log }),
     new NotesEnricher({ dir: null, clock, log })];
   let model: WorldModel | null = null;
@@ -271,7 +270,7 @@ async function wireDemo(n: number, cfg: ResolvedConfig, { clock, log }: WireCtx)
   };
 }
 
-/** --replay F [--speed K] (BE2, record.ts): a read-only HerdrSource + one replay enricher per recorded owner. */
+/** --replay F [--speed K] (record.ts): a read-only HerdrSource + one replay enricher per recorded owner. */
 async function wireReplay(file: string, speed: number, { clock, log }: WireCtx): Promise<Wiring> {
   const { createReplay } = await import('./record.ts');
   const { FakeTerminals } = await import('./demo/fakeTerm.ts');
@@ -329,7 +328,7 @@ async function wireLive(cfg: ResolvedConfig, { clock, log, instanceId, opts }: W
   };
 }
 
-/** Stats sampler (BE2, `server/stats/sampler.ts`) if present: emits 'stats', `history()` = the 300-sample ring. */
+/** Stats sampler (`server/stats/sampler.ts`) if present: emits 'stats', `history()` = the 300-sample ring. */
 async function loadStats({ clock, log }: WireCtx): Promise<StatsSampler | null> {
   let mod: typeof import('./stats/sampler.ts');
   try {

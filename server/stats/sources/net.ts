@@ -1,4 +1,4 @@
-/** Network: /proc/net/dev byte deltas; skips lo, docker*, br-*, veth*. Owner: BE2. */
+/** Network: /proc/net/dev byte deltas; skips lo, docker*, br-*, veth*. */
 import type { Stats } from '../../../shared/protocol.ts';
 import { read } from './util.ts';
 

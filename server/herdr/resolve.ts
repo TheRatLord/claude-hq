@@ -1,6 +1,6 @@
 /**
  * The ONE session → socket resolver. Every herdr socket path in the backend comes from `socketFor`;
- * every herdr child gets the same `--session <name>`. Owner: BE.
+ * every herdr child gets the same `--session <name>`.
  *
  * Default-socket guard: `dev:hq`, `hqtest-up.sh`, and the mock-herdr tests refuse to
  * start when `realpath(socketFor(session)) === realpath(socketFor('default'))`.

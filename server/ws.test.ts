@@ -19,8 +19,8 @@ test('hello → hello.ack → world; nothing accepted before the ack; protocol m
   assert.equal(hello.protocol, PROTOCOL_VERSION);
   assert.deepEqual(hello.limits, { ...DEFAULT_LIMITS });
   assert.equal(hello.demo, 12);
-  assert.equal(hello.session, 'demo'); // D8: demo never reports 'default'
-  assert.ok(Array.isArray(hello.statsHistory)); // StatsSampler ring (BE2)
+  assert.equal(hello.session, 'demo'); // demo never reports 'default'
+  assert.ok(Array.isArray(hello.statsHistory)); // StatsSampler ring
   assert.equal(typeof hello.serverNow, 'number');
   assert.equal(hello.herdr.connected, true);
   assert.equal(typeof hello.settings.fov, 'number');

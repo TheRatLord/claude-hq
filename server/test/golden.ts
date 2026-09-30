@@ -1,5 +1,5 @@
 /**
- * Golden replay fixture tooling. Owner: BE2 (record/replay).
+ * Golden replay fixture tooling.
  *
  *   node server/test/golden.ts <recording.ndjson>     # scrub → server/test/fixtures/hqtest-10min.ndjson
  *                                                     # and regenerate …golden.ndjson (the WorldModel output stream)

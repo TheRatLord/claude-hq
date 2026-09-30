@@ -13,7 +13,7 @@ let L: LiveHarness;
 before(async () => (L = await startLive()));
 after(async () => L.app.close());
 
-test('hello/world from the live source: entities, names, D2 baseTitle, slots, herdr status', async () => {
+test('hello/world from the live source: entities, names, baseTitle, slots, herdr status', async () => {
   const c = await connect(L.app.port, { cid: 'w' });
   const hello = helloOf(c);
   assert.equal(hello.session, 'hqtest');

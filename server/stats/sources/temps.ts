@@ -1,5 +1,5 @@
 /**
- * Temperatures (°C or null), hwmon found by name: k10temp → cpu, nvme, mt7921_phy0 → wifi, amdgpu → gpu. Owner: BE2.
+ * Temperatures (°C or null), hwmon found by name: k10temp → cpu, nvme, mt7921_phy0 → wifi, amdgpu → gpu.
  * The hwmon name map is re-scanned every 60 s; the NVMe sensor is read every 30 s only (a read can wake the drive
  * from APST and take ~10–400 ms here), Wi-Fi every 5 s.
  */

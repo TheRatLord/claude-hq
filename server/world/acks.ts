@@ -1,7 +1,7 @@
 /**
  * HQ-side done sign-off overlay, an Enricher (`acks`: owns `ack`, emits `acked`).
  * `done.ack {id, stateSeq}` stores `{stateSeq, at}` per stable identity in `acks.json`; `Entity.ack` is non-null only
- * while status === 'done' and stateSeq is unchanged. Keyed by identity so it follows re-keys. Owner: BE.
+ * while status === 'done' and stateSeq is unchanged. Keyed by identity so it follows re-keys.
  * Touches nothing in herdr.
  */
 import { Enricher } from '../interfaces.ts';

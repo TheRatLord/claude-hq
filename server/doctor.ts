@@ -4,7 +4,7 @@
  * Strictly read-only: resolves the session socket (path + realpath), pings it (protocol 22?), lists live HQ children
  * from /proc by instance tag (flags stale ones), checks the lock file, checks env gotchas (HERDR_* inherited,
  * CLAUDECODE → transcripts warning), prints the ssh -L command and URL.
- * Never spawns herdr, never writes to a socket beyond `ping`, never modifies anything. Owner: BE.
+ * Never spawns herdr, never writes to a socket beyond `ping`, never modifies anything.
  */
 import fs from 'node:fs';
 import os from 'node:os';
