@@ -3,6 +3,7 @@
  * flat-shaded low poly, 3-band toon ramp, vertex colours where one mesh needs several colours.
  */
 import * as THREE from 'three';
+import './lights/shader.ts';
 
 /** The palette. Warm, saturated, a little dusty. Add colours here instead of inlining hex in systems. */
 export const PAL = Object.freeze({

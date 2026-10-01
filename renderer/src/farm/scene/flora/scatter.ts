@@ -12,6 +12,7 @@ import type { XZ } from '../../world/map.ts';
 import { fbm, hash2 } from '../../world/noise.ts';
 import { sampleGround } from '../terrain/ground.ts';
 import { wallDist } from '../terrain/paths.ts';
+import { OUTCROPS, RIVER_ROCKS } from '../terrain/features.ts';
 import type { GroundSample } from '../terrain/ground.ts';
 import type { Item } from './cells.ts';
 import { SEASON_BIT } from './cells.ts';
@@ -49,6 +50,28 @@ const OPEN: readonly (XZ & { r: number })[] = [
   ...HANGOUTS.map((h) => ({ x: h.x, z: h.z, r: 4.5 })),
 ];
 const inOpen = (x: number, z: number) => OPEN.some((o) => Math.hypot(x - o.x, z - o.z) < o.r);
+/** Distance to the edge of the nearest outcrop / river boulder (their rendered footprint is about 1.35 r). */
+const STONES = [...OUTCROPS, ...RIVER_ROCKS];
+const stoneDist = (x: number, z: number) => { let d = Infinity; for (const o of STONES) d = Math.min(d, Math.hypot(x - o.x, z - o.z) - o.r * 1.35); return d; };
+/** Canopy radius per kind at scale 1 (spacing: neighbours may interleave their crowns, not fuse them). */
+const CROWN: Record<TreeKind, number> = { round: 2.0, lolly: 1.6, bushy: 2.0, oak: 2.6, birch: 1.5, pine: 2.2, fir: 1.7, willow: 2.8, hero: 4.0 };
+/** Height of the lowest crown tier above the trunk base at scale 1. */
+const CROWN_BASE: Record<TreeKind, number> = { round: 2.0, lolly: 2.0, bushy: 1.5, oak: 2.0, birch: 2.2, pine: 1.1, fir: 0.8, willow: 1.2, hero: 2.5 };
+/** Does the hillside rise into the lower crown (a tree on a cliff with its branches in the rock)? */
+const crownInSlope = (kind: TreeKind, x: number, z: number, y: number, s: number) => {
+  const r = CROWN[kind] * s * 0.8, top = y + CROWN_BASE[kind] * s * 0.7;
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; if (heightAt(x + Math.cos(a) * r, z + Math.sin(a) * r) > top) return true; }
+  return false;
+};
+/**
+ * Ground under a footprint of radius r (centre + 8 around): sit a prop on the lowest point so no side hovers, and
+ * reject spots where the spread would bury its uphill side.
+ */
+function footprint(x: number, z: number, r: number): { min: number; spread: number } {
+  let lo = heightAt(x, z), hi = lo;
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, h = heightAt(x + Math.cos(a) * r, z + Math.sin(a) * r); if (h < lo) lo = h; if (h > hi) hi = h; }
+  return { min: lo, spread: hi - lo };
+}
 const nearWater = (x: number, z: number) => Math.min(distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH, Math.hypot(x - POND.x, z - POND.z) - POND.r);
 
 /** Open spots for the hero trees: the most clearance near each wish. */
@@ -79,21 +102,31 @@ export function scatter(): Scatter {
   const H = WORLD.half - 2;
   const trees: XZ[] = [];
   // spatial hash for tree spacing (the list gets long)
-  const grid = new Map<string, XZ[]>();
+  const grid = new Map<string, (XZ & { r: number })[]>();
   const gk = (x: number, z: number) => `${Math.floor(x / 8)},${Math.floor(z / 8)}`;
   const addTree = (kind: TreeKind, x: number, z: number, s: number, r: () => number, sink = 0.1) => {
-    if (wallDist(x, z) < 1.5 || inOpen(x, z)) return;
-    const y = heightAt(x, z) - sink;
+    // low-skirted conifers keep their lowest tier off the old stone walls
+    if (wallDist(x, z) < (CROWN_BASE[kind] < 1.5 ? Math.max(1.5, CROWN[kind] * s * 1.05) : 1.5) || inOpen(x, z) || stoneDist(x, z) < 0.6 + CROWN[kind] * s * 0.5) return;
+    if (!spaced(x, z, 0, CROWN[kind] * s)) return;
+    const fp = footprint(x, z, 0.3 * s);
+    if (fp.spread > 0.45) return; // too steep under the trunk: its uphill side would vanish into the slope
+    const y = fp.min - sink; // the trunk's downhill side meets the ground
+    if (crownInSlope(kind, x, z, y, s)) return;
     const it: Item = { x, y, z, s, yaw: r() * Math.PI * 2, tint: tint(r, kind === 'pine' || kind === 'fir' ? 0.16 : 0.12, 0.06), tx: (r() - 0.5) * 0.08, tz: (r() - 0.5) * 0.08 };
     out.trees[kind].push(it);
-    const p = { x, z };
+    const p = { x, z, r: CROWN[kind] * s };
     trees.push(p);
     const k = gk(x, z);
     (grid.get(k) ?? grid.set(k, []).get(k)!).push(p);
   };
-  const spaced = (x: number, z: number, gap: number) => {
-    const i0 = Math.floor((x - gap) / 8), i1 = Math.floor((x + gap) / 8), j0 = Math.floor((z - gap) / 8), j1 = Math.floor((z + gap) / 8);
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const t of grid.get(`${i},${j}`) ?? []) if (Math.hypot(t.x - x, t.z - z) < gap) return false;
+  /** at least `gap` from every tree, and (for a tree of crown radius r) crowns overlapping by no more than ~30% */
+  const spaced = (x: number, z: number, gap: number, r = 0) => {
+    const reach = Math.max(gap, r * 2 + 1);
+    const i0 = Math.floor((x - reach) / 8), i1 = Math.floor((x + reach) / 8), j0 = Math.floor((z - reach) / 8), j1 = Math.floor((z + reach) / 8);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const t of grid.get(`${i},${j}`) ?? []) {
+      const d = Math.hypot(t.x - x, t.z - z);
+      if (d < gap || (r && d < 0.7 * (r + t.r))) return false;
+    }
     return true;
   };
 
@@ -152,6 +185,7 @@ export function scatter(): Scatter {
     addTree(set[Math.floor(rg() * set.length)], px, pz, 0.8 + rg() * 0.45, rg);
   }
 
+  const bushAt: (XZ & { r: number })[] = [];
   // bushes: forest edges, grove margins, a few hedges along clear strips
   const rb = seeded('flora:bushes');
   for (let z = -H; z < H; z += 4) for (let x = -H; x < H; x += 4) {
@@ -163,10 +197,14 @@ export function scatter(): Scatter {
     const p = 0.05 + edge * 0.3 + ss(0.1, 0.35, g) * 0.25;
     if (rb() > p) continue;
     const c = clearance(px, pz);
-    if (c < 1.3 || nearWater(px, pz) < 1.5 || slopeAt(px, pz) > 0.5 || !spaced(px, pz, 1.8) || wallDist(px, pz) < 1.2) continue;
+    if (c < 1.3 || nearWater(px, pz) < 1.5 || slopeAt(px, pz) > 0.5 || !spaced(px, pz, 1.8) || wallDist(px, pz) < 1.2 || stoneDist(px, pz) < 1) continue;
     const kind: BushKind = rb() < 0.25 ? 'berry' : 'bush';
-    const y = heightAt(px, pz) - 0.08;
-    out.bushes[kind].push({ x: px, y, z: pz, s: 0.75 + rb() * 0.6, yaw: rb() * 6.28, tint: tint(rb, 0.14, 0.05) });
+    const bs = 0.75 + rb() * 0.6, yaw = rb() * 6.28, bt = tint(rb, 0.14, 0.05);
+    const fp = footprint(px, pz, 0.8 * bs);
+    if (fp.spread > Math.min(0.4 * bs, 0.42)) continue; // too steep: the uphill half would vanish into the slope
+    if (bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < 0.75 * (b.r + 0.9 * bs))) continue; // two bushes fused into one blob
+    bushAt.push({ x: px, z: pz, r: 0.9 * bs });
+    out.bushes[kind].push({ x: px, y: fp.min - 0.06, z: pz, s: bs, yaw, tint: bt });
   }
 
   // ground cover: short grass everywhere open, tall grass in meadows, clover, wildflower patches
@@ -234,13 +272,21 @@ export function scatter(): Scatter {
     const R = ringR(px, pz), roll = rr();
     if (R > 118) continue;
     const c = clearance(px, pz);
-    if (c < 1.5 || nearWater(px, pz) < 1 || wallDist(px, pz) < 1.5) continue;
+    if (c < 1.5 || nearWater(px, pz) < 1 || wallDist(px, pz) < 1.5 || stoneDist(px, pz) < 1) continue;
     const h = heightAt(px, pz);
     const forest = ss(66, 92, R);
     const near = trees.length && !spaced(px, pz, 5);
-    if (roll < 0.08 + forest * 0.08) out.rocks.push({ x: px, y: h - 0.1, z: pz, s: 0.35 + rr() * 0.6 + forest * 0.5, yaw: rr() * 6.28, sy: 0.8 + rr() * 0.5 });
-    else if (roll < 0.1 + forest * 0.12 && slopeAt(px, pz) < 0.3 && c > 2.5) out.logs.push({ x: px, y: h - 0.05, z: pz, s: 0.8 + rr() * 0.4, yaw: rr() * 6.28 });
-    else if (roll < 0.13 + forest * 0.16) out.stumps.push({ x: px, y: h - 0.08, z: pz, s: 0.8 + rr() * 0.5, yaw: rr() * 6.28 });
+    // slope-aware: props sit on the lowest ground under their footprint, and skip spots too steep for them (and trunks: a stump inside a fir)
+    if (roll < 0.08 + forest * 0.08) {
+      const s = 0.35 + rr() * 0.6 + forest * 0.5, yaw = rr() * 6.28, sy = 0.8 + rr() * 0.5, fp = footprint(px, pz, 0.8 * s);
+      if (fp.spread < 0.5 * s * sy && spaced(px, pz, 1.2)) out.rocks.push({ x: px, y: Math.min(h - 0.1, fp.min + 0.05), z: pz, s, yaw, sy });
+    } else if (roll < 0.1 + forest * 0.12 && slopeAt(px, pz) < 0.3 && c > 2.5) {
+      const s = 0.8 + rr() * 0.4, yaw = rr() * 6.28, fp = footprint(px, pz, 1.1 * s);
+      if (fp.spread < 0.2 && spaced(px, pz, 1.8)) out.logs.push({ x: px, y: fp.min - 0.03, z: pz, s, yaw });
+    } else if (roll < 0.13 + forest * 0.16) {
+      const s = 0.8 + rr() * 0.5, yaw = rr() * 6.28, fp = footprint(px, pz, 0.55 * s);
+      if (fp.spread < Math.min(0.22 * s, 0.24) && spaced(px, pz, 1.6)) out.stumps.push({ x: px, y: fp.min - 0.04, z: pz, s, yaw });
+    }
     else if (near && roll < 0.3) {
       const autumnOnly = rr() < 0.65;
       out.mushrooms.push({ x: px, y: h - 0.02, z: pz, s: 0.9 + rr() * 0.6, yaw: rr() * 6.28, seasons: autumnOnly ? SEASON_BIT.autumn : SEASON_BIT.autumn | SEASON_BIT.summer | SEASON_BIT.spring });

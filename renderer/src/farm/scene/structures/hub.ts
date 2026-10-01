@@ -24,7 +24,7 @@ export function buildMailbox(o: BuildOpts): THREE.Group {
   k.beam(0, 0.55, 0.0, 0, 0.95, 0.25, 0.08, PAL.woodDark);
   k.box(0.46, 0.06, 0.62, PAL.wood, { y: 1.02 });
   // flowers at the foot
-  flowerPot(k, { x: 0.3, z: 0.25 }, o.season, 3);
+  flowerPot(k, { x: 0.45, z: 0.35 }, o.season, 3); // beside the stone foot, not in it
   k.build(root, o.night);
   // the box itself wiggles as one piece (body + door + flag pivot)
   const bk = new Kit(7);
@@ -404,7 +404,7 @@ export function buildSignpost(o: BuildOpts): THREE.Group {
   k.box(0.2, 3.2, 0.2, PAL.woodDark, { y: 1.6 });
   k.surf(['shingle', { scale: 0.4 }], () => k.cone(0.2, 0.3, PAL.roofRed, { y: 3.35, ry: Math.PI / 4 }, 4));
   k.ball(0.07, PAL.yellow, { y: 3.55 });
-  flowerPot(k, { x: 0.45, z: 0.3 }, o.season, 4);
+  flowerPot(k, { x: 0.6, z: 0.35 }, o.season, 4); // beside the stone foot, not in it
   k.build(root, o.night);
 
   const ROWS = SIGNPOST.maxArrows + 2; // + title row + wood row
@@ -570,7 +570,7 @@ export function buildToolshed(o: BuildOpts): THREE.Group {
     k.box(0.2, 0.15, 0.15, PAL.metalDark, { x: 0.55, y: 0.95 });
     k.box(0.3, 0.1, 0.1, PAL.red, { x: -0.3, y: 0.93, ry: 0.5 });
     k.box(0.04, 0.04, 0.25, PAL.woodLight, { x: -0.3, y: 0.93, z: 0.1, ry: 0.5 });
-    flowerPot(k, { x: -0.1, y: 0.89, z: 0.05 }, o.season, 6);
+    flowerPot(k, { x: 0.12, y: 0.89, z: -0.08 }, o.season, 6); // between the tools, off the shed wall
   });
   wateringCan(k, { x: -1.4, z: fz + 0.5, ry: 0.4 }, PAL.blue);
   barrel(k, { x: -W / 2 - 0.5, z: -0.6 });

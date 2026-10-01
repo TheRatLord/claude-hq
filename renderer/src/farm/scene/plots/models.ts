@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { PlotKind, Season } from '../../model/types.ts';
 import { PAL } from '../toon.ts';
-import { ball, box, cached, cone, cyl, dodec, jitter, leaf, merge, octa, paint, prism, rng, S, sphere, torus } from './geo.ts';
+import { ball, box, cached, cone, cyl, dodec, jitter, leaf, merge, named, octa, paint, prism, rng, S, sphere, torus } from './geo.ts';
 import type { Xf } from './geo.ts';
 
 const snowy = (s: Season) => s === 'winter';
@@ -19,7 +19,8 @@ export function fenceSegment(season: Season): THREE.BufferGeometry {
   return cached(`fence:${season}`, () => {
     const p: THREE.BufferGeometry[] = [];
     // weathered posts with sawn end-grain tops, rails with long grain
-    p.push(S(box(0.17, 1.16, 0.17, PAL.wood, { p: [0, 0.58, 0] }), 'logs', { axis: 'y', scale: 0.45, strength: 0.85 }));
+    // (driven 0.1 m into the ground: where the terrain mesh dips past a field corner the post still meets it)
+    p.push(S(box(0.17, 1.26, 0.17, PAL.wood, { p: [0, 0.53, 0] }), 'logs', { axis: 'y', scale: 0.45, strength: 0.85 }));
     // rails nailed on the front of the posts (not flush with them: no z-fighting between differently painted faces)
     p.push(S(box(2.02, 0.12, 0.07, PAL.woodLight, { p: [1, 0.48, 0.07], r: [0, 0, 0.012] }), 'logs', { axis: 'x', scale: 0.42, strength: 0.75 }));
     p.push(S(box(2.02, 0.12, 0.07, PAL.plank, { p: [1, 0.86, 0.07], r: [0, 0, -0.01] }), 'logs', { axis: 'x', scale: 0.42, strength: 0.75 }));
@@ -255,11 +256,11 @@ export function exitRibbon(): THREE.BufferGeometry {
 
 type Parts = THREE.BufferGeometry[];
 
-function hayBale(p: Parts, x: number, z: number, yaw: number, s = 1): void {
-  p.push(S(box(1.0 * s, 0.55 * s, 0.6 * s, PAL.hay, { p: [x, 0.275 * s, z], r: [0, yaw, 0] }), 'hay', { scale: 0.8 }));
+function hayBale(p: Parts, x: number, z: number, yaw: number, s = 1, y = 0): void {
+  p.push(S(box(1.0 * s, 0.55 * s, 0.6 * s, PAL.hay, { p: [x, y + 0.275 * s, z], r: [0, yaw, 0] }), 'hay', { scale: 0.8 }));
   for (const o of [-0.25, 0.25]) {
     const c = Math.cos(yaw), sn = Math.sin(yaw);
-    p.push(S(box(0.04 * s, 0.57 * s, 0.62 * s, 0x8a6a3a, { p: [x + o * s * c, 0.275 * s, z - o * s * sn], r: [0, yaw, 0] }), 'fabric', { scale: 0.2, strength: 0.6 }));
+    p.push(S(box(0.04 * s, 0.57 * s, 0.62 * s, 0x8a6a3a, { p: [x + o * s * c, y + 0.275 * s, z - o * s * sn], r: [0, yaw, 0] }), 'fabric', { scale: 0.2, strength: 0.6 }));
   }
 }
 
@@ -413,49 +414,52 @@ export interface KindProps { geo: Parts; /** solid footprints for animals + play
 export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season): KindProps {
   const p: Parts = [], solids: KindProps['solids'] = [];
   // every field: the thinking bench (a hay bale) at the bench spot, a water pump by the back fence
-  hayBale(p, -hw + 1.8, -hd + 1.25, 0.1, 0.9);
+  named(p, 'hayBale', () => hayBale(p, -hw + 1.8, -hd + 1.25, 0.1, 0.9));
   const crops = !['chickens', 'cows', 'sheep', 'pigs'].includes(kind);
-  if (crops && kind !== 'bees') { wellPump(p, -hw + 0.7, 0.8); solids.push({ x: -hw + 0.7, z: 1.1, r: 0.5 }); }
+  if (crops && kind !== 'bees') { named(p, 'wellPump', () => wellPump(p, -hw + 0.7, 0.8)); solids.push({ x: -hw + 0.7, z: 1.1, r: 0.5 }); }
   switch (kind) {
-    case 'pumpkins': wheelbarrow(p, -hw + 1.2, hd - 1.6, 0.6, PAL.pumpkin); hayBale(p, hw - 3.2, hd - 1.1, -0.2, 0.8); break;
-    case 'wheat': hayBale(p, hw - 3.2, hd - 1.1, 0.25); hayBale(p, hw - 3.1, hd - 1.12, 0.3, 0.7); break;
+    case 'pumpkins': named(p, 'wheelbarrow', () => wheelbarrow(p, -hw + 1.2, hd - 1.6, 0.6, PAL.pumpkin)); named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, -0.2, 0.8)); break;
+    case 'wheat': named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, 0.25)); named(p, 'hayBale', () => hayBale(p, hw - 3.15, hd - 1.12, 0.3, 0.7, 0.55)); break; // the second bale is stacked on the first (it sat inside it)
     case 'orchard': {
       // ladder against nothing: a leaning ladder + baskets of apples near the gate
+      named(p, 'ladder', () => {
       for (const s of [-1, 1]) p.push(S(box(0.06, 2.0, 0.06, PAL.wood, { p: [-hw + 1.1 + s * 0.2, 0.95, hd - 1.2], r: [0.25, 0, 0] }), 'logs', { axis: 'y', scale: 0.4 }));
       for (let k = 0; k < 6; k++) p.push(S(box(0.4, 0.04, 0.05, PAL.woodDark, { p: [-hw + 1.1, 0.2 + k * 0.3, hd - 1.2 - 0.05 - k * 0.075] }), 'logs', { axis: 'x', scale: 0.4 }));
-      for (const [bx, bz] of [[hw - 3.2, hd - 1.1], [hw - 2.5, hd - 0.8]]) {
+      });
+      for (const [bx, bz] of [[hw - 3.2, hd - 1.1], [hw - 2.5, hd - 0.8]]) named(p, 'appleBasket', () => {
         p.push(S(cyl(0.28, 0.22, 0.3, 8, PAL.woodLight, { p: [bx, 0.15, bz] }), 'thatch', { scale: 0.25 }));
         for (let i = 0; i < 5; i++) p.push(ball(0.09, PAL.apple, { p: [bx + Math.cos(i * 1.3) * 0.13, 0.32, bz + Math.sin(i * 1.3) * 0.13] }));
-      }
+      });
       break;
     }
-    case 'vineyard': for (const x of [-6.9, -3.6, 0, 3.6, 6.3]) trellisRow(p, x, -hd + 1.0, hd - 3.0, season); break;
-    case 'berries': wheelbarrow(p, hw - 3.2, hd - 1.2, -0.5, PAL.berry); break;
-    case 'cabbages': hayBale(p, hw - 3.2, hd - 1.1, 0.25, 0.8); break;
+    // the first row starts past the thinking-bench hay bale (it ran through the bale)
+    case 'vineyard': for (const x of [-6.9, -3.6, 0, 3.6, 6.3]) named(p, 'trellisRow', () => trellisRow(p, x, -hd + (x < -6 ? 2.1 : 1.0), hd - 3.0, season)); break;
+    case 'berries': named(p, 'wheelbarrow', () => wheelbarrow(p, hw - 3.2, hd - 1.2, -0.5, PAL.berry)); break;
+    case 'cabbages': named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, 0.25, 0.8)); break;
     case 'sunflowers': break;
     case 'chickens':
-      coop(p, 0.6, -hd + 1.3, season); solids.push({ x: 0.6, z: -hd + 1.3, r: 1.4 }, { x: -0.5, z: -hd + 1.3, r: 1.0 }, { x: 1.7, z: -hd + 1.3, r: 1.0 });
-      strawNest(p, -3.4, -hd + 1.4, 0); strawNest(p, 3.6, -hd + 1.3, 0);
-      trough(p, -4.5, 1.2, Math.PI / 2, PAL.wheat, 1.4); solids.push({ x: -4.5, z: 1.2, r: 0.8 });
+      named(p, 'coop', () => coop(p, 0.6, -hd + 1.3, season)); solids.push({ x: 0.6, z: -hd + 1.3, r: 1.4 }, { x: -0.5, z: -hd + 1.3, r: 1.0 }, { x: 1.7, z: -hd + 1.3, r: 1.0 });
+      named(p, 'strawNest', () => strawNest(p, -3.4, -hd + 1.4, 0)); named(p, 'strawNest', () => strawNest(p, 3.6, -hd + 1.3, 0));
+      named(p, 'trough', () => trough(p, -4.5, 1.2, Math.PI / 2, PAL.wheat, 1.4)); solids.push({ x: -4.5, z: 1.2, r: 0.8 });
       break;
     case 'cows':
-      shedRoof(p, 0.5, -hd + 1.5, 5.2, 2.6, 2.1, PAL.roofRed, season); solids.push({ x: 0.5, z: -hd + 0.5, r: 1.0 }, { x: -1.6, z: -hd + 0.6, r: 1.0 }, { x: 2.6, z: -hd + 0.6, r: 1.0 });
-      trough(p, -4.4, 1.0, Math.PI / 2, PAL.water, 2.0); solids.push({ x: -4.4, z: 0.6, r: 0.7 }, { x: -4.4, z: 1.4, r: 0.7 });
-      hayBale(p, 3.6, 0.6, 0.4); hayBale(p, 3.5, 1.3, 0.1, 0.9); solids.push({ x: 3.6, z: 0.9, r: 0.9 });
+      named(p, 'shedRoof', () => shedRoof(p, 0.5, -hd + 1.5, 5.2, 2.6, 2.1, PAL.roofRed, season)); solids.push({ x: 0.5, z: -hd + 0.5, r: 1.0 }, { x: -1.6, z: -hd + 0.6, r: 1.0 }, { x: 2.6, z: -hd + 0.6, r: 1.0 });
+      named(p, 'trough', () => trough(p, -4.4, 1.0, Math.PI / 2, PAL.water, 2.0)); solids.push({ x: -4.4, z: 0.6, r: 0.7 }, { x: -4.4, z: 1.4, r: 0.7 });
+      named(p, 'hayBale', () => hayBale(p, 3.6, 0.6, 0.4)); named(p, 'hayBale', () => hayBale(p, 3.5, 1.3, 0.1, 0.9)); solids.push({ x: 3.6, z: 0.9, r: 0.9 });
       break;
     case 'sheep':
-      feeder(p, 0.5, -hd + 2.2, season); solids.push({ x: 0.0, z: -hd + 2.2, r: 1.0 }, { x: 1.0, z: -hd + 2.2, r: 1.0 });
-      trough(p, -4.4, 1.2, Math.PI / 2, PAL.water, 1.6); solids.push({ x: -4.4, z: 1.2, r: 0.9 });
-      hayBale(p, 4.2, -hd + 1.3, 0.2, 0.9);
+      named(p, 'feeder', () => feeder(p, 0.5, -hd + 2.2, season)); solids.push({ x: 0.0, z: -hd + 2.2, r: 1.0 }, { x: 1.0, z: -hd + 2.2, r: 1.0 });
+      named(p, 'trough', () => trough(p, -4.4, 1.2, Math.PI / 2, PAL.water, 1.6)); solids.push({ x: -4.4, z: 1.2, r: 0.9 });
+      named(p, 'hayBale', () => hayBale(p, 4.2, -hd + 1.3, 0.2, 0.9));
       break;
     case 'pigs':
-      sty(p, 1.0, -hd + 1.3, season); solids.push({ x: 0.4, z: -hd + 1.3, r: 1.1 }, { x: 1.6, z: -hd + 1.3, r: 1.1 });
-      mudPuddle(p, -3.4, -0.6);
-      trough(p, 4.0, 1.0, Math.PI / 2, 0xa0803a, 1.6); solids.push({ x: 4.0, z: 1.0, r: 0.9 });
+      named(p, 'sty', () => sty(p, 1.0, -hd + 1.3, season)); solids.push({ x: 0.4, z: -hd + 1.3, r: 1.1 }, { x: 1.6, z: -hd + 1.3, r: 1.1 });
+      named(p, 'mudPuddle', () => mudPuddle(p, -3.4, -0.6));
+      named(p, 'trough', () => trough(p, 4.0, 1.0, Math.PI / 2, 0xa0803a, 1.6)); solids.push({ x: 4.0, z: 1.0, r: 0.9 });
       break;
     case 'bees': break;
   }
-  if (kind === 'bees') {
+  if (kind === 'bees') named(p, 'honeyStand', () => {
     // hives are added by the field (interactable); a bench + a honey stand
     p.push(S(box(1.0, 0.08, 0.6, PAL.plank, { p: [hw - 3.4, 0.8, hd - 1.1] }), 'planks', { axis: 'x', variant: 1, scale: 0.6 }));
     for (const s of [-1, 1]) p.push(S(box(0.08, 0.8, 0.5, PAL.woodDark, { p: [hw - 3.4 + s * 0.42, 0.4, hd - 1.1] }), 'planks', { axis: 'y', variant: 1, scale: 0.6 }));
@@ -463,13 +467,13 @@ export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season
       p.push(cyl(0.1, 0.1, 0.2, 7, PAL.yellow, { p: [hw - 3.75 + i * 0.23, 0.94, hd - 1.1] }));
       p.push(cyl(0.11, 0.11, 0.05, 7, PAL.red, { p: [hw - 3.75 + i * 0.23, 1.06, hd - 1.1] }));
     }
-  }
+  });
   return { geo: p, solids };
 }
 
 /** Hive for the bees field (a separate call so hives can be interactable positions; merged into props). */
 export function hiveGeo(parts: Parts, x: number, z: number, i: number, season: Season): void {
-  hive(parts, x, z, 2 + (i % 2), [PAL.wallWhite, PAL.yellow, 0x9fd0e0, 0xf0b0b8][i % 4], season);
+  named(parts, 'hive', () => hive(parts, x, z, 2 + (i % 2), [PAL.wallWhite, PAL.yellow, 0x9fd0e0, 0xf0b0b8][i % 4], season));
 }
 
 /** A weed tuft for fallow soil. */

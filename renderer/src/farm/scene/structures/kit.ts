@@ -3,16 +3,35 @@
  * merges them into one faceted mesh per material kind, plus canvas-texture helpers for plaques and signs.
  *
  * Kinds: 'solid' (toon, vertex coloured) and 'glow' (unlit, vertex coloured; windows, lamp heads, lantern glass —
- * dim by day, bright at night). Meshes a Kit emits are tagged `userData.bake = kind`; the structures system bakes
- * every tagged mesh of every structure into a few per-cluster meshes (a handful of draw calls for the whole package).
+ * glass by day, a lit interior at night). Meshes a Kit emits are tagged `userData.bake = kind`; the structures system
+ * bakes every tagged mesh of every structure into a few per-cluster meshes (a handful of draw calls for the whole
+ * package).
+ *
+ * Light: every glow part is also a light emitter (scene/lights). Windows (`PAL.windowGlow`) spill a soft cone out of
+ * the pane onto sills, porches and the ground; lamp glass (`PAL.lampGlow`) lights all around. The glow mesh carries
+ * them in `userData.emitters` (mesh-local; the structures system moves them to world space and registers them).
+ * `k.emit(false, fn)` builds glow parts that give no light (an interior lantern), `k.emit({ radius, … }, fn)` tunes.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PAL } from '../toon.ts';
 import { SURF, chainShader, surfaceMaterial, tagSurface, tagSurfaceBy } from '../surface/index.ts';
 import type { SurfAxis, SurfName, TagOpts } from '../surface/index.ts';
+import type { LightEmitter } from '../context.ts';
+import { recordParts } from '../parts.ts';
 
 export type BakeKind = 'solid' | 'glow';
+
+/** per-part light overrides for glow parts (`Kit.emit`) */
+export type EmitSpec = false | (Partial<Pick<LightEmitter, 'radius' | 'intensity' | 'flicker' | 'cone'>> & {
+  /** wall-mounted lamp: the wall's outward normal (kit space); it lights only the half-space in front of the wall */
+  wall?: readonly [number, number, number];
+});
+
+/** glow part kinds in the `glowUV` attribute (z = kind + seed * 0.9) */
+const GLOW_RECT = 0, GLOW_ROUND = 1, GLOW_LAMP = 2;
+export const WINDOW_LIGHT = new THREE.Color(1.0, 0.5, 0.2);
+export const LAMP_LIGHT = new THREE.Color(1.0, 0.55, 0.22);
 
 /**
  * Surfaces (hand-painted detail, see scene/surface). Every solid part carries a `surface` tag and a pattern frame
@@ -55,6 +74,11 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3
 /** Accumulates primitives; `build()` merges them into one mesh per kind. */
 export class Kit {
   private parts: Record<BakeKind, THREE.BufferGeometry[]> = { solid: [], glow: [] };
+  /** light emitters of the glow parts so far (kit space) */
+  emitters: LightEmitter[] = [];
+  private emitStack: EmitSpec[] = [];
+  /** glow parts added inside fn give this light (false = none) */
+  emit(spec: EmitSpec, fn: () => void): this { this.emitStack.push(spec); try { fn(); } finally { this.emitStack.pop(); } return this; }
   private stack: THREE.Matrix4[] = [new THREE.Matrix4()];
   readonly r: () => number;
   /** default lightness jitter per part (hand-painted variety) */
@@ -66,6 +90,20 @@ export class Kit {
   /** run fn inside a local transform */
   at(t: Xf, fn: () => void): this { this.push(t); try { fn(); } finally { this.pop(); } return this; }
   private top(): THREE.Matrix4 { return this.stack[this.stack.length - 1]; }
+
+  private labels: string[] = [];
+  private labelN = new Map<string, number>();
+  /**
+   * Name the parts added inside fn as one placed object (`name#n`, numbered per name; nested scopes join with '/').
+   * The merged geometry records the ranges (scene/parts.ts) so dev tools can trace triangles back to it.
+   */
+  part(name: string, fn: () => void): this {
+    const n = this.labelN.get(name) ?? 0;
+    this.labelN.set(name, n + 1);
+    this.labels.push(`${name}#${n}`);
+    try { fn(); } finally { this.labels.pop(); }
+    return this;
+  }
 
   /** Add any geometry (consumed). `pre` places the geometry inside the part (its pattern frame follows). */
   add(geo: THREE.BufferGeometry, color: number, t?: Xf, kind: BakeKind = 'solid', jitter = this.jitter, pre?: THREE.Matrix4): this {
@@ -81,7 +119,7 @@ export class Kit {
       const n = g.attributes.position.count, fq = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) { fq[i * 4] = _q.x; fq[i * 4 + 1] = _q.y; fq[i * 4 + 2] = _q.z; fq[i * 4 + 3] = _q.w; }
       g.setAttribute('surfQ', new THREE.BufferAttribute(fq, 4));
-    } else g.deleteAttribute('surface');
+    } else { g.deleteAttribute('surface'); this.glowPart(g, color, cyl, m); }
     g.applyMatrix4(m);
     _c.setHex(color);
     if (jitter) { const d = (this.r() - 0.5) * 2 * jitter; _c.offsetHSL(0, 0, d); }
@@ -89,8 +127,57 @@ export class Kit {
     const col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (this.labels.length) g.userData.part = this.labels.join('/');
     this.parts[kind].push(g);
     return this;
+  }
+
+  /** glow part: pane / glass coordinates for the lit-interior shader, and its light emitter */
+  private glowPart(g: THREE.BufferGeometry, color: number, cyl: boolean, m: THREE.Matrix4): void {
+    g.computeBoundingBox();
+    const bb = g.boundingBox!, size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+    const dims = [size.x, size.y, size.z];
+    const lamp = color === PAL.lampGlow;
+    const kind = lamp ? GLOW_LAMP : cyl ? GLOW_ROUND : GLOW_RECT;
+    const thin = dims.indexOf(Math.min(...dims));
+    const [a, b] = [0, 1, 2].filter((i) => i !== thin);
+    const wc = c.clone().applyMatrix4(m);
+    const seed = Math.abs(Math.sin(wc.x * 12.9898 + wc.y * 78.233 + wc.z * 37.719) * 43758.5453) % 1;
+    const pos = g.attributes.position, n = pos.count, uv = new Float32Array(n * 3);
+    const P = [0, 0, 0], C = [c.x, c.y, c.z];
+    for (let i = 0; i < n; i++) {
+      P[0] = pos.getX(i) - C[0]; P[1] = pos.getY(i) - C[1]; P[2] = pos.getZ(i) - C[2];
+      if (lamp) {
+        // across the glass face (0 mid-face, 0.5 at the corner posts), up the glass
+        uv[i * 3] = Math.min(Math.abs(P[0]) / (dims[0] || 1), Math.abs(P[2]) / (dims[2] || 1));
+        uv[i * 3 + 1] = P[1] / (dims[1] || 1);
+      } else {
+        uv[i * 3] = P[a] / (dims[a] || 1);
+        uv[i * 3 + 1] = P[b] / (dims[b] || 1);
+      }
+      uv[i * 3 + 2] = kind + seed * 0.9;
+    }
+    g.setAttribute('glowUV', new THREE.BufferAttribute(uv, 3));
+
+    const spec = this.emitStack.length ? this.emitStack[this.emitStack.length - 1] : {};
+    if (spec === false) return;
+    if (lamp) {
+      const big = Math.max(...dims);
+      const wall = spec.wall ? new THREE.Vector3(...spec.wall).transformDirection(m) : undefined;
+      this.emitters.push({
+        pos: wc, color: LAMP_LIGHT.clone(), intensity: spec.intensity ?? 0.5, dir: wall, cone: spec.cone,
+        radius: spec.radius ?? Math.min(5.8, Math.max(4.2, 2.8 + big * 8)), flicker: spec.flicker ?? 0.35,
+      });
+      return;
+    }
+    const area = dims[a] * dims[b];
+    if (area < 0.3) return;   // door panes, transoms: the porch lanterns cover them
+    const axis = new THREE.Vector3().setComponent(thin, 1).transformDirection(m);
+    // the spill cone is centred on the pane normal and narrower than 90°, so nothing behind the wall plane is lit
+    this.emitters.push({
+      pos: wc.addScaledVector(axis, 0.22), dir: axis, cone: spec.cone, color: WINDOW_LIGHT.clone(),
+      intensity: (spec.intensity ?? 0.32) * (0.85 + seed * 0.3), radius: spec.radius ?? Math.min(6.5, 3 + Math.sqrt(area) * 2.4), flicker: spec.flicker ?? 0.08,
+    });
   }
 
   private surfStack: (SurfSpec | null)[] = [];
@@ -162,6 +249,7 @@ export class Kit {
     if (!ps.length) return null;
     const g = ps.length === 1 ? ps[0] : mergeGeometries(ps, false);
     if (!g) return null;
+    recordParts(g, ps);
     for (const p of ps) if (p !== g) p.dispose();
     this.parts[kind] = [];
     g.computeVertexNormals();
@@ -174,7 +262,8 @@ export class Kit {
     const s = this.geometry('solid');
     if (s) { const m = new THREE.Mesh(s, solidMat()); m.userData.bake = 'solid'; m.castShadow = true; m.receiveShadow = true; into.add(m); }
     const g = this.geometry('glow');
-    if (g) { const m = new THREE.Mesh(g, glowMat(glowNight)); m.userData.bake = 'glow'; into.add(m); }
+    if (g) { const m = new THREE.Mesh(g, glowMat(glowNight)); m.userData.bake = 'glow'; m.userData.emitters = this.emitters; into.add(m); }
+    this.emitters = [];
     return into;
   }
 
@@ -252,35 +341,86 @@ export function autoSurface(color: number, size: THREE.Vector3, cyl: boolean): S
 }
 
 /**
- * Glow material: by day the panes read as cool glass with a hint of their colour, at night they burn warm (> 1 so the
- * bloom catches them). `setGlow` drives the blend; `boost` scales the lit colour (lanterns flicker with it).
+ * Glow material (windows, lamp glass, lanterns). By day the panes read as cool glass with a hint of their colour. At
+ * night they show a lit interior instead of a flat blob: a warm room glowing from a lamp low in the middle, curtains
+ * down both sides, the odd pot plant on the sill, the frame's inner shadow (the mullions are solid parts in front);
+ * lamp glass gets a small flame core in amber glass that darkens toward its cap and corner posts. Peak values sit
+ * just above the bloom threshold so only the hot cores halo, softly. `setGlow` drives the blend; `boost` scales the
+ * lit interior (lanterns flicker with it). Parts without `glowUV` (hand-built lanterns) get the flat lantern look.
  */
-const GLOW_NIGHT = new THREE.Color(1.7, 1.45, 1.1);
 const GLASS = new THREE.Color(0.32, 0.42, 0.52);
 export function setGlow(m: THREE.MeshBasicMaterial, night: number, boost = 1): void {
   const k = Math.min(1, Math.max(0, night));
-  const u = m.userData.uGlow as { value: number } | undefined;
   const e = k * k * (3 - 2 * k);
+  const u = m.userData.uGlow as { value: number } | undefined;
   if (u) u.value = e;
-  m.color.copy(GLOW_NIGHT).multiplyScalar(boost * (0.35 + 0.65 * e));
+  const b = m.userData.uBoost as { value: number } | undefined;
+  if (b) b.value = boost * (0.35 + 0.65 * e);
 }
+export const GLOW_FRAG = /* glsl */`
+vec3 glowInterior( vec3 g ) {
+  float kind = floor( g.z + 0.001 );
+  float seed = clamp( ( g.z - kind ) / 0.9, 0.0, 1.0 );
+  vec2 p = g.xy;
+  if ( kind < 0.5 ) {
+    // the room: a lamp low in the middle, deep amber up in the corners
+    vec2 q = ( p - vec2( ( seed - 0.5 ) * 0.25, -0.2 ) ) * vec2( 1.0, 1.15 );
+    float r = length( q );
+    vec3 room = mix( vec3( 1.12, 0.66, 0.28 ), vec3( 0.30, 0.12, 0.05 ), smoothstep( 0.0, 0.72, r ) );
+    // curtains down both sides, tied back a little below the middle, with folds
+    float tie = 0.37 - 0.09 * exp( -pow( ( p.y + 0.08 ) * 5.0, 2.0 ) );
+    float cur = smoothstep( tie - 0.015, tie + 0.015, abs( p.x ) );
+    vec3 cloth = mix( vec3( 0.62, 0.16, 0.08 ), vec3( 0.66, 0.42, 0.14 ), step( 0.55, seed ) );
+    cloth *= ( 0.7 + 0.3 * sin( abs( p.x ) * 90.0 ) ) * ( 0.55 + 0.6 * ( 1.0 - r ) );
+    room = mix( room, cloth, cur );
+    // a pot plant on the sill in some windows
+    if ( seed > 0.45 ) {
+      vec2 o = p - vec2( mix( -0.18, 0.18, fract( seed * 7.13 ) ), -0.43 );
+      float pot = step( abs( o.x ), 0.05 - o.y * 0.12 ) * step( o.y, 0.05 );
+      float leaf = step( length( ( o - vec2( 0.0, 0.12 ) ) * vec2( 1.0, 1.35 ) ), 0.085 );
+      room = mix( room, vec3( 0.09, 0.05, 0.03 ), max( pot, leaf ) * 0.92 );
+    }
+    // inner shadow of the frame, a little brighter overall in some homes
+    float edge = max( abs( p.x ), abs( p.y ) );
+    return room * ( 0.5 + 0.5 * smoothstep( 0.5, 0.34, edge ) ) * ( 0.82 + 0.3 * seed );
+  }
+  if ( kind < 1.5 ) {
+    float r = length( p );
+    return mix( vec3( 1.05, 0.62, 0.27 ), vec3( 0.34, 0.13, 0.05 ), smoothstep( 0.0, 0.5, r ) ) * ( 0.85 + 0.25 * seed );
+  }
+  if ( kind < 2.5 ) {
+    // lamp glass: a small flame core low in amber glass; darker toward the cap, the base and the corner posts
+    float core = exp( -( p.x * p.x * 26.0 + ( p.y + 0.06 ) * ( p.y + 0.06 ) * 14.0 ) );
+    vec3 glass = mix( vec3( 0.92, 0.52, 0.2 ), vec3( 0.36, 0.14, 0.05 ), smoothstep( 0.12, 0.55, abs( p.y + 0.04 ) + p.x * 0.7 ) );
+    return glass + vec3( 0.65, 0.42, 0.2 ) * core;
+  }
+  return vec3( 0.95, 0.58, 0.24 );
+}`;
 export function glowMat(night = 0): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true });
-  const uGlow = { value: 0 };
+  const uGlow = { value: 0 }, uBoost = { value: 1 };
   m.userData.uGlow = uGlow;
+  m.userData.uBoost = uBoost;
+  (m as THREE.Material & { defaultAttributeValues?: Record<string, number[]> }).defaultAttributeValues = { glowUV: [0, 0, 3] };
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uGlow = uGlow;
+    sh.uniforms.uBoost = uBoost;
     sh.uniforms.uGlass = { value: GLASS };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 glowUV;\nvarying vec3 vGlowUV;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowUV = glowUV;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform vec3 uGlass;')
+      .replace('#include <common>', `#include <common>\nuniform float uGlow, uBoost;\nuniform vec3 uGlass;\nvarying vec3 vGlowUV;\n${GLOW_FRAG}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
-          vec3 lit = diffuseColor.rgb;
-          vec3 glass = mix(uGlass, vColor.rgb, 0.22) * (0.85 + 0.3 * vColor.g);
-          diffuseColor.rgb = mix(glass, lit, uGlow);
-        }`);
+          vec3 glass = mix( uGlass, vColor.rgb, 0.22 ) * ( 0.85 + 0.3 * vColor.g );
+          vec3 lit = glowInterior( vGlowUV ) * uBoost;
+          diffuseColor.rgb = mix( glass, lit, uGlow );
+        }`)
+      // lit glass counts as warm light for the night grade (see scene/lights/shader.ts VL_ALPHA)
+      .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a = 1.0 - 0.5 * uGlow;');
   };
-  m.customProgramCacheKey = () => 'structures-glow';
+  m.customProgramCacheKey = () => 'structures-glow-v2';
   setGlow(m, night);
   return m;
 }

@@ -96,7 +96,7 @@ export const structure = (id: StructureId): Structure => {
 };
 
 const SITE_XZ: readonly [number, number][] = [
-  [-28, 16], [28, 14], [-10, 34], [12, 36], [-36, -4], [40, -6], [-12, -44], [16, -46], [-32, 40], [-14, 62],
+  [-28, 18], [28, 14], [-10, 34], [12, 36], [-40, -4], [43, -15], [-12, -44], [16, -46], [-34, 42], [-14, 62],
   [14, 64], [44, 70], [66, 24], [74, -6], [-28, -60], [40, -60], [66, 50], [-82, 4], [-80, -28], [-80, 34],
 ];
 const SITE_W = 18, SITE_D = 14;
@@ -153,7 +153,7 @@ function landHeight(x: number, z: number): number {
   return h;
 }
 
-interface Pad { x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number }
+interface Pad { x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number; /** landmark terraces sit on top of the plaza */ top?: boolean; /** a field: its core (fence and all) wins over everything */ field?: boolean }
 const pads: Pad[] = [];
 const padOf = (x: number, z: number, w: number, d: number, yaw: number, blend: number, y?: number): Pad =>
   ({ x, z, hw: w / 2, hd: d / 2, yaw, blend, y: y ?? Math.max(WORLD.water + 1.2, landHeight(x, z)) });
@@ -185,13 +185,28 @@ function carve(x: number, z: number, h: number): number {
   return h;
 }
 
+/**
+ * Pads blend as a weighted mean whose weight grows without bound toward a pad's flat core (w = s / (1 − s), then
+ * exponentially with depth inside it), so a pad's interior stays flat even where a neighbour's blend skirt reaches
+ * over it (applying pads one after another let a later skirt tilt an earlier field: its fence ran into a hill). Where
+ * two cores overlap, the one you are deeper in wins. Landmark terraces (`top`) are a second layer blended over the
+ * plaza, so a house's front steps keep their terrace and the plaza ramps up to it; a field's core (its fence line
+ * included) stays exactly level over all of them.
+ */
 export function heightAt(x: number, z: number): number {
-  let h = carve(x, z, landHeight(x, z));
+  const h = carve(x, z, landHeight(x, z));
+  let wsum = 1, hsum = h, tw = 0, th = 0, tk = 0, fk = 0, fy = 0;
   for (const p of pads) {
     const d = rectSdf(x, z, p);
-    if (d < p.blend) h = lerp(h, p.y, 1 - smooth(0, p.blend, d));
+    if (d >= p.blend) continue;
+    const k = 1 - smooth(0, p.blend, d);
+    const w = d < 0 ? 1e4 * Math.exp(Math.min(600, -d * 12)) : k / (1 - k + 1e-4);
+    if (p.top) { tw += w; th += w * p.y; if (k > tk) tk = k; } else { wsum += w; hsum += w * p.y; }
+    if (p.field && d < 0) { const c = smooth(0, -0.8, d); if (c > fk) { fk = c; fy = p.y; } }
   }
-  return h;
+  const base = hsum / wsum;
+  const terr = tw ? lerp(base, th / tw, tk) : base;
+  return fk ? lerp(terr, fy, fk) : terr;
 }
 
 /** Surface normal by central differences. */
@@ -215,21 +230,100 @@ pads.push(hubPad);
 for (const s of STRUCTURES) {
   if (!s.pad) continue;
   if (Math.hypot(s.x - HUB.x, s.z - HUB.z) < 16) continue; // on the square
-  pads.push(padOf(s.x, s.z, s.size[0] + 3, s.size[1] + 3, s.yaw, 5));
+  const p = padOf(s.x, s.z, s.size[0] + 3, s.size[1] + 3, s.yaw, 5);
+  // neighbours whose pads touch share one terrace (barn + silo): no step through either footprint
+  const c = Math.cos(p.yaw), sn = Math.sin(p.yaw);
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]].map(([i, j]) => ({ x: p.x + i * p.hw * c + j * p.hd * sn, z: p.z - i * p.hw * sn + j * p.hd * c }));
+  const touch = pads.find((q) => q.top && corners.some((k) => rectSdf(k.x, k.z, q) < 0));
+  if (touch) p.y = touch.y;
+  p.top = true;
+  pads.push(p);
+}
+/** The farmhouse's kitchen garden (east of the house, hub dressing): level with the house, kept clear of scatter. */
+export const GARDEN = Object.freeze({ x0: 7.6, x1: 12.4, z0: -25.5, z1: -18.2 });
+/** The laundry line's yard (west of the house, hub dressing): the line runs along x between the two poles; kept clear of scatter. */
+export const LAUNDRY = Object.freeze({ x: -8.9, z0: -25.0, z1: -19.4 });
+{
+  const fh = pads.find((q) => q.top && rectSdf(STRUCTURES[0].x, STRUCTURES[0].z, q) < 0)!;
+  const g = padOf((GARDEN.x0 + GARDEN.x1) / 2, (GARDEN.z0 + GARDEN.z1) / 2, GARDEN.x1 - GARDEN.x0 + 4, GARDEN.z1 - GARDEN.z0 + 4, 0, 4, fh.y);
+  g.top = true;
+  // a terrace that overlaps the garden (the water tower's) sits at the garden's level: two cores 1.4 m apart met in a cliff
+  const c = (q: Pad) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: q.x + i * q.hw * Math.cos(q.yaw) + j * q.hd * Math.sin(q.yaw), z: q.z - i * q.hw * Math.sin(q.yaw) + j * q.hd * Math.cos(q.yaw) }));
+  for (const q of pads) if (q.top && q !== fh && (c(q).some((k) => rectSdf(k.x, k.z, g) < 0) || c(g).some((k) => rectSdf(k.x, k.z, q) < 0))) q.y = g.y;
+  pads.push(g);
 }
 
 export const SITES: readonly Site[] = SITE_XZ.map(([x, z], index) => {
   const yaw = faceTo({ x, z }, HUB);
-  const p = padOf(x, z, SITE_W + 2, SITE_D + 2, yaw, 6);
+  const p = padOf(x, z, SITE_W + 3.5, SITE_D + 3.5, yaw, 6); // flat 1.7 m past the fence: the 1.25 m terrain mesh must not bend up under it
+  p.field = true;
   pads.push(p);
   const fx = Math.sin(yaw), fz = Math.cos(yaw);
   return { index, x, z, w: SITE_W, d: SITE_D, yaw, y: p.y, gate: { x: x + fx * (SITE_D / 2 + 1.5), z: z + fz * (SITE_D / 2 + 1.5) } };
 });
 
+// a terrace whose pad runs into a field's sits at the field's level (the campfire by its field): two flat cores at
+// different heights would meet in a cliff
+{
+  const corners = (q: Pad) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: q.x + i * q.hw * Math.cos(q.yaw) + j * q.hd * Math.sin(q.yaw), z: q.z - i * q.hw * Math.sin(q.yaw) + j * q.hd * Math.cos(q.yaw) }));
+  for (const q of pads) {
+    if (!q.top) continue;
+    // (the field itself, its fence grown by a metre, not the flat margin round it: a yard corner in that margin just ramps)
+    const fence = (p: Pad): Pad => ({ ...p, hw: p.hw - 0.75, hd: p.hd - 0.75 });
+    const f = pads.find((p) => p.field && (corners(q).some((k) => rectSdf(k.x, k.z, fence(p)) < 0) || corners(fence(p)).some((k) => rectSdf(k.x, k.z, q) < 0)));
+    if (!f || f.y === q.y) continue;
+    // ...and so does every terrace sharing its level with it (barn + silo)
+    const was = q.y;
+    for (const t of pads) if (t.top && t.y === was && (t === q || corners(t).some((k) => rectSdf(k.x, k.z, q) < 0) || corners(q).some((k) => rectSdf(k.x, k.z, t) < 0))) t.y = f.y;
+  }
+}
 for (const s of STRUCTURES) (s as { y: number }).y = heightAt(s.x, s.z);
 export const HUB_Y = hubPad.y;
 
 const BRIDGE: [XZ, XZ] = [{ x: -46, z: 7 }, { x: -66, z: 5.5 }];
+
+/** Does the segment a→b pass through a field (its fence rectangle grown by m)? Returns the site. */
+function crossedSite(a: XZ, b: XZ, m: number): Site | null {
+  const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.4);
+  for (const site of SITES) for (let i = 1; i < n; i++) {
+    const x = a.x + ((b.x - a.x) * i) / n, z = a.z + ((b.z - a.z) * i) / n;
+    if (rectSdf(x, z, { x: site.x, z: site.z, hw: site.w / 2 + m, hd: site.d / 2 + m, yaw: site.yaw }) < 0) return site;
+  }
+  return null;
+}
+
+/** Detour a polyline around fields it would cut through, via the grown corners of each field in its way. */
+function routeAround(pts: XZ[], m: number): void {
+  for (let guard = 0; guard < 24; guard++) {
+    let fixed = false;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const site = crossedSite(pts[i], pts[i + 1], m - 0.6);
+      if (!site) continue;
+      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => siteToWorld(site, sx * (site.w / 2 + m), sz * (site.d / 2 + m)));
+      const a = pts[i], b = pts[i + 1];
+      const d = (p: XZ, q: XZ) => Math.hypot(p.x - q.x, p.z - q.z);
+      // shortest detour via one grown corner, else via two neighbouring corners, every leg clear of this field
+      const clear = (p: XZ, q: XZ) => crossedSite(p, q, m - 0.6) === null;
+      let best: XZ[] | null = null, bestL = Infinity;
+      // walk the grown perimeter either way from any corner, up to three corners
+      for (let c = 0; c < 4; c++) for (const dir of [1, 3]) {
+        const chain: XZ[] = [];
+        let L = 0, prev = a;
+        for (let n = 0; n < 3; n++) {
+          const cn = corners[(c + dir * n) % 4];
+          if (!clear(prev, cn)) break;
+          L += d(prev, cn); chain.push(cn); prev = cn;
+          if (clear(cn, b) && L + d(cn, b) < bestL) { best = [...chain]; bestL = L + d(cn, b); }
+        }
+      }
+      if (!best) continue;
+      pts.splice(i + 1, 0, ...best);
+      fixed = true;
+      break;
+    }
+    if (!fixed) return;
+  }
+}
 
 /**
  * Roads: a spanning tree grown from the square (Prim's, nearest connected node first), so the network branches like
@@ -257,6 +351,15 @@ export const PATHS: readonly PathLine[] = (() => {
   const segs: [Node, Node][] = [];
   const bridgeE: Node = { p: BRIDGE[0], west: false, width: 3 }, bridgeW: Node = { p: BRIDGE[1], west: true, width: 3 };
   segs.push([connected[1], bridgeE], [bridgeE, bridgeW]);
+  // road graph (for the neighbour lanes below): the square joins its exits
+  const adj = new Map<Node, [Node, number][]>();
+  const link = (u: Node, v: Node) => {
+    const l = Math.hypot(u.p.x - v.p.x, u.p.z - v.p.z);
+    (adj.get(u) ?? adj.set(u, []).get(u)!).push([v, l]);
+    (adj.get(v) ?? adj.set(v, []).get(v)!).push([u, l]);
+  };
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) link(connected[i], connected[j]);
+  link(connected[1], bridgeE); link(bridgeE, bridgeW);
   connected.push(bridgeE, bridgeW);
   const pending = [...targets];
   const d2 = (a: XZ, b: XZ) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
@@ -272,17 +375,53 @@ export const PATHS: readonly PathLine[] = (() => {
     const t = pending.splice(bi, 1)[0];
     segs.push([bn, t]);
     // the middle of a new road is itself a junction others may branch from
-    connected.push(t, { p: { x: (t.p.x + bn.p.x) / 2, z: (t.p.z + bn.p.z) / 2 }, west: t.west, width: t.width });
+    const mid: Node = { p: { x: (t.p.x + bn.p.x) / 2, z: (t.p.z + bn.p.z) / 2 }, west: t.west, width: t.width };
+    connected.push(t, mid);
+    link(bn, t); link(mid, bn); link(mid, t);
+  }
+  // the greedy tree can leave two neighbouring fields a long way apart by road (each joined a different branch):
+  // give such neighbours a direct lane
+  const gates = SITES.map((s) => targets[s.index]);
+  for (const a of gates) {
+    const dist = new Map<Node, number>([[a, 0]]);
+    const open = [a];
+    while (open.length) {
+      open.sort((x, y) => dist.get(x)! - dist.get(y)!);
+      const u = open.shift()!;
+      for (const [v, l] of adj.get(u) ?? []) {
+        const nd = dist.get(u)! + l;
+        if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); if (!open.includes(v)) open.push(v); }
+      }
+    }
+    for (const b of gates) {
+      if (b === a || a.west !== b.west || a.p.x > b.p.x) continue;
+      const st = Math.sqrt(d2(a.p, b.p));
+      if (st < 40 && (dist.get(b) ?? Infinity) > st * 5) { segs.push([a, b]); link(a, b); }
+    }
   }
   for (const [a, b] of segs) {
     const dx = b.p.x - a.p.x, dz = b.p.z - a.p.z, l = Math.hypot(dx, dz) || 1;
     const wob = fbm(a.p.x * 0.07, b.p.z * 0.07) * Math.min(4, l * 0.12);
     const pts: XZ[] = [];
-    for (let k = 0; k <= 6; k++) {
-      const t = k / 6, bow = Math.sin(t * Math.PI) * wob;
-      pts.push({ x: a.p.x + dx * t - (dz / l) * bow, z: a.p.z + dz * t + (dx / l) * bow });
+    const width = Math.min(a.width, b.width) + (a.width > 2.5 && b.width > 2.5 ? 0.6 : 0);
+    const N = 6;
+    const inField = (p: XZ, m: number) => SITES.some((st) => rectSdf(p.x, p.z, { x: st.x, z: st.z, hw: st.w / 2 + m, hd: st.d / 2 + m, yaw: st.yaw }) < 0);
+    for (let k = 0; k <= N; k++) {
+      const t = k / N, bow = Math.sin(t * Math.PI) * wob;
+      const p = { x: a.p.x + dx * t - (dz / l) * bow, z: a.p.z + dz * t + (dx / l) * bow };
+      // roads skirt fields: drop bend points that fall in (or on the fence of) a field, then detour round corners
+      if (k === 0 || k === N || !inField(p, width / 2 + 0.3)) pts.push(p);
     }
-    out.push({ points: pts, width: Math.min(a.width, b.width) + (a.width > 2.5 && b.width > 2.5 ? 0.6 : 0) });
+    // a road leaving a field's gate first heads straight out from the fence (not along it)
+    for (const end of [0, 1] as const) {
+      const g = end ? pts[pts.length - 1] : pts[0];
+      const site = SITES.find((st) => Math.hypot(st.gate.x - g.x, st.gate.z - g.z) < 0.01);
+      if (!site) continue;
+      const stub = { x: g.x + Math.sin(site.yaw) * 2.5, z: g.z + Math.cos(site.yaw) * 2.5 };
+      if (end) pts.splice(pts.length - 1, 0, stub); else pts.splice(1, 0, stub);
+    }
+    routeAround(pts, width / 2 + 0.9);
+    out.push({ points: pts, width });
   }
   return out;
 })();
@@ -306,6 +445,8 @@ export function pathAt(x: number, z: number): number {
 export function clearance(x: number, z: number): number {
   let d = rectSdf(x, z, { x: HUB.x, z: HUB.z + 1, hw: 13, hd: 11, yaw: 0 });
   for (const s of STRUCTURES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.size[0] / 2, hd: s.size[1] / 2, yaw: s.yaw }));
+  d = Math.min(d, rectSdf(x, z, { x: (GARDEN.x0 + GARDEN.x1) / 2, z: (GARDEN.z0 + GARDEN.z1) / 2, hw: (GARDEN.x1 - GARDEN.x0) / 2, hd: (GARDEN.z1 - GARDEN.z0) / 2, yaw: 0 }));
+  d = Math.min(d, rectSdf(x, z, { x: LAUNDRY.x, z: (LAUNDRY.z0 + LAUNDRY.z1) / 2, hw: 1.0, hd: (LAUNDRY.z1 - LAUNDRY.z0) / 2 + 0.5, yaw: 0 }));
   for (const s of SITES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw }));
   for (const p of PATHS) d = Math.min(d, distToPolyline(x, z, p.points) - p.width / 2);
   d = Math.min(d, distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH - 1.5, Math.hypot(x - POND.x, z - POND.z) - POND.r - 1.5);

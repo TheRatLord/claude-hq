@@ -4,7 +4,9 @@
  */
 import * as THREE from 'three';
 import { PAL, toon } from '../toon.ts';
-import { Kit, damp, softSpot } from './kit.ts';
+import { Kit, damp } from './kit.ts';
+import type { LightEmitter } from '../context.ts';
+import { warmEmitter } from '../lights/emitters.ts';
 import { bucket, firewood, logBench, stool, crate, barrel, lampPost } from './props.ts';
 import type { Env, Rig } from './rig.ts';
 import type { BuildOpts } from './farmhouse.ts';
@@ -53,7 +55,7 @@ export function buildCampfire(o: BuildOpts): THREE.Group {
     k.beam(x, 0, z, x * 0.55, 0.7, z * 0.55, 0.03, PAL.woodLight);
     k.ball(0.06, PAL.white, { x: x * 0.53, y: 0.72, z: z * 0.53, ry: r, s: [1, 1.3, 1] });
   }
-  lampPost(k, { x: 4.2, z: -3.0 }, 2.4);
+  lampPost(k, { x: 4.5, z: -0.5 }, 2.4); // off the path that passes the fire
   k.build(root, o.night);
 
   // flames: three tongues in one mesh (unlit, hot colours)
@@ -64,30 +66,23 @@ export function buildCampfire(o: BuildOpts): THREE.Group {
   fk.cone(0.24, 0.9, 0xffb030, { y: 0.47, x: -0.12, z: -0.08 }, 5);
   fk.cone(0.16, 0.6, 0xfff0a0, { y: 0.35 }, 5);
   fk.cone(0.18, 0.7, 0xff8a2a, { y: 0.4, x: 0.05, z: -0.2 }, 5);
-  const flameMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.6, 1.4, 1.2) });
+  const flameMat = warmEmitter(new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.35, 1.12, 0.9) }));
   const flame = fk.mesh(flameMat);
   flame.castShadow = false;
   flame.position.y = 0.1;
   root.add(flame);
   // embers
   const EM = 18;
-  const embers = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.035, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.0, 0.25) }), EM);
+  const embers = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.035, 0), warmEmitter(new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.0, 0.25) })), EM);
   embers.frustumCulled = false;
   root.add(embers);
   const em = Array.from({ length: EM }, (_, i) => ({ age: (i / EM) * 2.5, life: 2.5, x: 0, z: 0, sx: Math.sin(i * 7.1) * 0.25, sz: Math.cos(i * 3.3) * 0.25 }));
   const d = new THREE.Object3D();
-  // fake light pool on the ground
-  const poolMat = new THREE.MeshBasicMaterial({ map: softSpot(), color: 0xff9a40, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2 });
-  const pool = new THREE.Mesh(new THREE.PlaneGeometry(9, 9).rotateX(-Math.PI / 2), poolMat);
-  pool.position.y = 0.06;
-  pool.renderOrder = 2;
-  root.add(pool);
-  // a real warm light (the system may disable it when the player is far)
-  const light = new THREE.PointLight(0xff9a4a, 0, 14, 1.6);
-  light.position.set(0, 1.2, 0);
-  light.castShadow = false;
-  root.add(light);
-  root.userData.light = light;
+  // the fire's light (scene/lights; root-local, the structures system moves it to world space and registers it):
+  // a warm pool on the logs, benches and faces around it, faintly there by day, flickering with the flames
+  const fire: LightEmitter = { pos: new THREE.Vector3(0, 0.9, 0), color: new THREE.Color(1.0, 0.5, 0.2), intensity: 0, radius: 9, when: 'always' };
+  root.userData.lights = [fire];
+  let fireY = NaN;   // world height once registered
 
   const rig: Rig = {
     update(e: Env) {
@@ -112,8 +107,9 @@ export function buildCampfire(o: BuildOpts): THREE.Group {
         embers.setMatrixAt(i, d.matrix);
       }
       embers.instanceMatrix.needsUpdate = true;
-      poolMat.opacity = (0.08 + e.night * 0.5) * fl;
-      light.intensity = e.night * 9 * fl;
+      fire.intensity = (0.1 + e.night * 0.8) * (0.86 + (fl - 1) * 1.6);
+      if (Number.isNaN(fireY)) fireY = fire.pos.y;
+      fire.pos.y = fireY + Math.sin(t * 7.3) * 0.04;
     },
   };
   root.userData.rig = rig;
@@ -155,7 +151,7 @@ export function buildDock(o: BuildOpts, dk: DeckOpts = { deckY: 0.6, ground: (z)
   crate(k, { x: -0.6, y, z: z1 - 2.2, ry: 0.3 }, 0.42);
   k.cyl(0.18, 0.6, 0xc9b98a, { x: 0.6, y: y + 0.18, z: z1 - 2.6, rz: Math.PI / 2 }, 7);
   // a fish in the bucket's neighbour
-  k.ball(0.1, 0x7fa8c0, { x: -0.6, y: y + 0.47, z: z1 - 2.2, s: [1.8, 0.7, 0.8] });
+  k.ball(0.1, 0x7fa8c0, { x: -0.12, y: y + 0.07, z: z1 - 2.25, s: [1.8, 0.7, 0.8] }); // on the planks by the crate (on the lid it was sunk into it)
   k.build(root, o.night);
 
   // fishing rod resting on the stool, line to a bobbing float
@@ -192,7 +188,7 @@ export function buildDock(o: BuildOpts, dk: DeckOpts = { deckY: 0.6, ground: (z)
 // ---------------------------------------------------------------------------------------------
 // Bridge — a wooden arch over the river
 
-export interface BridgeOpts { /** ground at the two ends (root-local heights), z = -L/2 and +L/2 */ yA: number; yB: number; water: number }
+export interface BridgeOpts { /** ground at the two ends (root-local heights), z = -L/2 and +L/2 */ yA: number; yB: number; water: number; /** root-local ground height at (lx, lz), for the props by the ends */ ground?: (lx: number, lz: number) => number }
 export const BRIDGE = Object.freeze({ L: 14.6, w: 3.0, rise: 1.6 });
 
 export function bridgeDeck(b: BridgeOpts, lz: number): number {
@@ -253,8 +249,16 @@ export function buildBridge(o: BuildOpts, b: BridgeOpts = { yA: 0.2, yB: 0.2, wa
     }
   }
   // a crate and a barrel near the east end (a traveller's rest)
-  crate(k, { x: -w / 2 - 1.0, y: b.yB, z: L / 2 + 0.6, ry: 0.4 }, 0.5);
-  barrel(k, { x: w / 2 + 0.9, y: b.yB, z: L / 2 + 0.8 });
+  // props stand on the bank where they are (the bank rises beside the abutment), not at the deck end's height
+  // (between the mean and the highest footprint corner: on the sloping bank a prop's uphill side is not buried, its downhill rim clears by a few cm)
+  // both on the -x side: the road swings +x off the east end
+  const gy = (x: number, z: number, r: number) => {
+    if (!b.ground) return b.yB;
+    const hs = [b.ground(x - r, z - r), b.ground(x + r, z - r), b.ground(x - r, z + r), b.ground(x + r, z + r)];
+    return (hs.reduce((a, h) => a + h, 0) / 4 + Math.max(...hs)) / 2;
+  };
+  crate(k, { x: -w / 2 - 1.0, y: gy(-w / 2 - 1.0, L / 2 + 0.9, 0.25), z: L / 2 + 0.9, ry: 0.4 }, 0.5);
+  barrel(k, { x: -w / 2 - 1.1, y: gy(-w / 2 - 1.1, L / 2 + 1.75, 0.3), z: L / 2 + 1.75 });
   k.build(root, o.night);
   return root;
 }

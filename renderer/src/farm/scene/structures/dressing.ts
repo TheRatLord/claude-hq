@@ -1,13 +1,13 @@
 /**
- * Hub dressing: the paved plaza with its sundial flowerbed, lamp posts along the roads near the hub (with fake light
- * pools), benches, the farmhouse garden and its fence, a laundry line flapping in the wind, and lived-in clutter.
- * Everything static goes into one Kit (baked by the system); the laundry and light pools are the only moving parts.
+ * Hub dressing: the paved plaza with its sundial flowerbed, lamp posts along the roads near the hub (lit
+ * by real local light), benches, the farmhouse garden and its fence, a laundry line flapping in the wind, and lived-in clutter.
+ * Everything static goes into one Kit (baked by the system); the laundry is the only moving part.
  */
 import * as THREE from 'three';
 import type { Season } from '../../model/types.ts';
-import { PATHS, SITES, STRUCTURES, WORLD, heightAt, inSite, pathAt, distToPolyline, RIVER, RIVER_HALF_WIDTH, POND } from '../../world/map.ts';
+import { GARDEN, LAUNDRY, PATHS, SITES, STRUCTURES, WORLD, heightAt, inSite, pathAt, distToPolyline, RIVER, RIVER_HALF_WIDTH, POND } from '../../world/map.ts';
 import { PAL } from '../toon.ts';
-import { Kit, rng, softSpot } from './kit.ts';
+import { Kit, rng } from './kit.ts';
 import { surfaceMaterial } from '../surface/index.ts';
 import { bench, lampPost, flowerPot, barrel, crate, hayBale, picnicTable, fenceRun, wateringCan, sack, pumpkin, cart, bucket, flowerColors } from './props.ts';
 import type { Env, Rig } from './rig.ts';
@@ -34,9 +34,18 @@ function structDist(x: number, z: number): number {
   }
   return d;
 }
+/** The nearest spot (spiralling out from x, z) at least r clear of every field and landmark footprint (and of `avoid`). */
+function clearSpot(x: number, z: number, r: number, avoid: readonly { x: number; z: number }[] = []): { x: number; z: number } {
+  for (let i = 0; i < 200; i++) {
+    const a = i * 2.4, d = Math.sqrt(i) * 0.5, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+    if (structDist(px, pz) > r && !SITES.some((s) => inSite(s, px, pz, r)) && pathAt(px, pz) < 0.5 && avoid.every((q) => Math.hypot(q.x - px, q.z - pz) > r)) return { x: px, z: pz };
+  }
+  return { x, z };
+}
 const wet = (x: number, z: number) => distToPolyline(x, z, RIVER) < RIVER_HALF_WIDTH + 2.5 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 2.5 || heightAt(x, z) < WORLD.water + 0.3;
 
-export function buildDressing(season: Season, seed = 1): Dressing {
+/** `blocked`: ground other systems already use (flora's trunks and bushes): lamp posts keep out of it. */
+export function buildDressing(season: Season, seed = 1, blocked: (x: number, z: number, r: number) => boolean = () => false): Dressing {
   const root = new THREE.Group();
   root.name = 'hub-dressing';
   const k = new Kit(seed * 7 + 201);
@@ -59,16 +68,16 @@ export function buildDressing(season: Season, seed = 1): Dressing {
       const x = P.x + Math.sin(a) * rr, z = P.z + Math.cos(a) * rr;
       if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr)) continue;
       const border = rr + 0.52 > P.r;
-      k.surf(['rock', { scale: 0.5 }], () => k.box(0.5 + r() * 0.06, 0.06, 0.44, border ? 0x8f887c : stoneCols[Math.floor(r() * stoneCols.length)], { x, y: gy(x, z) + 0.015 + r() * 0.02, z, ry: a + (r() - 0.5) * 0.12, rx: (r() - 0.5) * 0.05, rz: (r() - 0.5) * 0.05 }));
+      k.part('paver', () => k.surf(['rock', { scale: 0.5 }], () => k.box(0.5 + r() * 0.06, 0.06, 0.44, border ? 0x8f887c : stoneCols[Math.floor(r() * stoneCols.length)], { x, y: gy(x, z) + 0.015 + r() * 0.02, z, ry: a + (r() - 0.5) * 0.12, rx: (r() - 0.5) * 0.05, rz: (r() - 0.5) * 0.05 })));
     }
   }
   // spokes of darker stones toward the four exits
   for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) for (let rr = 2.1; rr < P.r - 0.3; rr += 0.52) {
     const x = P.x + Math.sin(a) * rr, z = P.z + Math.cos(a) * rr;
-    k.surf(['rock', { scale: 0.5 }], () => k.box(0.46, 0.09, 0.4, 0x9a8f7c, { x, y: gy(x, z) + 0.025, z, ry: a }));
+    k.part('paver', () => k.surf(['rock', { scale: 0.5 }], () => k.box(0.46, 0.09, 0.4, 0x9a8f7c, { x, y: gy(x, z) + 0.025, z, ry: a })));
   }
   // ---- central flowerbed with a sundial ----
-  {
+  k.part('sundial', () => {
     const cx = P.x, cz = P.z, y = gy(cx, cz);
     for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; k.box(0.62, 0.32, 0.3, i % 2 ? PAL.stone : 0xa9a294, { x: cx + Math.sin(a) * 1.45, y: y + 0.16, z: cz + Math.cos(a) * 1.45, ry: a }); }
     k.cyl(1.35, 0.3, PAL.soil, { x: cx, y: y + 0.15, z: cz }, 12);
@@ -82,7 +91,7 @@ export function buildDressing(season: Season, seed = 1): Dressing {
     k.cyl(0.42, 0.08, 0xd9a93a, { x: cx, y: y + 0.88, z: cz }, 12);
     k.prism([[0, 0], [0.34, 0], [0, 0.28]], 0.03, 0x8a6a2a, { x: cx - 0.17, y: y + 0.92, z: cz, ry: 0 });
     circles.push([cx, cz, 1.7]);
-  }
+  });
 
   // ---- lamp posts: plaza ring + along the roads near the hub ----
   const lampAt = (x: number, z: number) => {
@@ -96,10 +105,10 @@ export function buildDressing(season: Season, seed = 1): Dressing {
     for (let k2 = 0; k2 < 24; k2++) {
       const a = a0 + (k2 % 2 ? 1 : -1) * Math.ceil(k2 / 2) * 0.06;
       const x = P.x + Math.sin(a) * (P.r + 0.5), z = P.z + Math.cos(a) * (P.r + 0.5);
-      if (structDist(x, z) > 2.2 && pathAt(x, z) < 0.9) { lampAt(x, z); break; }
+      if (structDist(x, z) > 2.2 && pathAt(x, z) < 0.9 && !blocked(x, z, 0.3)) { lampAt(x, z); break; }
     }
   }
-  const okLamp = (x: number, z: number) => structDist(x, z) > 1.8 && !SITES.some((s) => inSite(s, x, z, 1.2)) && !wet(x, z) && pathAt(x, z) < 0.35
+  const okLamp = (x: number, z: number) => structDist(x, z) > 1.8 && !SITES.some((s) => inSite(s, x, z, 1.2)) && !wet(x, z) && pathAt(x, z) < 0.35 && !blocked(x, z, 0.3)
     && lamps.every((l) => Math.hypot(l.x - x, l.z - z) > 9) && Math.hypot(x - P.x, z - P.z) > P.r + 1;
   let side = 1;
   for (const p of PATHS) {
@@ -158,24 +167,29 @@ export function buildDressing(season: Season, seed = 1): Dressing {
   rects.push([-13.7, -9.2, 1.2, 0.8, 0.4]);
   if (season === 'autumn') { for (let i = 0; i < 5; i++) pumpkin(k, { x: -13 + i * 0.5, y: gy(-13, -8.2), z: -8.2 + (i % 2) * 0.35 }, 0.2 + (i % 3) * 0.06); }
   // a cart parked by the barn road
-  { const x = -31.5, z = -13.5; cart(k, { x, y: gy(x, z), z, ry: 0.9 }, season === 'autumn' ? 'pumpkins' : 'crates'); rects.push([x, z, 1.5, 2.4, 0.9]); }
+  { const { x, z } = clearSpot(-31.5, -13.5, 1.6, lamps); cart(k, { x, y: gy(x, z), z, ry: 0.9 }, season === 'autumn' ? 'pumpkins' : 'crates'); rects.push([x, z, 1.5, 2.4, 0.9]); }
 
   // ---- farmhouse garden (east of the house) with a picket fence ----
-  const G = { x0: 7.6, x1: 12.4, z0: -25.5, z1: -18.2 };
+  const G = GARDEN; // levelled with the house by its own terrace (world/map.ts)
   {
     const fenceGy = (x: number, z: number) => gy(x, z);
     const gateX = (G.x0 + G.x1) / 2;
-    fenceRun(k, G.x0, G.z1, gateX - 0.6, G.z1, fenceGy);
-    fenceRun(k, gateX + 0.6, G.z1, G.x1, G.z1, fenceGy);
-    fenceRun(k, G.x1, G.z1, G.x1, G.z0, fenceGy);
-    fenceRun(k, G.x1, G.z0, G.x0, G.z0, fenceGy);
-    fenceRun(k, G.x0, G.z0, G.x0, G.z1, fenceGy);
+    k.part('gardenFence', () => {
+      fenceRun(k, G.x0, G.z1, gateX - 0.6, G.z1, fenceGy);
+      fenceRun(k, gateX + 0.6, G.z1, G.x1, G.z1, fenceGy);
+      fenceRun(k, G.x1, G.z1, G.x1, G.z0, fenceGy);
+      fenceRun(k, G.x1, G.z0, G.x0, G.z0, fenceGy);
+      fenceRun(k, G.x0, G.z0, G.x0, G.z1, fenceGy);
+    });
     rects.push([(G.x0 + gateX - 0.6) / 2, G.z1, gateX - 0.6 - G.x0, 0.2, 0], [(G.x1 + gateX + 0.6) / 2, G.z1, G.x1 - gateX - 0.6, 0.2, 0]);
     rects.push([G.x1, (G.z0 + G.z1) / 2, 0.2, G.z1 - G.z0, 0], [G.x0, (G.z0 + G.z1) / 2, 0.2, G.z1 - G.z0, 0], [(G.x0 + G.x1) / 2, G.z0, G.x1 - G.x0, 0.2, 0]);
     // raised beds with veg
-    for (let b = 0; b < 3; b++) {
-      const bz = G.z0 + 1.3 + b * 2.2, bx = (G.x0 + G.x1) / 2, y = gy(bx, bz);
-      k.surf(['planks', { axis: 'h', variant: 1 }], () => k.box(3.6, 0.3, 1.2, PAL.woodDark, { x: bx, y: y + 0.15, z: bz }));
+    for (let b = 0; b < 3; b++) k.part('raisedBed', () => {
+      const bz = G.z0 + 1.3 + b * 2.2, bx = (G.x0 + G.x1) / 2;
+      // level on a slope: the frame stands on the lowest corner and grows to the highest (no hovering end)
+      const cs = [[-1.8, -0.6], [1.8, -0.6], [1.8, 0.6], [-1.8, 0.6], [0, 0]].map(([dx, dz]) => gy(bx + dx, bz + dz));
+      const lo = Math.min(...cs), hi = Math.max(...cs), y = hi, fh = 0.3 + (hi - lo) + 0.04;
+      k.surf(['planks', { axis: 'h', variant: 1 }], () => k.box(3.6, fh, 1.2, PAL.woodDark, { x: bx, y: y + 0.3 - fh / 2, z: bz }));
       k.box(3.4, 0.05, 1.0, PAL.soil, { x: bx, y: y + 0.31, z: bz });
       for (let i = 0; i < 6; i++) {
         const x = bx - 1.4 + i * 0.56;
@@ -184,30 +198,30 @@ export function buildDressing(season: Season, seed = 1): Dressing {
         else if (b === 1) { k.cone(0.07, 0.18, PAL.orange, { x, y: y + 0.36, z: bz - 0.2, rx: Math.PI }, 5); k.cone(0.12, 0.35, PAL.leaf, { x, y: y + 0.52, z: bz - 0.2 }, 5); k.cone(0.12, 0.35, PAL.leafDark, { x, y: y + 0.5, z: bz + 0.2 }, 5); }
         else { k.cyl(0.02, 0.9, PAL.woodLight, { x, y: y + 0.75, z: bz }, 4); k.ball(0.16, PAL.leaf, { x, y: y + 0.7, z: bz }); if (season !== 'spring') k.ball(0.07, PAL.red, { x: x + 0.1, y: y + 0.65, z: bz + 0.08 }); }
       }
-    }
-    wateringCan(k, { x: G.x0 + 0.8, y: gy(G.x0 + 0.8, G.z1 - 0.8), z: G.z1 - 0.8, ry: 1.2 });
+    });
+    wateringCan(k, { x: G.x0 + 0.8, y: gy(G.x0 + 0.8, G.z1 - 0.5), z: G.z1 - 0.5, ry: 1.2 }); // between the last bed and the fence
     sack(k, { x: G.x1 - 0.6, y: gy(G.x1 - 0.6, G.z1 - 0.7), z: G.z1 - 0.7 });
     // bird bath
-    { const x = G.x1 - 0.8, z = G.z0 + 0.9, y = gy(x, z); k.cyl(0.12, 0.8, PAL.stone, { x, y: y + 0.4, z }, 6, 0.08); k.cyl(0.4, 0.12, PAL.stone, { x, y: y + 0.85, z }, 8, 0.45); k.cyl(0.34, 0.02, PAL.water, { x, y: y + 0.91, z }, 8); }
+    k.part('birdBath', () => { const x = G.x1 - 0.65, z = G.z0 + 2.4, y = gy(x, z); /* in the gap between the first two beds */ k.cyl(0.12, 0.8, PAL.stone, { x, y: y + 0.4, z }, 6, 0.08); k.cyl(0.4, 0.12, PAL.stone, { x, y: y + 0.85, z }, 8, 0.45); k.cyl(0.34, 0.02, PAL.water, { x, y: y + 0.91, z }, 8); });
   }
 
   // ---- laundry line (west yard, between the house and the toolshed) ----
-  const LA = { x: -8.9, z0: -25.0, z1: -19.4 };
-  for (const z of [LA.z0, LA.z1]) {
+  const LA = LAUNDRY; // kept clear of trees by world/map.ts clearance()
+  for (const z of [LA.z0, LA.z1]) k.part('laundryPole', () => {
     const y = gy(LA.x, z);
     k.box(0.14, 2.2, 0.14, PAL.woodDark, { x: LA.x, y: y + 1.1, z });
     k.box(0.14, 0.14, 0.8, PAL.woodDark, { x: LA.x, y: y + 2.1, z });
     circles.push([LA.x, z, 0.2]);
-  }
+  });
   const lineY = (z: number) => {
     const u = (z - LA.z0) / (LA.z1 - LA.z0);
     return gy(LA.x, LA.z0) + (gy(LA.x, LA.z1) - gy(LA.x, LA.z0)) * u + 2.08 - Math.sin(u * Math.PI) * 0.18;
   };
-  for (let i = 0; i < 12; i++) {
+  k.part('laundryLine', () => { for (let i = 0; i < 12; i++) {
     const za = LA.z0 + ((LA.z1 - LA.z0) * i) / 12, zb = LA.z0 + ((LA.z1 - LA.z0) * (i + 1)) / 12;
     k.beam(LA.x, lineY(za), za, LA.x, lineY(zb), zb, 0.025, PAL.cloth);
-  }
-  basket(k, LA.x + 0.8, LA.z0 + 1.2, gy);
+  } });
+  k.part('basket', () => basket(k, LA.x + 0.8, LA.z0 + 1.2, gy));
 
   k.build(root);
 
@@ -224,13 +238,7 @@ export function buildDressing(season: Season, seed = 1): Dressing {
   root.add(laundry);
   const d = new THREE.Object3D();
 
-  // fake light pools under every lamp (additive discs; opacity follows the night)
-  const poolMat = new THREE.MeshBasicMaterial({ map: softSpot(), color: 0xffb060, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2 });
-  const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), poolMat, lamps.length);
-  pools.renderOrder = 2;
-  lamps.forEach((l, i) => { d.position.set(l.x, l.y + 0.06, l.z); d.rotation.set(0, 0, 0); d.scale.set(6, 1, 6); d.updateMatrix(); pools.setMatrixAt(i, d.matrix); });
-  pools.visible = false;
-  root.add(pools);
+  // (lamp light: the lamp heads are glow parts, so the Kit registers them as real local lights; see scene/lights)
 
   const rig: Rig = {
     update(e: Env) {
@@ -247,8 +255,6 @@ export function buildDressing(season: Season, seed = 1): Dressing {
         laundry.setMatrixAt(i, d.matrix);
       }
       laundry.instanceMatrix.needsUpdate = true;
-      poolMat.opacity = e.night * 0.55;
-      pools.visible = e.night > 0.02;
     },
   };
   root.userData.rig = rig;

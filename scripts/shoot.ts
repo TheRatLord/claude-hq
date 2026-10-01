@@ -143,4 +143,18 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((e: unknown) => { console.error(e); process.exitCode = 1; });
+/**
+ * Contact sheet: tile base64 PNGs (with a caption each) under a title into one PNG. Used by the placement audit.
+ */
+export async function contactSheet(browser: import('@playwright/test').Browser, file: string, title: string, shots: { png: string; label: string }[], w: number, h: number, cols = shots.length): Promise<void> {
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const scale = Math.min(1, 2400 / (cols * w));
+  const sheet = await browser.newPage({ viewport: { width: Math.ceil(cols * w * scale), height: 200 } });
+  await sheet.setContent(`<body style="margin:0;background:#222;color:#eee;font:14px monospace"><div style="padding:6px 8px;white-space:pre-wrap">${esc(title)}</div><div style="display:grid;grid-template-columns:repeat(${cols},${w * scale}px)">${
+    shots.map((s) => `<div style="position:relative"><img style="display:block;width:${w * scale}px" src="data:image/png;base64,${s.png}"><span style="position:absolute;left:4px;top:2px;font:bold 13px monospace;color:#fff;text-shadow:0 0 3px #000">${esc(s.label)}</span></div>`).join('')}</div></body>`);
+  await sheet.waitForTimeout(100);
+  await sheet.screenshot({ path: file, fullPage: true });
+  await sheet.close();
+}
+
+if (import.meta.main) void main().catch((e: unknown) => { console.error(e); process.exitCode = 1; });

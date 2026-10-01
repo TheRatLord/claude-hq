@@ -42,7 +42,7 @@ defineAsset({ name: 'noticeboard', group: 'structure', note: 'live corkboard: wh
 defineAsset({ name: 'well', group: 'structure', note: 'Make a wish: crank spins, coin sparkle', build: (o) => tag(buildWell(opts(o)), o), animate: (obj, t, dt, p) => { if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) rigOf(obj)?.poke?.('wish'); animate(obj, t, dt, p); } });
 defineAsset({ name: 'signpost', group: 'structure', note: 'arrows point at live fields, lettered with plot names', build: (o) => tag(buildSignpost(opts(o)), o), animate });
 defineAsset({ name: 'toolshed', group: 'structure', build: (o) => tag(buildToolshed(opts(o)), o), animate });
-defineAsset({ name: 'campfire', group: 'structure', note: 'flames, embers, warm pool of light at night; log benches', build: (o) => tag(buildCampfire(opts(o)), o), animate });
+defineAsset({ name: 'campfire', group: 'structure', note: 'flames, embers, a flickering local light (scene/lights) at night; log benches', build: (o) => tag(buildCampfire(opts(o)), o), animate });
 defineAsset({ name: 'dock', group: 'structure', note: 'walkable planks into the pond, a rod with a bobbing float', build: (o) => tag(buildDock(opts(o)), o), animate });
 defineAsset({ name: 'bridge', group: 'structure', note: 'walkable wooden arch over the river', build: (o) => tag(buildBridge(opts(o)), o), animate });
 
@@ -50,7 +50,7 @@ defineAsset({ name: 'bridge', group: 'structure', note: 'walkable wooden arch ov
 const prop = (name: string, fn: (k: Kit, o: AssetBuildOpts) => void, note?: string) => defineAsset({ name, group: 'prop', note, build: (o) => { const k = new Kit(o.seed); fn(k, o); return k.build(new THREE.Group(), o.night ?? 0); } });
 prop('bench', (k) => P.bench(k, {}));
 prop('logBench', (k) => P.logBench(k, {}));
-prop('lampPost', (k) => { P.lampPost(k, {}); }, 'head glows at night (fake light pool on the ground in the valley)');
+prop('lampPost', (k) => { P.lampPost(k, {}); }, 'head glass glows at night; in the valley it is a real local light (scene/lights)');
 prop('barrel', (k) => P.barrel(k, {}));
 prop('crate', (k) => P.crate(k, {}));
 prop('hayBale', (k) => { P.hayBale(k, {}); P.hayBale(k, { x: 1.4 }, true); });

@@ -11,7 +11,7 @@ import { FALLOW_MS, HARVEST_MS, TILL_MS } from '../../model/valley.ts';
 import type { Site } from '../../world/map.ts';
 import { askSpot, benchSpot, doneSpot, helperSpot, signSpot, workSpot, SPOT_CLEAR } from '../../world/spots.ts';
 import type { AgentPort } from '../../model/types.ts';
-import type { Colliders, Interactions, SfxName, UiPort } from '../context.ts';
+import type { Colliders, Interactions, LightEmitter, LightsService, SfxName, UiPort } from '../context.ts';
 import { PAL, WORKSPACE_COLORS, toon } from '../toon.ts';
 import type { Batches } from './batch.ts';
 import type { TextAtlas } from './atlas.ts';
@@ -21,6 +21,7 @@ import type { CropUniforms } from './materials.ts';
 import { cropLayout, decorClump, SUN_STEM } from './crops.ts';
 import type { Clear, CropLayout, Slot } from './crops.ts';
 import { bounce, clamp01, damp, lerp, merge, rng, smooth01 } from './geo.ts';
+import { partName } from '../parts.ts';
 import {
   cart, cartHeap, clod, crate, exitRibbon, fenceRibbon, fenceSegment, flag, gatePosts, hiveGeo, kindProps, lanternCore, LANTERN, penTile, scarecrow,
   SIGN_TEXT, signBoard, soilBed, sprinkler, textQuad, weed,
@@ -29,13 +30,19 @@ import { Herd, penFor } from './animals.ts';
 import type { Animal, HerdInput, SpeciesKey } from './animals.ts';
 import { Bees } from './bees.ts';
 import type { Fx } from './fx.ts';
+import { warmEmitter } from '../lights/emitters.ts';
 
 export interface FieldHooks {
   interact?: Interactions;
   colliders?: Colliders;
   ui?: UiPort;
   agents?: AgentPort;
+  /** scarecrow lanterns light the field around them (scene/lights) */
+  lights?: LightsService;
 }
+
+/** a running scarecrow's lantern as a local light: a small flickering warm pool on the post, the straw and the soil */
+const LANTERN_LIGHT = new THREE.Color(1.0, 0.56, 0.22);
 
 export interface FieldEnv {
   time: number; dt: number; now: number;
@@ -71,7 +78,7 @@ const ONE = new THREE.Vector3(1, 1, 1);
 
 interface FenceSeg { x: number; z: number; yaw: number; len: number }
 interface GroundTile { x: number; z: number; yaw: number; order: number; color: number | null; s: number }
-interface HelperState { appear: number; rect: number[] | null; key: string; off: (() => void) | null; flick: number }
+interface HelperState { appear: number; rect: number[] | null; key: string; off: (() => void) | null; flick: number; light?: LightEmitter; lightOff?: () => void }
 interface Weed { x: number; z: number; yaw: number; s: number; th: number }
 
 export class Field {
@@ -170,11 +177,12 @@ export class Field {
     for (const s of kp.solids) this.clears.push(s);
     const gp = gatePosts(GATE_HW, this.color, season);
     for (const g of gp) g.translate(0, 0, hd);
+    for (const g of gp) partName(g, 'gate');
     const parts = [...kp.geo, ...gp];
     if (!ANIMAL_PLOTS.includes(this.kind) || this.kind === 'bees') {
-      if (this.kind === 'vineyard') for (const x of [-6.9, -3.6, 0, 3.6, 6.3]) parts.push(soilBed(x - 0.55, x + 0.55, -hd + 0.75, hd - 2.4, season));
+      if (this.kind === 'vineyard') [-6.9, -3.6, 0, 3.6, 6.3].forEach((x, i) => parts.push(partName(soilBed(x - 0.55, x + 0.55, -hd + 0.75, hd - 2.4, season), `soilBed#${i}`)));
       else if (this.kind !== 'orchard') {
-        parts.push(soilBed(-hw + 0.6, hw - 1.95, -hd + 0.75, hd - 2.0, season));
+        parts.push(partName(soilBed(-hw + 0.6, hw - 1.95, -hd + 0.75, hd - 2.0, season), 'soilBed#0'));
       }
     }
     if (this.kind === 'bees') {
@@ -248,6 +256,13 @@ export class Field {
 
     // crops
     this.layout = cropLayout(this.kind, hw, hd, this.clears, plot.id);
+    // crops stand on a ridge crest; where no ridge was laid (kept clear round the benches and the gate lane) they stand on the flat soil bed
+    if (!useTiles) {
+      for (const s of this.layout.slots) {
+        if (s.parent >= 0) continue;
+        if (!this.tiles.some((t) => Math.abs(t.x - s.x) < 0.42 && Math.abs(t.z - s.z) < 0.64)) s.y = 0.03;
+      }
+    }
     if (this.kind === 'orchard') {
       for (const s of this.layout.slots) if (s.part === 0) this.tiles.push({ x: s.x, z: s.z, yaw: r() * 6, order: s.sow, color: [0xa88a5c, 0x9a7c50][Math.floor(r() * 2)], s: 1.0 });
     }
@@ -594,7 +609,7 @@ export class Field {
       cart: B.get('cart', () => ({ geo: cart(), mat: lit, cap: 12, shadow: true })),
       heap: B.get('cartheap', () => ({ geo: cartHeap(), mat: lit, cap: 12 })),
       scarecrow: B.get(`scarecrow:${this.season}`, () => ({ geo: scarecrow(this.season), mat: lit, cap: 48, shadow: true })),
-      lantern: B.get('lantern', () => ({ geo: lanternCore(), mat: new THREE.MeshBasicMaterial({ color: 0xffffff }), cap: 48 })),
+      lantern: B.get('lantern', () => ({ geo: lanternCore(), mat: warmEmitter(new THREE.MeshBasicMaterial({ color: 0xffffff })), cap: 48 })),
       ribbon: B.get('exitribbon', () => ({ geo: exitRibbon(), mat: toon(0xffffff), cap: 48 })),
       sprinkler: B.get('sprinkler', () => ({ geo: sprinkler(), mat: lit, cap: 24 })),
       weed: B.get('weed', () => ({ geo: weed(), mat: env.weedMat, cap: 900 })),
@@ -712,15 +727,20 @@ export class Field {
       st.flick += env.dt;
       const lit = h.running;
       const fl = lit ? 0.85 + 0.15 * Math.sin(st.flick * 13) * Math.sin(st.flick * 7.3 + 1) : 0;
-      const glow = lit ? (1.1 + env.night * 0.9) * fl : 0;
+      const glow = lit ? (0.75 + env.night * 0.4) * fl : 0;
       _c.setRGB(lit ? glow * 1.0 : 0.22, lit ? glow * 0.62 : 0.18, lit ? glow * 0.22 : 0.14);
       _m2.compose(_v.set(LANTERN.x, LANTERN.y, LANTERN.z), _q.identity(), ONE).premultiply(sm);
       b.lantern.push(_m2, _c);
       if (lit) {
         _p.setFromMatrixPosition(_m2);
-        _c.setRGB(1.5 * fl, 0.95 * fl, 0.4 * fl).multiplyScalar(0.25 + env.night * 0.75);
-        env.fx.billboard('halo', _p.x, _p.y, _p.z, (0.7 + env.night * 0.9) * k, _c);
+        _c.setRGB(1.5 * fl, 0.95 * fl, 0.4 * fl).multiplyScalar(0.12 + env.night * 0.3);
+        env.fx.billboard('halo', _p.x, _p.y, _p.z, (0.5 + env.night * 0.5) * k, _c);
+        if (this.hooks.lights && !st.light) {
+          st.light = { pos: new THREE.Vector3(), color: LANTERN_LIGHT, intensity: 0, radius: 4.2, flicker: 0.6 };
+          st.lightOff = this.hooks.lights.add(st.light);
+        }
       }
+      if (st.light) { st.light.pos.setFromMatrixPosition(_m2); st.light.intensity = lit ? 0.6 * k : 0; }
       // exit ribbon
       if (h.exit) {
         _c.set(h.exit === 'ok' ? PAL.ok : PAL.alertRed);
@@ -742,7 +762,7 @@ export class Field {
         b.text.push(_m2, null, st.rect!);
       }
     }
-    for (const [id, st] of this.helpers) if (!seen.has(id)) { st.off?.(); if (st.key) env.atlas.release(st.key); this.helpers.delete(id); }
+    for (const [id, st] of this.helpers) if (!seen.has(id)) { st.off?.(); st.lightOff?.(); if (st.key) env.atlas.release(st.key); this.helpers.delete(id); }
   }
 
   private drawCritters(env: FieldEnv): void {
@@ -752,7 +772,9 @@ export class Field {
     if (this.sprinklerAt && this.plot.stage !== 'fallow' && !this.closing) {
       const s = this.sprinklerAt;
       const k = clamp01((this.tillP - 0.5) / 0.2);
-      _m.compose(_v.set(s.x, 0, s.z), _q.setFromAxisAngle(_v.set(0, 1, 0), env.time * 2.4), _s.set(k, k, k)).premultiply(this.siteM);
+      // (the axis must not reuse _v: it was overwriting the position and the sprinkler hovered at the field centre)
+      _q.setFromAxisAngle(_v.set(0, 1, 0), env.time * 2.4);
+      _m.compose(_v.set(s.x, 0, s.z), _q, _s.set(k, k, k)).premultiply(this.siteM);
       b.sprinkler.push(_m);
       if (alive && this.thriveK > 0.5 && env.fx) {
         const n = Math.random() < env.dt * 70 ? 2 : 0;
@@ -878,7 +900,7 @@ export class Field {
   dispose(atlas: TextAtlas | null): void {
     this.removeColliders();
     for (const f of this.offs) f();
-    for (const st of this.helpers.values()) { st.off?.(); if (st.key) atlas?.release(st.key); }
+    for (const st of this.helpers.values()) { st.off?.(); st.lightOff?.(); if (st.key) atlas?.release(st.key); }
     if (this.signKey) atlas?.release(this.signKey);
     this.root.removeFromParent();
     this.props.geometry.dispose();

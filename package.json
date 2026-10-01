@@ -12,6 +12,7 @@
     "build": "node scripts/workbench.ts --build",
     "shoot": "node scripts/shoot.ts",
     "mapviz": "node scripts/mapviz.ts",
+    "audit:placement": "node scripts/placement.ts",
     "test:browser": "playwright test",
     "typecheck": "node scripts/typecheck.ts",
     "test": "node --test \"**/*.test.ts\"",
@@ -32,9 +33,10 @@
     "@types/node": "^24.19.0",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.1",
+    "electron": "^44.4.5",
+    "three-mesh-bvh": "^0.9.15",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1",
-    "electron": "^44.4.5"
+    "vite": "^8.3.1"
   },
   "engines": {
     "node": ">=24"

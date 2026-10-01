@@ -10,13 +10,13 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { AudioService, SceneCtx, SystemFactory } from '../context.ts';
+import type { AudioService, LightEmitter, LightsService, SceneCtx, SystemFactory } from '../context.ts';
 import type { FarmerView, Season, ValleyState } from '../../model/types.ts';
 import { unreadCount } from '../../model/valley.ts';
 import { SITES, STRUCTURES, WORLD, heightAt } from '../../world/map.ts';
 import type { Structure, StructureId } from '../../world/map.ts';
 import { WORKSPACE_COLORS } from '../toon.ts';
-import { bakeInto, glowMat, setGlow, softSpot, solidMat } from './kit.ts';
+import { bakeInto, glowMat, setGlow, solidMat } from './kit.ts';
 import { levelsFrom, newLevels, rigOf } from './rig.ts';
 import type { Env, Rig } from './rig.ts';
 import { FARMHOUSE, buildFarmhouse } from './farmhouse.ts';
@@ -26,6 +26,7 @@ import type { Arrow, Board, Note, Signpost } from './hub.ts';
 import { BRIDGE, CAMPFIRE_SEATS, DOCK, bridgeDeck, buildBridge, buildCampfire, buildDock, dockStart } from './leisure.ts';
 import type { BridgeOpts, DeckOpts } from './leisure.ts';
 import { buildDressing } from './dressing.ts';
+import { partName, recordParts } from '../parts.ts';
 
 import type { StructureSpot, StructureSpots } from '../context.ts';
 export type { StructureSpot, StructureSpots };
@@ -53,7 +54,17 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   interface Placed { s: Structure; root: THREE.Object3D; rig?: Rig }
   let placed = new Map<StructureId, Placed>();
   let dressingRig: Rig | undefined;
-  let campLight: THREE.PointLight | undefined;
+  const lights = ctx.services.get('lights') as LightsService | undefined;
+  const lightOffs: (() => void)[] = [];
+  /** move kit/root-local emitters to world space (in place: rigs keep mutating them) and register them */
+  const addLights = (list: LightEmitter[] | undefined, m: THREE.Matrix4) => {
+    if (!list || !lights) return;
+    for (const e of list) {
+      e.pos.applyMatrix4(m);
+      e.dir?.transformDirection(m);
+      lightOffs.push(lights.add(e));
+    }
+  };
   let baked: THREE.Mesh[] = [];
   let spotsMap = new Map<string, StructureSpot>();
   let seatList: StructureSpot[] = [];
@@ -76,7 +87,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   };
   const bridgeOpts = (s: Structure): BridgeOpts => {
     const a = toWorld(s, 0, -BRIDGE.L / 2), b = toWorld(s, 0, BRIDGE.L / 2);
-    return { yA: heightAt(a.x, a.z) - s.y, yB: heightAt(b.x, b.z) - s.y, water: WORLD.water - s.y };
+    return { yA: heightAt(a.x, a.z) - s.y, yB: heightAt(b.x, b.z) - s.y, water: WORLD.water - s.y, ground: (lx, lz) => { const w = toWorld(s, lx, lz); return heightAt(w.x, w.z) - s.y; } };
   };
 
   function buildAll(): void {
@@ -105,11 +116,24 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     make('dock', buildDock(o, dockOpts(S('dock'))));
     make('bridge', buildBridge(o, bridgeOpts(S('bridge'))));
     make('signpost', buildSignpost(o));
-    campLight = placed.get('campfire')!.root.userData.light as THREE.PointLight | undefined;
-    const dr = buildDressing(season, 1);
+    const flora = ctx.services.get('floraSolids') as { blocked(x: number, z: number, r: number): boolean } | undefined;
+    const dr = buildDressing(season, 1, flora ? (x, z, r) => flora.blocked(x, z, r) : undefined);
     group.add(dr.root);
     dressingRig = rigOf(dr.root);
     group.updateMatrixWorld(true);
+    // animated lights (campfire, barn lantern) live on their structure's root
+    for (const p of placed.values()) addLights(p.root.userData.lights as LightEmitter[] | undefined, p.root.matrixWorld);
+    addLights(dr.root.userData.lights as LightEmitter[] | undefined, dr.root.matrixWorld);
+    // building volumes that shadow freestanding lamps (a little inside the walls, so the walls still catch light)
+    const occ = (id: StructureId, lx: number, lz: number, w: number, d: number, h: number) => {
+      const st = S(id), p = toWorld(st, lx, lz);
+      if (lights) lightOffs.push(lights.occluder({ x: p.x, z: p.z, yaw: st.yaw, w, d, y0: st.y - 0.5, y1: st.y + h }));
+    };
+    occ('farmhouse', 0, FARMHOUSE.bodyZ, 8.7, 6.1, 5.6);
+    occ('barn', 0, 0, BARN.w - 0.4, BARN.d - 0.4, BARN.wallH + 1.6);
+    occ('toolshed', 0, 0, 2.9, 2.3, 2.3);
+    occ('silo', 0, 0, SILO.r * 1.6, SILO.r * 1.6, SILO.h);
+    occ('windmill', 0, 0, WINDMILL.r1 * 2.1, WINDMILL.r1 * 2.1, WINDMILL.h * 0.75);
     bake();
 
     // ---- colliders ----
@@ -133,7 +157,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     circ(S('windmill'), 0, 0, 3.05);
     for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) circ(S('waterTower'), x * 2.2, z * 2.2, 0.36);
     rect(S('barn'), 0, 0, BARN.w + 0.3, BARN.d + 0.3);
-    rect(S('barn'), -6.2, 3.5, 1.6, 3.0, 0.5);
+    rect(S('barn'), 2.6, -BARN.d / 2 - 1.7, 1.6, 3.0, Math.PI / 2 + 0.25);
     circ(S('silo'), 0, 0, SILO.r + 0.3);
     rect(S('toolshed'), 0, 0, 3.4, 2.8); rect(S('toolshed'), 2.1, 0.1, 0.7, 1.6);
     circ(S('campfire'), 0, 0, 1.25);
@@ -168,7 +192,11 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh || !m.userData.bake) return;
+      addLights(m.userData.emitters as LightEmitter[] | undefined, m.matrixWorld);
       const g = bakeInto(m.geometry.clone(), m.matrixWorld);
+      let top: THREE.Object3D = m;
+      while (top.parent && top.parent !== group) top = top.parent;
+      partName(g, top.name || 'structure'); // provenance for dev tools (scene/parts.ts)
       g.computeBoundingSphere();
       c.copy(g.boundingSphere!.center);
       const key = `${m.userData.bake}|${Math.floor(c.x / CELL)}|${Math.floor(c.z / CELL)}`;
@@ -178,6 +206,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     for (const m of kill) { m.removeFromParent(); m.geometry.dispose(); if (m.material !== solid && (m.material as THREE.Material).dispose) (m.material as THREE.Material).dispose(); }
     for (const [key, geos] of buckets) {
       const g = mergeGeometries(geos, false);
+      if (g) recordParts(g, geos);
       for (const x of geos) x.dispose();
       if (!g) continue;
       g.computeBoundingSphere();
@@ -194,12 +223,13 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
 
   function disposeAll(): void {
     for (const f of removers.splice(0)) f();
+    for (const f of lightOffs.splice(0)) f();
     group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
       m.geometry.dispose();
       const mat = m.material as THREE.MeshBasicMaterial;
-      if (mat.map && mat.map !== softSpot()) mat.map.dispose(); // plaques, noticeboard, signpost canvases
+      if (mat.map) mat.map.dispose(); // plaques, noticeboard, signpost canvases
     });
     group.clear();
     baked = [];
@@ -318,7 +348,6 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   }
 
   const windSvc = () => ctx.services.get('wind') as { at(x: number, z: number, t: number, out: { x: number; z: number }): { x: number; z: number } } | undefined;
-  const nearCamp = new THREE.Vector3();
 
   return {
     name: 'structures',
@@ -334,12 +363,6 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
       if (contentT > 1) { contentT = 0; refreshContent(); }
       for (const p of placed.values()) p.rig?.update(env);
       dressingRig?.update(env);
-      if (campLight) {
-        const s = S('campfire');
-        nearCamp.set(s.x, s.y, s.z);
-        // keep the light in the scene (toggling visibility recompiles every material); just zero it when far away
-        if (nearCamp.distanceToSquared(ctx.player.pos) > 45 * 45) campLight.intensity = 0;
-      }
     },
     stats: () => ({ baked: baked.length, structures: placed.size }),
     dispose() {

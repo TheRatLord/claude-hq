@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { facet } from '../toon.ts';
 import { ensureSurface } from '../surface/index.ts';
+import { recordParts } from '../parts.ts';
 
 /**
  * Merge parts that each carry a `color` attribute (and optionally a `surface` tag) into one faceted, non-indexed
@@ -21,6 +22,7 @@ export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   });
   const m = mergeGeometries(clean)!;
   const g = smooth ? m : facet(m);
+  recordParts(g, parts); // provenance of named parts (scene/parts.ts)
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;

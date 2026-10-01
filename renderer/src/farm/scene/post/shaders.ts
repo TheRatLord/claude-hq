@@ -131,7 +131,9 @@ float edgeAxis(float dc, float zc, float dA, float dB) {
 
 void main() {
   vec2 uv = vUv;
-  vec3 col = texture2D(tColor, uv).rgb;
+  vec4 c0 = texture2D(tColor, uv);
+  vec3 col = c0.rgb;
+  float cA = c0.a;
   if (any(isnan(col))) col = vec3(0.0);
   float d0 = texture2D(tDepth, uv).x;
   bool sky = d0 >= 0.999999;
@@ -198,13 +200,16 @@ void main() {
   if (uUseBloom > 0.5) col += texture2D(tBloom, uv).rgb * uBloom;
 
   // --- grade in linear HDR, tone map, then display-space tweaks
-  col *= uExposure * uGain;
+  // warm = how lamp-lit this pixel is (its local-light share, written to alpha by the toon shader: 1 - share / 2;
+  // values below 0.5 are not ours). At night moonlit tones lose colour into blue, but lamp pools, windows and fire keep
+  // (and slightly gain) their colour and skip the cool white balance: a blue world with warm pockets.
+  float warm = (cA >= 0.5 ? clamp((1.0 - cA) * 2.0, 0.0, 1.0) : 0.0) * uNight;
+  col *= uExposure * mix(uGain, vec3(dot(uGain, vec3(0.3333))) * vec3(1.06, 1.0, 0.9), warm * 0.6);
   col += vec3(0.8, 0.85, 1.0) * uFlash * 0.25;
   col = neutral(col);
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  // at night dim tones lose colour into moonlight blue; bright lamps and windows keep their warmth
-  float satK = mix(uSaturation, max(uSaturation, 1.08), smoothstep(0.3, 0.8, lum) * uNight);
-  col = mix(vec3(lum) * mix(vec3(1.0), vec3(0.8, 0.92, 1.25), uNight * (1.0 - smoothstep(0.25, 0.7, lum))), col, satK);
+  float satK = mix(uSaturation, max(uSaturation, 1.0), max(smoothstep(0.3, 0.8, lum), warm) * uNight);
+  col = mix(vec3(lum) * mix(vec3(1.0), vec3(0.8, 0.92, 1.25), uNight * (1.0 - warm) * (1.0 - smoothstep(0.25, 0.7, lum))), col, satK);
   vec3 s = toSRGB(col);
   float sl = dot(s, vec3(0.299, 0.587, 0.114));
   // split-tone: cool-violet shadows, leaving warm highlights (lamps at night) untouched

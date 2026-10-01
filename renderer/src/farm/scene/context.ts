@@ -138,6 +138,7 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'structureSpots' StructureSpots               structures package: named anchors + seats
  *   'controller'  Controller (player/controller.ts) lead (main.ts): onStep, teleport, lookAt
  *   'settings'    Settings (core/settings.ts)       lead (main.ts): volumes, quality, reducedMotion…
+ *   'lights'      LightsService (scene/lights)      lighting: lamps, lanterns, windows, fires as local light
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
 export interface FarmerLocator {
@@ -164,6 +165,53 @@ export interface AudioService {
   voice(seed: string, o?: { pos?: THREE.Vector3; mood?: 'happy' | 'question' | 'sad' | 'excited'; syllables?: number }): void;
   /** positional loop (fire crackle, water, windmill creak); returns a handle */
   loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
+}
+
+/**
+ * A local light source (lamp, lantern, window, fire). Register with the 'lights' service (`LightsService.add`); the
+ * service picks the nearest few that can touch the view each frame and feeds them to every toon material as
+ * stylised, banded warm pools (see scene/lights). Mutate the fields freely (moving lanterns, gauges, flicker);
+ * they are read every frame.
+ */
+export interface LightEmitter {
+  /** world position of the light (centre of the glass / flame, or a little behind a window pane) */
+  pos: THREE.Vector3;
+  /** linear colour */
+  color: THREE.Color;
+  /** ~1 = the core lights a surface at its full albedo; pools get softer bands further out */
+  intensity: number;
+  /** metres: nothing beyond this is touched */
+  radius: number;
+  /** window spill: unit direction the light pours out along (omitted = all around) */
+  dir?: THREE.Vector3;
+  /** spill half-angle in radians (default π/2: the whole half-space in front of the wall) */
+  cone?: number;
+  /** 0..1 candle / fire flicker */
+  flicker?: number;
+  /** extra 0..1 gain (a scarecrow lantern lit only while its process runs); default 1 */
+  gain?: number;
+  /** 'night' (default): fades with `lighting.night` (dusk, storms); 'always': lit by day too (the campfire) */
+  when?: 'night' | 'always';
+}
+
+/**
+ * A solid building volume that blocks freestanding lamps (a lamp behind the farmhouse does not light the plaza in
+ * front of it). World-space box: centre x/z, yaw (same convention as `Colliders.rect`), size w (local x) × d (local z),
+ * floor y0 to top y1. Keep it a little inside the real walls so the walls themselves still catch the light.
+ */
+export interface LightOccluder { x: number; z: number; yaw: number; w: number; d: number; y0: number; y1: number }
+
+export interface LightsService {
+  /** register an emitter; returns the remove fn */
+  add(e: LightEmitter): () => void;
+  /** register a building volume that shadows point lights; returns the remove fn */
+  occluder(o: LightOccluder): () => void;
+  /** 0..1 how much local light is on right now (night factor after easing) */
+  readonly level: number;
+  /** every registered emitter (debug overlays, shots) */
+  all(): readonly LightEmitter[];
+  /** every registered occluder (debug overlays, shots) */
+  occluders(): readonly LightOccluder[];
 }
 
 /** Wind for foliage sway, cloth, smoke, particles. Published by the atmosphere package as service 'wind'. */

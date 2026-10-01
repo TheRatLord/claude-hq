@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import type { PlotStage, Season } from '../../model/types.ts';
 import { SITES, heightAt, inSite, structure } from '../../world/map.ts';
 import type { Site } from '../../world/map.ts';
-import type { AudioService, SystemFactory } from '../context.ts';
+import type { AudioService, LightsService, SystemFactory } from '../context.ts';
 import { TextAtlas } from './atlas.ts';
 import { Batches } from './batch.ts';
 import { Field } from './field.ts';
@@ -45,7 +45,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
   const fields = new Map<string, Field>();
   let closing: Field[] = [];
   const barn = structure('barn');
-  const hooks = { interact: ctx.interact, colliders: ctx.colliders, ui: ctx.ui, agents: ctx.agents };
+  const hooks = { interact: ctx.interact, colliders: ctx.colliders, ui: ctx.ui, agents: ctx.agents, lights: ctx.services.get('lights') as LightsService | undefined };
   const audio = () => ctx.services.get('audio') as AudioService | undefined;
   const sndPos = new THREE.Vector3();
   const covers = new Float32Array(SITES.length);

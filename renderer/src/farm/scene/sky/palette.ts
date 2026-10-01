@@ -32,8 +32,8 @@ export interface SkyKey {
 type K = [hourOf: (rise: number, set: number) => number, key: SkyKey];
 
 const NIGHT: SkyKey = {
-  zenith: 0x050a1e, horizon: 0x1a2748, glow: 0x243463, key: 0xa4b6ec, keyI: 1.35, hemiSky: 0x3a4876, hemiGround: 0x1a1e2a, hemiI: 1.5,
-  stars: 1, night: 1, exposure: 1.4, gain: 0x7c8498, shade: 0x0c1236, sat: 0.6, contrast: 1.04, bloom: 1, mist: 0.25,
+  zenith: 0x050a1e, horizon: 0x1a2748, glow: 0x243463, key: 0xa4b6ec, keyI: 1.55, hemiSky: 0x34406e, hemiGround: 0x15182a, hemiI: 1.0,
+  stars: 1, night: 1, exposure: 1.28, gain: 0x7c8498, shade: 0x0c1236, sat: 0.6, contrast: 1.04, bloom: 1, mist: 0.25,
 };
 const KEYS: K[] = [
   [(r) => r - 1.7, NIGHT],

@@ -150,7 +150,7 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
       // porch lanterns by the door
       for (const s of [-1, 1]) {
         k.box(0.08, 0.3, 0.2, PAL.ink, { x: s * 1.0, y: 2.25, z: 0.12 });
-        k.box(0.2, 0.32, 0.2, PAL.lampGlow, { x: s * 1.0, y: 2.05, z: 0.28 }, 'glow');
+        k.emit({ wall: [0, 0, 1] }, () => k.box(0.2, 0.32, 0.2, PAL.lampGlow, { x: s * 1.0, y: 2.05, z: 0.28 }, 'glow'));   // lights the porch, never the hall behind
         k.cone(0.18, 0.14, PAL.ink, { x: s * 1.0, y: 2.28, z: 0.28 }, 4);
       }
     });
@@ -206,8 +206,9 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
   });
   k.box(1.2, 0.02, 0.7, 0xb0553e, { y: P.y + 0.01, z: 2.55 });
   k.box(1.0, 0.021, 0.5, 0xd88a5a, { y: P.y + 0.012, z: 2.55 });
-  flowerPot(k, { x: -1.3, y: P.y, z: 4.2 }, o.season, 1, true);
-  flowerPot(k, { x: 1.3, y: P.y, z: 4.2 }, o.season, 3, true);
+  // big pots flank the door, clear of the railing (z 4.4) and the door posts (x ±1.1)
+  flowerPot(k, { x: -1.65, y: P.y, z: 3.9 }, o.season, 1, true);
+  flowerPot(k, { x: 1.65, y: P.y, z: 3.9 }, o.season, 3, true);
   flowerPot(k, { x: 1.4, y: 0, z: 5.3 }, o.season, 2);
   flowerPot(k, { x: -1.4, y: 0, z: 5.3 }, o.season, 4);
   wateringCan(k, { x: 3.9, y: P.y, z: 3.9, ry: 0.6 });

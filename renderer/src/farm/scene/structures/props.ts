@@ -14,7 +14,22 @@ const FLOWERS: Record<Season, number[]> = {
 };
 export const flowerColors = (s: Season): number[] => FLOWERS[s];
 
-export function barrel(k: Kit, t: Xf, color: number = PAL.wood): void {
+/**
+ * Every prop names itself in the Kit (`barrel#3`, provenance for dev tools, see Kit.part); a prop built inside
+ * another prop (crates on a cart) stays part of the outer one.
+ */
+let inProp = 0;
+function labelled<A extends unknown[], R>(name: string, f: (k: Kit, ...a: A) => R): (k: Kit, ...a: A) => R {
+  return (k, ...a) => {
+    if (inProp) return f(k, ...a);
+    let r!: R;
+    inProp++;
+    try { k.part(name, () => { r = f(k, ...a); }); } finally { inProp--; }
+    return r;
+  };
+}
+
+function barrelProp(k: Kit, t: Xf, color: number = PAL.wood): void {
   k.at(t, () => {
     k.surf(['planks', { scale: 0.9 }], () => {   // staves
       k.cyl(0.36, 0.5, color, { y: 0.25 }, 9, 0.42);
@@ -25,7 +40,7 @@ export function barrel(k: Kit, t: Xf, color: number = PAL.wood): void {
   });
 }
 
-export function crate(k: Kit, t: Xf, s = 0.6, color: number = PAL.woodLight): void {
+function crateProp(k: Kit, t: Xf, s = 0.6, color: number = PAL.woodLight): void {
   k.at(t, () => {
     k.surf(['planks', { axis: 'h', scale: Math.max(0.6, s * 1.1) }], () => k.box(s, s, s, color, { y: s / 2 }));
     const e = s * 0.12;
@@ -34,7 +49,7 @@ export function crate(k: Kit, t: Xf, s = 0.6, color: number = PAL.woodLight): vo
   });
 }
 
-export function hayBale(k: Kit, t: Xf, round = false): void {
+function hayBaleProp(k: Kit, t: Xf, round = false): void {
   k.at(t, () => {
     if (round) {
       k.cyl(0.6, 0.9, PAL.hay, { y: 0.6, rz: Math.PI / 2 }, 10);
@@ -49,7 +64,7 @@ export function hayBale(k: Kit, t: Xf, round = false): void {
 }
 
 /** Park bench, facing +z, seat top at 0.48. */
-export function bench(k: Kit, t: Xf, w = 1.8): void {
+function benchProp(k: Kit, t: Xf, w = 1.8): void {
   k.at(t, () => {
     for (const x of [-w / 2 + 0.15, w / 2 - 0.15]) {
       k.box(0.1, 0.45, 0.5, PAL.metalDark, { x, y: 0.23 });
@@ -62,7 +77,7 @@ export function bench(k: Kit, t: Xf, w = 1.8): void {
 }
 
 /** Log bench (campfire), along x. */
-export function logBench(k: Kit, t: Xf, w = 2.2): void {
+function logBenchProp(k: Kit, t: Xf, w = 2.2): void {
   k.at(t, () => {
     k.cyl(0.26, w, PAL.trunk, { y: 0.3, rz: Math.PI / 2 }, 7);
     k.box(w - 0.1, 0.06, 0.34, PAL.woodLight, { y: 0.52 });
@@ -75,7 +90,7 @@ export function logBench(k: Kit, t: Xf, w = 2.2): void {
 }
 
 /** Lamp post: returns the lamp head height. The head glass is emitted as 'glow'. */
-export function lampPost(k: Kit, t: Xf, h = 2.9): number {
+function lampPostProp(k: Kit, t: Xf, h = 2.9): number {
   k.at(t, () => {
     k.cyl(0.2, 0.25, PAL.stone, { y: 0.12 }, 6, 0.16);
     k.cyl(0.07, h - 0.3, PAL.ink, { y: 0.25 + (h - 0.3) / 2 }, 6, 0.06);
@@ -91,7 +106,7 @@ export function lampPost(k: Kit, t: Xf, h = 2.9): number {
   return h + 0.1;
 }
 
-export function flowerPot(k: Kit, t: Xf, season: Season, seed = 0, big = false): void {
+function flowerPotProp(k: Kit, t: Xf, season: Season, seed = 0, big = false): void {
   const fl = FLOWERS[season];
   const s = big ? 1.4 : 1;
   k.at(t, () => {
@@ -108,7 +123,7 @@ export function flowerPot(k: Kit, t: Xf, season: Season, seed = 0, big = false):
 }
 
 /** Window flower box, along x, width w. */
-export function flowerBox(k: Kit, t: Xf, w: number, season: Season, seed = 0): void {
+function flowerBoxProp(k: Kit, t: Xf, w: number, season: Season, seed = 0): void {
   const fl = FLOWERS[season];
   k.at(t, () => {
     k.box(w, 0.22, 0.28, PAL.woodDark, { y: 0 });
@@ -139,7 +154,7 @@ export function fenceRun(k: Kit, ax: number, az: number, bx: number, bz: number,
   }
 }
 
-export function picnicTable(k: Kit, t: Xf): void {
+function picnicTableProp(k: Kit, t: Xf): void {
   k.at(t, () => {
     for (let i = 0; i < 4; i++) k.box(0.2, 0.05, 1.9, i % 2 ? PAL.plank : PAL.woodLight, { x: -0.3 + i * 0.2, y: 0.75 });
     for (const s of [-1, 1]) {
@@ -158,7 +173,7 @@ export function picnicTable(k: Kit, t: Xf): void {
 }
 
 /** Farm cart, facing +z. */
-export function cart(k: Kit, t: Xf, load: 'hay' | 'pumpkins' | 'crates' = 'hay'): void {
+function cartProp(k: Kit, t: Xf, load: 'hay' | 'pumpkins' | 'crates' = 'hay'): void {
   k.at(t, () => {
     k.surf(['planks', { axis: 'z', variant: 1 }], () => k.box(1.4, 0.12, 2.2, PAL.plank, { y: 0.75 }));
     for (const s of [-1, 1]) {
@@ -182,7 +197,7 @@ export function cart(k: Kit, t: Xf, load: 'hay' | 'pumpkins' | 'crates' = 'hay')
   });
 }
 
-export function wateringCan(k: Kit, t: Xf, color: number = PAL.roofGreen): void {
+function wateringCanProp(k: Kit, t: Xf, color: number = PAL.roofGreen): void {
   k.at(t, () => {
     k.cyl(0.14, 0.3, color, { y: 0.15 }, 8);
     k.beam(0.1, 0.1, 0, 0.36, 0.34, 0, 0.05, color);
@@ -191,7 +206,7 @@ export function wateringCan(k: Kit, t: Xf, color: number = PAL.roofGreen): void 
   });
 }
 
-export function bucket(k: Kit, t: Xf, water = false): void {
+function bucketProp(k: Kit, t: Xf, water = false): void {
   k.at(t, () => {
     k.cyl(0.14, 0.28, PAL.woodLight, { y: 0.14 }, 8, 0.18);
     k.cyl(0.19, 0.04, PAL.metalDark, { y: 0.24 }, 8);
@@ -201,7 +216,7 @@ export function bucket(k: Kit, t: Xf, water = false): void {
 }
 
 /** Stacked firewood pile along x, facing +z. */
-export function firewood(k: Kit, t: Xf, w = 1.6, rows = 4): void {
+function firewoodProp(k: Kit, t: Xf, w = 1.6, rows = 4): void {
   k.at(t, () => {
     k.box(w + 0.2, 0.08, 0.7, PAL.woodDark, { y: 0.04 });
     for (let r = 0; r < rows; r++) {
@@ -218,7 +233,7 @@ export function firewood(k: Kit, t: Xf, w = 1.6, rows = 4): void {
 }
 
 /** Chopping block with an axe. */
-export function choppingBlock(k: Kit, t: Xf): void {
+function choppingBlockProp(k: Kit, t: Xf): void {
   k.at(t, () => {
     k.cyl(0.3, 0.5, PAL.trunk, { y: 0.25 }, 8);
     k.surf(['logs', { axis: 'y' }], () => k.cyl(0.26, 0.02, PAL.woodLight, { y: 0.51 }, 8));
@@ -227,7 +242,7 @@ export function choppingBlock(k: Kit, t: Xf): void {
   });
 }
 
-export function stool(k: Kit, t: Xf): void {
+function stoolProp(k: Kit, t: Xf): void {
   k.at(t, () => {
     k.cyl(0.2, 0.06, PAL.woodLight, { y: 0.45 }, 8);
     for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2; k.beam(Math.cos(a) * 0.12, 0.44, Math.sin(a) * 0.12, Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2, 0.05, PAL.wood); }
@@ -238,7 +253,7 @@ export function stool(k: Kit, t: Xf): void {
 export function stone(k: Kit, t: Xf, r: number, color: number = PAL.stone): void { k.blob(r, color, t); }
 
 /** Sack of grain/seed. */
-export function sack(k: Kit, t: Xf): void {
+function sackProp(k: Kit, t: Xf): void {
   k.at(t, () => {
     k.blob(0.28, PAL.cloth, { y: 0.26, s: [1, 1.1, 0.85] });
     k.cyl(0.08, 0.14, PAL.cloth, { y: 0.56 }, 6, 0.12);
@@ -247,7 +262,7 @@ export function sack(k: Kit, t: Xf): void {
 }
 
 /** Pumpkin pile (autumn dressing). */
-export function pumpkin(k: Kit, t: Xf, r = 0.25): void {
+function pumpkinProp(k: Kit, t: Xf, r = 0.25): void {
   k.at(t, () => {
     k.ball(r, PAL.pumpkin, { y: r * 0.75, s: [1, 0.72, 1] }, 1);
     k.cyl(0.03, 0.12, PAL.leafDark, { y: r * 1.35 }, 5);
@@ -258,3 +273,21 @@ export function pumpkin(k: Kit, t: Xf, r = 0.25): void {
 export function snowCap(k: Kit, t: Xf, w: number, d: number): void {
   k.box(w, 0.12, d, PAL.snow, t);
 }
+
+export const barrel = labelled('barrel', barrelProp);
+export const crate = labelled('crate', crateProp);
+export const hayBale = labelled('hayBale', hayBaleProp);
+export const bench = labelled('bench', benchProp);
+export const logBench = labelled('logBench', logBenchProp);
+export const lampPost = labelled('lampPost', lampPostProp);
+export const flowerPot = labelled('flowerPot', flowerPotProp);
+export const flowerBox = labelled('flowerBox', flowerBoxProp);
+export const picnicTable = labelled('picnicTable', picnicTableProp);
+export const cart = labelled('cart', cartProp);
+export const wateringCan = labelled('wateringCan', wateringCanProp);
+export const bucket = labelled('bucket', bucketProp);
+export const firewood = labelled('firewood', firewoodProp);
+export const choppingBlock = labelled('choppingBlock', choppingBlockProp);
+export const stool = labelled('stool', stoolProp);
+export const sack = labelled('sack', sackProp);
+export const pumpkin = labelled('pumpkin', pumpkinProp);

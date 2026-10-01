@@ -250,8 +250,10 @@ export const skySystem: SystemFactory = (ctx) => {
       g.saturation = mix.sat * (1 - gloom * 0.28 - fg * 0.2 - sn * 0.12);
       g.contrast = mix.contrast * (1 - fg * 0.08);
       g.vignette = 0.22 + mix.night * 0.12;
-      g.bloomThreshold = 1.1 - mix.night * 0.35 + (1 - mix.night) * 0.3;
-      g.bloomStrength = 0.5 + mix.bloom * 0.35;
+      // only true light sources halo: the threshold stays above anything lamp-lit (lit pools peak ≈ 0.8), so lamp glass,
+      // window cores, fire and the moon bloom, softly; by day only the sun disk and specular glints reach it
+      g.bloomThreshold = 1.4 - mix.night * 0.4;
+      g.bloomStrength = (0.5 + mix.bloom * 0.35) * (1 - mix.night * 0.3);
       g.ink.setHex(0x3a2a22).multiplyScalar(1 - mix.night * 0.3);
       g.inkStrength = 0.75 - mix.night * 0.2 - fg * 0.3;
       a.mist = Math.min(2, mix.mist * (sky.season === 'summer' ? 0.6 : 1) * (0.5 + 0.5 * clamp01(wet + fg + oc * 0.5)) + fg * 1.6 + rn * 0.25);

@@ -62,6 +62,23 @@ the lead.
   fades with distance. Gallery: `surfaces` (variants per family / per surface, `compare` = off | on).
 * **Palette:** warm, saturated, a little dusty. Greens lean yellow; shadows lean blue-purple (the post/grade does
   this). Night is deep blue with warm lamp pools.
+* **Local light (night, dusk, storms):** lamps, lanterns, windows and fires are real lights, not ground decals.
+  Register a `LightEmitter` with the `'lights'` service (`ctx.services.get('lights') as LightsService`, types in
+  `scene/context.ts`): `{ pos (world, mutable), color (linear), intensity (~1 = full albedo at the core), radius (m),
+  dir? + cone? (window spill), flicker? 0..1, gain? 0..1, when? 'night' | 'always' }`; keep the returned remove fn.
+  `scene/lights/lights.ts` packs the nearest frustum-visible emitters into a fixed pool of three.js PointLights /
+  SpotLights each frame (no recompiles), and `scene/lights/shader.ts` patches the toon light loop so every
+  `MeshToonMaterial` (any package, any hook) shades them as painted, banded warm pools with a soft facing terminator.
+  Emitters fade in with `lighting.night` (dusk and storm gloom included). Occlusion is cheap and explicit: an
+  emitter with `dir` is wall-mounted (windows, wall lanterns: `k.emit({ wall: [nx, ny, nz] }, fn)`) and lights only
+  the half-space in front of its wall (the wall face itself gets a soft glow); freestanding lamps are shadowed by
+  building boxes registered with `lights.occluder({ x, z, yaw, w, d, y0, y1 })` (the structures system adds the
+  farmhouse, barn, toolshed, silo and windmill; each pooled lamp tests its 2 nearest boxes, soft-edged, in the shader). Kit glow parts register themselves:
+  `PAL.windowGlow` panes spill a cone out of the window, `PAL.lampGlow` glass lights all around (`k.emit(false, fn)`
+  for glow that lights nothing, `k.emit({ radius, intensity }, fn)` to tune). Lit glass shows an interior (room
+  gradient, curtains, sill plants, flame cores), peaking just above the night bloom threshold so only sources halo.
+  Unlit emitters that must stay warm under the night grade (flames, lantern cores): `warmEmitter(material)` from
+  `scene/lights/emitters.ts`. Toon pixels write their local-light share to the scene target's alpha for that grade.
 * **Outlines + post:** a dark warm outline on silhouettes (post pass), soft bloom on emissives (lamps, "!" markers,
   fireflies), colour grade per time of day, gentle vignette. Keep emissive intensities > 1 only for things meant to glow.
 * **Seasons** follow the real month (`ctx.valley.sky.season`): spring blossoms, summer lush, autumn orange/red trees
@@ -86,7 +103,7 @@ the lead.
 | package | owns | publishes |
 |---|---|---|
 | **land** | `scene/terrain/*`, `scene/flora/*`, `scene/surface/*` (shared surface library), `world/map.ts` tuning | terrain look, water (river, pond, waterfall), path decals, trees/bushes/grass/flowers/rocks/logs scatter |
-| **atmosphere** | `scene/sky/*`, `scene/weather/*`, `scene/post/*` | `ctx.lighting`, services `wind`, `post` |
+| **atmosphere** | `scene/sky/*`, `scene/weather/*`, `scene/post/*`, `scene/lights/*` | `ctx.lighting`, services `wind`, `post`, `lights` |
 | **structures** | `scene/structures/*` | landmarks + gauges, hub decoration, service `walkSurface` |
 | **plots** | `scene/plots/*` | 12 plot kinds × lifecycle, animals (pettable), scarecrow helpers, service `plots` |
 | **farmers** | `scene/farmers/*` | characters, jobs → animation, emotes, ducklings, greetings, service `farmers` |
@@ -115,6 +132,7 @@ npm run shoot -- --url 'http://127.0.0.1:PORT/?t=TOKEN' --shot name=live,pose=hu
 npm run shoot -- --shot name=g,gallery=windmill,param=0.8   # one asset in the gallery
 npm run shoot -- --shot name=g,grid=structure        # every asset of a group
 npm run mapviz                                      # top-down map PNG, no browser
+npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
 npm run app  |  npm run app:demo                    # Electron: live herdr session | demo world
 # in game: F3 perf overlay, F4 valley state inspector, F6 debug labels
@@ -125,3 +143,34 @@ Read the PNGs you produce (they are the ground truth), compare against the art d
 (`dev/api.ts`) also offers `setHour`, `setWeather`, `setSeason`, `timeScale`, `force(id, patch)` (demo entity
 patch), `scenario(name)`, `debug(flag)`, `state()`. Demo scenarios: `mixed allStates crowd40 trio longIdle queue churn
 empty offline` (`--scenario`). Put scratch files under `scratch/` (gitignored).
+
+### Placement audit (`npm run audit:placement`)
+
+Finds assets that float, sink into the terrain or run through each other, in the real built scene (all demo
+scenarios' static world: `allStates` + `crowd40` by default, every plot lifecycle stage, flora, terrain features,
+structures and dressing). `scripts/placement.ts` starts a dev server per scenario (no HMR), freezes time and calls
+`__valley.audit()` (`dev/placement.ts`, loaded lazily; pure maths in `dev/placementCore.ts`, tested):
+
+- **items**: every static mesh, every InstancedMesh instance, and every named part of a merged / baked geometry, so a
+  finding names the placed thing, e.g. `structures/barn/pumpkin#3`, `plots/field:d4/fence#100`,
+  `flora/tree-pine#12`. Provenance comes from `scene/parts.ts`: `Kit.part(name, fn)` / labelled props (structures),
+  `named(parts, name, fn)` (plots) and `partName(geo, name)` record element ranges that survive `merge` / `bake`.
+  Name new parts the same way, or they show up as `…/m<n>`.
+- **ground checks** against the rendered terrain (raycast into the terrain chunks, plus `walkSurface` decks and
+  anything the item rests on): `floating` (base gap > 4 cm), `overhang` (part of a wide base hovers > 20 cm),
+  `sunk` (terrain swallows > 12 cm of a solid), `water` (dry-land object in the river / pond), `path` (a solid on a
+  road's centre line). Soft cover (grass, flowers, clover, pebbles, reeds, soil) only gets the ground checks.
+- **overlaps**: three-mesh-bvh per item, a uniform-grid broad phase over world AABBs, then triangle–triangle
+  intersection (`bvhcast`); pairs that a 3 cm nudge separates are resting contact, not overlap. Parts of one placed
+  object never pair with each other.
+
+Output: `scratch/placement/report.json` (every finding, ranked, with key / owner / asset / AABB / metrics and the
+scenarios it appeared in) and one contact sheet per open class (`NN-check-asset.png`: best view, opposite side, from
+above; magenta = the item, cyan = what it hits, yellow = the problem region). Exit code 1 with `--strict` if anything
+is open. Options: `--scenario a,b`, `--season x|all`, `--top N`, `--only key`, `--all-sheets`, `--shots allowed`.
+
+Intended cases live in `scripts/placement-allow.json` (globs over key / owner / asset, per check, optional `max` /
+`min` on the metrics, and a `reason` for each). Fix real findings at the source (the placing code), allowlist only
+what is meant to be (apples hang in trees, outcrops are bedded into slopes), and keep `max` tight so a regression
+still surfaces. Entries that match nothing are reported; delete them. In page: `__valley.audit({ only })`,
+`__valley.auditShow(keys, focus, view)`, `__valley.auditClear()`.

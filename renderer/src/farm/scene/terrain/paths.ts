@@ -11,6 +11,7 @@ import { SURF, surfaceMaterial } from '../surface/index.ts';
 import { merge } from '../flora/geom.ts';
 import { rockGeometry } from './rocks.ts';
 import { GROUND } from './ground.ts';
+import { partName } from '../parts.ts';
 
 interface Peb { x: number; y: number; z: number; s: number; yaw: number }
 
@@ -28,7 +29,9 @@ function pebbles(): Peb[] {
         const t = d / l, side = r() < 0.5 ? -1 : 1, off = p.width * (0.38 + r() * 0.3);
         const x = a.x + dx * t - (dz / l) * off * side, z = a.z + dz * t + (dx / l) * off * side;
         if (Math.hypot(x - HUB.x, z - HUB.z) < 17 || clearance(x, z) < -0.6 || heightAt(x, z) < WORLD.water + 0.2) continue;
-        out.push({ x, y: heightAt(x, z) - 0.02, z, s: 0.06 + r() * 0.1, yaw: r() * 6.28 });
+        // the lowest ground round it: in a hollow the 1.25 m terrain mesh runs below heightAt and a pebble would hover
+        const y = Math.min(heightAt(x, z), heightAt(x + 0.6, z), heightAt(x - 0.6, z), heightAt(x, z + 0.6), heightAt(x, z - 0.6));
+        out.push({ x, y: y - 0.02, z, s: 0.06 + r() * 0.1, yaw: r() * 6.28 });
       }
     }
   }
@@ -63,7 +66,7 @@ function wallGeometry(runs: { x: number; z: number; y: number }[][], season: Sea
   const r = seeded('land:wall-stones');
   const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
-  for (const run of runs) {
+  for (const [ri, run] of runs.entries()) {
     for (let i = 0; i < run.length; i++) {
       // gaps where the wall has tumbled down
       if (fbm(run[i].x / 5 + 3, run[i].z / 5) > 0.45) continue;
@@ -84,7 +87,7 @@ function wallGeometry(runs: { x: number; z: number; y: number }[][], season: Sea
           col[v * 3] = s.r; col[v * 3 + 1] = s.g; col[v * 3 + 2] = s.b;
         }
         g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        parts.push(g);
+        parts.push(partName(g, `wall#${ri}`));
       }
     }
   }

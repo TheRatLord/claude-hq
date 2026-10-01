@@ -79,6 +79,11 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   const S = scatter();
   const root = new THREE.Group();
   root.name = 'flora';
+  // what later systems must not plant things in (structures' dressing keeps its lamp posts out of trunks and bushes)
+  const solids: { x: number; z: number; r: number }[] = [];
+  for (const list of Object.values(S.trees)) for (const t of list) solids.push({ x: t.x, z: t.z, r: 1.2 * t.s });
+  for (const list of Object.values(S.bushes)) for (const b of list) solids.push({ x: b.x, z: b.z, r: 0.95 * b.s });
+  ctx.services.set('floraSolids', { blocked: (x: number, z: number, r: number) => solids.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + r) });
 
   // surfaces: parts are tagged in species.ts (bark, leaves, needles, logs, rock); patterns use the rest pose, so wind never swims them
   const treeMat = withSurfaces(sway(toon(0xffffff, { vertexColors: true, shared: false }), { mode: 'tree', amount: 0.07, pivot: 2.2 }), { surfaces: ['bark', 'leaves'] });
@@ -188,6 +193,7 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
     },
     dispose() {
       ctx.scene.remove(root);
+      ctx.services.delete('floraSolids');
       for (const u of unCollide) u();
       for (const set of sets) set.inst.dispose();
       for (const m of mats) m.dispose();

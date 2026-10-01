@@ -8,6 +8,7 @@ import { hash32, mulberry32 } from '../../../../../shared/identity.ts';
 import { ensureSurface, tagSurface } from '../surface/index.ts';
 import type { SurfId, SurfName, TagOpts } from '../surface/index.ts';
 import { paintCode } from './materials.ts';
+import { partName, recordParts } from '../parts.ts';
 import type { PaintName } from './materials.ts';
 
 export type V3 = readonly [number, number, number];
@@ -102,10 +103,23 @@ export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   if (smooth) for (const p of parts) if (!p.userData.smoothNormals || !p.attributes.normal) p.computeVertexNormals();
   const g = parts.length === 1 ? parts[0] : mergeGeometries(parts, false);
   if (!g) throw new Error('[plots] merge failed');
+  recordParts(g, parts);
   if (!smooth) g.computeVertexNormals();
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;
+}
+
+const partCounts = new WeakMap<object, Map<string, number>>();
+/** Name everything fn pushes onto `parts` as one placed object `name#n` (provenance for dev tools, scene/parts.ts). */
+export function named(parts: THREE.BufferGeometry[], name: string, fn: () => void): void {
+  const c = partCounts.get(parts) ?? new Map<string, number>();
+  partCounts.set(parts, c);
+  const n = c.get(name) ?? 0;
+  c.set(name, n + 1);
+  const n0 = parts.length;
+  fn();
+  for (let i = n0; i < parts.length; i++) partName(parts[i], `${name}#${n}`);
 }
 
 /** Per-vertex lightness jitter by face, so large merged meshes look hand painted. */

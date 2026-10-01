@@ -4,7 +4,8 @@
  */
 import * as THREE from 'three';
 import { PAL, toon } from '../toon.ts';
-import { Kit, damp, plaque, setGlow, glowMat, clamp01 } from './kit.ts';
+import { Kit, LAMP_LIGHT, damp, plaque, setGlow, glowMat, clamp01 } from './kit.ts';
+import type { LightEmitter } from '../context.ts';
 import { crate, hayBale, barrel, sack, bucket, cart, pumpkin, flowerPot } from './props.ts';
 import type { Env, Levels, Rig } from './rig.ts';
 import { pct } from './rig.ts';
@@ -71,8 +72,8 @@ export function buildWindmill(o: BuildOpts): THREE.Group {
   sack(k, { x: -1.8, z: 3.0, ry: 0.3 });
   sack(k, { x: -2.3, z: 2.6, ry: -0.5 });
   sack(k, { x: -2.0, y: 0.45, z: 2.8, ry: 1.1, s: 0.85 });
-  crate(k, { x: 2.8, z: 1.6, ry: 0.4 });
-  crate(k, { x: 2.9, y: 0.6, z: 1.7, ry: 0.1 }, 0.5);
+  crate(k, { x: 3.3, z: 2.0, ry: 0.4 });            // clear of the stone plinth (r0 + 0.35)
+  crate(k, { x: 3.4, y: 0.6, z: 2.1, ry: 0.1 }, 0.5);
   if (o.season === 'autumn') { pumpkin(k, { x: -1.2, z: 3.5 }); pumpkin(k, { x: 1.0, z: 3.7 }, 0.18); }
   k.build(root, o.night);
 
@@ -207,7 +208,7 @@ export function buildWaterTower(o: BuildOpts): THREE.Group {
   // plaque sign post
   k.box(0.12, 1.4, 0.12, PAL.woodDark, { x: -0.7, y: 0.7, z: T.plaque.z - 0.05 });
   k.box(0.12, 1.4, 0.12, PAL.woodDark, { x: 0.7, y: 0.7, z: T.plaque.z - 0.05 });
-  barrel(k, { x: -1.6, z: 0.8 });
+  barrel(k, { x: 1.5, z: -0.9 }); // between the legs, away from the road and the bucket
   k.build(root, o.night);
 
   // animated water column + wobbling surface inside the sight glass
@@ -342,7 +343,7 @@ export function buildBarn(o: BuildOpts): THREE.Group {
     hayBale(k, { x: -0.8, y: 0.85, z: hd - 1.5, ry: 0.5 });
     hayBale(k, { x: 1.3, y: 0.3, z: hd - 3.0, ry: 0.1 });
     k.blob(1.3, PAL.hay, { x: 0.2, y: 0.4, z: -1.5, s: [1.5, 0.8, 1.3] });
-    k.box(0.3, 0.4, 0.3, PAL.lampGlow, { x: -1.6, y: 2.5, z: -1.0 }, 'glow');
+    k.emit(false, () => k.box(0.3, 0.4, 0.3, PAL.lampGlow, { x: -1.6, y: 2.5, z: -1.0 }, 'glow'));   // seen through the door, lights nothing outside
   });
   // side windows (hay-door style, cross-braced) and trims
   for (const s of [-1, 1]) for (const z of [-2.2, 1.6]) {
@@ -374,16 +375,17 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   k.cyl(0.18, 0.08, PAL.ink, { x: L.x, y: L.y + 0.3, z: L.z }, 6, 0.1);
   k.cyl(0.19, 0.06, PAL.ink, { x: L.x, y: L.y - 0.25, z: L.z }, 6);
   // yard dressing
-  cart(k, { x: -6.2, z: 3.5, ry: 0.5 }, 'hay');
+  cart(k, { x: 2.6, z: -hd - 1.7, ry: Math.PI / 2 + 0.25 }, 'hay'); // parked behind the barn (by its west wall it ran into the wall and a field fence)
   hayBale(k, { x: 5.8, z: 3.2, ry: 0.3 }, true);
   hayBale(k, { x: 5.9, z: 1.6, ry: -0.2 });
   hayBale(k, { x: 5.9, y: 0.55, z: 1.7, ry: 0.1 });
   barrel(k, { x: -5.6, z: -1.5 });
   barrel(k, { x: -5.9, z: -2.5 }, PAL.woodDark);
-  crate(k, { x: 2.6, z: hd + 1.0, ry: 0.3 }, 0.55);
+  crate(k, { x: 3.3, z: hd + 1.15, ry: 0.3 }, 0.55); // clear of the swung-open door leaf
   bucket(k, { x: 2.1, z: hd + 1.2 });
-  flowerPot(k, { x: -2.6, z: hd + 0.5 }, o.season, 1);
-  if (o.season === 'autumn') for (let i = 0; i < 4; i++) pumpkin(k, { x: -3.2 + i * 0.35, z: hd + 0.9 + (i % 2) * 0.3 }, 0.2 + (i % 2) * 0.08);
+  // by the east front corner: the -x side is under the swung-open door leaf and the yard road runs along it
+  flowerPot(k, { x: 4.6, z: hd + 0.45 }, o.season, 1);
+  if (o.season === 'autumn') for (let i = 0; i < 4; i++) pumpkin(k, { x: 4.0 + i * 0.33, z: hd + 1.1 + (i % 2) * 0.3 }, 0.2 + (i % 2) * 0.08);
   k.build(root, o.night);
 
   // thermometer liquid (animated)
@@ -401,6 +403,9 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   lantern.castShadow = false;
   lantern.position.copy(L);
   root.add(lantern);
+  // its light (root-local; registered in world space by the structures system): brighter while the GPU works
+  const lanternLight: LightEmitter = { pos: L.clone().add(new THREE.Vector3(0, -0.05, 0.1)), color: LAMP_LIGHT.clone(), intensity: 0.6, radius: 5.5, dir: new THREE.Vector3(0, 0, 1) };
+  root.userData.lights = [lanternLight];
 
   const pl = plaque(1.1, 0.6);
   pl.mesh.position.set(T.x, 1.16, fz + 0.26);
@@ -415,6 +420,7 @@ export function buildBarn(o: BuildOpts): THREE.Group {
       gpu = damp(gpu, lv.gpu ?? 0, 2, e.dt);
       const flick = 1 + Math.sin(e.t * 13) * 0.04 * gpu + Math.sin(e.t * 7.3) * 0.03 * gpu;
       setGlow(lanternMat, Math.max(e.night * 0.6, gpu), (0.55 + gpu * 0.75) * flick);
+      lanternLight.intensity = (0.55 + gpu * 0.55) * flick;
       lantern.rotation.z = Math.sin(e.t * 1.3) * 0.04;
       if (e.t - lastPl > 0.5 || lastPl < 0) {
         lastPl = e.t;

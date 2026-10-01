@@ -21,6 +21,8 @@ export function viteConfig(): InlineConfig {
     configFile: false,
     root: RENDERER,
     logLevel: 'warn',
+    // loaded lazily by the placement audit (dev/placement.ts); pre-bundle it so its first import does not reload the page
+    optimizeDeps: { include: ['three-mesh-bvh'] },
     build: {
       outDir: path.join(REPO, 'dist'),
       emptyOutDir: true,
@@ -38,7 +40,7 @@ export function viteConfig(): InlineConfig {
 
 export async function buildRenderer(): Promise<void> { await build(viteConfig()); }
 
-export interface DevOpts { port?: number; seed?: number; population?: number; scenario?: string; timescale?: number; quiet?: boolean }
+export interface DevOpts { port?: number; seed?: number; population?: number; scenario?: string; timescale?: number; quiet?: boolean; hmr?: boolean }
 export interface Dev { url: URL; origin: string; token: string; app: App; close(): Promise<void> }
 
 export async function startDev(o: DevOpts = {}): Promise<Dev> {
@@ -66,6 +68,8 @@ export async function startDev(o: DevOpts = {}): Promise<Dev> {
         host: '127.0.0.1', port: o.port ?? 7461, strictPort: o.port !== 0,
         fs: { allow: [REPO] },
         proxy: { '/ws': proxy(true), '/healthz': proxy(), '/debug': proxy(), '/api': proxy() },
+        // long-running tools (placement audit) must not be reloaded by someone else's edit mid-run
+        ...(o.hmr === false ? { hmr: false, watch: null } : {}),
       },
     });
     await vite.listen();

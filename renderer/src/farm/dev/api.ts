@@ -17,6 +17,8 @@
  *   __valley.scenario(name, seed?)        demo backend: reset to a scenario             (demo only)
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
+ *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
+ *   __valley.auditShow(keys, focus, view) highlight items + frame the free camera on a finding; auditClear()
  */
 import * as THREE from 'three';
 import type { Engine } from '../scene/engine.ts';
@@ -112,6 +114,14 @@ export function installDevApi(d: DevDeps): void {
     interact() { ctx.interact.focused()?.use(); },
     focused() { const f = ctx.interact.focused(); return f ? { id: f.id, kind: f.kind, verb: f.verb, label: f.label() } : null; },
     look: (x: number, y: number, z: number) => controller.lookAt(x, y, z),
+    // placement audit: loaded on demand (three-mesh-bvh stays out of the game bundle's hot path)
+    audit: async (o?: import('./placement.ts').AuditOpts) => (await import('./placement.ts')).audit(ctx, valley.state, o),
+    async auditShow(keys: string[], focus: import('./placementCore.ts').Box, view = 0) {
+      const p = (await import('./placement.ts')).show(ctx, keys, focus, view);
+      api.cam(p.x, p.y, p.z, p.yaw, p.pitch);
+      return p;
+    },
+    async auditClear() { (await import('./placement.ts')).clearHighlight(ctx); api.cam(null); },
     three: THREE,
     ctx,
   };
