@@ -350,6 +350,8 @@ export function buildSeats(src: SeatSource): Seat[] {
     if (tel) push({ x: tel.x, z: tel.z, yaw: tel.yaw, act: 'telescope', kind: 'telescope' });
     const ham = b.get('hammock');
     if (ham) push({ x: ham.x, z: ham.z, y: ham.y, yaw: ham.yaw, act: 'lie', kind: 'nap' });
+    // dozing against the round bales in the hay meadow (structures/countryside.ts)
+    for (let i = 0; ; i++) { const h = b.get(`haymeadow:nap:${i}`); if (!h) break; push({ x: h.x, z: h.z, y: h.y, yaw: h.yaw, act: 'nap', kind: 'nap' }); }
     const dock = b.get('dockEnd');
     if (dock) push({ x: dock.x, z: dock.z, y: dock.y, yaw: dock.yaw, act: 'fish', kind: 'fish' });
   }

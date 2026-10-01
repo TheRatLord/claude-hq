@@ -2,6 +2,8 @@
  * First-person walker for the valley: pointer-lock mouse look, WASD, sprint, jump, terrain following, structure
  * collision, no swimming (deep water and cliffs push back), footstep-locked head bob.
  * Movement pauses whenever a modal UI owns the input (`player.frozen`).
+ * Fly mode (photo mode): the camera leaves the body and flies freely (WASD along the view, Space up, C down, Shift
+ * fast, no collision); leaving it snaps the view back to where you stood.
  */
 import * as THREE from 'three';
 import type { FrameInfo, SceneCtx } from '../scene/context.ts';
@@ -23,6 +25,9 @@ export interface Controller {
   lookAt(x: number, y: number, z: number): void;
   onStep(fn: (speed: number, surface: 'grass' | 'water' | 'wood') => void): () => void;
   lockPointer(): void;
+  /** detach the camera and fly it freely (photo mode); false returns to the body */
+  fly(on: boolean): void;
+  readonly flying: boolean;
   dispose(): void;
 }
 
@@ -33,6 +38,9 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   let vy = 0, grounded = true, bob = 0, lastStep = 0, look: { yaw: number; pitch: number } | null = null;
   const stepFns = new Set<(speed: number, surface: 'grass' | 'water' | 'wood') => void>();
   let sens = 0.0022;
+  let flying = false;
+  const flyPos = new THREE.Vector3(), flyVel = new THREE.Vector3(), body = { yaw: 0, pitch: 0 };
+  const flyDir = new THREE.Vector3();
 
   const onKey = (e: KeyboardEvent, down: boolean) => {
     if (p.frozen && down) return;
@@ -81,6 +89,25 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
       const side = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
       const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      if (flying) {
+        // free camera: along the view (pitch included), Space / C for straight up / down; eased so moves glide
+        const rise = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') || keys.has('ControlLeft') ? 1 : 0);
+        const sp = sprint ? 16 : 4.5;
+        const cp = Math.cos(p.pitch);
+        flyDir.set(-Math.sin(p.yaw) * cp * fwd + Math.cos(p.yaw) * side, Math.sin(p.pitch) * fwd + rise, -Math.cos(p.yaw) * cp * fwd - Math.sin(p.yaw) * side);
+        if (flyDir.lengthSq() > 1) flyDir.normalize();
+        flyVel.x = damp(flyVel.x, flyDir.x * sp, 4, dt); flyVel.y = damp(flyVel.y, flyDir.y * sp, 4, dt); flyVel.z = damp(flyVel.z, flyDir.z * sp, 4, dt);
+        flyPos.addScaledVector(flyVel, dt);
+        // keep out of the ground and inside the valley's bowl
+        flyPos.y = Math.max(flyPos.y, Math.max(heightAt(flyPos.x, flyPos.z), WORLD.water) + 0.3);
+        const r = Math.hypot(flyPos.x, flyPos.z);
+        if (r > WORLD.half - 10) flyPos.multiplyScalar((WORLD.half - 10) / r);
+        flyPos.y = Math.min(flyPos.y, 160);
+        ctx.camera.position.copy(flyPos);
+        ctx.camera.rotation.set(p.pitch, p.yaw, 0);
+        p.speed = 0;
+        return;
+      }
       const h0 = heightAt(p.pos.x, p.pos.z);
       const wading = h0 < WORLD.water - 0.1;
       const max = (sprint ? SPRINT : WALK) * (wading ? 0.45 : 1);
@@ -144,6 +171,14 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
     },
     onStep(fn) { stepFns.add(fn); return () => stepFns.delete(fn); },
     lockPointer() { canvas.requestPointerLock?.()?.catch?.(() => {}); },
+    fly(on) {
+      if (on === flying) return;
+      flying = on;
+      keys.clear();
+      if (on) { flyPos.copy(ctx.camera.position); flyVel.set(0, 0, 0); body.yaw = p.yaw; body.pitch = p.pitch; look = null; }
+      else { p.yaw = body.yaw; p.pitch = body.pitch; place(); }
+    },
+    get flying() { return flying; },
     dispose() {
       removeEventListener('keydown', kd); removeEventListener('keyup', ku); removeEventListener('blur', blur);
       removeEventListener('mousemove', mm); canvas.removeEventListener('click', click);

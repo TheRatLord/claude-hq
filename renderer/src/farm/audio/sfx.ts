@@ -231,6 +231,29 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
     });
     return end;
   },
+  // ---- the almanac
+  fanfare: (c, out, t, o) => {
+    // a little brass-and-bells "ta-da-da-DAAA": G C E G' with a held major chord and a sparkle shower
+    const p = o.pitch;
+    const notes: [number, number, number][] = [[392, 0, 0.12], [523.3, 0.13, 0.12], [659.3, 0.26, 0.12], [784, 0.4, 0.9]];
+    let end = t;
+    for (const [f, dl, hold] of notes) {
+      end = max(end, formant(c, out, t, { wave: 'sawtooth', pitch: [[0, f * p], [0.03, f * p]], formants: [[900, 2.5, 1, 1400], [2200, 4, 0.35]], gain: 0.2, a: 0.015, hold, d: 0.25, delay: dl, vib: dl > 0.3 ? { rate: 5.2, depth: 0.012 } : undefined }));
+    }
+    for (const f of [523.3, 659.3, 784, 1046.5]) tone(c, out, t, { type: 'triangle', f: f * p, gain: 0.05, a: 0.06, hold: 0.6, d: 0.8, delay: 0.4 });
+    bell(c, out, t, { f: 1568 * p, gain: 0.16, d: 1.6, delay: 0.42 });
+    return max(end, sparkle(c, out, t + 0.5, o, 9, 0.06));
+  },
+  firework: (c, out, t, o) => {
+    // whistle up, a soft boom, then crackle
+    tone(c, out, t, { type: 'sine', f: 900 * o.pitch, f2: 2200 * o.pitch, glide: 0.9, gain: 0.035, a: 0.05, d: 0.9 });
+    const boom = 0.95;
+    tone(c, out, t, { f: 80, f2: 38, gain: 0.4, a: 0.003, d: 0.6, delay: boom });
+    noise(c, out, t, { kind: 'brown', gain: 0.3, a: 0.003, d: 0.5, filter: 'lowpass', f: 600, f2: 200, delay: boom });
+    let end = t + boom + 0.6;
+    for (let i = 0; i < 14; i++) end = max(end, noise(c, out, t, { kind: 'white', gain: 0.05 + o.rnd() * 0.05, a: 0.001, d: 0.02 + o.rnd() * 0.03, filter: 'highpass', f: 3000 + o.rnd() * 3000, delay: boom + 0.15 + i * 0.05 + o.rnd() * 0.06 }));
+    return end;
+  },
 };
 
 export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
@@ -320,9 +343,9 @@ export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
 export type BusName = 'sfx' | 'notify' | 'voice' | 'ambient';
 export function busOf(name: SfxName): BusName {
   switch (name) {
-    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'bell': case 'oops': return 'notify';
+    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'bell': case 'oops': case 'fanfare': return 'notify';
     case 'greet': case 'voice': return 'voice';
-    case 'thunder': return 'ambient';
+    case 'thunder': case 'firework': return 'ambient';
     default: return 'sfx';
   }
 }
@@ -331,8 +354,8 @@ export function busOf(name: SfxName): BusName {
 export function sendOf(name: SfxName): number {
   switch (name) {
     case 'bell': return 0.5;
-    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': return 0.25;
-    case 'thunder': return 0.4;
+    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'fanfare': return 0.25;
+    case 'thunder': case 'firework': return 0.4;
     case 'ui-hover': case 'ui-click': case 'ui-open': case 'ui-close': case 'step-grass': case 'step-wood': case 'step-water': return 0;
     default: return 0.12;
   }

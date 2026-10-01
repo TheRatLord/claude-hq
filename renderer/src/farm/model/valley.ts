@@ -11,6 +11,8 @@ import type { JobSmoother } from './jobs.ts';
 import { skyAt } from './sky.ts';
 import type { SkyOverrides } from './sky.ts';
 import { PLOT_KINDS } from './types.ts';
+import { almanacView, dayKey, emptyAlmanac, parseAlmanac, recapDue, recapLetter, recordHarvest, RANKS } from './almanac.ts';
+import type { AlmanacData, HarvestKind } from './almanac.ts';
 import type {
   FarmerView, Gauges, HelperView, Job, Letter, LetterKind, LinkState, Mood, PlotKind, PlotStage, PlotView, ValleyEvent, ValleyState,
 } from './types.ts';
@@ -50,13 +52,44 @@ export interface Valley {
   markAllRead(): void;
   /** debug: pin the hour / weather (null clears) */
   setSky(o: SkyOverrides): void;
+  /** the overrides currently applied (dev / photo mode restore them) */
+  skyOverrides(): Readonly<SkyOverrides>;
   /** for the local clock (sky); defaults to Date.now */
   wallNow?: () => number;
+  /** debug: set the almanac's points (gallery / shots / the dev API) */
+  setAlmanac(points: number): void;
+  /** switch where the almanac lives (the demo valley swaps in its own), loading what that store holds */
+  useAlmanac(store: AlmanacStore): void;
 }
 
-export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNow?: () => number } = {}): Valley {
+/** Where the almanac persists (browser-local storage in the app; nothing in tests unless given). */
+export interface AlmanacStore {
+  load(): unknown;
+  save(data: AlmanacData): void;
+}
+
+/** valley events that are harvests in the almanac */
+const HARVEST_OF: Partial<Record<ValleyEvent['kind'], HarvestKind>> = {
+  ship: 'commit', celebrate: 'tests', finished: 'finished', unblocked: 'answered', 'plot-opened': 'tilled', 'duckling-hatched': 'ducklings',
+};
+
+export function createValley(src: ValleySource, { wallNow = Date.now, almanac: alStore }: { wallNow?: () => number; almanac?: AlmanacStore } = {}): Valley {
   const listeners = new Set<(e: ValleyEvent) => void>();
-  const emit = (e: ValleyEvent) => { for (const f of [...listeners]) { try { f(e); } catch (err) { console.error('[valley] listener threw', err); } } };
+  const send = (e: ValleyEvent) => { for (const f of [...listeners]) { try { f(e); } catch (err) { console.error('[valley] listener threw', err); } } };
+  const loadAlmanac = (st: AlmanacStore | undefined): AlmanacData => { try { return parseAlmanac(st?.load()) ?? emptyAlmanac(); } catch { return emptyAlmanac(); } };
+  let alData = loadAlmanac(alStore);
+  let alDay = '';
+  const saveAlmanac = () => { try { alStore?.save(alData); } catch (err) { console.warn('[valley] almanac save failed', err); } };
+  const emit = (e: ValleyEvent) => {
+    send(e);
+    const h = HARVEST_OF[e.kind];
+    if (!h) return;
+    const { earned, rankUp } = recordHarvest(alData, h, wallNow());
+    if (!earned && !rankUp) { state.almanac = almanacView(alData, wallNow()); return; }
+    state.almanac = almanacView(alData, wallNow());
+    saveAlmanac();
+    if (rankUp) send({ kind: 'level-up', id: 'valley', detail: state.almanac.name });
+  };
   const farmerRecs = new Map<string, FarmerRec>();
   const plotRecs = new Map<string, PlotRec>();
   const cpuHist: number[] = [], memHist: number[] = [];
@@ -72,6 +105,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
     now: src.now(), link: src.link(), demo: src.demo(),
     farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
     sky: skyAt(new Date(wallNow())),
+    almanac: almanacView(alData, wallNow()),
   };
 
   const letter = (kind: LetterKind, e: Entity | undefined, id: string, title: string, body = '') => {
@@ -283,6 +317,17 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
       }
     }
     tickGauges(src.stats());
+    // the almanac's "today" rolls over at local midnight
+    const day = new Date(wallNow()).toDateString();
+    if (day !== alDay) { alDay = day; state.almanac = almanacView(alData, wallNow()); }
+    // the Mayor's evening recap: once a day, from six, if anything was harvested
+    if (primed && recapDue(alData, wallNow())) {
+      alData.recap = dayKey(wallNow());
+      saveAlmanac();
+      const r = recapLetter(state.almanac);
+      letter('news', undefined, 'villager:marigold', r.title, r.body);
+      state.letters[0].farmerName = 'Mayor Marigold';
+    }
     // prime once the first real world arrived (a tick before that must not swallow the on-connect letters)
     if (entities.length || src.workspaces().length || (state.link === 'live' && ++liveTicks > 8)) primed = true;
   }
@@ -328,8 +373,20 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
     state, tick, ingest,
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     markRead(id) { const l = state.letters.find((x) => x.id === id); if (l) l.read = true; },
+    useAlmanac(st) {
+      alStore = st;
+      alData = loadAlmanac(st);
+      state.almanac = almanacView(alData, wallNow());
+    },
+    setAlmanac(points) {
+      const before = state.almanac.rank;
+      alData = { ...alData, points: Math.max(0, points) };
+      state.almanac = almanacView(alData, wallNow());
+      if (state.almanac.rank > before) send({ kind: 'level-up', id: 'valley', detail: RANKS[state.almanac.rank].name });
+    },
     markAllRead() { for (const l of state.letters) l.read = true; },
     setSky(o) { skyO = { ...skyO, ...o }; state.sky = skyAt(new Date(wallNow()), skyO); },
+    skyOverrides: () => ({ ...skyO }),
   };
 }
 

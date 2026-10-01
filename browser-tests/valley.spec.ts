@@ -165,3 +165,29 @@ test('every terminal is reachable by keyboard: map list, mailbox answers, the me
 
   expect(errors).toEqual([]);
 });
+
+test('photo mode: P hides the HUD and flies the camera, P again puts the view back', async ({ page, demoServer }) => {
+  test.slow(); // software rendering: every step waits on slow frames
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  const hud = page.getByTestId('hud');
+  await expect(hud).toBeVisible();
+  const cam = () => page.evaluate(() => (window as unknown as { __valley: { ctx: { camera: { position: { x: number; y: number; z: number } } } } }).__valley.ctx.camera.position).then((p) => ({ x: p.x, y: p.y, z: p.z }));
+  const before = await cam();
+  await page.keyboard.press('KeyP');
+  await expect(page.getByTestId('photo-bar')).toBeVisible();
+  await expect(hud).toBeHidden();
+  // Space: straight up
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(900);
+  await page.keyboard.up('Space');
+  expect((await cam()).y).toBeGreaterThan(before.y + 0.5);
+  // HUD keys are asleep in photo mode (M would open the map)
+  await page.keyboard.press('KeyM');
+  await expect(hud).toBeHidden();
+  await page.keyboard.press('KeyP');
+  await expect(page.getByTestId('photo-bar')).toBeHidden();
+  await expect(hud).toBeVisible();
+  const after = await cam();
+  expect(Math.abs(after.y - before.y)).toBeLessThan(0.3);
+  expect(errors).toEqual([]);
+});

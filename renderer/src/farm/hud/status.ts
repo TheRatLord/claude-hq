@@ -5,6 +5,7 @@
 import { SEASON_ICON, WEATHER_ICON, ICONS, icon } from './icons.ts';
 import { clock, LINK_LABEL, SEASON_LABEL, WEATHER_LABEL } from './format.ts';
 import { h, type HudCtx } from './ctx.ts';
+import { rankChip } from './almanac.ts';
 
 export interface StatusCorner { el: HTMLElement; banner: HTMLElement; refresh(): void }
 
@@ -18,7 +19,8 @@ export function createStatus(ctx: HudCtx): StatusCorner {
   const date = h('span');
   const link = h('span.vh-link', { 'data-testid': 'link-state' });
   const counts = h('div.vh-counts');
-  const face = h('div.vh-paper.face', null, wx, h('div', null, time, h('div.date', null, seasonIco, date), h('div.meta', null, link, counts)));
+  const rank = rankChip(ctx);
+  const face = h('div.vh-paper.face', null, wx, h('div', null, time, h('div.date', null, seasonIco, date), h('div.meta', null, link, counts), rank.el));
   const el = h('div.vh-status.vh-wood', { role: 'status', 'aria-label': 'Clock and connection' }, face);
   el.addEventListener('click', () => ctx.panels.open('noticeboard'));
   el.title = 'Open the noticeboard';
@@ -38,6 +40,7 @@ export function createStatus(ctx: HudCtx): StatusCorner {
     }
     const sky = s.sky;
     time.textContent = clock(sky.hour);
+    rank.refresh(s.almanac);
     const night = sky.daylight < 0.25;
     const wk = sky.weather.kind === 'clear' && night ? 'night' : sky.weather.kind;
     if (wk !== sigWx) { sigWx = wk; wx.innerHTML = WEATHER_ICON[wk]; wx.title = `${WEATHER_LABEL[sky.weather.kind]}${night ? ' night' : ''}`; }

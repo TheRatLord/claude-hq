@@ -34,7 +34,7 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     const done = farmers.filter((f) => f.unseenDone);
     const working = farmers.filter((f) => f.status === 'working');
     const plots = [...s.plots.values()].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.label.localeCompare(b.label));
-    const nsig = JSON.stringify([need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0]);
+    const nsig = JSON.stringify([need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0, s.almanac.points]);
     if (nsig === sig) return;
     sig = nsig;
     const notes: HTMLElement[] = [];
@@ -49,7 +49,13 @@ export function createNoticeboard(ctx: HudCtx): Panel {
       h('p', null, h('b', { text: clock(s.sky.hour) }), ` · ${SEASON_LABEL[s.sky.season]} · ${WEATHER_LABEL[s.sky.weather.kind]}`),
       h('p', null, icon(SEASON_ICON[s.sky.season]), ` ${working.length} at work · ${farmers.length} farmers · ${plots.filter((p) => p.stage !== 'fallow').length} fields`),
       s.gauges ? h('p', { text: `${s.gauges.host}: CPU ${pct(s.gauges.cpu)} · RAM ${pct(s.gauges.mem)}` }) : null,
-      h('p.vh-muted', { text: 'Tap for the full almanac of numbers.', style: { fontSize: '12px' } })));
+      h('p.vh-muted', { text: 'Tap for the numbers behind the landmarks.', style: { fontSize: '12px' } })));
+    const al = s.almanac;
+    notes.push(note('', () => ctx.panels.open('almanac'),
+      h('h4', null, icon(ICONS.rosette), 'Valley Almanac'),
+      h('div.big', { text: al.name }),
+      h('p', { text: al.nextAt !== null ? `${al.points} / ${al.nextAt} prosperity toward ${al.nextName}` : `${al.points} prosperity` }),
+      h('p.vh-muted', { text: al.today.points ? `+${al.today.points} today${al.streak > 1 ? ` · ${al.streak}-day streak` : ''}` : 'Nothing harvested yet today.', style: { fontSize: '12px' } })));
     if (done.length) notes.push(note('', null, h('h4', null, icon(LETTER_ICON.finished), 'Ready for review'),
       h('ul', null, ...done.slice(0, 6).map((f) => go(() => ctx.openTerminal(f.id), `${nice(f.name)}: open the terminal`, h('b', { text: shortName(f) }), f.title ? ` — ${f.title}` : ''))),
       more(done.length - 6, 'to review')));
@@ -104,7 +110,7 @@ function spark(cv: HTMLCanvasElement, data: readonly number[], max: number, colo
 }
 
 export function createStats(ctx: HudCtx): Panel & { sample(): void } {
-  const { el, body, closeBtn } = framePanel('stats', 'Valley Almanac', ICONS.stats);
+  const { el, body, closeBtn } = framePanel('stats', 'Valley gauges', ICONS.stats);
   closeBtn.addEventListener('click', () => ctx.panels.close());
   const hostEl = h('div.vh-h3');
   const grid = h('div.vh-gauges', { 'data-testid': 'gauges' });

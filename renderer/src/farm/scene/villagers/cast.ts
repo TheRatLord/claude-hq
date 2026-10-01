@@ -147,8 +147,10 @@ export const CAST: readonly Villager[] = [
       // the ranger sleeps out under the stars by the fire
       home: { at: 'campfire', x: 3.4, z: 3.6, face: 'toward', loop: [{ act: 'nap', min: 60, max: 90 }] },
       shelter: { at: 'barn', x: -1.2, z: 6.2, face: 'toward', loop: [STAND], indoors: true },
-      // rounds: the bridge, the pond's beach, the waterfall pool, back past the hot spring
+      // rounds: the bridge, the pond's beach, the waterfall pool, back past the hot spring; the stones and the orchard
       round: [
+        { at: 'stones', x: 0, z: 6.6, face: 'toward', loop: [{ act: 'gaze', min: 8, max: 12 }, { act: 'almanac', min: 5, max: 7 }], amble: true },
+        { at: 'orchard', x: 2.5, z: 7.6, face: 'toward', loop: [{ act: 'gaze', min: 6, max: 10 }], amble: true },
         { at: 'bridge', x: 0, z: -9.5, face: Math.PI, loop: [{ act: 'gaze', min: 8, max: 12 }, { act: 'almanac', min: 5, max: 7 }], amble: true },
         { at: 'xz', x: -33, z: -92, face: Math.PI, loop: [{ act: 'gaze', min: 8, max: 12 }], amble: true },
         { at: 'hotspring', x: 0, z: 5.6, face: 'toward', loop: [{ act: 'gaze', min: 6, max: 10 }], amble: true },

@@ -4,7 +4,8 @@
  *   HUD / scene ──AgentPort / HudNet──▶ net/store
  * Nothing below this file crosses those lines.
  *
- * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=
+ * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
+ *             ?almanac=POINTS (demo: the almanac's starting prosperity)
  */
 import './hud/base.css';
 import { R2S } from '../../../shared/protocol.ts';
@@ -13,6 +14,8 @@ import { call, connect, onTermData, send, sendBytes, store } from '../net/store.
 import { createSettings } from '../core/settings.ts';
 import { createPlatform } from '../ui/platform.ts';
 import { createValley } from './model/valley.ts';
+import { demoAlmanac } from './model/almanac.ts';
+import { installPhotoMode } from './photo.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
 import type { Quality } from './scene/context.ts';
@@ -46,7 +49,19 @@ const hudNet: HudNet = {
   demoScenario: async (name, seed) => { const r = await call({ t: R2S.DEMO_SCENARIO, name, ...(seed !== undefined ? { seed } : {}) }); return { ok: r.ok, error: r.error }; },
 };
 
-const valley = createValley(storeSource);
+/** the almanac persists per browser profile; the demo valley keeps a believable fortnight in memory instead */
+const ALMANAC_KEY = 'claude-valley.almanac.v1';
+const valley = createValley(storeSource, {
+  almanac: {
+    load: () => { const raw = localStorage.getItem(ALMANAC_KEY); return raw ? JSON.parse(raw) : null; },
+    save: (d) => localStorage.setItem(ALMANAC_KEY, JSON.stringify(d)),
+  },
+});
+store.on('hello', (h) => {
+  if (!h.demo) return;
+  let mem: unknown = demoAlmanac(Date.now(), params.get('almanac') ? Number(params.get('almanac')) : undefined);
+  valley.useAlmanac({ load: () => mem, save: (d) => { mem = d; } });
+});
 const hour = params.get('hour');
 if (hour !== null && hour !== '') valley.setSky({ hour: Number(hour) });
 if (params.get('weather')) valley.setSky({ weather: params.get('weather') as WeatherKind });
@@ -109,6 +124,8 @@ installDevApi({
   demoScenario: (name, seed) => call({ t: R2S.DEMO_SCENARIO, name, ...(seed !== undefined ? { seed } : {}) }),
 });
 installOverlay(engine);
+const photo = installPhotoMode(engine, controller, valley, canvas);
+engine.ctx.services.set('photo', photo);
 const ts = Number(params.get('timescale'));
 if (params.get('timescale') !== null && Number.isFinite(ts)) engine.setTimeScale(ts);
 const pose = params.get('pose');

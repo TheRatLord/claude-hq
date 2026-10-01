@@ -7,6 +7,7 @@
  * live store, a recording, or a local fake, so the visuals stay detachable from real sessions.
  */
 import type { Kind, ModelTier, Status } from '../../../../shared/protocol.ts';
+import type { AlmanacView } from './almanac.ts';
 
 /** What a farmer is visibly doing. Coarse on purpose: tool churn inside a family never shows as a switch. */
 export const JOBS = Object.freeze([
@@ -224,6 +225,8 @@ export interface Sky {
 export const VALLEY_EVENTS = Object.freeze([
   'arrived', 'left', 'blocked', 'unblocked', 'finished', 'celebrate', 'oops', 'ship', 'duckling-hatched', 'duckling-home', 'compact', 'struggle',
   'plot-opened', 'plot-closed',
+  // the almanac: the valley reached a new rank (detail: the rank's name)
+  'level-up',
 ] as const);
 export type ValleyEventKind = (typeof VALLEY_EVENTS)[number];
 export interface ValleyEvent { kind: ValleyEventKind; /** farmer / helper / plot id */ id: string; detail?: string }
@@ -242,6 +245,8 @@ export interface ValleyState {
   letters: Letter[];
   /** commits shipped since local midnight (shipping-bin crate stack) */
   commitsToday: number;
+  /** the Valley Almanac: prosperity, rank, today's harvest, unlocked town upgrades (model/almanac.ts) */
+  almanac: AlmanacView;
   gauges: Gauges | null;
   sky: Sky;
 }

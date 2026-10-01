@@ -50,6 +50,8 @@ export const STRUCTURE_IDS = Object.freeze([
   'campfire', 'dock', 'bridge', 'signpost', 'waterfall',
   // purpose-built leisure nooks (idle farmers' outings)
   'pergola', 'picnic', 'lookout', 'hotspring',
+  // countryside nooks out by the rim, each at the end of its own footpath
+  'orchard', 'stones', 'haymeadow', 'swingtree',
 ] as const);
 export type StructureId = (typeof STRUCTURE_IDS)[number];
 
@@ -96,9 +98,14 @@ export const STRUCTURES: readonly Structure[] = [
   S('picnic', 3, 19.5, -2.95, [5.6, 4.6]),
   S('lookout', 67, -24, -1.25, [7.8, 7.8]),
   S('hotspring', -45, -25, 0.1, [7.6, 7.6]),
+  // countryside nooks on the open land near the rim (scratch survey: the flattest, emptiest pockets), facing the square
+  S('orchard', 64.5, -50, -1.9, [17, 13]),
+  S('stones', 3, -80, -0.04, [11, 11]),
+  S('haymeadow', -40, 72, 2.65, [12, 10]),
+  S('swingtree', 83.5, 13, -1.75, [8, 8]),
 ];
 /** The leisure nooks, each joined to the road network by a short footpath from its front. */
-export const NOOKS = ['pergola', 'picnic', 'lookout', 'hotspring'] as const satisfies readonly StructureId[];
+export const NOOKS = ['pergola', 'picnic', 'lookout', 'hotspring', 'orchard', 'stones', 'haymeadow', 'swingtree'] as const satisfies readonly StructureId[];
 export const structure = (id: StructureId): Structure => {
   const s = STRUCTURES.find((x) => x.id === id);
   if (!s) throw new Error(`no structure ${id}`);

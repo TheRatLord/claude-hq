@@ -111,7 +111,8 @@ test('valley: plots till on open, harvest and go fallow on close, free the site 
 
 test('valley: letters for blocks resolve themselves; farmers get spots per plot', () => {
   const f = fakeSource();
-  const v = createValley(f.src, { wallNow: () => 0 });
+  // midday local: no evening almanac recap joins the letters (epoch 0 is evening in the Americas)
+  const v = createValley(f.src, { wallNow: () => new Date(2026, 0, 5, 12).getTime() });
   const a = ws('w1', 0);
   f.s.workspaces = [a];
   f.s.entities = [ent('p1', a, { status: 'blocked' }), ent('p2', a, { paneIndex: 1 })];

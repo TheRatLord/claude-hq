@@ -40,7 +40,7 @@ export const POSES: Record<string, [number, number, number, number]> = {
   barn: [-16, -6, 0.6, 0],
   river: [-44, 12, 1.6, -0.05],
   plots: [0, 24, Math.PI, -0.1],
-  east: [30, 2, -1.57, -0.05],
+  east: [40, 16, -1.75, 0.02],
 };
 
 export interface DevDeps {
@@ -120,6 +120,12 @@ export function installDevApi(d: DevDeps): void {
     villager: (id: string) => (ctx.services.get('villagers') as VillagersService | undefined)?.debug(id.startsWith('villager:') ? id : `villager:${id}`) ?? null,
     focused() { const f = ctx.interact.focused(); return f ? { id: f.id, kind: f.kind, verb: f.verb, label: f.label() } : null; },
     look: (x: number, y: number, z: number) => controller.lookAt(x, y, z),
+    /** set the almanac's prosperity (no save): crossing a rank pops its upgrade in and sets off a level-up */
+    almanac: (points: number) => valley.setAlmanac(points),
+    /** a shooting star where the camera looks */
+    meteor: () => (ctx.services.get('meteors') as { launch(c: THREE.Camera): void } | undefined)?.launch(ctx.camera),
+    /** a firework show over the south meadow (town upgrades) */
+    fireworks: (seconds = 20) => (ctx.services.get('upgrades') as { fireworks(s: number): void } | undefined)?.fireworks(seconds),
     // placement audit: loaded on demand (three-mesh-bvh stays out of the game bundle's hot path)
     audit: async (o?: import('./placement.ts').AuditOpts) => (await import('./placement.ts')).audit(ctx, valley.state, o),
     async auditShow(keys: string[], focus: import('./placementCore.ts').Box, view = 0) {

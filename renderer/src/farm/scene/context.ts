@@ -95,6 +95,8 @@ export interface UiPort {
   noticeboard(): void;
   /** system stats panel (gauge landmarks call this when read) */
   stats(): void;
+  /** the Valley Almanac (prosperity, ranks, town upgrades) */
+  almanac(): void;
   /** the farm ledger (roster of every farmer by field); optional for fakes */
   roster?(): void;
   /**
@@ -233,6 +235,8 @@ export const SFX = Object.freeze([
   'alert', 'chime-done', 'chime-pass', 'oops', 'ship', 'hammer', 'hoe', 'water-pour', 'chop', 'page', 'whistle',
   'quack', 'cluck', 'moo', 'baa', 'oink', 'buzz', 'pet', 'purr', 'bark', 'meow',
   'greet', 'voice', 'splash', 'bell', 'creak', 'pop', 'sparkle', 'thunder',
+  // the almanac: the valley reached a new rank; fireworks over the square
+  'fanfare', 'firework',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 

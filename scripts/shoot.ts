@@ -11,11 +11,12 @@
  *   npm run shoot -- --shot name=mill,gallery=windmill,param=0.9   (gallery asset; variant=, season=, night=, turn=)
  *   npm run shoot -- --shot name=all,grid=structure                (gallery grid of a group, or 'all')
  *   npm run shoot -- --shot name=x,pose=hub,eval=__valley.debug('labels',true)
+ *   npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.kind)'   (print an expression's value)
  *
  * Options: --url URL (existing backend + its built dist; default: a fresh demo dev server)  --out DIR (default scratch/shots)  --size 1600x900  --scenario mixed  --seed 1  --demo 12  --wait 2500
  *          --timescale K  --video (also record a short webm per shot, wait = its length)
  * Flipbook: frames=N every=MS [clip=x;y;w;h] tiles N frames into one contact sheet (quote the spec).
- * Shot keys: frames every clip name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time
+ * Shot keys: frames every clip name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time pitch zoom log almanac
  * Quote specs containing ';' (cam=…) for the shell: --shot 'name=top,cam=0;120;100;0;-0.9'
  */
 import fs from 'node:fs';
@@ -38,7 +39,7 @@ const video = argv.includes('--video');
 
 async function shootValley(page: Page, base: URL, s: Record<string, string>): Promise<void> {
   const u = new URL(base);
-  for (const k of ['pose', 'hour', 'weather', 'season', 'quality', 'timescale']) if (s[k]) u.searchParams.set(k, s[k]);
+  for (const k of ['pose', 'hour', 'weather', 'season', 'quality', 'timescale', 'almanac']) if (s[k]) u.searchParams.set(k, s[k]);
   await page.goto(u.toString());
   await page.waitForFunction(() => (window as unknown as { __valley?: { ready: boolean } }).__valley?.ready === true, null, { timeout: 30_000 });
   if (s.goto) await page.evaluate((id) => (window as unknown as { __valley: { goTo(id: string): void } }).__valley.goTo(id), s.goto);
@@ -62,7 +63,7 @@ async function shootGallery(page: Page, base: URL, s: Record<string, string>): P
   u.pathname = '/gallery/';
   if (s.gallery) u.searchParams.set('asset', s.gallery);
   if (s.grid) u.searchParams.set('grid', s.grid);
-  for (const k of ['variant', 'season', 'night', 'param', 'turn', 'time']) if (s[k]) u.searchParams.set(k, s[k]);
+  for (const k of ['variant', 'season', 'night', 'param', 'turn', 'time', 'pitch', 'zoom']) if (s[k]) u.searchParams.set(k, s[k]);
   await page.goto(u.toString());
   await page.waitForFunction(() => (window as unknown as { __gallery?: { ready: boolean } }).__gallery?.ready === true, null, { timeout: 30_000 });
   if (s.eval) await page.evaluate(s.eval);
@@ -129,6 +130,8 @@ async function main(): Promise<void> {
         }).catch(() => 'unknown');
         console.log(`✔ ${path.relative(REPO, file)}  (${Date.now() - t0} ms, ${gl.slice(0, 60)})`);
         if (perf) console.log(`  perf ${JSON.stringify(perf)}`);
+        // log=EXPR prints the value of an in-page expression (JSON), e.g. log=__valley.state().plots.length
+        if (s.log) console.log(`  log ${JSON.stringify(await page.evaluate(s.log).catch((e: Error) => `error: ${e.message}`))}`);
       } catch (e) {
         console.log(`✘ ${name}: ${e instanceof Error ? e.message : String(e)}`);
         await page.screenshot({ path: path.join(out, `${name}.error.png`) }).catch(() => {});

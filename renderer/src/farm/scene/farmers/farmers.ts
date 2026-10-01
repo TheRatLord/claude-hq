@@ -279,6 +279,10 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       face({ x: 0, z: 7 }, fh),                                 // the square, admiring the farmhouse
       face(front('hotspring', 5.2), structure('hotspring')),    // the steaming spring
       face(front('picnic', 4.2), structure('picnic')),          // the picnic meadow
+      face(front('stones', 7), structure('stones')),            // the standing stones
+      face(front('orchard', 8), structure('orchard')),          // the orchard and its hives
+      face(front('swingtree', 5.5), structure('swingtree')),    // under the swing tree
+      face(front('haymeadow', 6.5), structure('haymeadow')),    // the hay meadow
     ];
     if (lv) cand.push({ x: lv.x, z: lv.z, yaw: lv.yaw });          // the stargazers' deck rail
     viewList = cand.filter((p) => !ctx.colliders.blocked(p.x, p.z, 0.35) && (heightAt(p.x, p.z) > WORLD.water + 0.1 || !!surface()?.(p.x, p.z)));

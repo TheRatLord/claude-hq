@@ -30,6 +30,8 @@ import { createRoster } from './roster.ts';
 import { createCard } from './cards.ts';
 import { createDrawer } from './drawer.ts';
 import { createNoticeboard, createStats } from './boards.ts';
+import { createAlmanac } from './almanac.ts';
+import { UPGRADES } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
 
 export interface HudBindings {
@@ -140,7 +142,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createPause(ctx), drawer]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createPause(ctx), drawer]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -208,7 +210,11 @@ export function createHud(d: HudDeps): Hud {
     return matchCombo(e, leader);
   };
   const handled = (e: KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); };
+  // photo mode (farm/photo.ts) owns the keyboard while it is on
+  const inPhoto = () => document.body.classList.contains('photo-mode');
+  const photoJustLeft = () => performance.now() - ((window as unknown as { __photoLeftAt?: () => number }).__photoLeftAt?.() ?? -1e9) < 400;
   addEventListener('keydown', (e) => {
+    if (inPhoto()) return;
     if (e.defaultPrevented || e.isComposing) return;
     const cur = panels.current();
     if (leaderMatch(e)) {
@@ -236,6 +242,7 @@ export function createHud(d: HudDeps): Hud {
       if (typing || e.ctrlKey || e.altKey || e.metaKey) return;
       if (e.code === 'KeyJ') { handled(e); panels.toggle('mailbox'); return; }
       if (e.code === 'KeyM') { handled(e); panels.toggle('map'); return; }
+      if (e.code === 'KeyH') { handled(e); panels.toggle('almanac'); return; }
       if (e.key === 'Tab' && cur.id !== 'pause') { handled(e); panels.toggle('roster'); return; }
       if (e.code === 'KeyE' && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
@@ -254,6 +261,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyJ': handled(e); panels.open('mailbox'); return;
       case 'KeyM': handled(e); panels.open('map'); return;
       case 'KeyB': handled(e); panels.open('noticeboard'); return;
+      case 'KeyH': handled(e); panels.open('almanac'); return;
       case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Tab': handled(e); panels.open('roster'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
@@ -266,7 +274,7 @@ export function createHud(d: HudDeps): Hud {
     const locked = !!document.pointerLockElement;
     if (locked && panels.modal) { document.exitPointerLock(); return; } // a late grant while a panel is open
     if (locked && !prefs.hinted) { prefs.hinted = true; savePrefs(prefs); }
-    if (!locked && wasLocked && !panels.modal) { pausedAt = Date.now(); panels.open('pause'); }
+    if (!locked && wasLocked && !panels.modal && !inPhoto() && !photoJustLeft()) { pausedAt = Date.now(); panels.open('pause'); }
     wasLocked = locked;
     overlays();
   });
@@ -342,6 +350,7 @@ export function createHud(d: HudDeps): Hud {
       map: () => panels.open('map'),
       noticeboard: () => panels.open('noticeboard'),
       stats: () => panels.open('stats'),
+      almanac: () => panels.open('almanac'),
       roster: () => panels.open('roster'),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
@@ -352,6 +361,12 @@ export function createHud(d: HudDeps): Hud {
       x.onValley((e) => {
         if (e.kind === 'blocked') { mailBtn.classList.remove('bounce'); void mailBtn.offsetWidth; mailBtn.classList.add('bounce'); }
         else if (e.kind === 'plot-opened') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `A new field was tilled: ${p.label}`, sub: 'a workspace opened in herdr', icon: ICONS.sprout, level: 'good' }); }
+        else if (e.kind === 'level-up') {
+          const a = ctx.state()?.almanac;
+          const up = a && a.rank > 0 ? UPGRADES[a.rank - 1] : null;
+          toasts.push({ text: `The valley is now ${/^[aeiou]/i.test(e.detail ?? '') ? 'an' : 'a'} ${e.detail}!`, sub: up ? `New in town: ${up.title.replace(/^The /, "the ")} · H for the almanac` : 'H for the almanac', icon: ICONS.rosette, level: 'good', ms: 9000, key: `level|${e.detail}` });
+          ctx.sfx('fanfare');
+        }
         else if (e.kind === 'plot-closed') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `Harvest time at ${p.label}`, sub: 'the workspace closed', icon: ICONS.sprout }); }
       });
       tick();

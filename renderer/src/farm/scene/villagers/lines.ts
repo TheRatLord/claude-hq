@@ -30,6 +30,12 @@ export interface Brief {
   mem: number | null;
   disk: number | null;
   tempC: number | null;
+  /** the Valley Almanac: rank name, points to the next rank (null at the top), what it brings */
+  rank: string;
+  toNext: number | null;
+  nextRank: string | null;
+  nextUpgrade: string | null;
+  harvestToday: number;
 }
 
 const cap = (s: string): string => (s && !/[:/\\.]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s);
@@ -55,6 +61,8 @@ export function brief(s: ValleyState): Brief {
     unread: unreadCount(s.letters), needs: needs.map((n) => n.name), commits: s.commitsToday, farmers: s.farmers.size, working, idle,
     busy, growing, resting, fallow,
     cpu: g ? g.cpu : null, mem: g ? g.mem : null, disk: g ? g.disk : null, tempC: g ? g.tempC : null,
+    rank: s.almanac.name, toNext: s.almanac.nextAt === null ? null : s.almanac.nextAt - s.almanac.points,
+    nextRank: s.almanac.nextName, nextUpgrade: s.almanac.next?.title ?? null, harvestToday: s.almanac.today.points,
   };
 }
 
@@ -110,6 +118,11 @@ export function lineFor(role: Role, b: Brief, n = 0): string {
     }
     case 'mayor': {
       const fields = b.busy + b.growing + b.resting;
+      if (n % 3 === 2) {
+        const today = b.harvestToday ? ` We've added ${b.harvestToday} prosperity today.` : '';
+        if (b.toNext === null) return `${b.rank}! The finest valley on the map. Fireworks at nine, as promised.${today}`;
+        return `We're a proud ${b.rank} now — ${b.toNext} more prosperity and we'll be a ${b.nextRank}${b.nextUpgrade ? `, with ${b.nextUpgrade.replace(/^The /, "the ").replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())}` : ''}.${today} The almanac (H) has it all.`;
+      }
       if (!b.farmers && !fields) return alt ? 'Plenty of good land going! Open a workspace and we\'ll till you a field.' : 'A quiet valley today. Open a herdr workspace to till a field!';
       const parts: string[] = [];
       if (b.busy) parts.push(`${plural(b.busy, 'field')} busy`);

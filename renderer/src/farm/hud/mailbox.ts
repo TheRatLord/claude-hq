@@ -103,6 +103,8 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     acts.replaceChildren(...(f || s?.helpers.has(l.farmerId) ? [
       h('button.vh-btn.small.primary', { type: 'button', 'data-testid': 'letter-terminal', onclick: () => { mark.read(l); ctx.openTerminal(l.farmerId); } }, icon(ICONS.terminal), 'Terminal'),
       h('button.vh-btn.small', { type: 'button', onclick: () => { mark.read(l); ctx.travel(l.farmerId); ctx.panels.close(); } }, icon(ICONS.walk), 'Walk there'),
+    ] : []), ...(l.farmerId === 'villager:marigold' ? [
+      h('button.vh-btn.small.primary', { type: 'button', 'data-testid': 'letter-almanac', onclick: () => { mark.read(l); ctx.panels.open('almanac'); } }, icon(ICONS.rosette), 'Open almanac'),
     ] : []), ...(!l.read ? [h('button.vh-btn.small.ghost', { type: 'button', onclick: () => { mark.read(l); render(); } }, 'Mark read')] : []));
     acts.style.display = open || live ? '' : 'none';
   }

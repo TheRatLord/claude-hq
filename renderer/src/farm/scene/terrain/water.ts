@@ -337,6 +337,15 @@ function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUnifor
         float sp = vnoise(p * 3.1 + flow * t * 3.0 + t * 0.4) * vnoise(p * 2.3 - t * 0.55 + 5.1);
         float spark = step(0.74 - glint * 0.2, sp) * (0.25 + glint) * (1.0 - uNight * 0.6) * (1.0 - foam);
         col += spark * uSunColor * 0.9;
+        // the moon's path at night: a narrow shimmering road of broken highlights toward the moon (sunDir is the moon
+        // after dark), plus a faint sheen around it
+        {
+          float path = pow(max(dot(R, V), 0.0), 36.0);
+          float sheen = pow(max(dot(R, V), 0.0), 7.0);
+          float sp2 = vnoise(vec2(p.x * 7.5, p.y * 2.8) + flow * t * 2.0 + vec2(t * 0.9, -t * 0.6)) * vnoise(p * 4.6 + t * 0.35 + 9.3);
+          float bits = step(0.62 - path * 0.45, sp2) * path;
+          col += uNight * (bits * 1.6 + sheen * 0.12) * vec3(0.78, 0.86, 1.0) * (1.0 - foam * 0.7) * (1.0 - uWinter);
+        }
         // rain: little rings popping all over the surface
         {
           vec2 q = p * 0.85; vec2 cell = floor(q); vec2 fq = fract(q) - 0.5;

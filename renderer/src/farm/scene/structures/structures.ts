@@ -26,8 +26,10 @@ import type { Arrow, Board, Note, Signpost } from './hub.ts';
 import { BRIDGE, CAMPFIRE_SEATS, DOCK, bridgeDeck, buildBridge, buildCampfire, buildDock, dockStart } from './leisure.ts';
 import type { BridgeOpts, DeckOpts } from './leisure.ts';
 import { buildDressing } from './dressing.ts';
+import { createUpgrades, type Upgrades } from './upgrades.ts';
 import { LOOKOUT, PERGOLA, PICNIC, SPRING, buildHotSpring, buildLookout, buildPergola, buildPicnic, lookoutFloor, lookoutSeats, springSeats, telescopeStand } from './nooks.ts';
 import type { NookSeat } from './nooks.ts';
+import { HAY, ORCHARD, STONES, SWING, buildHayMeadow, buildOrchard, buildStones, buildSwingTree, hayNaps, standingStones, stoneSeats } from './countryside.ts';
 import { partName, recordParts } from '../parts.ts';
 
 import type { StructureSpot, StructureSpots } from '../context.ts';
@@ -62,6 +64,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   interface Placed { s: Structure; root: THREE.Object3D; rig?: Rig }
   let placed = new Map<StructureId, Placed>();
   let dressingRig: Rig | undefined;
+  let upgrades: Upgrades | undefined;
   const lights = ctx.services.get('lights') as LightsService | undefined;
   const lightOffs: (() => void)[] = [];
   /** move kit/root-local emitters to world space (in place: rigs keep mutating them) and register them */
@@ -128,10 +131,15 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     make('picnic', buildPicnic(o));
     make('lookout', buildLookout(o));
     make('hotspring', buildHotSpring(o));
+    make('orchard', buildOrchard(o));
+    make('stones', buildStones(o));
+    make('haymeadow', buildHayMeadow(o));
+    make('swingtree', buildSwingTree(o));
     const flora = ctx.services.get('floraSolids') as { blocked(x: number, z: number, r: number): boolean } | undefined;
     const dr = buildDressing(season, 1, flora ? (x, z, r) => flora.blocked(x, z, r) : undefined);
     group.add(dr.root);
     dressingRig = rigOf(dr.root);
+    upgrades = createUpgrades(ctx, { season, lamps: dr.lamps, blocked: (x, z, r) => flora?.blocked(x, z, r) ?? false });
     group.updateMatrixWorld(true);
     // animated lights (campfire, barn lantern) live on their structure's root
     for (const p of placed.values()) addLights(p.root.userData.lights as LightEmitter[] | undefined, p.root.matrixWorld);
@@ -195,6 +203,19 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     for (const l of SPRING.lanterns) circ(hs, l.x, l.z, 0.32);
     circ(hs, SPRING.spout.x, SPRING.spout.z, 0.42);
     rect(hs, 0, -3.5, 3.5, 0.3);
+    // countryside nooks: trunks, hives, the stand, stones, bales and the wagon are solid
+    const oc = S('orchard');
+    for (const t of ORCHARD.trees) circ(oc, t.x, t.z, 0.25);
+    for (const h of ORCHARD.hives) circ(oc, h.x, h.z, 0.4);
+    circ(oc, ORCHARD.stand.x, ORCHARD.stand.z, 0.65);
+    const st = S('stones');
+    for (const p of standingStones()) circ(st, p.x, p.z, 0.5);
+    circ(st, 0, 0, STONES.altar.r);
+    const hm = S('haymeadow');
+    for (const b of HAY.bales) circ(hm, b.x, b.z, 0.75);
+    rect(hm, HAY.wagon.x, HAY.wagon.z, 1.8, 3.2, HAY.wagon.ry);
+    const sw = S('swingtree');
+    circ(sw, SWING.trunk.x, SWING.trunk.z, SWING.trunk.r + 0.1);
     for (const [x, z, r] of dr.circles) removers.push(ctx.colliders.circle(x, z, r));
     for (const [x, z, w, d, y] of dr.rects) removers.push(ctx.colliders.rect(x, z, w, d, y));
 
@@ -221,6 +242,10 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     nook('picnic', PICNIC.places, 'blanket');
     nook('lookout', lookoutSeats(), 'lookout');
     nook('hotspring', springSeats(), 'soak');
+    nook('orchard', [ORCHARD.bench], 'bench');
+    nook('stones', stoneSeats(), 'bench');
+    nook('swingtree', [SWING.bench], 'bench');
+    hayNaps().forEach((q, i) => spot(`haymeadow:nap:${i}`, S('haymeadow'), q.x, q.y, q.z, q.yaw, 'hayNap'));
     const ts = telescopeStand();
     spot('telescope', S('lookout'), ts.x, ts.y, ts.z, ts.yaw, 'telescope');
     spot('lookoutView', S('lookout'), 0, LOOKOUT.deck, LOOKOUT.apothem - 0.75, 0, 'view');
@@ -264,6 +289,8 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   }
 
   function disposeAll(): void {
+    upgrades?.dispose();
+    upgrades = undefined;
     for (const f of removers.splice(0)) f();
     for (const f of lightOffs.splice(0)) f();
     group.traverse((o) => {
@@ -317,6 +344,10 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     ctx.interact.add({ id: 'picnic', kind: 'structure', verb: 'Nibble at', label: () => 'Picnic', pos: vec('picnic', 0, 0.3, 0), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'The firefly jar glows. Someone saved you a slice of pie. 🥧' : 'Lemonade, sandwiches, a cherry pie. Help yourself! 🧺') }),
     ctx.interact.add({ id: 'lookout:telescope', kind: 'prop', verb: 'Look through', label: () => 'Telescope', pos: vec('lookout', LOOKOUT.telescope.x, LOOKOUT.deck + 1.05, LOOKOUT.telescope.z), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'So many stars… is that one shaped like a crab? ✨' : 'You can see every field from up here. Tiny farmers, hard at work. 🔭') }),
     ctx.interact.add({ id: 'hotspring', kind: 'structure', verb: 'Dip toes in', label: () => 'Hot spring', pos: vec('hotspring', SPRING.cx, SPRING.water + 0.3, SPRING.cz), reach: 3.6, use: () => { audio()?.play('splash', { pos: vec('hotspring', SPRING.cx, SPRING.water, SPRING.cz)(new THREE.Vector3()), volume: 0.5 }); say('Ahh. Warm as a fresh build. ♨️'); } }),
+    ctx.interact.add({ id: 'orchard', kind: 'structure', verb: 'Buy honey at', label: () => 'Honesty stand', pos: vec('orchard', ORCHARD.stand.x, 1.1, ORCHARD.stand.z), reach: 3.2, use: () => { audio()?.play('pop', { pos: vec('orchard', ORCHARD.stand.x, 1, ORCHARD.stand.z)(new THREE.Vector3()), volume: 0.6 }); say(season === 'winter' ? 'The bees are tucked up for winter. One jar left: you drop a coin in the tin. 🍯' : 'Clink. A coin in the tin, a jar of clover honey for you. The bees approve. 🐝'); } }),
+    ctx.interact.add({ id: 'stones', kind: 'structure', verb: 'Touch', label: () => 'Standing stones', pos: vec('stones', 0, STONES.altar.h + 0.3, 0), reach: 3.6, use: () => { audio()?.play('sparkle', { pos: vec('stones', 0, 1, 0)(new THREE.Vector3()) }); say(ctx.lighting.night > 0.5 ? 'The runes hum softly. You feel a sudden urge to write tests. ✨' : 'Cool, old stone. Nobody remembers who raised them, only that the builds pass more often up here.'); } }),
+    ctx.interact.add({ id: 'haymeadow', kind: 'structure', verb: 'Flop into', label: () => 'Hay meadow', pos: vec('haymeadow', HAY.bales[0].x, 0.9, HAY.bales[0].z), reach: 3.4, use: () => say(season === 'winter' ? 'The bales are frosty. Maybe in summer.' : 'Fwump. Warm hay, blue sky, the faint sound of someone else\'s CI running. 🌾') }),
+    ctx.interact.add({ id: 'swingtree', kind: 'structure', verb: 'Push', label: () => 'Rope swing', pos: vec('swingtree', SWING.pivot.x, 0.9, SWING.pivot.z), reach: 3.4, use: () => { P('swingtree').rig?.poke?.('push'); audio()?.play('creak', { pos: vec('swingtree', SWING.pivot.x, 2, SWING.pivot.z)(new THREE.Vector3()), volume: 0.6 }); say('Wheee! The swing sails out over the valley.'); } }),
     ctx.interact.add({ id: 'toolshed', kind: 'structure', verb: 'Peek into', label: () => 'Toolshed', pos: vec('toolshed', -0.6, 1.2, 1.4), use: () => say('Rakes, hoes, a very old keyboard. Everything in its place.') }),
   ];
 
@@ -415,6 +446,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
       if (contentT > 1) { contentT = 0; refreshContent(); }
       for (const p of placed.values()) p.rig?.update(env);
       dressingRig?.update(env);
+      upgrades?.update(env, ctx.valley.almanac, ctx.valley.sky.hour);
     },
     stats: () => ({ baked: baked.length, structures: placed.size }),
     dispose() {

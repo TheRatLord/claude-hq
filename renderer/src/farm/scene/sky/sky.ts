@@ -13,6 +13,8 @@ import { createMix, samplePalette } from './palette.ts';
 import { createDome } from './dome.ts';
 import { createClouds } from './clouds.ts';
 import { createWind } from './wind.ts';
+import { createMeteors, showerOn } from './meteors.ts';
+import type { AudioService } from '../context.ts';
 
 const SHADOW_SPAN = 72;
 const NIGHT_DIR = new THREE.Vector3(-0.42, 0.78, 0.46).normalize();
@@ -62,6 +64,10 @@ export const skySystem: SystemFactory = (ctx) => {
   ctx.scene.fog = fog;
 
   const mix = createMix();
+  const meteors = createMeteors();
+  ctx.scene.add(meteors.mesh);
+  ctx.services.set('meteors', meteors);
+  let wishAt = -1e9;
   const sunTmp = { x: 0, y: 0, z: 0 };
   const keyDir = new THREE.Vector3(), nightDir = new THREE.Vector3(), moonLight = new THREE.Vector3();
   const center = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), camPos = new THREE.Vector3();
@@ -209,6 +215,16 @@ export const skySystem: SystemFactory = (ctx) => {
       du.uDeckShade.value.copy(mix.hemiSky).multiplyScalar(0.55 * (1 - st * 0.45) * (1 - mix.night * 0.5)).lerp(mix.zenith, 0.35);
       du.uFlash.value = a.flash;
 
+      // --- shooting stars (clear nights; showers on their real peak nights)
+      const starVis = mix.stars * (1 - clamp01(oc * 1.3 + fg * 1.5 + sn + rn));
+      const seen = meteors.update(f.dt, ctx.camera, starVis, sky.dayOfYear);
+      if (seen && f.time - wishAt > 600) {
+        wishAt = f.time;
+        const sh = showerOn(sky.dayOfYear);
+        (ctx.services.get('audio') as AudioService | undefined)?.play('sparkle', { volume: 0.35 });
+        ctx.ui.say(sh ? `The ${sh.name} are falling tonight. Make a wish! ✨` : 'A shooting star! Make a wish. ✨');
+      }
+
       // --- clouds
       a.cloudOffset.x += a.windDir.x * (a.windSpeed * 1.6 + 1.5) * f.dt;
       a.cloudOffset.y += a.windDir.y * (a.windSpeed * 1.6 + 1.5) * f.dt;
@@ -266,6 +282,8 @@ export const skySystem: SystemFactory = (ctx) => {
       dome.mesh.geometry.dispose(); (dome.mesh.material as THREE.Material).dispose();
       clouds.mesh.geometry.dispose(); (clouds.mesh.material as THREE.Material).dispose();
       ctx.services.delete('wind');
+      ctx.services.delete('meteors');
+      meteors.dispose();
     },
   };
 };

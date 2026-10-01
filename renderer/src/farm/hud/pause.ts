@@ -109,7 +109,8 @@ export function createPause(ctx: HudCtx): Panel {
       ...row([leader], 'open / close terminal drawer'),
       ...row(['Ctrl+PgUp', 'PgDn'], 'next / previous terminal'), ...row(['Esc'], 'close (in a terminal: only while watching)'),
       ...row(['type'], 'in a terminal: take control'), ...row(['Wheel ↑'], 'terminal scrollback'),
-      ...row(['F3'], 'performance overlay'), ...row(['B'], 'noticeboard'));
+      ...row(['B'], 'noticeboard'), ...row(['H'], 'valley almanac'),
+      ...row(['P'], 'photo mode: fly, [ ] time, wheel zoom, Enter saves a PNG'), ...row(['F3'], 'performance overlay'));
   }
 
   return {

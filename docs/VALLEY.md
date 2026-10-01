@@ -52,7 +52,12 @@ the lead.
   table, spectators' bench, hanging lantern) north-east of the farmhouse, the **Picnic spot** (gingham blanket,
   parasol, firefly jar) south of the square, **Stargazers' knoll** (octagonal deck, telescope, benches; favoured at
   night) by the windmill, and the **Hot spring** foot-bath (steam, stone lanterns, rubber duck) on the river meadow
-  behind the barn. Restless or chatty farmers sometimes leave their seat for an outing: a stroll to a view, the
+  behind the barn. Four **countryside nooks** out by the rim (`scene/structures/countryside.ts`), each at the end of
+  its own footpath, give strolls somewhere to go: the **Orchard & apiary** (seasonal fruit trees, beehives with bees
+  on fine days, a honey honesty stand) to the north-east, the **Standing stones** on the north knoll (runes glow cyan
+  after dark), the **Hay meadow** (round bales, a hay wagon; away farmers doze against the bales) to the south-west,
+  and the **Swing tree** on the east edge (a rope swing in the wind; E pushes it). Fern's rounds pass the stones and
+  the orchard. Restless or chatty farmers sometimes leave their seat for an outing: a stroll to a view, the
   mailbox, their own field, visiting a friend, or petting the village dog/cat (service `pets`) or one of their
   field's animals (`plots.petAnimal`).
 * **Villagers = the persistent townsfolk** (`scene/villagers/`, cast in `cast.ts`). Not agents, never in ValleyState,
@@ -67,7 +72,7 @@ the lead.
   | **Bram**, shipping clerk | mustard, green eyeshade, canvas apron | by the shipping bin | farm ledger (commits shipped today); cheers every `ship` event | pergola · campfire · toolshed |
   | **Hazel**, miller | flour-tan, floppy flour-dusted cap, smock | windmill door | system stats, with a line keyed to CPU / RAM / disk | the well · under the sails · the mill |
   | **Mayor Marigold** | plum, top hat, sash + medal | by the noticeboard | noticeboard ("3 fields busy, 1 resting") | the square · pergola · farmhouse |
-  | **Fern**, ranger | forest green, campaign hat, rucksack + bedroll | the signpost; rounds to the bridge, waterfall, hot spring and pond | valley map | campfire · campfire · sleeps out by the fire |
+  | **Fern**, ranger | forest green, campaign hat, rucksack + bedroll | the signpost; rounds to the stones, orchard, bridge, waterfall, hot spring and pond | valley map | campfire · campfire · sleeps out by the fire |
   | **Nimbus**, weather-watcher | sky blue, sou'wester, oilskin cape | stargazers' knoll (a night owl) | the real-clock weather report (say only) | the dock · the knoll · the mill's loft till late morning |
 
   Routines run on the real clock (`schedule.ts`: a cyclic day plan per villager, ±18 min seeded jitter per day, rounds,
@@ -82,12 +87,37 @@ the lead.
   window = disk; farmhouse chimney smoke = disk IO; carrier pigeons between the farmhouse loft and the valley =
   network; a big thermometer on the barn = temperature; the greenhouse-glow / barn lantern = GPU. Each has a readable
   in-world plaque (canvas texture) when you walk up (E to read exact numbers).
+* **The night sky is worth looking up at:** the moon keeps its real phase and lays a shimmering path across the pond
+  and river toward itself; on clear nights a shooting star crosses now and then (`scene/sky/meteors.ts`), and on the
+  real peak nights of the Perseids, Geminids and Quadrantids they come every few seconds. The first one you see in a
+  while gets a "make a wish" line.
+* **Photo mode (P)** (`farm/photo.ts`): the HUD steps away and the camera flies free (WASD along the view, Space / C,
+  Shift); the wheel zooms, [ ] scrub the clock, Enter saves a PNG; P or Esc puts the view and the clock back.
+* **The Valley Almanac (H) is the valley's long memory.** Real work is a *harvest* worth prosperity points (commit 10,
+  green test run 4, finished task 6, answered question 3, new field 5, duckling 1; per-kind daily caps so a busy test
+  loop can't farm it). Points persist per browser profile (localStorage `claude-valley.almanac.v1`; the demo keeps a
+  fortnight in memory, `?almanac=POINTS`) and lift the valley through ten ranks, Homestead → Golden Valley (then a star
+  per 1,500). Each rank unlocks a **town upgrade** built in the world (`scene/structures/upgrades.ts`, not baked):
+  bunting over the square, flower barrels along the roads, the fountain (toss a coin), market stalls (browse today's
+  harvest), festoon lanterns, the bandstand (strike up a tune), a patchwork hot-air balloon, the golden Clawd statue,
+  and evening fireworks over the south meadow at nine. A new rank pops its upgrade in with confetti, fires a short
+  firework show and toasts with a fanfare; Mayor Marigold talks about the rank every third chat. The status sign's
+  rank chip opens the panel (rank, today's harvest, the week, streak, upgrades). Logic is pure: `model/almanac.ts`.
 
 ## Art direction
 
 * **Low poly + cel shaded.** Faceted geometry (`facet()` in `scene/toon.ts`), `toon()` materials (3-band ramp),
   colours from `PAL`. Merge static geometry per object with vertex colours (`paint()` + `mergeGeometries`); instance
   anything repeated (`InstancedMesh`). Rounded, chunky, slightly exaggerated proportions; nothing razor-thin.
+* **Creatures are sculpted, not stacked.** Animals, pets and critters are smooth low-poly hulls from `scene/sculpt.ts`:
+  `loft(rings, { paint, coat?, bump?, blend? })` lofts one continuous mesh through a few cross-section rings
+  (Catmull-Rom interpolated superellipses with separate up / down radii) with smooth normals (clean cel bands) and a
+  faceted silhouette; `blob()` is the ellipsoid shorthand. Paint per face from `Face` (`t` along the spine, `a` around
+  it, snapped to the quad so regions follow the mesh edges; use them rather than raw x / y for clean boundaries),
+  `blend: true` for soft gradients, `coat` for a per-face tint / pattern mask (`tag` in plots/rig.ts, `piece` in
+  life/rig.ts read it). Pet skins take lofts with `sp(g, null, …)` and `chain` weights so a tail or a leg is one hull
+  over several bones. Keep separate pieces for what moves on its own (ears, jaw, eyes, wings) and small accents
+  (nostrils, bells, beaks); never build a body out of overlapping balls.
 * **Surfaces (texturing):** hand-painted detail comes from the shared surface library `scene/surface/` (read its
   `index.ts` header): tag geometry parts with `tagSurface(g, SURF.planks | shingle | brick | …)` (+ `ensureSurface` on
   untagged parts before merging) and draw with `surfaceMaterial({ vertexColors: true })` or `withSurfaces(material)`.
@@ -218,11 +248,14 @@ npm run shoot -- --shot name=m,pose=hub,panel=map    # HUD panel (map mailbox ro
 npm run shoot -- --url 'http://127.0.0.1:PORT/?t=TOKEN' --shot name=live,pose=hub   # a running backend (live herdr; npm run build first)
 npm run shoot -- --shot name=g,gallery=windmill,param=0.8   # one asset in the gallery
 npm run shoot -- --shot name=g,grid=structure        # every asset of a group
+npm run shoot -- --shot name=u,pose=square,almanac=3400,hour=22,eval=__valley.fireworks(30)  # every town upgrade + a show
+# __valley.almanac(points) sets prosperity live (crossing a rank pops its upgrade in)
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
 npm run app  |  npm run app:demo                    # Electron: live herdr session | demo world
-# in game: F3 perf overlay, F4 valley state inspector, F6 debug labels
+# in game: F3 perf overlay, F4 valley state inspector, F6 debug labels, P photo mode (fly, [ ] time, wheel zoom, Enter → PNG)
+# __valley.meteor() launches a shooting star where the camera looks
 ```
 
 Read the PNGs you produce (they are the ground truth), compare against the art direction, iterate. Poses:

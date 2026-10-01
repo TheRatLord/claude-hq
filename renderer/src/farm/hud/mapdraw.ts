@@ -38,6 +38,7 @@ const KIND_FILL: Record<PlotView['kind'], string> = {
 const LABELS: Partial<Record<StructureId, string>> = {
   farmhouse: 'Farmhouse', barn: 'Barn', silo: 'Silo', windmill: 'Windmill', waterTower: 'Water tower', campfire: 'Campfire',
   bridge: 'Bridge', waterfall: 'Waterfall', pergola: 'Pergola', picnic: 'Picnic spot', lookout: 'Stargazers\' knoll', hotspring: 'Hot spring',
+  orchard: 'Orchard & apiary', stones: 'Standing stones', haymeadow: 'Hay meadow', swingtree: 'Swing tree',
 };
 
 let base: HTMLCanvasElement | null = null;
@@ -159,7 +160,12 @@ export function getBase(): HTMLCanvasElement {
     const fill = s.id === 'barn' ? '#c9573f' : s.id === 'farmhouse' ? '#e0a26a' : s.id === 'dock' || s.id === 'bridge' ? '#b8864f'
       : s.id === 'waterfall' || s.id === 'hotspring' ? '#a9d4ef' : s.id === 'picnic' ? '#d86a5a' : s.id === 'campfire' ? '#e8742c' : s.id === 'silo' || s.id === 'waterTower' ? '#cfd6dc' : '#c8955a';
     g.fillStyle = fill; g.strokeStyle = '#4a2f19'; g.lineWidth = 0.35 * S;
-    if (s.id === 'silo' || s.id === 'waterTower' || s.id === 'well' || s.id === 'campfire' || s.id === 'hotspring' || s.id === 'lookout') { g.beginPath(); g.arc(0, 0, Math.min(w, d) / 2.4, 0, Math.PI * 2); g.fill(); g.stroke(); }
+    const dot = (dx: number, dz: number, r: number, c: string) => { g.beginPath(); g.arc(dx * S, dz * S, r * S, 0, Math.PI * 2); g.fillStyle = c; g.fill(); g.stroke(); };
+    if (s.id === 'orchard') { for (const dx of [-4.6, 0, 4.6]) for (const dz of [-4.2, -0.6, 3.0]) dot(dx, dz, 1.25, '#7fb85a'); for (const dx of [-6.6, -5.3, -7.7]) dot(dx, 4.4, 0.45, '#f1d77a'); }
+    else if (s.id === 'stones') { for (let i = 1; i < 9; i++) { const a = (i / 9) * Math.PI * 2; dot(Math.sin(a) * 4.4, Math.cos(a) * 4.4, 0.55, '#b9b4a8'); } dot(0, 0, 0.85, '#cfcabe'); }
+    else if (s.id === 'haymeadow') { for (const [dx, dz] of [[-3.6, -1.8], [-1.4, -3.0], [2.2, -2.2], [4.2, 0.4], [-4.4, 1.6]]) dot(dx, dz, 0.75, '#e2c25e'); }
+    else if (s.id === 'swingtree') { dot(-0.6, -1.2, 3.0, '#6aa84f'); }
+    else if (s.id === 'silo' || s.id === 'waterTower' || s.id === 'well' || s.id === 'campfire' || s.id === 'hotspring' || s.id === 'lookout') { g.beginPath(); g.arc(0, 0, Math.min(w, d) / 2.4, 0, Math.PI * 2); g.fill(); g.stroke(); }
     else if (s.id === 'windmill') {
       g.beginPath(); g.arc(0, 0, w / 4, 0, Math.PI * 2); g.fill(); g.stroke();
       g.lineWidth = 0.9 * S; g.beginPath(); g.moveTo(-w / 1.6, 0); g.lineTo(w / 1.6, 0); g.moveTo(0, -w / 1.6); g.lineTo(0, w / 1.6); g.stroke();

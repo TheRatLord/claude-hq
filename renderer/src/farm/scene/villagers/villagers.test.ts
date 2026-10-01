@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { almanacView, emptyAlmanac } from '../../model/almanac.ts';
 import assert from 'node:assert/strict';
 import { CAST, villagerLook } from './cast.ts';
 import type { Villager } from './cast.ts';
@@ -116,6 +117,7 @@ function state(o: Partial<ValleyState> = {}): ValleyState {
   return {
     now: 0, link: 'live', demo: true, farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
     sky: { hour: 14.5, daylight: 1, season: 'autumn', dayOfYear: 274, weather: { kind: 'rain', intensity: 0.5, clouds: 0.8, wind: 3, windDir: 0 } },
+    almanac: almanacView(emptyAlmanac(), 0),
     ...o,
   };
 }
@@ -150,6 +152,8 @@ test('lines: clerk, miller, mayor, ranger, weather-watcher', () => {
   const plots = new Map([['a', plot('a', 'thriving')], ['b', plot('b', 'thriving')], ['c', plot('c', 'tilling')], ['d', plot('d', 'resting')], ['e', plot('e', 'fallow')]]);
   assert.equal(lineFor('mayor', brief(state({ plots, farmers: new Map([['x', farmer('x')]]) }))), 'Welcome to the valley! 3 fields busy, 1 resting.');
   assert.match(lineFor('mayor', brief(state())), /quiet valley/);
+  assert.equal(lineFor('mayor', brief(state()), 2), 'We\'re a proud Homestead now — 40 more prosperity and we\'ll be a Smallholding, with bunting over the square. The almanac (H) has it all.');
+  assert.match(lineFor('mayor', brief(state({ almanac: almanacView({ ...emptyAlmanac(), points: 9000 }, 0) })), 2), /Golden Valley!.*Fireworks/);
   assert.match(lineFor('ranger', brief(state())), /map/);
   assert.match(lineFor('ranger', brief(state({ farmers: new Map([['flint', farmer('flint', { needsYou: true })]]) }))), /Flint/);
   assert.equal(lineFor('weather', brief(state())), '14:30 on a rainy autumn afternoon. Steady rain. The crops are grateful.');
