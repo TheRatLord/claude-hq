@@ -98,6 +98,7 @@ hud.bind({
   player: () => ({ x: engine.ctx.player.pos.x, z: engine.ctx.player.pos.z, yaw: engine.ctx.player.yaw }),
   locate: (id) => { const p = (engine.ctx.services.get('farmers') as FarmerLocator | undefined)?.position(id); return p ? { x: p.x, z: p.z } : null; },
   villagers: () => (engine.ctx.services.get('villagers') as VillagersService | undefined)?.list() ?? [],
+  camera: () => engine.ctx.camera,
   sfx: (name) => (engine.ctx.services.get('audio') as AudioService | undefined)?.play(name),
 });
 engine.onFrame((f) => hud.update(f));

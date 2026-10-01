@@ -1,0 +1,88 @@
+/* Anchored in-world overlays (hud/anchors.ts): nameplates, villager signboards, duckling labels, speech bubbles.
+   Positioned by transform only (left/top stay 0); sizes are measured once per text change. */
+.vh-anchors { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+.vh-anchors .vh-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.vt { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity; pointer-events: none; white-space: nowrap;
+  font-family: var(--round); color: var(--ink); text-align: center; contain: layout style; }
+
+/* nameplate: a little paper tag */
+.vt-name { display: flex; flex-direction: column; align-items: center; padding: 3px 12px 4px; border-radius: 12px; max-width: 300px;
+  background: linear-gradient(#fffbf0, #f6e8c6); border: 2px solid var(--wood-dark); box-shadow: 0 2px 0 rgba(74, 47, 25, .35), 0 4px 10px rgba(0, 0, 0, .18); }
+.vt-name b { font-weight: 800; font-size: 15px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.vt-name span { font-weight: 600; font-size: 12px; line-height: 1.2; color: var(--ink-soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* villager: the green role signboard on two cords */
+.vt-villager { display: flex; flex-direction: column; align-items: center; padding: 3px 14px 5px; margin-top: 10px; border-radius: 8px;
+  background: linear-gradient(#3f7656, #2f5a41); border: 2px solid #f0d696; box-shadow: 0 0 0 1.5px #24402e, 0 4px 10px rgba(0, 0, 0, .25); }
+.vt-villager::before { content: ""; position: absolute; left: 22%; right: 22%; top: -11px; height: 10px; border: 2px solid rgba(74, 50, 30, .85);
+  border-bottom: 0; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+.vt-villager b { font: 700 15px/1.2 var(--serif); color: #fff3d6; }
+.vt-villager span { font-weight: 800; font-size: 10px; letter-spacing: .14em; color: #f0d696; line-height: 1.3; }
+
+.vt-duck { padding: 1px 9px; border-radius: 999px; background: #fff3b8; border: 1.5px solid #9a7a20; font-size: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+.vt-duck b { font-weight: 700; }
+.vt-duck span { display: none; }
+
+/* speech bubbles: the card + a tail pointing down at the speaker (the node's bottom padding holds the tail) */
+.vt-speech, .vt-ask, .vt-note { padding-bottom: 12px; white-space: normal; }
+.vt .card { position: relative; min-width: 46px; max-width: 300px; width: max-content; padding: 7px 13px 8px; border-radius: 16px; text-align: left;
+  background: #fffdf6; border: 2.5px solid var(--wood-dark); box-shadow: 0 3px 0 rgba(74, 47, 25, .28), 0 6px 16px rgba(0, 0, 0, .22);
+  font-weight: 650; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; animation: vt-pop .18s ease-out; }
+.vt .card::before, .vt .card::after { content: ""; position: absolute; left: 50%; border: solid transparent; }
+.vt .card::before { bottom: -13px; margin-left: calc(-10px + var(--tx, 0px)); border-width: 12px 10px 0; border-top-color: var(--wood-dark); }
+.vt .card::after { bottom: -8.5px; margin-left: calc(-7px + var(--tx, 0px)); border-width: 9px 7px 0; border-top-color: #fffdf6; }
+.vt .who { display: none; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 1px; }
+.vt .pg { display: block; text-align: right; font-size: 10px; font-weight: 800; color: var(--ink-faint); margin: 1px -4px -3px 0; font-variant-numeric: tabular-nums; }
+.vt .arrow { display: none; }
+
+/* needs you: golden, with a "!" badge and the farmer's name */
+.vt-ask .card { background: linear-gradient(#fff8dc, #ffe9a6); border-color: #9a6212; padding-left: 30px; }
+.vt-ask .card::after { border-top-color: #ffeaa9; }
+.vt-ask .card::before { border-top-color: #9a6212; }
+.vt-ask .who { color: #8a5200; }
+.vt.solo .who { display: block; }
+.vt-ask .who::after { content: " needs you"; text-transform: none; letter-spacing: 0; }
+.vt-ask .txt::before { content: "!"; position: absolute; left: 7px; top: 8px; width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--gold); color: #3a2400; font: 900 13px/1 var(--round); box-shadow: 0 0 0 2px #9a6212; animation: vh-blink 1.2s steps(2) infinite; }
+
+/* narration (structures, props): parchment, italic */
+.vt-note .card { background: linear-gradient(var(--paper), var(--paper-2)); font-style: italic; font-weight: 600; }
+.vt-note .card::after { border-top-color: var(--paper-2); }
+
+/* pinned to the screen edge: no tail; an arrow on the rim points at the speaker, and the bubble says who it is */
+.vt.edge { padding-bottom: 0; }
+.vt.edge .card::before, .vt.edge .card::after { display: none; }
+.vt.edge .who { display: block; }
+.vt.edge .arrow { display: block; position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -9px 0 0 -6px;
+  border-style: solid; border-width: 9px 0 9px 13px; border-color: transparent transparent transparent var(--wood-dark); transform-origin: 6px 9px; }
+
+@keyframes vt-pop { from { transform: translateY(6px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+.vh-layer.reduced .vt .card { animation: none; }
+@media (prefers-reduced-motion: reduce) { .vt .card { animation: none; } }
+
+/* ---------- the interaction tag (hud/prompt.ts): beside the focused target, a notch pointing at it ---------- */
+.vh-prompt { position: absolute; left: 0; top: 0; z-index: 6; display: flex; flex-direction: column; gap: 3px; max-width: 320px; padding: 6px 11px 7px;
+  border-radius: 12px; background: linear-gradient(#fffbf0, #f3e2bb); border: 2px solid var(--wood-dark); color: var(--ink);
+  box-shadow: 0 3px 0 rgba(74, 47, 25, .3), 0 6px 18px rgba(0, 0, 0, .25); will-change: transform; pointer-events: none; animation: vt-fade .14s ease-out; }
+.vh-prompt.hide { display: none; }
+.vh-prompt::before, .vh-prompt::after { content: ""; position: absolute; top: 14px; border: solid transparent; }
+.vh-prompt::before { left: -12px; border-width: 8px 12px 8px 0; border-right-color: var(--wood-dark); }
+.vh-prompt::after { left: -8.5px; top: 16px; border-width: 6px 9px 6px 0; border-right-color: #fef8ea; }
+.vh-prompt.left::before { left: auto; right: -12px; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent var(--wood-dark); }
+.vh-prompt.left::after { left: auto; right: -8.5px; border-width: 6px 0 6px 9px; border-color: transparent transparent transparent #fef8ea; }
+.vh-prompt .who { display: flex; align-items: baseline; gap: 7px; white-space: nowrap; min-width: 0; }
+.vh-prompt .who b { font-weight: 800; font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+.vh-prompt .role { font-size: 11px; font-weight: 800; letter-spacing: .05em; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; }
+.vh-prompt .acts { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.vh-prompt .act { display: inline-flex; align-items: center; gap: 5px; font-weight: 750; font-size: 14px; white-space: nowrap; }
+.vh-prompt .act.alt { font-size: 13px; color: var(--ink-soft); }
+.vh-prompt .sub { font-size: 12.5px; font-weight: 650; color: var(--ink-soft); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vh-prompt.ask { border-color: #9a6212; background: linear-gradient(#fff8dc, #ffe7a0); }
+.vh-prompt.ask::before { border-right-color: #9a6212; }
+.vh-prompt.ask.left::before { border-left-color: #9a6212; border-right-color: transparent; }
+.vh-prompt.ask::after { border-right-color: #fff4cf; }
+.vh-prompt.ask.left::after { border-left-color: #fff4cf; border-right-color: transparent; }
+.vh-prompt.ask .sub { color: #8a5200; }
+@keyframes vt-fade { from { opacity: 0; } to { opacity: 1; } }
+.vh-layer.reduced .vh-prompt { animation: none; }
+.vt-note.solo:not(.edge) .who { display: none; }

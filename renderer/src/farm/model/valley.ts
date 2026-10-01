@@ -179,7 +179,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
       : null;
     const ctxMax = e.modelTier === 'haiku' ? 200_000 : 200_000;
     return {
-      id: e.id, name: e.name, kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
+      id: e.id, name: e.name, project: projectName(e), tag: projectName(e), kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
       status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw,
       detail: needsYou ? shortDetail(e.prompt?.subject?.arg ?? e.prompt?.question ?? e.activity?.detail) : shortDetail(e.activity?.detail),
       title: e.title, needsYou, unseenDone, struggle, mood,
@@ -198,7 +198,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
     const exit = p?.exit ? (p.exit.code === 0 ? 'ok' : 'fail') : null;
     const running = !!p && p.activity !== 'prompt';
     return {
-      id: e.id, name: e.name, plotId: e.workspace.id, spot, activity: p?.activity ?? 'prompt', running, exit,
+      id: e.id, name: e.name, project: projectName(e), tag: projectName(e), plotId: e.workspace.id, spot, activity: p?.activity ?? 'prompt', running, exit,
       label: shortDetail(p?.argv ?? e.baseTitle ?? e.name, 32), ports: p?.ports ?? [],
     };
   }
@@ -265,6 +265,14 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
     for (const p of plotRecs.values()) { p.view.farmers = []; p.view.helpers = []; }
     for (const f of farmers.values()) plotRecs.get(f.plotId)?.view.farmers.push(f.id);
     for (const h of helpers.values()) plotRecs.get(h.plotId)?.view.helpers.push(h.id);
+    // in-world names: unique per field (farmers and helpers each), in spot order
+    for (const p of plotRecs.values()) {
+      for (const [ids, views] of [[p.view.farmers, farmers], [p.view.helpers, helpers]] as const) {
+        if (ids.length < 2) continue;
+        const list = ids.map((id) => views.get(id)!);
+        worldTags(list).forEach((t, i) => { list[i].tag = t; });
+      }
+    }
     state.farmers = farmers;
     state.helpers = helpers;
     state.plots = new Map([...plotRecs].map(([id, r]) => [id, r.view]));
@@ -323,6 +331,44 @@ export function createValley(src: ValleySource, { wallNow = Date.now }: { wallNo
     markAllRead() { for (const l of state.letters) l.read = true; },
     setSky(o) { skyO = { ...skyO, ...o }; state.sky = skyAt(new Date(wallNow()), skyO); },
   };
+}
+
+/** basename of a path ('' for '/', '', '~'). */
+const baseOf = (p: string | null | undefined): string => {
+  const b = String(p ?? '').trim().replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? '';
+  return b === '~' ? '' : b;
+};
+
+/** The project directory name for the 3D world: basename of the project (repo) name, else of the cwd, else the name. */
+export function projectName(e: { project?: string | null; cwd?: string | null; name: string }): string {
+  return baseOf(e.project) || baseOf(e.cwd) || baseOf(e.name) || e.name;
+}
+
+/** a herdr name short and clean enough to tell twins apart in the world ('flint', 'review'; not paths or sentences) */
+const cleanWord = (name: string, project: string): string | null => {
+  const n = name.trim();
+  if (!n || n.length > 14 || /[\s/\\~:]/.test(n) || /^\d+$/.test(n)) return null;
+  const l = n.toLowerCase(), p = project.toLowerCase();
+  if (l === p || l.startsWith(`${p}·`)) return null;
+  return n;
+};
+
+/**
+ * In-world names, unique within one field (`items` = one field's farmers or helpers, in spot order): the project
+ * directory name; twins sharing it get `project·word` when every twin has a distinct clean one-word herdr name, else
+ * the first keeps the bare project and the rest get `·2`, `·3`, … Returns tags in input order.
+ */
+export function worldTags(items: readonly { name: string; project: string }[]): string[] {
+  const groups = new Map<string, number[]>();
+  items.forEach((it, i) => { const k = it.project.toLowerCase(); const g = groups.get(k); if (g) g.push(i); else groups.set(k, [i]); });
+  const out = items.map((it) => it.project);
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const words = g.map((i) => cleanWord(items[i].name, items[i].project));
+    const distinct = new Set(words.map((w) => w?.toLowerCase())).size === g.length;
+    g.forEach((i, n) => { out[i] = distinct && words.every(Boolean) ? `${items[i].project}·${words[n]!.toLowerCase()}` : n ? `${items[i].project}·${n + 1}` : items[i].project; });
+  }
+  return out;
 }
 
 /** Letters the player hasn't read that still matter (unresolved asks count double in the badge). */

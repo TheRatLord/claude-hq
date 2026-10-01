@@ -91,11 +91,10 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   crowd.group.name = 'villagers';
   const bills = new Billboards(48);
   bills.mesh.name = 'villager-emotes';
-  const labels = new Labels(6);
-  labels.group.name = 'villager-labels';
+  const labels = new Labels(ctx);
   const root = new THREE.Group();
   root.name = 'villagers-root';
-  root.add(crowd.group, bills.mesh, labels.group);
+  root.add(crowd.group, bills.mesh);
   ctx.scene.add(root);
 
   const roads = buildRoads(PATHS, { x: 0, z: -1, hw: 12, hd: 10 });
@@ -206,8 +205,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     f.talks++;
     f.talkUntil = time + 6;
     f.greeted = true; f.greetCool = time + 25;
-    f.lineUntil = 0; // the caption carries the line; drop any call-out bubble so it doesn't show twice
-    ctx.ui.say(`${f.v.name}: ${line}`, 4200);
+    f.lineUntil = 0; // the anchored say bubble carries the line; drop any call-out bubble so it doesn't show twice
+    ctx.ui.say(line, 4200, { who: f.v.name, from: f.v.id });
     audio()?.voice(f.v.id, { pos: f.pos, mood: 'happy', syllables: 3 + Math.floor(f.k * 3) });
     if (chatOnly || f.v.fn === 'say') return;
     const fn = f.v.fn;
@@ -520,7 +519,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       // emotes + labels
       ctx.camera.getWorldPosition(camPos);
       bills.begin();
-      labels.begin();
+      labels.begin(dt);
       nearN = 0;
       const focused = ctx.interact.focused();
       for (const f of order) {
@@ -548,13 +547,11 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (let i = 1; i < nearN; i++) { const x = near[i]; let j = i - 1; while (j >= 0 && byDist(near[j], x) > 0) { near[j + 1] = near[j]; j--; } near[j + 1] = x; }
       for (let i = 0; i < nearN && i < 3; i++) {
         const { f, d } = near[i];
-        const kk = Math.max(1, Math.abs(d) / 7);
+        void d;
         tmpV.set(f.head.x, f.head.y + HAT_TOP[f.v.hat] + 0.02, f.head.z);
-        if (f.nameA > 0.02) labels.show(f.v.id, 'villager', f.v.name, f.v.title, tmpV, 0.36 * kk, f.nameA);
-        if (f.bubbleA > 0.02) {
-          tmpV.y += f.nameA * 0.42 * kk;
-          labels.show(f.sayKey, 'speech', f.line, '', tmpV, 0.5 * kk, f.bubbleA);
-        }
+        if (f.nameA > 0.02) labels.show(f.v.id, f.v.id, 'villager', f.v.name, f.v.title, tmpV, f.nameA);
+        // the HUD stacks the call-out above the signboard (same owner)
+        if (f.bubbleA > 0.02) labels.show(f.sayKey, f.v.id, 'speech', f.line, f.v.name, tmpV, f.bubbleA);
       }
       labels.end();
       bills.end();

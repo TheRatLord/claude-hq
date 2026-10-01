@@ -1,141 +1,71 @@
 /**
- * Small pooled canvas sprites: nameplates ("Gale · planting store.ts"), speech bubbles (an excerpt of what the
- * farmer said / asked) and duckling labels. A handful at a time (nearest / focused), each redrawn only when its text
- * changes.
+ * In-world labels: nameplates ("claude-hq · planting store.ts"), the villagers' role signboards, speech / needs-you
+ * bubbles and duckling labels. The scene only decides what shows where (anchor, text, fade); the HUD draws them as
+ * DOM overlays anchored to the world point (`UiPort.tag`, see `WorldTag` in scene/context.ts), so they stay crisp and
+ * legible at night, in fog and rain, stack per character and nudge apart instead of overlapping.
+ *
+ * Big buildings (the light occluders: farmhouse, barn, toolshed, silo, windmill) hide the labels behind them: a
+ * segment-vs-box test from the eye, faded per key. No per-frame allocation once a key has been seen.
  */
 import * as THREE from 'three';
+import type { LightOccluder, LightsService, SceneCtx, TagStyle, WorldTag } from '../context.ts';
 
-/** 'villager': the persistent villagers' nameplate (a green signboard with the role), never confused with a farmer's */
-export type LabelStyle = 'name' | 'speech' | 'ask' | 'duck' | 'villager';
+export type LabelStyle = TagStyle;
 
-interface Slot { sprite: THREE.Sprite; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; key: string; used: boolean; alpha: number; aspect: number }
-
-const W = 512, H = 160;
-
-function wrap(g: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const t = cur ? `${cur} ${w}` : w;
-    if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; if (lines.length === maxLines) break; } else cur = t;
-  }
-  if (lines.length < maxLines && cur) lines.push(cur);
-  if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
-    let last = lines[maxLines - 1];
-    while (g.measureText(`${last}…`).width > maxW && last.length > 1) last = last.slice(0, -1);
-    lines[maxLines - 1] = `${last}…`;
-  }
-  return lines;
+/** does the segment eye → p pass through the box (a little shrunk so labels by a wall still show)? Allocation-free. */
+export function segmentHitsBox(o: LightOccluder, ex: number, ey: number, ez: number, px: number, py: number, pz: number): boolean {
+  const c = Math.cos(o.yaw), s = Math.sin(o.yaw);
+  // into the box frame (Colliders.rect convention: local x = (cos, -sin), local z = (sin, cos))
+  const ax = (ex - o.x) * c - (ez - o.z) * s, az = (ex - o.x) * s + (ez - o.z) * c;
+  const bx = (px - o.x) * c - (pz - o.z) * s, bz = (px - o.x) * s + (pz - o.z) * c;
+  const hw = o.w / 2 - 0.1, hd = o.d / 2 - 0.1;
+  slabT0 = 0; slabT1 = 1;
+  return slab(ax, bx, -hw, hw) && slab(az, bz, -hd, hd) && slab(ey, py, o.y0, o.y1 - 0.1);
 }
-
-function draw(c: HTMLCanvasElement, style: LabelStyle, title: string, sub: string): number {
-  const g = c.getContext('2d')!;
-  g.clearRect(0, 0, W, H);
-  const font = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-  if (style === 'villager') {
-    // a little painted signboard: green board, cream serif name, the role in small caps, two hanging cords
-    const serif = 'Georgia, "DejaVu Serif", serif';
-    g.font = `700 36px ${serif}`;
-    const tw = g.measureText(title).width;
-    g.font = `600 22px ${font}`;
-    const sw = sub ? g.measureText(sub.toUpperCase()).width + sub.length * 2 : 0;
-    const w = Math.min(W - 8, Math.max(tw, sw) + 48);
-    const h = sub ? 92 : 58;
-    const x = (W - w) / 2, y = H - h - 4;
-    g.strokeStyle = 'rgba(70,50,30,0.9)'; g.lineWidth = 4;
-    g.beginPath(); g.moveTo(x + 22, y); g.lineTo(W / 2, y - 22); g.lineTo(x + w - 22, y); g.stroke();
-    g.fillStyle = 'rgba(52,96,70,0.95)';
-    g.strokeStyle = 'rgba(240,214,150,0.95)'; g.lineWidth = 4;
-    g.beginPath(); g.roundRect(x, y, w, h, 10); g.fill(); g.stroke();
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = '#fff3d6'; g.font = `700 36px ${serif}`;
-    g.fillText(title, W / 2, y + (sub ? 32 : h / 2));
-    if (sub) {
-      g.fillStyle = '#f0d696'; g.font = `600 22px ${font}`;
-      if ('letterSpacing' in g) (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '2px';
-      g.fillText(sub.toUpperCase(), W / 2, y + 68, W - 40);
-      if ('letterSpacing' in g) (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '0px';
-    }
-    return W / H;
-  }
-  if (style === 'name' || style === 'duck') {
-    const big = style === 'name' ? 38 : 30;
-    g.font = `700 ${big}px ${font}`;
-    const tw = g.measureText(title).width;
-    g.font = `500 26px ${font}`;
-    const sw = sub ? g.measureText(sub).width : 0;
-    const w = Math.min(W - 8, Math.max(tw, sw) + 44);
-    const h = sub ? 96 : 60;
-    const x = (W - w) / 2, y = H - h - 4;
-    g.fillStyle = style === 'duck' ? 'rgba(255,246,200,0.95)' : 'rgba(255,250,238,0.94)';
-    g.strokeStyle = 'rgba(90,60,30,0.85)'; g.lineWidth = 4;
-    g.beginPath(); g.roundRect(x, y, w, h, 22); g.fill(); g.stroke();
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = '#3a2a1c'; g.font = `700 ${big}px ${font}`;
-    g.fillText(title, W / 2, y + (sub ? 32 : h / 2));
-    if (sub) { g.fillStyle = '#7a6250'; g.font = `500 26px ${font}`; g.fillText(sub, W / 2, y + 70, W - 40); }
-    return W / H;
-  }
-  // speech / ask bubble with a tail
-  g.font = `600 30px ${font}`;
-  const lines = wrap(g, title, W - 70, 2);
-  const w = Math.min(W - 8, Math.max(...lines.map((l) => g.measureText(l).width)) + 50);
-  const h = lines.length * 38 + 34;
-  const x = (W - w) / 2, y = H - h - 26;
-  g.fillStyle = style === 'ask' ? 'rgba(255,236,160,0.97)' : 'rgba(255,255,255,0.96)';
-  g.strokeStyle = style === 'ask' ? 'rgba(160,110,20,0.95)' : 'rgba(70,70,90,0.8)'; g.lineWidth = 5;
-  g.beginPath(); g.roundRect(x, y, w, h, 26);
-  g.moveTo(W / 2 - 18, y + h); g.lineTo(W / 2 - 4, H - 4); g.lineTo(W / 2 + 12, y + h);
-  g.fill(); g.stroke();
-  g.fillStyle = style === 'ask' ? 'rgba(255,236,160,0.97)' : 'rgba(255,255,255,0.96)';
-  g.fillRect(W / 2 - 16, y + h - 6, 26, 8);
-  g.fillStyle = '#2b2420'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  lines.forEach((l, i) => g.fillText(l, W / 2, y + 17 + 19 + i * 38));
-  void sub;
-  return W / H;
+let slabT0 = 0, slabT1 = 1;
+function slab(a: number, b: number, lo: number, hi: number): boolean {
+  const d = b - a;
+  if (Math.abs(d) < 1e-9) return a >= lo && a <= hi;
+  let u = (lo - a) / d, v = (hi - a) / d;
+  if (u > v) { const t = u; u = v; v = t; }
+  slabT0 = Math.max(slabT0, u); slabT1 = Math.min(slabT1, v);
+  return slabT0 <= slabT1;
 }
 
 export class Labels {
-  readonly group = new THREE.Group();
-  private slots: Slot[] = [];
-  private cap: number;
-  constructor(cap = 10) { this.cap = cap; this.group.name = 'farmer-labels'; }
+  private readonly tag: WorldTag = { key: '', owner: '', style: 'name', title: '', sub: '', pos: new THREE.Vector3(), alpha: 0, dist: 0 };
+  private readonly seen = new Map<string, number>();
+  private readonly eye = new THREE.Vector3();
+  private shown = 0;
+  private dt = 0;
+  private readonly ctx: SceneCtx;
+  constructor(ctx: SceneCtx) { this.ctx = ctx; }
 
-  begin(): void { for (const s of this.slots) s.used = false; }
+  begin(dt = 1 / 60): void { this.shown = 0; this.dt = dt; this.ctx.camera.getWorldPosition(this.eye); }
 
-  /** Show a label this frame at `pos` (bottom centre), `height` metres tall. */
-  show(key: string, style: LabelStyle, title: string, sub: string, pos: THREE.Vector3, height: number, alpha: number): void {
-    if (alpha < 0.02) return;
-    const content = `${style}|${title}|${sub}`;
-    let s = this.slots.find((x) => !x.used && x.key === content);
-    if (!s) s = this.slots.find((x) => !x.used && !x.sprite.visible);
-    if (!s && this.slots.length < this.cap) {
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.LinearFilter;
-      tex.generateMipmaps = false;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
-      sprite.center.set(0.5, 0);
-      sprite.renderOrder = 20;
-      this.group.add(sprite);
-      s = { sprite, canvas, tex, key: '', used: false, alpha: 0, aspect: W / H };
-      this.slots.push(s);
-    }
-    if (!s) return;
-    s.used = true;
-    if (s.key !== content) { s.aspect = draw(s.canvas, style, title, sub); s.tex.needsUpdate = true; s.key = content; }
-    s.sprite.visible = true;
-    s.sprite.position.copy(pos);
-    s.sprite.scale.set(height * s.aspect, height, 1);
-    (s.sprite.material as THREE.SpriteMaterial).opacity = alpha;
-    void key;
+  /** Show a label this frame, its bottom centre at `pos` (just above the head). */
+  show(key: string, owner: string, style: LabelStyle, title: string, sub: string, pos: THREE.Vector3, alpha: number): void {
+    const ui = this.ctx.ui;
+    if (!ui.tag || alpha < 0.02 || !title) return;
+    const e = this.eye;
+    let vis = 1;
+    const occ = (this.ctx.services.get('lights') as LightsService | undefined)?.occluders();
+    if (occ) for (let i = 0; i < occ.length; i++) if (segmentHitsBox(occ[i], e.x, e.y, e.z, pos.x, pos.y, pos.z)) { vis = 0; break; }
+    const prev = this.seen.get(key) ?? vis;
+    const k = prev + (vis - prev) * Math.min(1, this.dt * 10);
+    this.seen.set(key, k);
+    const a = alpha * k;
+    if (a < 0.02) return;
+    const t = this.tag;
+    t.key = key; t.owner = owner; t.style = style; t.title = title; t.sub = sub; t.alpha = a;
+    t.pos.copy(pos);
+    t.dist = e.distanceTo(pos);
+    ui.tag(t);
+    this.shown++;
   }
 
-  end(): void { for (const s of this.slots) if (!s.used) s.sprite.visible = false; }
+  end(): void { /* the HUD hides whatever was not shown this frame */ }
 
-  /** draw calls this frame */
-  visible(): number { return this.slots.filter((s) => s.sprite.visible).length; }
+  /** labels shown this frame (perf overlay) */
+  visible(): number { return this.shown; }
 }

@@ -1,10 +1,11 @@
 /**
  * The big parchment map (M) and the corner minimap. Clicking a farmer opens its terminal immediately; Shift+click or
- * right-click walks there. Wheel zooms around the cursor, drag pans, 0 resets. The side list mirrors the fields.
+ * right-click walks there. Wheel zooms around the cursor, drag pans, 0 resets. The side list mirrors the fields
+ * (farmers and scarecrows): ↑/↓ moves through it (the pin lights up on the map), Enter = terminal, Shift+Enter = walk.
  */
 import type { FrameInfo } from '../scene/context.ts';
 import { ICONS, KIND_ICON, icon } from './icons.ts';
-import { farmerLine, HELPER_LABEL, JOB_LABEL, nice, STAGE_LABEL, STATUS_LABEL, STATUS_RANK } from './format.ts';
+import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_LABEL, STATUS_RANK } from './format.ts';
 import { drawValley, fitContent, fitView, hitTest, toWorld, type Hit, type View } from './mapdraw.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
@@ -33,6 +34,7 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const foot = h('div.vh-foot', null,
     h('span', null, 'Click a farmer: ', h('b', { text: 'terminal' })),
     h('span', null, h('kbd.vh-k', { text: 'Shift' }), '+click / right-click: walk'),
+    h('span', null, h('kbd.vh-k', { text: '↑' }), h('kbd.vh-k', { text: '↓' }), 'pick', h('kbd.vh-k', { text: 'Enter' }), 'terminal'),
     h('span', null, 'Wheel zoom · drag pan · ', h('kbd.vh-k', { text: '0' }), ' reset'));
   const side = h('div.vh-mapside', null, h('div.vh-h3', null, icon(ICONS.book), 'Farmers'), legend, list, foot);
   body.append(wrap, side);
@@ -68,14 +70,15 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     if (hit.kind === 'farmer') {
       const f = s.farmers.get(hit.id);
       if (!f) return;
-      tip.append(h('b', { text: nice(f.name) }), ' ', h(`span.vh-pill.st-${f.status}`, { text: STATUS_LABEL[f.status] }),
+      const alt = altName(f);
+      tip.append(h('b', { text: shortName(f) }), ' ', h(`span.vh-pill.st-${f.status}`, { text: STATUS_LABEL[f.status] }), alt ? h('div.vh-muted', { text: alt }) : '',
         h('div', { text: `${s.plots.get(f.plotId)?.label ?? ''} · ${JOB_LABEL[f.job]}` }),
         h('div.vh-muted', { text: f.needsYou ? (f.question ?? '') : f.detail || f.title || '' }),
         h('div.k', { text: 'Click: open terminal · Shift+click: walk there' }));
     } else if (hit.kind === 'helper') {
       const hp = s.helpers.get(hit.id);
       if (!hp) return;
-      tip.append(h('b', { text: `${nice(hp.name)} (scarecrow)` }), h('div', { text: `${HELPER_LABEL[hp.activity]} · ${hp.label}` }), h('div.k', { text: 'Click: open shell · Shift+click: walk there' }));
+      tip.append(h('b', { text: `${shortName(hp)} (scarecrow)` }), h('div', { text: `${HELPER_LABEL[hp.activity]}${hp.label ? ` · ${hp.label}` : ''}` }), h('div.k', { text: 'Click: open shell · Shift+click: walk there' }));
     } else {
       const p = s.plots.get(hit.id);
       if (!p) return;
@@ -127,31 +130,49 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   }, { passive: false });
 
   let sig = '';
+  let rows: HTMLElement[] = [];
+  const pickRow = (row: HTMLElement | undefined) => {
+    if (!row) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
+    listHover = row.dataset.id ?? null;
+  };
   const refreshList = () => {
     const s = ctx.state();
     if (!s) return;
     const plots = [...s.plots.values()].filter((p) => p.farmers.length + p.helpers.length > 0).sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.label.localeCompare(b.label));
-    const nsig = plots.map((p) => `${p.id}:${p.kind}:${p.farmers.map((id) => { const f = s.farmers.get(id); return f ? `${f.name}${f.status}${f.job}${f.needsYou}${f.unseenDone}` : id; }).join(',')}`).join('|');
+    const nsig = plots.map((p) => `${p.id}:${p.kind}:${p.label}:${p.farmers.map((id) => { const f = s.farmers.get(id); return f ? `${f.name}${f.tag}${f.status}${f.job}${f.needsYou}${f.unseenDone}` : id; }).join(',')}:${p.helpers.map((id) => { const hp = s.helpers.get(id); return hp ? `${hp.name}${hp.running}` : id; }).join(',')}`).join('|') + s.link;
     if (nsig === sig) return;
     sig = nsig;
     const keep = list.scrollTop;
+    const focused = (document.activeElement as HTMLElement | null)?.dataset?.id;
     list.replaceChildren();
+    rows = [];
+    const add = (id: string, dot: HTMLElement, name: string, job: string, title: string, testid: string) => {
+      const row = h('div.who', { role: 'button', tabindex: '0', title, 'data-testid': testid, 'data-id': id }, dot, h('span.nm', { text: name }), h('span.j', { text: job }));
+      row.addEventListener('click', (e) => { if (e.shiftKey) { ctx.travel(id); ctx.panels.close(); } else ctx.openTerminal(id); });
+      row.addEventListener('mouseenter', () => { listHover = id; });
+      row.addEventListener('mouseleave', () => { if (listHover === id) listHover = null; });
+      row.addEventListener('focus', () => { listHover = id; });
+      row.addEventListener('blur', () => { if (listHover === id) listHover = null; });
+      list.append(row);
+      rows.push(row);
+    };
     for (const p of plots) {
-      list.append(h('div.fld', null, icon(KIND_ICON[p.kind]), p.label));
+      list.append(h('div.fld', null, icon(KIND_ICON[p.kind]), h('span', { text: p.label })));
       const fs = p.farmers.map((id) => s.farmers.get(id)).filter((f) => !!f).sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
-      for (const f of fs) {
-        const row = h('div.who', { role: 'button', tabindex: '0', title: `${farmerLine(f)} — click for terminal`, 'data-testid': 'map-farmer', 'data-id': f.id },
-          h(`i.vh-dot.st-${f.status}`), nice(f.name), h('span.j', { text: f.needsYou ? 'needs you!' : JOB_LABEL[f.job] }));
-        const id = f.id;
-        row.addEventListener('click', (e) => { if (e.shiftKey) { ctx.travel(id); ctx.panels.close(); } else ctx.openTerminal(id); });
-        row.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ctx.openTerminal(id, { enterAt: e.timeStamp }); } });
-        row.addEventListener('mouseenter', () => { listHover = id; });
-        row.addEventListener('mouseleave', () => { if (listHover === id) listHover = null; });
-        list.append(row);
+      for (const f of fs) add(f.id, h(`i.vh-dot.st-${f.status}`), fieldName(f), f.needsYou ? 'needs you!' : JOB_LABEL[f.job], `${nice(f.name)} — ${farmerLine(f)}\nEnter / click: terminal · Shift: walk there`, 'map-farmer');
+      for (const hid of p.helpers) {
+        const hp = s.helpers.get(hid);
+        if (hp) add(hp.id, h('i.vh-dot.helper', { style: { background: hp.running ? '#ffd23f' : hp.exit === 'fail' ? '#d0584a' : '#ddd' } }), fieldName(hp), hp.running ? HELPER_LABEL[hp.activity] : 'scarecrow', `${nice(hp.name)} (scarecrow) — click for the shell`, 'map-helper');
       }
     }
-    if (!plots.length) list.append(h('div.vh-empty', { text: 'No fields tilled yet.' }));
+    if (!plots.length) {
+      const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
+      list.append(h('div.vh-empty', null, away ? 'Waiting for herdr…' : 'No fields tilled yet.', h('small', { text: away ? 'Fields and farmers appear once herdr answers.' : 'Each herdr workspace becomes a field here.' })));
+    }
     list.scrollTop = keep;
+    if (focused) rows.find((r) => r.dataset.id === focused)?.focus({ preventScroll: true });
   };
 
   let ro: ResizeObserver | null = null;
@@ -170,6 +191,18 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     frame(f: FrameInfo) { t = f.time; draw(); },
     key(e) {
       if (!view) return false;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!rows.length) return true;
+        const i = rows.indexOf(document.activeElement as HTMLElement);
+        pickRow(rows[i < 0 ? (e.key === 'ArrowDown' ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]);
+        return true;
+      }
+      const row = rows.find((r) => r === document.activeElement);
+      if (e.key === 'Enter' && row?.dataset.id) {
+        const id = row.dataset.id;
+        if (e.shiftKey) { ctx.travel(id); ctx.panels.close(); } else ctx.openTerminal(id, { enterAt: e.timeStamp });
+        return true;
+      }
       if (e.key === '0') { view = fitContent(view.w, view.h, ctx.state(), ctx.b?.player?.() ?? null); return true; }
       if (e.key === '9') { view = fitView(view.w, view.h); return true; }
       if (e.key === '+' || e.key === '=') { view.scale *= 1.25; return true; }
@@ -186,7 +219,10 @@ export function createMinimap(ctx: HudCtx): { el: HTMLElement; frame(f: FrameInf
   el.addEventListener('click', () => ctx.panels.open('map'));
   let g: CanvasRenderingContext2D | null = null;
   let last = -1;
-  const SIZE = () => Math.round(el.clientWidth - 14);
+  // the corner size only changes with the window (media queries): measure on resize, never per frame
+  let size = -1;
+  addEventListener('resize', () => { size = -1; });
+  const SIZE = () => (size >= 0 ? size : (size = Math.round(el.clientWidth - 14)));
   function draw(time: number): void {
     const s = ctx.state();
     const player = ctx.b?.player?.() ?? null;

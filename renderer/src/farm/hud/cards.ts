@@ -5,7 +5,7 @@
  */
 import type { FarmerView, HelperView } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
-import { ago, dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, nice, pct, seedHue, STATUS_LABEL } from './format.ts';
+import { ago, altName, shortName, dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, nice, pct, seedHue, STATUS_LABEL } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 
 export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void; showHelper(id: string): void } {
@@ -27,8 +27,8 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
     const kids: (Node | null)[] = [];
     kids.push(h('div.hero', null, face, h('div', null,
-      h('div.nm', { text: nice(f.name), 'data-testid': 'card-name' }),
-      h('div.sub', null, `${kindLine(f)} · `, plot ? icon(KIND_ICON[plot.kind]) : null, ` ${plot?.label ?? ''}`),
+      h('div.nm', { text: shortName(f), 'data-testid': 'card-name', title: shortName(f) }),
+      h('div.sub', null, `${kindLine(f)} · `, plot ? icon(KIND_ICON[plot.kind]) : null, ` ${plot?.label ?? ''}${altName(f) ? ` · ${altName(f)}` : ''}`),
       h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done — not yet reviewed' : STATUS_LABEL[f.status] }),
       h('span.vh-muted', { text: `  for ${dur(s.now - f.lastActive)}`, style: { fontSize: '12px', fontWeight: '700' } }))));
     if (f.needsYou) {
@@ -60,20 +60,20 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const acts = h('div.acts', null,
       h('button.vh-btn.primary', { type: 'button', 'data-autofocus': '', 'data-testid': 'card-terminal', onclick: () => ctx.openTerminal(f.id) }, icon(ICONS.terminal), 'Open terminal', h('kbd.vh-k', { text: 'T' })),
       h('button.vh-btn', { type: 'button', onclick: () => { ctx.travel(f.id); ctx.panels.close(); } }, icon(ICONS.walk), 'Walk there'));
-    if (f.unseenDone) acts.append(h('button.vh-btn', { type: 'button', 'data-testid': 'card-ack', onclick: () => { ctx.b?.agents.ack(f.id); ctx.sfx('chime-done'); ctx.toast({ text: `Thanked ${nice(f.name)}`, sub: 'marked as reviewed', level: 'good', icon: ICONS.check }); ctx.panels.close(); } }, icon(ICONS.check), 'Acknowledge', h('kbd.vh-k', { text: 'A' })));
+    if (f.unseenDone) acts.append(h('button.vh-btn', { type: 'button', 'data-testid': 'card-ack', onclick: () => { ctx.b?.agents.ack(f.id); ctx.sfx('chime-done'); ctx.toast({ text: `Thanked ${shortName(f)}`, sub: 'marked as reviewed', level: 'good', icon: ICONS.check }); ctx.panels.close(); } }, icon(ICONS.check), 'Acknowledge', h('kbd.vh-k', { text: 'A' })));
     kids.push(acts);
     if ((f.status === 'idle' || f.status === 'done') && !f.needsYou) kids.push(promptBox(f));
     body.replaceChildren(...kids.filter((k): k is Node => !!k));
   }
 
   function promptBox(f: FarmerView): HTMLElement {
-    const ta = h('textarea', { placeholder: `Ask ${nice(f.name)} to do something next…`, 'aria-label': `New prompt for ${nice(f.name)}`, rows: '2', 'data-testid': 'card-prompt' });
+    const ta = h('textarea', { placeholder: `Ask ${shortName(f)} to do something next…`, 'aria-label': `New prompt for ${shortName(f)}`, rows: '2', 'data-testid': 'card-prompt' });
     ta.value = draft;
     const row = h('div.row');
     const renderRow = () => {
       row.replaceChildren();
       if (confirming) {
-        row.append(h('span.confirm', { text: `Send this to ${nice(f.name)}'s terminal?` }),
+        row.append(h('span.confirm', { text: `Send this to ${shortName(f)}'s terminal?` }),
           h('button.vh-btn.small', { type: 'button', onclick: () => { confirming = false; renderRow(); ta.focus(); } }, 'Cancel'),
           h('button.vh-btn.small.primary', { type: 'button', disabled: sending, onclick: () => void send() }, icon(ICONS.send), sending ? 'Sending…' : 'Yes, send'));
       } else {
@@ -87,8 +87,8 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
       sending = true; renderRow();
       const r = await ctx.b.agents.prompt(f.id, text).catch((e: unknown) => ({ ok: false, error: String(e) }));
       sending = false; confirming = false;
-      if (r.ok) { draft = ''; ta.value = ''; ctx.toast({ text: `Sent to ${nice(f.name)}`, sub: text, level: 'good', icon: ICONS.send }); ctx.panels.close(); }
-      else { ctx.toast({ text: `Couldn't reach ${nice(f.name)}`, sub: r.error ?? 'unknown error', level: 'error' }); renderRow(); }
+      if (r.ok) { draft = ''; ta.value = ''; ctx.toast({ text: `Sent to ${shortName(f)}`, sub: text, level: 'good', icon: ICONS.send }); ctx.panels.close(); }
+      else { ctx.toast({ text: `Couldn't reach ${shortName(f)}`, sub: r.error ?? 'unknown error', level: 'error' }); renderRow(); }
     };
     ta.addEventListener('input', () => { draft = ta.value; if (confirming) confirming = false; renderRow(); });
     ta.addEventListener('keydown', (e) => {
@@ -107,7 +107,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const face = h('div.face'); face.innerHTML = ICONS.scarecrow;
     const kids: (Node | null)[] = [
       h('div.hero', null, face, h('div', null,
-        h('div.nm', { text: nice(hp.name) }),
+        h('div.nm', { text: shortName(hp) }),
         h('div.sub', null, 'Shell · ', plot ? icon(KIND_ICON[plot.kind]) : null, ` ${plot?.label ?? ''}`),
         h('span.vh-pill', { text: hp.running ? 'Lantern lit · running' : 'Resting', style: { background: hp.running ? '#d9a520' : '#b09a78' } }))),
       h('div.job', null, `${HELPER_LABEL[hp.activity]}${hp.label ? ` · ${hp.label}` : ''}`, h('small', { text: e?.cwd ?? '' })),

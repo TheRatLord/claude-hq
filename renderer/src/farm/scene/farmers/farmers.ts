@@ -94,7 +94,7 @@ interface Actor {
   waveW: number;
   lookX: number; lookY: number; lookTw: number;
   greeted: boolean; greetUntil: number; greetCool: number; glanced: boolean; glanceUntil: number; callAt: number;
-  nameA: number; bubbleA: number;
+  nameA: number; bubbleA: number; sayKey: string; saidIn: string | null; saidOut: string;
   vanish: number;
   trail: Trail;
   ducks: Duck[];
@@ -132,24 +132,26 @@ function spr(s: Spring2, fx: number, fz: number, fy: number, freq: number, zeta:
   }
 }
 
-function excerpt(s: string | null, max = 70): string {
+/** what a farmer said, as bubble text: markdown punctuation and runs of whitespace dropped, never truncated (the HUD
+ * wraps and pages long lines). Cached on the actor. */
+function spoken(a: { saidIn: string | null; saidOut: string }, s: string | null): string {
   if (!s) return '';
-  let t = s.replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim();
-  const m = t.match(/^(.{12,}?[.!?])(\s|$)/);
-  if (m && m[1].length <= max) t = m[1];
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+  if (s !== a.saidIn) { a.saidIn = s; a.saidOut = s.replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim(); }
+  return a.saidOut;
 }
+/** css px of an in-world nameplate, for the "!" beacon to clear it (the HUD draws plates at a fixed size) */
+const PLATE_PX = 52;
 
 export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const crowd = new Crowd(48, true);
   const bills = new Billboards(320);
   const parts = new Particles(900);
   const beacons = new Beacons(32);
-  const labels = new Labels(10);
+  const labels = new Labels(ctx);
   const ducks = new Ducks(200);
   const root = new THREE.Group();
   root.name = 'farmers-root';
-  root.add(crowd.group, ducks.group, bills.mesh, parts.points, beacons.mesh, labels.group);
+  root.add(crowd.group, ducks.group, bills.mesh, parts.points, beacons.mesh);
   ctx.scene.add(root);
 
   const roads = buildRoads(PATHS, { x: 0, z: -1, hw: 12, hd: 10 });
@@ -311,7 +313,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       gait: { cyc: k * 3, w: 0, jog: 0, turn: 0, speed: 0, heavy: false, bounce: look.bounce }, lastYaw: 0, glyphs: newGlyphs(),
       prop: null, propS: 0, y: 0, yGround: 0, hx: 1e9, hz: 0, react: null,
       blinkAt: time + 1 + k * 3, blinkT: 99, blinkAgain: false, waveW: 0, lookX: 0, lookY: 0, lookTw: 0, greeted: false, greetUntil: 0, greetCool: 0, glanced: false,
-      glanceUntil: 0, callAt: 0, nameA: 0, bubbleA: 0, vanish: 0, trail: newTrail(0, 0), ducks: [], quackAt: time + 5 + k * 10,
+      glanceUntil: 0, callAt: 0, nameA: 0, bubbleA: 0, sayKey: `${f.id}:say`, saidIn: null, saidOut: '', vanish: 0, trail: newTrail(0, 0), ducks: [], quackAt: time + 5 + k * 10,
       pos: new THREE.Vector3(), head: new THREE.Vector3(), hand: new THREE.Vector3(), eyes: new THREE.Vector3(),
       top0: new THREE.Vector3(1e9, 0, 0), vel0: new THREE.Vector3(), hat: spring2(), shear: spring2(), plag: spring2(), wob: 0, wobPh: k * 10,
       unreg: () => {}, lastPropK: 0, k, born: time, stuckX: 0, stuckZ: 0, stuckT: time, stuckN: 0,
@@ -335,7 +337,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     a.hx = a.mv.x; a.hz = a.mv.z;
     for (const d of f.ducklings) a.ducks.push(Ducks.make(d, a.mv.x, a.mv.z, a.y, false));
     a.unreg = ctx.interact.add({
-      id: f.id, kind: 'farmer', verb: 'Talk to', label: () => a.view.name, reach: 3.4,
+      id: f.id, kind: 'farmer', verb: 'Talk to', label: () => a.view.tag, reach: 3.4,
       pos: (out) => out.set(a.pos.x, a.pos.y + 0.6 * a.look.scale, a.pos.z),
       enabled: () => a.mind.leaving === null,
       use: () => ctx.ui.farmerCard(a.id),
@@ -646,10 +648,14 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (f.needsYou && a.mind.leaving === null) {
       const bounce = Math.abs(Math.sin(t * 3.2)) * 0.22;
       const size = Math.max(0.6, d * 0.065);
-      const lift = a.nameA * 0.5 * Math.max(1, d / 7) + a.bubbleA * 0.7 * Math.max(1, d / 7);
+      // the plate is a fixed-size HUD overlay: lift the "!" by its height in metres at this distance. Up close the
+      // golden ask bubble (with its own "!") takes over from the beacon.
+      const pxM = (2 * d * Math.tan((ctx.camera.fov * Math.PI) / 360)) / Math.max(1, ctx.renderer.domElement.clientHeight);
+      const lift = a.nameA * PLATE_PX * pxM;
       const y = top + 0.2 + lift + bounce * Math.max(1, size);
-      bills.push(hp.x, y - size * 0.25, hp.z, size * 1.8, EMOTE.halo, 0.55 + Math.sin(t * 4) * 0.15, 1.6);
-      bills.push(hp.x, y, hp.z, size, EMOTE.bang, 1, 2.2, Math.sin(t * 2.2) * 0.12);
+      const bangA = 1 - a.bubbleA;
+      bills.push(hp.x, y - size * 0.25, hp.z, size * 1.8, EMOTE.halo, (0.55 + Math.sin(t * 4) * 0.15) * bangA, 1.6);
+      bills.push(hp.x, y, hp.z, size, EMOTE.bang, bangA, 2.2, Math.sin(t * 2.2) * 0.12);
       beacons.push(hp.x, top, hp.z, 16 + d * 0.1, 0.8 + d * 0.01, clamp((d - 8) / 20, 0, 1));
     } else if (f.unseenDone && a.mind.leaving === null) {
       const p = 0.5 + 0.5 * Math.sin(t * 2);
@@ -829,7 +835,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       ctx.camera.getWorldDirection(camDir);
       bills.begin();
       beacons.begin(time);
-      labels.begin();
+      labels.begin(dt);
       _near.length = 0;
       const focused = ctx.interact.focused();
       for (const a of actors.values()) {
@@ -847,9 +853,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         const f = a.view;
         const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}` : JOB_VERB[f.job];
         const sub = f.detail && !f.needsYou && f.job !== 'idle' && f.job !== 'away' ? `${verb} · ${f.detail}` : verb;
-        const k = Math.max(1, _near[i].d / 7);
         tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
-        labels.show(a.id, 'name', f.name, sub, tmpV, 0.36 * k, a.nameA);
+        labels.show(a.id, a.id, 'name', f.tag, sub, tmpV, a.nameA);
       }
       // speech bubbles: talkers you can hear, and farmers asking for you
       const talkers = [...actors.values()].filter((a) => a.mind.leaving === null && ((a.view.job === 'talk' && a.view.said) || (a.view.needsYou && a.view.question)))
@@ -861,9 +866,9 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         said.add(a);
         a.bubbleA = damp(a.bubbleA, 1, 5, dt);
         const ask = a.view.needsYou;
-        const k = Math.max(1, d / 7);
-        tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale + a.nameA * 0.4 * k, a.head.z);
-        labels.show(`${a.id}:say`, ask ? 'ask' : 'speech', excerpt(ask ? a.view.question : a.view.said), '', tmpV, 0.5 * k, a.bubbleA * clamp((20 - d) / 4, 0, 1));
+        // same anchor as the nameplate: the HUD stacks the bubble above it
+        tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
+        labels.show(a.sayKey, a.id, ask ? 'ask' : 'speech', ask ? (a.view.question ?? '') : spoken(a, a.view.said), ask ? a.view.tag : '', tmpV, a.bubbleA * clamp(((ask ? 14 : 20) - d) / 4, 0, 1));
       }
       for (const a of actors.values()) if (!said.has(a)) a.bubbleA = damp(a.bubbleA, 0, 8, dt);
       // duckling labels on hover: the one closest to the crosshair
@@ -875,7 +880,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         const c = tmpV.dot(camDir) / l;
         if (c > bestCos) { bestCos = c; bestDuck = d; }
       }
-      if (bestDuck) labels.show('duck', 'duck', bestDuck.label || 'duckling', '', tmpV.set(bestDuck.x, bestDuck.y + 0.4, bestDuck.z), 0.2, 1);
+      if (bestDuck) labels.show('duck', 'duck', 'duck', bestDuck.label || 'duckling', '', tmpV.set(bestDuck.x, bestDuck.y + 0.4, bestDuck.z), 1);
       labels.end();
       bills.end();
       beacons.end();

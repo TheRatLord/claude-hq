@@ -97,8 +97,45 @@ export interface UiPort {
   stats(): void;
   /** the farm ledger (roster of every farmer by field); optional for fakes */
   roster?(): void;
-  /** transient speech / toast line near the crosshair */
-  say(text: string, ms?: number): void;
+  /**
+   * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
+   * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the
+   * screen. `o.who` heads the bubble (the speaker's name) when it is pinned to the screen edge.
+   */
+  say(text: string, ms?: number, o?: { who?: string; from?: string }): void;
+  /**
+   * Show an anchored in-world tag (nameplate / speech bubble) this frame. Call every frame while it should show; the
+   * HUD copies the fields (reuse one object, no per-frame allocation). Optional for fakes.
+   */
+  tag?(t: WorldTag): void;
+}
+
+/**
+ * One in-world label, drawn by the HUD as a DOM overlay anchored to a world point (projected each frame, so it stays
+ * crisp and legible at night, in fog and rain). Tags with the same `owner` stack upward from their anchor in `style`
+ * order (nameplate, then bubble); different owners nudge apart instead of overlapping.
+ *   name      a farmer / helper nameplate: title + optional sub line ("planting · store.ts")
+ *   villager  a villager's green role signboard: title = name, sub = role
+ *   duck      a duckling label
+ *   speech    a speech bubble (full text, wraps, long lines page)
+ *   ask       a needs-you bubble (golden, with a "!")
+ * For speech / ask, `sub` is the speaker's name (it heads the bubble when the bubble is pinned to the screen edge).
+ */
+export type TagStyle = 'name' | 'villager' | 'duck' | 'speech' | 'ask';
+export interface WorldTag {
+  /** stable key (DOM nodes are reused per key) */
+  key: string;
+  /** who the tag belongs to (farmer / villager / interactable id): same-owner tags stack */
+  owner: string;
+  style: TagStyle;
+  title: string;
+  sub: string;
+  /** world anchor: the tag's bottom centre (just above the head) */
+  pos: THREE.Vector3;
+  /** 0..1 (distance / occlusion fades applied by the caller) */
+  alpha: number;
+  /** metres from the camera (priority: nearer wins the spot, farther tags nudge away; also scales the tag down) */
+  dist: number;
 }
 
 export interface SceneCtx {

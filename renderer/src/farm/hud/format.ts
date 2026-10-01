@@ -169,3 +169,36 @@ export function letterTitle(l: { title: string; farmerName: string }): string {
   const t = l.title.split(l.farmerName).join(nice(l.farmerName));
   return t[0] ? t[0].toUpperCase() + t.slice(1) : t;
 }
+
+/**
+ * The compact name for tight spots (needs-you cards, map pins, ledger rows, the drawer's side list): the in-world tag
+ * (project directory, unique within the field), the same name the farmer's nameplate shows. Falls back to the name.
+ */
+export function shortName(p: { name: string; tag?: string }): string {
+  return p.tag || nice(p.name ?? '');
+}
+
+/**
+ * The name inside a list or map already grouped by field: just the tag's distinguishing part (`claude-hq·flint` →
+ * `flint`), since the group already says which field. Numbered twins (`claude-hq·2`) and unique tags stay whole.
+ */
+export function fieldName(p: { name: string; tag?: string }): string {
+  const t = shortName(p);
+  const i = t.lastIndexOf('·');
+  const w = i >= 0 ? t.slice(i + 1) : '';
+  return w && !/^\d+$/.test(w) ? w : t;
+}
+
+/** The full herdr name as a secondary line, when it says something the shown name does not ('' otherwise). */
+export function altName(p: { name: string; tag?: string }, shown = shortName(p)): string {
+  const full = nice(p.name ?? '');
+  return full && full.toLowerCase() !== shown.toLowerCase() ? full : '';
+}
+
+/** One glyph for a map pin: the tag's distinguishing suffix (`claude-hq·flint` → F), else its first letter. */
+export function pinGlyph(p: { name: string; tag?: string }): string {
+  const t = shortName(p);
+  const i = t.lastIndexOf('·');
+  const w = i >= 0 ? t.slice(i + 1) : t;
+  return (/^\d+$/.test(w) ? w : w[0] ?? '?').toUpperCase();
+}

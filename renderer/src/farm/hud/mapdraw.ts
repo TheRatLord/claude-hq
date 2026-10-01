@@ -6,9 +6,9 @@
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import type { Status } from '../../../../shared/protocol.ts';
 import type { VillagerPin } from '../scene/context.ts';
-import { heightAt, PATHS, POND, RIVER, RIVER_HALF_WIDTH, SITES, siteToWorld, STRUCTURES, WORLD, type StructureId } from '../world/map.ts';
+import { heightAt, inSite, PATHS, POND, RIVER, RIVER_HALF_WIDTH, SITES, siteToWorld, STRUCTURES, WORLD, type StructureId } from '../world/map.ts';
 import { KIND_ICON, iconImage } from './icons.ts';
-import { nice, STATUS_COLOR, WS_COLORS } from './format.ts';
+import { fieldName, pinGlyph, shortName, STATUS_COLOR, WS_COLORS } from './format.ts';
 
 /** the interesting part of the valley (what "fit" frames) */
 export const BOUNDS = Object.freeze({ x0: -100, x1: 96, z0: -116, z1: 88 });
@@ -151,9 +151,7 @@ export function getBase(): HTMLCanvasElement {
   // roads
   for (const p of PATHS) { line(p.points); g.strokeStyle = '#a57c4d'; g.lineWidth = (p.width + 0.9) * S; g.stroke(); }
   for (const p of PATHS) { line(p.points); g.strokeStyle = '#e4c894'; g.lineWidth = p.width * S; g.stroke(); }
-  // landmarks: footprints + labels
-  g.font = `italic 700 ${3.1 * S}px Georgia, "DejaVu Serif", serif`;
-  g.textAlign = 'center'; g.textBaseline = 'top';
+  // landmarks: footprints
   for (const s of STRUCTURES) {
     const [x, y] = P(s.x, s.z);
     g.save(); g.translate(x, y); g.rotate(-s.yaw);
@@ -170,15 +168,8 @@ export function getBase(): HTMLCanvasElement {
       if (s.id === 'farmhouse' || s.id === 'barn' || s.id === 'toolshed') { g.beginPath(); g.moveTo(-w / 2, 0); g.lineTo(w / 2, 0); g.stroke(); }
     }
     g.restore();
-    const lab = LABELS[s.id];
-    if (lab) {
-      const ty = y + Math.max(s.size[0], s.size[1]) * S * 0.55 + 2;
-      g.lineWidth = 0.9 * S; g.strokeStyle = 'rgba(248,238,214,.9)'; g.strokeText(lab, x, ty);
-      g.fillStyle = '#4a2f19'; g.fillText(lab, x, ty);
-    }
   }
-  const [pondX, pondY] = P(POND.x, POND.z);
-  g.lineWidth = 0.9 * S; g.strokeStyle = 'rgba(248,238,214,.9)'; g.strokeText('Pond', pondX, pondY - 1.6 * S); g.fillStyle = '#23577f'; g.fillText('Pond', pondX, pondY - 1.6 * S);
+  // landmark names are drawn live (drawValley), so they can dodge farmer pins and field signs
   base = cv;
   return cv;
 }
@@ -345,12 +336,13 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
   }
   // ---- farmers: screen positions, relaxed apart so clustered dots stay clickable ----
   const r = mini ? 5 : Math.max(8, Math.min(12, v.scale * 1.4));
-  const dots: { f: FarmerView; x: number; y: number }[] = [];
+  const dots: { f: FarmerView; x: number; y: number; home: boolean }[] = [];
   for (const f of s.farmers.values()) {
     const p = paneSpot(s, f, o.locate);
     if (!p) continue;
     const [x, y] = toScreen(v, p.x, p.z);
-    dots.push({ f, x, y });
+    const pl = s.plots.get(f.plotId), site = pl ? SITES[pl.site] : undefined;
+    dots.push({ f, x, y, home: !!site && inSite(site, p.x, p.z, 3) });
   }
   const gap = r * 2 + (mini ? 1 : 3);
   for (let it = 0; it < 8; it++) {
@@ -383,7 +375,7 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
     g.fillStyle = f.needsYou ? '#3a2400' : '#fff';
     g.font = `800 ${Math.round(r * (mini ? 1.5 : 1.2))}px ui-rounded, "DejaVu Sans", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (!mini || f.needsYou) g.fillText(f.needsYou ? '!' : f.unseenDone ? '✓' : (nice(f.name)[0] ?? '?'), x, y + 0.5);
+    if (!mini || f.needsYou) g.fillText(f.needsYou ? '!' : f.unseenDone ? '✓' : pinGlyph(f), x, y + 0.5);
     hits.push({ id: f.id, kind: 'farmer', sx: x, sy: y, r: r + 4 });
   }
   if (!mini) {
@@ -392,11 +384,12 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
     g.font = `700 12px ui-rounded, "DejaVu Sans", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const d of [...dots].sort((a, b2) => pri(a) - pri(b2))) {
-      const nm = nice(d.f.name);
+      const nm = d.home ? fieldName(d.f) : shortName(d.f); // in its field the sign names the project; away from it, the full tag
       const tw = g.measureText(nm).width + 8;
       const cands: [number, number][] = [[d.x, d.y - r - 10], [d.x + r + tw / 2 + 2, d.y], [d.x - r - tw / 2 - 2, d.y], [d.x, d.y + r + 10]];
       const spot = cands.find(([cx, cy]) => {
         const box: [number, number, number, number] = [cx - tw / 2, cy - 8, cx + tw / 2, cy + 8];
+        if (box[0] < 2 || box[1] < 2 || box[2] > v.w - 2 || box[3] > v.h - 2) return false;
         const hitsDot = dots.some((o2) => o2 !== d && o2.x + r > box[0] && o2.x - r < box[2] && o2.y + r > box[1] && o2.y - r < box[3]);
         return !hitsDot && !placed.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1]);
       });
@@ -409,6 +402,7 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
       g.fillStyle = '#3b2a1e'; g.fillText(nm, cx, cy + 0.5);
     }
   }
+  if (!mini) landmarkLabels(g, v, placed, dots, r);
   // ---- player ----
   if (o.player) {
     const [x, y] = toScreen(v, o.player.x, o.player.z);
@@ -428,6 +422,37 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
     g.fillStyle = vg; g.fillRect(0, 0, v.w, v.h);
   }
   return hits;
+}
+
+/** Landmark names in italic serif, quietly: each one only where it hits no field sign, pin, name or farmer dot. */
+function landmarkLabels(g: CanvasRenderingContext2D, v: View, placed: [number, number, number, number][], dots: readonly { x: number; y: number }[], r: number): void {
+  const fs = Math.round(Math.max(11, Math.min(16, v.scale * 2.6)));
+  g.font = `italic 700 ${fs}px Georgia, "DejaVu Serif", serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  const items: { text: string; x: number; z: number; off: number; ink: string }[] = [];
+  for (const st of STRUCTURES) {
+    const lab = LABELS[st.id];
+    if (lab) items.push({ text: lab, x: st.x, z: st.z, off: Math.max(st.size[0], st.size[1]) * 0.55, ink: '#4a2f19' });
+  }
+  items.push({ text: 'Pond', x: POND.x, z: POND.z, off: 0, ink: '#23577f' });
+  for (const it of items) {
+    const [x, y0] = toScreen(v, it.x, it.z);
+    if (x < -60 || x > v.w + 60 || y0 < -30 || y0 > v.h + 30) continue;
+    const tw = g.measureText(it.text).width;
+    const below = y0 + it.off * v.scale + fs * 0.7 + 2;
+    // under the footprint first, then above it, then centred on it
+    for (const y of [below, y0 - it.off * v.scale - fs * 0.7 - 2, y0]) {
+      const box: [number, number, number, number] = [x - tw / 2 - 3, y - fs / 2 - 1, x + tw / 2 + 3, y + fs / 2 + 1];
+      if (box[0] < 4 || box[1] < 4 || box[2] > v.w - 4 || box[3] > v.h - 4) continue;
+      if (placed.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1])) continue;
+      if (dots.some((d) => d.x + r > box[0] && d.x - r < box[2] && d.y + r > box[1] && d.y - r < box[3])) continue;
+      placed.push(box);
+      g.lineWidth = 3.5; g.strokeStyle = 'rgba(248,238,214,.92)'; g.strokeText(it.text, x, y);
+      g.fillStyle = it.ink; g.fillText(it.text, x, y);
+      break;
+    }
+  }
 }
 
 export function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

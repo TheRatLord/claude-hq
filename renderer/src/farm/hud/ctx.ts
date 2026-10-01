@@ -7,7 +7,7 @@ import type { FrameInfo, SfxName } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
 import type { HudBindings } from './hud.ts';
 import { h } from '../../ui/dom.ts';
-import { nice } from './format.ts';
+import { shortName } from './format.ts';
 
 export { h };
 
@@ -59,11 +59,14 @@ export interface Prefs {
   minimap: boolean;
   toasts: boolean;
   hinted: boolean;
+  /** the needs-you strip is folded down to its count chip */
   compactStrip: boolean;
+  /** terminal drawer height as a fraction of the viewport (0 = default) */
+  drawerH: number;
 }
 const PREFS_KEY = 'valley.hud.prefs';
 export function loadPrefs(): Prefs {
-  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false };
+  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0 };
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (raw) return { ...def, ...(JSON.parse(raw) as Partial<Prefs>) };
@@ -99,7 +102,7 @@ export interface HudCtx {
   kick(): void;
 }
 
-export function createPanels(ctx: () => HudCtx, host: HTMLElement, backdrop: HTMLElement): Panels {
+export function createPanels(ctx: () => HudCtx, host: HTMLElement, backdrop: HTMLElement, changed: () => void = () => {}): Panels {
   const all = new Map<PanelId, Panel>();
   let cur: Panel | null = null;
   let modal = false;
@@ -134,6 +137,7 @@ export function createPanels(ctx: () => HudCtx, host: HTMLElement, backdrop: HTM
         const auto = p.el.querySelector<HTMLElement>('[data-autofocus]');
         (auto ?? p.el).focus({ preventScroll: true });
       }
+      changed();
     },
     close() {
       if (!cur) return;
@@ -149,6 +153,7 @@ export function createPanels(ctx: () => HudCtx, host: HTMLElement, backdrop: HTM
       else (document.activeElement as HTMLElement | null)?.blur?.();
       lastFocus = null;
       c.b?.setModal(false);
+      changed();
     },
     toggle(id, arg) { if (cur?.id === id) self.close(); else self.open(id, arg); },
     current: () => cur,
@@ -192,7 +197,7 @@ export function typingIn(t: EventTarget | null): boolean {
 
 export function displayName(s: ValleyState | null, id: string): string {
   const f = s?.farmers.get(id) ?? s?.helpers.get(id);
-  return f ? nice(f.name) : id;
+  return f ? shortName(f) : id;
 }
 
 /** A standard wooden-framed panel skeleton: frame > plaque title + close + body. */

@@ -30,15 +30,26 @@ export function createPause(ctx: HudCtx): Panel {
   }
 
   function menu(): HTMLElement {
-    const big = (label: string, ico: string, fn: () => void, cls = '') => h(`button.vh-btn${cls}`, { type: 'button', onclick: fn }, icon(ico), label);
+    const big = (label: string, ico: string, key: string, fn: () => void, cls = '') => h(`button.vh-btn${cls}`, { type: 'button', onclick: fn, 'data-testid': `pause-${label.split(' ')[0].toLowerCase()}` }, icon(ico), label, key ? h('kbd.vh-k', { text: key }) : null);
+    const leader = S.get('leaderKey') || 'Ctrl+`';
     return h('div.main', null,
-      big('Back to the valley', ICONS.play, () => ctx.panels.close(), '.primary'),
-      big('Farm ledger', ICONS.book, () => ctx.panels.open('roster')),
-      big('Map', ICONS.map, () => ctx.panels.open('map')),
-      big('Mailbox', ICONS.mail, () => ctx.panels.open('mailbox')),
-      big('Almanac (system stats)', ICONS.stats, () => ctx.panels.open('stats')),
-      big('Settings', ICONS.gear, () => setTab('settings')),
-      big('Controls', ICONS.keyboard, () => setTab('controls')));
+      big('Back to the valley', ICONS.play, 'Esc', () => ctx.panels.close(), '.primary'),
+      big('Terminals', ICONS.terminal, leader, () => { const id = bestId(); if (id) ctx.openTerminal(id); else ctx.panels.open('drawer'); }),
+      big('Farm ledger', ICONS.book, 'Tab', () => ctx.panels.open('roster')),
+      big('Map', ICONS.map, 'M', () => ctx.panels.open('map')),
+      big('Mailbox', ICONS.mail, 'J', () => ctx.panels.open('mailbox')),
+      big('Noticeboard', ICONS.board, 'B', () => ctx.panels.open('noticeboard')),
+      big('Almanac (system stats)', ICONS.stats, '', () => ctx.panels.open('stats')),
+      big('Settings', ICONS.gear, '', () => setTab('settings')),
+      big('Controls', ICONS.keyboard, '', () => setTab('controls')));
+  }
+
+  /** who the Terminals entry opens: whoever needs you first, else anyone (the drawer's list switches) */
+  function bestId(): string | null {
+    const s = ctx.state();
+    if (!s) return null;
+    const fs = [...s.farmers.values()];
+    return (fs.find((f) => f.needsYou) ?? fs.find((f) => f.unseenDone) ?? fs[0])?.id ?? [...s.helpers.keys()][0] ?? null;
   }
 
   function settings(): HTMLElement {
@@ -74,7 +85,7 @@ export function createPause(ctx: HudCtx): Panel {
       h('label.vh-set', null, h('span', { text: 'Graphics quality' }), quality),
       range('Field of view', 'fov', 55, 75, 1, (v) => `${v}°`),
       flag('Head bob', 'headBob'), flag('Reduced motion', 'reducedMotion'),
-      pref('Corner minimap (N)', 'minimap'), pref('Pop-up toasts', 'toasts'), pref('Compact needs-you cards', 'compactStrip'),
+      pref('Corner minimap (N)', 'minimap'), pref('Pop-up toasts', 'toasts'), pref('Fold the needs-you list (Alt+0)', 'compactStrip'),
       h('h4', { text: 'Terminal' }),
       range('Text size', 'termFontPx', 8, 32, 1, (v) => `${v}px`),
       h('label.vh-set', null, h('span', { text: 'Leader key (close / open)' }), leader),
@@ -94,7 +105,8 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['E'], 'talk / use'), ...row(['F'], 'open terminal of the farmer in front'),
       ...row(['M'], 'map (click a farmer → terminal)'), ...row(['Tab'], 'farm ledger'),
       ...row(['J'], 'mailbox'), ...row(['N'], 'toggle minimap'),
-      ...row(['Alt+1…9'], "open the Nth needs-you farmer's terminal"), ...row([leader], 'open / close terminal drawer'),
+      ...row(['Alt+1…9'], "open the Nth needs-you farmer's terminal"), ...row(['Alt+0'], 'fold / unfold the needs-you list'),
+      ...row([leader], 'open / close terminal drawer'),
       ...row(['Ctrl+PgUp', 'PgDn'], 'next / previous terminal'), ...row(['Esc'], 'close (in a terminal: only while watching)'),
       ...row(['type'], 'in a terminal: take control'), ...row(['Wheel ↑'], 'terminal scrollback'),
       ...row(['F3'], 'performance overlay'), ...row(['B'], 'noticeboard'));

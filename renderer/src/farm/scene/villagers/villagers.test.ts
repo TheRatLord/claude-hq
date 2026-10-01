@@ -106,7 +106,7 @@ test('rounds and beats are deterministic', () => {
 });
 
 const farmer = (name: string, o: Partial<FarmerView> = {}): FarmerView => ({
-  id: name, name, kind: 'claude', seed: name, tier: 'opus', plotId: 'p1', spot: 0, status: 'working', job: 'plant', jobSince: 0, rawJob: 'plant',
+  id: name, name, project: name, tag: name, kind: 'claude', seed: name, tier: 'opus', plotId: 'p1', spot: 0, status: 'working', job: 'plant', jobSince: 0, rawJob: 'plant',
   detail: '', title: null, needsYou: false, unseenDone: false, struggle: 0, mood: 'happy', busy: 0, ducklings: [], said: null, question: null,
   options: [], todos: null, work: null, context: null, lastActive: 0, ...o,
 });

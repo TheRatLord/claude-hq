@@ -11,7 +11,7 @@ import type { FarmerView, ValleyState } from '../model/types.ts';
 import { createTermView, type TermView } from '../../ui/terminal/view.ts';
 import type { TerminalKeyAction } from '../../ui/terminal/keys.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
-import { HELPER_LABEL, JOB_LABEL, nice, seedHue, STATUS_LABEL, STATUS_RANK } from './format.ts';
+import { altName, HELPER_LABEL, JOB_LABEL, nice, seedHue, shortName, STATUS_LABEL, STATUS_RANK } from './format.ts';
 import { h, type HudCtx, type Panel } from './ctx.ts';
 
 export interface Drawer extends Panel {
@@ -52,13 +52,47 @@ export function createDrawer(ctx: HudCtx): Drawer {
   const ask = h('div.vh-dask', { hidden: true, 'data-testid': 'drawer-ask' }, icon(ICONS.bang), askQ, askOpts);
   const notices = h('div');
   const host = h('div.host', { 'data-testid': 'drawer-host' });
-  const empty = h('div.vh-dempty', { text: 'Pick a farmer on the left.' });
+  const empty = h('div.vh-dempty', null, h('span', { text: 'Pick a farmer on the left.' }), h('small', { text: 'Every agent and shell in herdr has its terminal here.' }));
   const term = h('div.vh-dterm', null, notices, host, empty);
   const hintL = h('span');
   const flashEl = h('span.flash');
   const foot = h('div.vh-dfoot', null, hintL, flashEl);
   const main = h('div.vh-dmain', null, head, ask, term, foot);
-  const el = h('section.vh-drawer.vh-wood', { 'aria-label': 'Terminal', 'data-testid': 'drawer' }, side, main);
+  // drag the grip on the top edge to resize (double-click resets); the height is a browser-local HUD preference
+  const grip = h('button.vh-dgrip', { type: 'button', title: 'Drag to resize · double-click: full height', 'aria-label': 'Resize the terminal drawer' });
+  const el = h('section.vh-drawer.vh-wood', { 'aria-label': 'Terminal', 'data-testid': 'drawer' }, grip, side, main);
+  const applyHeight = () => { if (ctx.prefs.drawerH > 0) el.style.setProperty('--dh', `${Math.round(ctx.prefs.drawerH * 1000) / 10}vh`); else el.style.removeProperty('--dh'); };
+  applyHeight();
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    el.classList.add('sizing');
+    const bottom = el.getBoundingClientRect().bottom;
+    const move = (m: PointerEvent) => {
+      const frac = Math.max(0.35, Math.min(0.96, (bottom - m.clientY) / innerHeight));
+      ctx.prefs.drawerH = frac;
+      applyHeight();
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      el.classList.remove('sizing');
+      ctx.savePrefs();
+      view?.relayout();
+      view?.focus();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up, { once: true });
+    grip.addEventListener('pointercancel', up, { once: true });
+  });
+  grip.addEventListener('dblclick', () => { ctx.prefs.drawerH = 0; ctx.savePrefs(); applyHeight(); view?.focus(); });
+  grip.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault(); e.stopPropagation();
+    const cur = ctx.prefs.drawerH || 0.88;
+    ctx.prefs.drawerH = Math.max(0.35, Math.min(0.96, cur + (e.key === 'ArrowUp' ? 0.05 : -0.05)));
+    ctx.savePrefs(); applyHeight();
+  });
 
   let view: TermView | null = null;
   let last: string | null = null;
@@ -77,15 +111,30 @@ export function createDrawer(ctx: HudCtx): Drawer {
     const s = ctx.state();
     const id = view?.id ?? last;
     empty.style.display = view ? 'none' : '';
-    if (!id) return;
+    host.style.display = view ? '' : 'none';
+    el.classList.toggle('none', !id);
+    if (!id) {
+      const any = !!s && (s.farmers.size + s.helpers.size) > 0;
+      const away = s?.link === 'offline' || s?.link === 'herdr-offline' || s?.link === 'connecting';
+      nameEl.textContent = 'Terminals';
+      sub.textContent = '';
+      (empty.firstElementChild as HTMLElement).textContent = any ? 'Pick a farmer on the left.' : away ? 'Waiting for herdr…' : 'No terminals yet.';
+      (empty.lastElementChild as HTMLElement).textContent = any ? 'Every agent and shell in herdr has its terminal here.' : away ? 'The terminals come back the moment herdr answers.' : 'Open a herdr workspace and start an agent; its terminal shows up here.';
+      hintL.replaceChildren();
+      ask.hidden = true;
+      renderList(s);
+      return;
+    }
     const f = s?.farmers.get(id), hp = s?.helpers.get(id), e = d.net.entity(id);
     const plot = s?.plots.get(f?.plotId ?? hp?.plotId ?? '');
-    const name = nice(f?.name ?? hp?.name ?? e?.name ?? id);
+    const name = f ? shortName(f) : hp ? shortName(hp) : nice(e?.name ?? id);
     if (face.dataset.for !== id) { face.dataset.for = id; face.innerHTML = f ? farmerFace(seedHue(f.seed), f.kind, f.tier) : ICONS.scarecrow; }
     nameEl.textContent = name;
     if (f) { pillEl.className = `vh-pill st-${f.status}`; pillEl.textContent = f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status]; }
     else { pillEl.className = 'vh-pill'; pillEl.textContent = hp?.running ? 'Running' : 'Shell'; }
-    sub.replaceChildren(plot ? icon(KIND_ICON[plot.kind]) : '', ` ${plot?.label ?? e?.workspace.label ?? ''} · `,
+    const alt = f ? altName(f) : hp ? altName(hp) : '';
+    nameEl.title = alt ? `${name} · ${alt}` : name;
+    sub.replaceChildren(plot ? icon(KIND_ICON[plot.kind]) : '', ` ${plot?.label ?? e?.workspace.label ?? ''}${alt ? ` · ${alt}` : ''} · `,
       f ? `${JOB_LABEL[f.job]}${f.detail ? ` · ${f.detail}` : ''}` : hp ? `${HELPER_LABEL[hp.activity]} · ${hp.label}` : '');
     const st = view?.state?.state ?? 'connecting';
     const control = view?.mode === 'control' && view.life.input === 'send';
@@ -133,6 +182,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     }
     items = next;
     const cur = view?.id ?? last;
+    if (!next.length) { if (listSig !== 'none') { listSig = 'none'; dlist.replaceChildren(h('div.none', { text: 'Nobody in the valley yet.' })); } return; }
     const sig = `${cur}#${next.map((it) => { const f = s.farmers.get(it.id); return `${it.id}${f ? f.status + f.needsYou + f.unseenDone : ''}`; }).join(',')}`;
     if (sig === listSig) return;
     listSig = sig;
@@ -145,9 +195,9 @@ export function createDrawer(ctx: HudCtx): Drawer {
         dlist.append(h('div.g', null, p ? icon(KIND_ICON[p.kind]) : null, it.plot));
       }
       const f = s.farmers.get(it.id), hp = s.helpers.get(it.id);
-      const btn = h('button', { type: 'button', role: 'option', 'aria-current': String(it.id === cur), 'data-id': it.id, title: f ? `${STATUS_LABEL[f.status]} · ${JOB_LABEL[f.job]}` : 'Shell' },
+      const btn = h('button', { type: 'button', role: 'option', 'aria-current': String(it.id === cur), 'aria-selected': String(it.id === cur), 'data-id': it.id, title: f ? `${nice(f.name)} · ${STATUS_LABEL[f.status]} · ${JOB_LABEL[f.job]}` : `${nice(hp?.name ?? it.id)} · shell` },
         f ? h(`i.vh-dot.st-${f.status}`) : h('i.vh-dot', { style: { background: hp?.running ? '#ffd23f' : '#ddd' } }),
-        h('span.nm', { text: nice(f?.name ?? hp?.name ?? it.id) }),
+        h('span.nm', { text: f ? shortName(f) : hp ? shortName(hp) : it.id }),
         f?.needsYou ? h('span.tag', { text: '!' }) : f?.unseenDone ? h('span.tag.done', { text: '✓' }) : null);
       const id = it.id;
       btn.addEventListener('click', () => show(id));

@@ -34,3 +34,23 @@ test('filter matches every word anywhere', () => {
   assert.ok(matches('fl need', 'Flint', 'needs you'));
   assert.ok(!matches('flint cows', 'Flint', 'wheat'));
 });
+
+test('short names: the in-world tag first, the full name as the secondary line, one glyph per pin', async () => {
+  const { shortName, altName, pinGlyph } = await import('./format.ts');
+  assert.equal(shortName({ name: '~/src/claude-hq/renderer', tag: 'claude-hq' }), 'claude-hq');
+  assert.equal(shortName({ name: 'flint' }), 'Flint');
+  assert.equal(altName({ name: '~/src/claude-hq', tag: 'claude-hq' }), '~/src/claude-hq');
+  assert.equal(altName({ name: 'claude-hq', tag: 'claude-hq' }), '');
+  assert.equal(altName({ name: 'flint', tag: 'claude-hq·flint' }), 'Flint');
+  assert.equal(pinGlyph({ name: 'flint', tag: 'claude-hq·flint' }), 'F');
+  assert.equal(pinGlyph({ name: 'x', tag: 'webshop·2' }), '2');
+  assert.equal(pinGlyph({ name: 'x', tag: 'webshop' }), 'W');
+});
+
+test('field-grouped lists show only the distinguishing part of the tag', async () => {
+  const { fieldName, altName } = await import('./format.ts');
+  assert.equal(fieldName({ name: 'flint', tag: 'claude-hq·flint' }), 'flint');
+  assert.equal(fieldName({ name: 'x', tag: 'webshop·2' }), 'webshop·2');
+  assert.equal(fieldName({ name: '~/src/claude-hq', tag: 'claude-hq' }), 'claude-hq');
+  assert.equal(altName({ name: 'flint', tag: 'claude-hq·flint' }, 'flint'), '');
+});

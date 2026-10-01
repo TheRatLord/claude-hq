@@ -10,7 +10,7 @@ import { HANGOUTS, POND, SITES, structure } from '../../world/map.ts';
 import type { FarmerView, Job } from '../../model/types.ts';
 
 const view = (job: Job, id = 'f1'): FarmerView => ({
-  id, name: 'x', kind: 'claude', seed: id, tier: 'opus', plotId: 'p', spot: 0, status: 'working', job, jobSince: 0, rawJob: job, detail: '',
+  id, name: 'x', project: 'x', tag: 'x', kind: 'claude', seed: id, tier: 'opus', plotId: 'p', spot: 0, status: 'working', job, jobSince: 0, rawJob: job, detail: '',
   title: null, needsYou: false, unseenDone: false, struggle: 0, mood: 'happy', busy: 0, ducklings: [], said: null, question: null,
   options: [], todos: null, work: null, context: null, lastActive: 0,
 });

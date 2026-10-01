@@ -198,7 +198,7 @@ test('trail returns points behind the walker', () => {
 });
 
 const view = (job: Job, spot = 0): FarmerView => ({
-  id: 'f1', name: 'x', kind: 'claude', seed: 's', tier: 'opus', plotId: 'p', spot, status: 'working', job, jobSince: 0, rawJob: job, detail: '',
+  id: 'f1', name: 'x', project: 'x', tag: 'x', kind: 'claude', seed: 's', tier: 'opus', plotId: 'p', spot, status: 'working', job, jobSince: 0, rawJob: job, detail: '',
   title: null, needsYou: job === 'ask', unseenDone: false, struggle: 0, mood: 'focused', busy: 0.5, ducklings: [], said: null, question: null,
   options: [], todos: null, work: null, context: null, lastActive: 0,
 });
@@ -256,4 +256,14 @@ test('the HUD portrait draws the same sprite grids and colours as the 3D mascots
   // with a tier the hat is added on top; the sprite is unchanged
   assert.ok(farmerFace(0, 'claude', 'opus').length > clawd.length);
   assert.equal(count(farmerFace(0, 'claude', 'opus'), KIND_COLORS.claude.body), cells(CLAWD.front, '#a'));
+});
+
+test('labels: a building between the eye and a label hides it', async () => {
+  const { segmentHitsBox } = await import('./labels.ts');
+  const barn = { x: 0, z: 0, yaw: 0.4, w: 6, d: 4, y0: 0, y1: 5 };
+  assert.equal(segmentHitsBox(barn, -10, 1.6, 0, 10, 2, 0), true, 'straight through');
+  assert.equal(segmentHitsBox(barn, -10, 1.6, 0, 10, 8, 0), true, 'clips the wall on the way up');
+  assert.equal(segmentHitsBox(barn, -10, 6, 0, 10, 6, 0), false, 'over the roof');
+  assert.equal(segmentHitsBox(barn, -10, 1.6, 8, 10, 2, 8), false, 'beside it');
+  assert.equal(segmentHitsBox(barn, -10, 1.6, 0, -5, 2, 0), false, 'label in front of it');
 });

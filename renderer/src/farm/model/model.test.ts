@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createJobSmoother, rawJob, MIN_DWELL_S, shortDetail } from './jobs.ts';
-import { createValley, unreadCount, TILL_MS, HARVEST_MS } from './valley.ts';
+import { createValley, unreadCount, TILL_MS, HARVEST_MS, projectName, worldTags } from './valley.ts';
 import type { ValleySource } from './valley.ts';
 import { skyAt, seasonOf, daylightAt } from './sky.ts';
 import type { Entity, Workspace } from '../../../../shared/protocol.ts';
@@ -126,4 +126,40 @@ test('valley: letters for blocks resolve themselves; farmers get spots per plot'
   assert.equal(unreadCount(v.state.letters), 0);
   v.ingest({ t: 'event', id: 'p2', kind: 'commit', detail: { push: false } });
   assert.equal(v.state.letters[0].kind, 'commit');
+});
+
+test('projectName: the project directory name, never a path', () => {
+  assert.equal(projectName({ project: 'claude-hq', cwd: '/home/d/src/claude-hq/renderer', name: '/home/d/src/claude-hq' }), 'claude-hq');
+  assert.equal(projectName({ project: '', cwd: '/home/d/src/tinker/', name: 'x' }), 'tinker');
+  assert.equal(projectName({ project: '/home/d/work/api', cwd: '/', name: 'x' }), 'api');
+  assert.equal(projectName({ project: '/', cwd: '/', name: 'flint' }), 'flint');
+});
+
+test('worldTags: unique per field, with a short distinguishing suffix', () => {
+  assert.deepEqual(worldTags([{ name: 'a', project: 'hq' }, { name: 'b', project: 'web' }]), ['hq', 'web']);
+  // twins with clean one-word names keep them
+  assert.deepEqual(worldTags([{ name: 'Flint', project: 'hq' }, { name: 'Gale', project: 'hq' }, { name: 'x', project: 'web' }]), ['hq·flint', 'hq·gale', 'web']);
+  // paths, duplicates or the project itself: numbered, first one bare
+  assert.deepEqual(worldTags([{ name: '/home/d/src/hq', project: 'hq' }, { name: 'hq·2', project: 'hq' }, { name: 'Flint', project: 'hq' }]), ['hq', 'hq·2', 'hq·3']);
+  assert.deepEqual(worldTags([{ name: 'fix the login bug please', project: 'hq' }, { name: 'review', project: 'hq' }]), ['hq', 'hq·2']);
+});
+
+test('valley: farmers and helpers carry project + in-world tag; the full name stays', () => {
+  const f = fakeSource();
+  const v = createValley(f.src, { wallNow: () => 0 });
+  const a = ws('w1', 0), b = ws('w2', 1);
+  f.s.workspaces = [a, b];
+  const long = '/home/david/src/claude-hq/renderer/src/farm';
+  f.s.entities = [
+    ent('p1', a, { name: long, project: 'claude-hq', cwd: long }),
+    ent('p2', a, { name: `${long}·2`, project: 'claude-hq', cwd: long, paneIndex: 1 }),
+    ent('p3', b, { name: 'origami', project: 'origami', cwd: '/home/david/origami' }),
+    ent('p4', a, { kind: 'shell', name: 'zsh', project: 'claude-hq', cwd: long, paneIndex: 2 }),
+  ];
+  v.tick();
+  const F = (id: string) => v.state.farmers.get(id)!;
+  assert.deepEqual([F('p1').tag, F('p2').tag, F('p3').tag], ['claude-hq', 'claude-hq·2', 'origami']);
+  assert.equal(F('p1').name, long);
+  assert.equal(F('p1').project, 'claude-hq');
+  assert.equal(v.state.helpers.get('p4')?.tag, 'claude-hq', 'helpers are named apart from farmers');
 });

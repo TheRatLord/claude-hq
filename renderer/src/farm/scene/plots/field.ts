@@ -706,7 +706,7 @@ export class Field {
         if (it) {
           const hid = id;
           st.off = it.add({
-            id: `helper:${hid}`, kind: 'helper', verb: 'Check on', label: () => env.helper(hid)?.name ?? 'scarecrow', reach: 3.2,
+            id: `helper:${hid}`, kind: 'helper', verb: 'Check on', label: () => env.helper(hid)?.tag ?? 'scarecrow', reach: 3.2,
             pos: (out) => { const sp = helperSpot(this.site, env.helper(hid)?.spot ?? 0); return out.set(sp.x, this.site.y + 1.6, sp.z); },
             enabled: () => !this.closing,
             use: () => this.hooks.ui?.helperCard(hid),

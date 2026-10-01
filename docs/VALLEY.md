@@ -120,6 +120,59 @@ the lead.
 * **No external assets.** All geometry, textures (canvas), sounds (WebAudio synthesis) and fonts (system) are made
   in code. No downloads, no image/model/audio files.
 
+## In-world UI (names, speech bubbles, the interaction tag)
+
+* **Names in 3D are project names.** `FarmerView.tag` / `HelperView.tag` (model, tested): the project directory name
+  (`project` = basename of the repo / cwd), unique per field — twins become `claude-hq·flint` when each has a clean
+  one-word herdr name, else `claude-hq`, `claude-hq·2`, … Nameplates, bubbles, the prompt and the noticeboard use
+  `tag`; `name` (herdr name / tab label, may be a long path) is for HUD panels with room (secondary line / tooltip).
+* **One anchored overlay system** (`hud/anchors.ts` + `anchors.css`, pure maths in `hud/anchor.ts`): nameplates,
+  villager signboards, duckling labels and speech / needs-you bubbles are DOM nodes projected over their world anchor
+  every frame (transform only, nodes reused per key, sizes measured once per text change), so they stay crisp at night,
+  in fog and rain. Scene code never touches the DOM: it calls `Labels.show(key, owner, style, title, sub, pos, alpha)`
+  (`scene/farmers/labels.ts`, which fades tags behind the big buildings via the light occluders) → `UiPort.tag`.
+  Same-owner tags stack (plate, then bubble); stacks nudge apart nearest-first; long lines wrap and page (`1/3`),
+  never truncate; tags shrink a little with distance.
+* **HUD furniture is an obstacle.** Mark any fixed HUD element `data-hud-obstacle` (its box) or
+  `data-hud-obstacle="children"` (each visible child: a card column, a toast stack); `anchors.ts` re-measures them only
+  when they change (Resize/MutationObserver on the marked elements, window resize), and bubbles, nameplates and the
+  interaction tag step around them (`placeRect` in `hud/anchor.ts`: up, sideways, then down; hidden or edge-pinned
+  when nothing fits).
+* **`ui.say(text, ms, { who, from })`** is a timed bubble anchored to the speaker: `from` (an interactable id), else
+  whatever was under the crosshair when it was said (most lines come from `use()`); characters get a speech bubble,
+  structures / props a parchment note. If you turn away it pins to the screen edge with an arrow toward the speaker.
+* **The interaction tag** (`hud/prompt.ts`) sits beside the focused target (right side, flips left when there is no
+  room; never over the face): name + role, `[E] verb`, `[F] alt`, and the hint line. The crosshair stays.
+  Shots: `goto=villager:posy` plus `eval=setTimeout(()=>dispatchEvent(new KeyboardEvent('keydown',{code:'KeyF'})),1200)`
+  for a villager line; `__valley.force(id, { status: 'working', activity: { cls: 'talk', … }, lastText })` for a talker.
+
+
+## HUD panels (screen furniture, menus, the terminal drawer)
+
+* **Every terminal is a menu away.** Ledger (Tab), map (M: click a pin, or ↑/↓ + Enter in the side list, which lists
+  farmers *and* scarecrows), mailbox (J: the Needs you tab pre-selects the first ask, 1–9 answers it, Enter opens the
+  terminal), the needs-you strip (Alt+1…9), the pause menu's Terminals entry, the dock's terminal button and the leader
+  key (Ctrl+`). `browser-tests/valley.spec.ts` checks the ledger, map-click, map-keyboard, mailbox and needs-you paths:
+  add a flow there when you add one.
+* **Names:** compact spots (needs-you cards, map pins and the side lists, ledger rows, the drawer's list and header,
+  the farmer card's title) use `shortName()` = the in-world `tag`; the full herdr name goes on a secondary line or a
+  tooltip via `altName()` (`hud/format.ts`, tested). Map pins carry one glyph (`pinGlyph()`: the tag's suffix).
+* **Layout:** top-left the status sign (clock, link, *needs / working / done* counts) over the needs-you strip; top-right
+  the minimap over the dock (mail, map, ledger, terminals, menu; z above the backdrop); bottom-right the toasts over the
+  key-hints bar (whose first item is the "Click: look around" reminder while the mouse is free). The needs-you strip is
+  a count chip (click or Alt+0 folds it; the fold is a HUD pref) and the asks newest-first: one open card with the answer
+  buttons, the rest one-line rows (click / Enter opens one; the green button opens its terminal).
+* **Layer classes** (on `.vh-layer`, set by `hud.ts` / `needs.ts`; style against them instead of measuring): `modal` (any
+  panel), `covered` (a big panel, not the side card: hints hide, toasts shrink to two compact ones and only asks /
+  errors pop, the offline banner docks bottom-left), `has-needs` (the strip is unfolded: centred panels shift right by
+  `--lw` so the strip stays clickable beside them; the mailbox sits between the strip and the dock).
+* **Empty and offline states:** every list says what is going on and what to do (no farmers yet → open a herdr
+  workspace; herdr offline → it comes back on its own); never an empty frame.
+* **Drawer:** bottom-anchored; drag the grip on its top edge (or ↑/↓ on the focused grip) to resize, double-click to
+  reset; the height is the `drawerH` HUD pref (browser-local, like `minimap`, `toasts`, `compactStrip`).
+* **Performance:** the 4 Hz tick refreshes only what changed (keyed rows with per-row signatures: `syncList`, the
+  ledger's row cache); nothing in the HUD reads layout per frame except the map canvas, which redraws only while open.
+  Check with `npm run shoot -- --scenario crowd40 --shot name=r,pose=hub,panel=roster` (fps in the printed perf).
 ## Coordinates & conventions
 
 * Metres. +x east, +z south (north = −z), +y up. Models are built facing **+z** (their front); `rotation.y = yaw`

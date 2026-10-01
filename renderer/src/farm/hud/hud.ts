@@ -12,6 +12,7 @@
 import './hud.css';
 import type { AgentPort, Letter, ValleyEvent, ValleyState } from '../model/types.ts';
 import { unreadCount } from '../model/valley.ts';
+import type { Camera } from 'three';
 import type { FrameInfo, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
 import { createPanels, displayName, h, loadPrefs, savePrefs, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
@@ -20,6 +21,7 @@ import { ICONS, icon } from './icons.ts';
 import { createStatus } from './status.ts';
 import { createNeeds } from './needs.ts';
 import { createPrompt } from './prompt.ts';
+import { createAnchors } from './anchors.ts';
 import { createToasts } from './toasts.ts';
 import { createMapPanel, createMinimap } from './map.ts';
 import { warmBase } from './mapdraw.ts';
@@ -49,6 +51,8 @@ export interface HudBindings {
   locate?(id: string): { x: number; z: number } | null;
   /** optional: the persistent villagers (scene service 'villagers'), drawn as role pins on the maps */
   villagers?(): readonly VillagerPin[];
+  /** optional: the scene camera, for the anchored overlays (nameplates, speech bubbles, the interaction tag) */
+  camera?(): Camera;
 }
 
 export interface Hud {
@@ -86,7 +90,7 @@ export function createHud(d: HudDeps): Hud {
     travel: (id) => {
       if (!b) return;
       if (panels.current()?.id === 'pause') panels.close();
-      try { b.travelTo(id); toasts.sayText(`Off to see ${ctx.nameOf(id)}!`, 1600); } catch (e) { console.warn('[hud] travel failed', e); }
+      try { b.travelTo(id); anchors.say(`Off to see ${ctx.nameOf(id)}!`, 1600, undefined, 'screen'); } catch (e) { console.warn('[hud] travel failed', e); }
     },
     answer: async (id, key, label) => {
       if (!b) return false;
@@ -105,17 +109,20 @@ export function createHud(d: HudDeps): Hud {
     savePrefs: () => savePrefs(prefs),
     kick: () => tick(),
   };
-  const panels = createPanels(() => ctx, panelHost, backdrop);
+  const panels = createPanels(() => ctx, panelHost, backdrop, () => overlays());
   ctx.panels = panels;
 
   // ---- overlays ----
   const status = createStatus(ctx);
   const needs = createNeeds(ctx);
   const prompt = createPrompt(ctx);
+  const anchors = createAnchors(() => prompt.focused() ?? safeFocus(), () => b?.interact.all() ?? null);
+  const safeFocus = () => { try { return b?.interact.focused() ?? null; } catch { return null; } };
   const toasts = createToasts(ctx);
   const minimap = createMinimap(ctx);
   const hint = createHint();
-  const freehint = h('div.vh-freehint', { text: 'Click the valley to look around · Esc for the menu' });
+  // the free-mouse reminder is the first item of the key-hints bar (one bar at the bottom, not two)
+  const freehint = h('span.vh-freehint', null, h('kbd.vh-k', { text: 'Click' }), 'look around');
 
   // ---- read-state persistence (letter ids restart per page; keys survive) ----
   const readKeys = new Set<string>();
@@ -142,22 +149,45 @@ export function createHud(d: HudDeps): Hud {
     return bt;
   };
   const mailBtn = dockBtn('Mailbox', 'J', ICONS.mail, () => panels.toggle('mailbox'), 'dock-mail');
+  const leaderLabel = () => (d.settings.get('leaderKey') || 'Ctrl+`').replace(/^Ctrl\+/i, '⌃').replace(/^Alt\+/i, '⌥');
+  const termBtn = dockBtn('Terminals', leaderLabel(), ICONS.terminal, () => toggleTerminal(), 'dock-term');
   const dock = h('div.vh-dock', null, minimap.el, h('div.vh-dockbtns.vh-wood', null,
     mailBtn,
     dockBtn('Map', 'M', ICONS.map, () => panels.toggle('map'), 'dock-map'),
     dockBtn('Farm ledger', 'Tab', ICONS.book, () => panels.toggle('roster'), 'dock-roster'),
+    termBtn,
     dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')));
-  const hints = h('div.vh-hints', null,
+  const leaderKbd = h('kbd.vh-k');
+  const hints = h('div.vh-hints', null, freehint,
+    h('span.opt', null, h('kbd.vh-k', { text: 'E' }), 'talk'), h('span.opt', null, h('kbd.vh-k', { text: 'F' }), 'terminal'),
     h('span', null, h('kbd.vh-k', { text: 'M' }), 'map'), h('span', null, h('kbd.vh-k', { text: 'Tab' }), 'ledger'),
-    h('span', null, h('kbd.vh-k', { text: 'J' }), 'mail'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'));
+    h('span', null, h('kbd.vh-k', { text: 'J' }), 'mail'), h('span', null, h('kbd.vh-k', { text: 'B' }), 'board'),
+    h('span', null, leaderKbd, 'terminals'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'));
+  const syncLeader = () => {
+    const spec = d.settings.get('leaderKey') || 'Ctrl+`';
+    leaderKbd.textContent = spec;
+    (termBtn.querySelector('.key') as HTMLElement).textContent = leaderLabel();
+    termBtn.title = `Terminals (${spec})`;
+  };
+  syncLeader();
 
-  layer.append(prompt.cross, prompt.el, toasts.say, dock, hints, freehint, hint, backdrop, h('div.vh-left', null, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner);
+  layer.append(anchors.el, prompt.cross, prompt.el, dock, hints, hint, backdrop, h('div.vh-left', null, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner);
+  // fixed HUD furniture the anchored bubbles / interaction tag keep clear of (anchors.ts measures them on change only;
+  // "children" = each visible child, so the gaps in a column or a toast stack stay usable)
+  for (const [el, how] of [[status.el, ''], [needs.el, 'children'], [dock, 'children'], [hints, ''], [hint, ''],
+    [toasts.el, 'children'], [status.banner, ''], [drawer.el, '']] as const) el.dataset.hudObstacle = how;
+  anchors.watch(layer);
 
   // ---- terminal opener ----
   function openTerminal(id: string, enterAt?: number): void {
     if (!b) { pendingOpen = { id, enterAt }; return; }
     if (panels.isOpen('drawer')) drawer.show(id, enterAt);
     else panels.open('drawer', { id, enterAt });
+  }
+  function toggleTerminal(): void {
+    if (panels.isOpen('drawer')) { panels.close(); return; }
+    const id = bestTerminal();
+    if (id) openTerminal(id); else toasts.push({ text: 'No terminals to open yet', sub: 'open a herdr workspace and its agents show up here', level: 'info' });
   }
   function bestTerminal(): string | null {
     const s = ctx.state();
@@ -183,12 +213,12 @@ export function createHud(d: HudDeps): Hud {
     const cur = panels.current();
     if (leaderMatch(e)) {
       handled(e);
-      if (cur?.id === 'drawer') panels.close();
-      else { const id = bestTerminal(); if (id) openTerminal(id); else toasts.push({ text: 'No terminals to open yet', level: 'info' }); }
+      toggleTerminal();
       return;
     }
     if (cur?.id === 'drawer') { if (cur.key?.(e)) handled(e); return; }
-    // Alt+1…9: the Nth needs-you farmer's terminal, from anywhere
+    // Alt+0 folds / unfolds the needs-you list; Alt+1…9: the Nth needs-you farmer's terminal, from anywhere
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'Digit0') { handled(e); needs.toggle(); return; }
     if (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) {
       const f = needs.list()[Number(e.code.slice(5)) - 1];
       if (f) { handled(e); openTerminal(f.id); }
@@ -224,7 +254,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyJ': handled(e); panels.open('mailbox'); return;
       case 'KeyM': handled(e); panels.open('map'); return;
       case 'KeyB': handled(e); panels.open('noticeboard'); return;
-      case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); toasts.sayText(prefs.minimap ? 'Minimap on' : 'Minimap off', 900); return;
+      case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Tab': handled(e); panels.open('roster'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
     }
@@ -243,6 +273,8 @@ export function createHud(d: HudDeps): Hud {
   function overlays(): void {
     const locked = !!document.pointerLockElement;
     layer.classList.toggle('modal', panels.modal);
+    // a big panel (not a side card) is up: corner furniture steps back (toasts shrink, the banner docks, hints hide)
+    layer.classList.toggle('covered', panels.modal && !panels.current()?.light);
     const idle = !locked && !panels.modal;
     hint.classList.toggle('show', idle && !prefs.hinted && !!b);
     freehint.classList.toggle('show', idle && prefs.hinted && !!b);
@@ -285,7 +317,7 @@ export function createHud(d: HudDeps): Hud {
   // ---- network toasts, settings ----
   d.net.onToast((level, text) => toasts.push({ text, level: level === 'info' ? 'info' : level }));
   const motion = () => layer.classList.toggle('reduced', !!d.settings.get('reducedMotion'));
-  d.settings.onChange((c) => { if ('reducedMotion' in c) motion(); });
+  d.settings.onChange((c) => { if ('reducedMotion' in c) motion(); if ('leaderKey' in c) syncLeader(); });
   motion();
 
   // dev/test handle (screenshots, browser tests): open any panel or terminal without key simulation
@@ -311,7 +343,8 @@ export function createHud(d: HudDeps): Hud {
       noticeboard: () => panels.open('noticeboard'),
       stats: () => panels.open('stats'),
       roster: () => panels.open('roster'),
-      say: (t, ms) => toasts.sayText(t, ms),
+      say: (t, ms, o) => anchors.say(t, ms, o),
+      tag: (t) => anchors.submit(t),
     },
     openTerminal: (id) => openTerminal(id),
     bind(x) {
@@ -326,7 +359,8 @@ export function createHud(d: HudDeps): Hud {
       if (pendingOpen) { const p = pendingOpen; pendingOpen = null; openTerminal(p.id, p.enterAt); }
     },
     update(f) {
-      prompt.update();
+      const cam = b?.camera?.() ?? null;
+      anchors.frame(cam, prompt.update(cam, anchors.fit));
       minimap.frame(f);
       const cur = panels.current();
       if (cur?.frame) { try { cur.frame(f); } catch (e) { console.error('[hud] panel frame', e); } }

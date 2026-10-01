@@ -4,7 +4,7 @@
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
-import { dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS } from './format.ts';
+import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
@@ -19,12 +19,12 @@ function groups(s: ValleyState, q: string): Group[] {
   };
   for (const f of s.farmers.values()) {
     const plot = s.plots.get(f.plotId);
-    if (!matches(q, f.name, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, f.needsYou ? 'needs blocked' : '')) continue;
+    if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, f.needsYou ? 'needs blocked' : '')) continue;
     get(f.plotId).rows.push({ id: f.id, kind: 'farmer', f });
   }
   for (const hp of s.helpers.values()) {
     const plot = s.plots.get(hp.plotId);
-    if (!matches(q, hp.name, hp.label, plot?.label, 'shell scarecrow', HELPER_LABEL[hp.activity])) continue;
+    if (!matches(q, hp.name, hp.tag, hp.project, hp.label, plot?.label, 'shell scarecrow', HELPER_LABEL[hp.activity])) continue;
     get(hp.plotId).rows.push({ id: hp.id, kind: 'helper', hp });
   }
   const rank = (r: Row) => (r.kind === 'farmer' ? STATUS_RANK[r.f.status] : 10);
@@ -62,37 +62,70 @@ export function createRoster(ctx: HudCtx): Panel {
   const walk = (id: string) => { ctx.travel(id); ctx.panels.close(); };
   const card = (id: string) => ctx.panels.open('card', id);
 
-  function rowFor(r: Row, s: ValleyState): HTMLElement {
+  const rowSig = (r: Row): string => r.kind === 'farmer'
+    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}`
+    : `h|${r.hp.name}|${r.hp.tag}|${r.hp.running}|${r.hp.exit}|${r.hp.label}|${r.hp.activity}|${r.hp.ports.join(',')}`;
+
+  function rowFor(r: Row): HTMLElement {
+    const id = r.id;
+    const row = h('div.vh-row', { role: 'option', 'data-testid': 'roster-row', 'data-id': id });
+    row.addEventListener('click', () => { select(id, false); });
+    row.addEventListener('dblclick', () => open(id));
+    return row;
+  }
+
+  /** (re)fill a row's cells; called only when its signature changes */
+  function fillRow(row: HTMLElement, r: Row): void {
     const id = r.id;
     const acts = h('div.acts', null,
-      h('button.vh-btn.small.primary', { type: 'button', title: 'Open terminal (Enter)', onclick: (e: Event) => { e.stopPropagation(); open(id); } }, icon(ICONS.terminal), 'Terminal'),
-      h('button.vh-btn.small', { type: 'button', title: 'Walk there (Shift+Enter)', 'aria-label': 'Walk there', onclick: (e: Event) => { e.stopPropagation(); walk(id); } }, icon(ICONS.walk)));
-    let row: HTMLElement;
+      h('button.vh-btn.small.term', { type: 'button', title: 'Open terminal (Enter)', onclick: (e: Event) => { e.stopPropagation(); open(id); } }, icon(ICONS.terminal), 'Terminal'),
+      h('button.vh-btn.small', { type: 'button', title: 'Walk there (W)', 'aria-label': 'Walk there', onclick: (e: Event) => { e.stopPropagation(); walk(id); } }, icon(ICONS.walk)));
+    const ago = h('span.t', { title: 'time since their last activity' });
     if (r.kind === 'farmer') {
       const f = r.f;
       const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
       const job = f.needsYou
-        ? h('div.job.ask', { title: f.question ?? '' }, `Needs you: ${f.question ?? 'waiting'}`)
-        : h('div.job', { title: `${JOB_REAL[f.job]}${f.detail ? ` · ${f.detail}` : ''}` }, h('b', { text: JOB_LABEL[f.job] }), f.detail ? ` · ${f.detail}` : f.title ? ` · ${f.title}` : '');
+        ? h('div.job.ask', { title: f.question ?? '' }, h('b', { text: 'Needs you: ' }), f.question ?? 'waiting')
+        : h('div.job', { title: `${JOB_REAL[f.job]}${f.detail ? ` · ${f.detail}` : ''}${f.title ? `\nTask: ${f.title}` : ''}` }, h('b', { text: JOB_LABEL[f.job] }), f.detail ? ` · ${f.detail}` : f.title ? ` · ${f.title}` : '');
       const ducks = f.ducklings.filter((d) => d.active).length;
-      row = h('div.vh-row', { role: 'option', 'data-testid': 'roster-row', 'data-id': id, 'data-status': f.status },
-        face, h('div.nm', null, nice(f.name), h('small', { text: kindLine(f) })),
+      const nm = fieldName(f), alt = altName(f, nm);
+      row.className = 'vh-row';
+      row.dataset.status = f.status;
+      row.replaceChildren(
+        face, h('div.nm', { title: [shortName(f), alt].filter(Boolean).join('\n') }, h('span.n', { text: nm }), h('small', { text: alt ? `${kindLine(f)} · ${alt}` : kindLine(f) })),
         h('div', null, h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status] })),
         job,
-        h('div.since', null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, h('span.t', { text: dur(s.now - f.lastActive) })),
+        h('div.since', null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
         acts);
     } else {
       const hp = r.hp;
       const face = h('div.face'); face.innerHTML = ICONS.scarecrow;
-      row = h('div.vh-row.helper', { role: 'option', 'data-testid': 'roster-row', 'data-id': id, 'data-status': 'helper' },
-        face, h('div.nm', null, nice(hp.name), h('small', { text: 'Scarecrow · shell' })),
-        h('div', null, h('span.vh-pill', { text: hp.running ? 'Running' : hp.exit === 'fail' ? 'Failed' : 'Resting', style: { background: hp.running ? '#d9a520' : hp.exit === 'fail' ? '#d0584a' : '#b09a78' } })),
+      const nm = fieldName(hp), alt = altName(hp, nm);
+      row.className = 'vh-row helper';
+      row.dataset.status = 'helper';
+      row.replaceChildren(
+        face, h('div.nm', { title: [shortName(hp), alt].filter(Boolean).join('\n') }, h('span.n', { text: nm }), h('small', { text: alt ? `Scarecrow · ${alt}` : 'Scarecrow · shell' })),
+        h('div', null, h('span.vh-pill', { text: hp.running ? 'Running' : hp.exit === 'fail' ? 'Failed' : 'Resting', style: { background: hp.running ? '#c98f12' : hp.exit === 'fail' ? '#d0584a' : '#a08a68' } })),
         h('div.job', { title: hp.label }, h('b', { text: HELPER_LABEL[hp.activity] }), hp.label ? ` · ${hp.label}` : '', hp.ports.length ? ` · :${hp.ports.join(' :')}` : ''),
-        h('div.since'), acts);
+        h('div.since', null, ago), acts);
     }
-    row.addEventListener('click', () => { select(id, false); });
-    row.addEventListener('dblclick', () => open(id));
-    return row;
+    const on = id === sel;
+    row.classList.toggle('sel', on);
+    row.setAttribute('aria-selected', String(on));
+  }
+
+  function groupHead(g: Group): HTMLElement {
+    const p = g.plot;
+    const n = g.rows.length;
+    let need = 0, work = 0;
+    for (const r of g.rows) if (r.kind === 'farmer') { if (r.f.needsYou) need++; else if (r.f.status === 'working') work++; }
+    const bits = [p ? STAGE_LABEL[p.stage] : '', `${n} hand${n === 1 ? '' : 's'}`, work ? `${work} working` : ''].filter(Boolean).join(' · ');
+    return h('div.vh-ghead', null,
+      p ? icon(KIND_ICON[p.kind]) : icon(ICONS.sprout),
+      h('span.gl', { text: p?.label ?? 'Wandering' }),
+      p ? h('span.swatch', { style: { background: WS_COLORS[p.colorIndex % WS_COLORS.length] } }) : null,
+      h('span.gs', { text: bits }),
+      need ? h('span.vh-pill.st-blocked', { text: `${need} need${need === 1 ? 's' : ''} you` }) : null);
   }
 
   function render(force = false): void {
@@ -100,40 +133,65 @@ export function createRoster(ctx: HudCtx): Panel {
     if (!s) return;
     const q = input.value;
     const gs = groups(s, q);
-    const nsig = `${q}#${gs.map((g) => `${g.plot?.id}:${g.plot?.stage}:${g.rows.map((r) => r.kind === 'farmer' ? `${r.id}/${r.f.status}/${r.f.job}/${r.f.detail}/${r.f.needsYou}/${r.f.unseenDone}/${r.f.ducklings.length}/${r.f.question}` : `${r.id}/${r.hp.running}/${r.hp.exit}/${r.hp.label}`).join(',')}`).join('|')}`;
-    if (nsig !== sig || force) {
-      sig = nsig;
+    const order = gs.map((g) => `${g.plot?.id ?? '-'}:${g.rows.map((r) => r.id).join(',')}`).join('|');
+    if (force) { rowsEl.replaceChildren(); rowEls.clear(); sig = ''; }
+    if (order !== sig) {
+      // structure changed (rows added / removed / regrouped / reordered): rebuild the group shells, keep row nodes
+      sig = order;
       const keep = rowsEl.scrollTop;
-      rowsEl.replaceChildren();
-      rowEls.clear();
+      const nodes: HTMLElement[] = [];
       visible = [];
+      const live = new Set<string>();
       for (const g of gs) {
-        const p = g.plot;
-        const head = h('div.vh-ghead', null,
-          p ? icon(KIND_ICON[p.kind]) : icon(ICONS.sprout),
-          h('span.gl', { text: p?.label ?? 'Wandering' }),
-          p ? h('span.swatch', { style: { background: WS_COLORS[p.colorIndex % WS_COLORS.length] } }) : null,
-          h('span.gs', { text: p ? `${STAGE_LABEL[p.stage]} · ${g.rows.length} hand${g.rows.length === 1 ? '' : 's'}` : '' }));
-        const grp = h('div.vh-group', null, head);
-        for (const r of g.rows) { const re = rowFor(r, s); rowEls.set(r.id, re); visible.push(r.id); grp.append(re); }
-        rowsEl.append(grp);
+        const grp = h('div.vh-group', { role: 'group', 'aria-label': g.plot?.label ?? 'Wandering' }, groupHead(g));
+        grp.dataset.head = '';
+        for (const r of g.rows) {
+          let re = rowEls.get(r.id);
+          if (!re) { re = rowFor(r); rowEls.set(r.id, re); }
+          live.add(r.id); visible.push(r.id); grp.append(re);
+        }
+        nodes.push(grp);
       }
-      if (!visible.length) rowsEl.append(h('div.vh-empty', null, icon(ICONS.sprout), q ? `Nobody matches "${q}".` : 'No farmers in the valley yet. Open a herdr workspace to till a field.'));
+      for (const id of [...rowEls.keys()]) if (!live.has(id)) rowEls.delete(id);
+      const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
+      if (!visible.length) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), q ? `Nobody matches "${q}".`
+        : away ? 'The ledger is waiting for herdr.' : 'No farmers in the valley yet.',
+        h('small', { text: q ? 'Try a name, a field, a job (“testing”) or “needs”.' : away ? 'Your agents appear here the moment herdr answers again.' : 'Open a herdr workspace and start an agent: a field gets tilled and its farmer shows up here.' })));
+      rowsEl.replaceChildren(...nodes);
       if (!sel || !visible.includes(sel)) sel = visible[0] ?? null;
-      select(sel, false);
       rowsEl.scrollTop = keep;
-    } else {
-      for (const f of s.farmers.values()) {
-        const t = rowEls.get(f.id)?.querySelector('.since .t');
-        if (t) t.textContent = dur(s.now - f.lastActive);
+    }
+    // per row: refill only what changed; the time column is cheap text
+    const byId = new Map<string, Row>();
+    for (const g of gs) for (const r of g.rows) byId.set(r.id, r);
+    for (const g of gs) {
+      const head = rowEls.get(g.rows[0]?.id ?? '')?.parentElement?.firstElementChild as HTMLElement | null | undefined;
+      const hs = `${g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}`;
+      if (head && head.dataset.sig !== hs) { const nh = groupHead(g); nh.dataset.sig = hs; head.replaceWith(nh); }
+    }
+    for (const [id, re] of rowEls) {
+      const r = byId.get(id);
+      if (!r) continue;
+      const rs = rowSig(r);
+      if (re.dataset.sig !== rs) { re.dataset.sig = rs; fillRow(re, r); }
+      if (r.kind === 'farmer') {
+        const t = re.querySelector('.since .t');
+        const txt = dur(s.now - r.f.lastActive);
+        if (t && t.textContent !== txt) t.textContent = txt;
       }
     }
+    select(sel, false);
     let need = 0, work = 0, done = 0;
     for (const f of s.farmers.values()) { if (f.needsYou) need++; else if (f.status === 'working') work++; else if (f.unseenDone) done++; }
-    summary.replaceChildren(
-      h('span.vh-pill.st-blocked', { text: `${need} need you` }),
-      h('span.vh-pill.st-working', { text: `${work} working` }),
-      h('span.vh-pill.st-done', { text: `${done} done` }));
+    const ssig = `${need}|${work}|${done}|${s.farmers.size}|${s.helpers.size}`;
+    if (summary.dataset.sig !== ssig) {
+      summary.dataset.sig = ssig;
+      summary.replaceChildren(
+        ...(need ? [h('span.vh-pill.st-blocked', { text: `${need} need${need === 1 ? 's' : ''} you` })] : []),
+        ...(work ? [h('span.vh-pill.st-working', { text: `${work} working` })] : []),
+        ...(done ? [h('span.vh-pill.st-done', { text: `${done} done` })] : []),
+        h('span.vh-muted.count', { text: `${s.farmers.size} farmer${s.farmers.size === 1 ? '' : 's'}${s.helpers.size ? ` · ${s.helpers.size} scarecrow${s.helpers.size === 1 ? '' : 's'}` : ''}` }));
+    }
   }
 
   input.addEventListener('input', () => { sel = null; render(); });

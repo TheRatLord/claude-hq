@@ -4,7 +4,7 @@
  */
 import type { Gauges } from '../model/types.ts';
 import { ICONS, KIND_ICON, LETTER_ICON, SEASON_ICON, WEATHER_ICON, icon } from './icons.ts';
-import { ago, bytesRate, clock, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL, STAGE_LABEL, STATUS_RANK, WEATHER_LABEL } from './format.ts';
+import { ago, bytesRate, clock, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL, shortName, STAGE_LABEL, STATUS_RANK, WEATHER_LABEL } from './format.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
 export function createNoticeboard(ctx: HudCtx): Panel {
@@ -18,6 +18,14 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     if (onClick) { n.addEventListener('click', onClick); n.addEventListener('keydown', (e) => { if (e.key === 'Enter') onClick(); }); }
     return n;
   };
+  /** a list line you can click or Enter (stopPropagation: the note itself may be clickable too) */
+  const go = (fn: () => void, title: string, ...kids: (Node | string | null)[]) => {
+    const li = h('li.go', { tabindex: '0', role: 'button', title }, ...kids);
+    li.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); fn(); } });
+    return li;
+  };
+  const more = (n: number, what: string) => (n > 0 ? h('div.more', { text: `+${n} more ${what}` }) : null);
   function render(): void {
     const s = ctx.state();
     if (!s) return;
@@ -33,7 +41,8 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     notes.push(note(need.length ? '.ask' : '', need.length ? () => ctx.panels.open('mailbox', 'needs') : null,
       h('h4', null, icon(ICONS.bang), 'Needs you'),
       h('div.big', { text: String(need.length) }),
-      need.length ? h('ul', null, ...need.slice(0, 5).map((f) => h('li', null, h('b', { text: nice(f.name) }), `: ${f.question ?? 'waiting'}`))) : h('p', { text: 'Nobody is waiting. Enjoy the sunshine.' })));
+      need.length ? h('ul', null, ...need.slice(0, 5).map((f) => go(() => ctx.panels.open('card', f.id), `${nice(f.name)}: answer`, h('b', { text: shortName(f) }), `: ${f.question ?? 'waiting'}`))) : h('p', { text: 'Nobody is waiting. Enjoy the sunshine.' }),
+      more(need.length - 5, 'waiting')));
     const wk = s.sky.weather.kind === 'clear' && s.sky.daylight < 0.25 ? 'night' : s.sky.weather.kind;
     notes.push(note('', () => ctx.panels.open('stats'),
       h('h4', null, icon(WEATHER_ICON[wk]), 'Today in the valley'),
@@ -42,13 +51,20 @@ export function createNoticeboard(ctx: HudCtx): Panel {
       s.gauges ? h('p', { text: `${s.gauges.host}: CPU ${pct(s.gauges.cpu)} · RAM ${pct(s.gauges.mem)}` }) : null,
       h('p.vh-muted', { text: 'Tap for the full almanac of numbers.', style: { fontSize: '12px' } })));
     if (done.length) notes.push(note('', null, h('h4', null, icon(LETTER_ICON.finished), 'Ready for review'),
-      h('ul', null, ...done.slice(0, 6).map((f) => { const li = h('li', null, h('b', { text: nice(f.name) }), f.title ? ` — ${f.title}` : ''); li.style.cursor = 'pointer'; li.addEventListener('click', () => ctx.openTerminal(f.id)); return li; }))));
+      h('ul', null, ...done.slice(0, 6).map((f) => go(() => ctx.openTerminal(f.id), `${nice(f.name)}: open the terminal`, h('b', { text: shortName(f) }), f.title ? ` — ${f.title}` : ''))),
+      more(done.length - 6, 'to review')));
+    if (!plots.length) {
+      const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
+      notes.push(note('', null, h('h4', null, icon(ICONS.sprout), 'No fields yet'),
+        h('p', { text: away ? "herdr isn't answering yet. The fields come back as soon as it does." : 'Open a herdr workspace: a field gets tilled, and its agents come out to farm it.' })));
+    }
     for (const p of plots.slice(0, 9)) {
       const fs = p.farmers.map((id) => s.farmers.get(id)).filter((f) => !!f);
       notes.push(note('', () => ctx.panels.open('roster'),
         h('h4', null, icon(KIND_ICON[p.kind]), p.label),
         h('p.vh-muted', { text: `${STAGE_LABEL[p.stage]} · ${fs.length} farmer${fs.length === 1 ? '' : 's'}${p.helpers.length ? ` · ${p.helpers.length} scarecrow${p.helpers.length === 1 ? '' : 's'}` : ''}`, style: { fontSize: '12.5px', fontWeight: '700' } }),
-        h('ul', null, ...fs.slice(0, 5).map((f) => h('li', null, h(`i.vh-dot.st-${f.status}`, { style: { marginRight: '5px' } }), h('b', { text: nice(f.name) }), ` ${f.needsYou ? 'needs you' : JOB_LABEL[f.job].toLowerCase()}`)))));
+        h('ul', null, ...fs.slice(0, 5).map((f) => go(() => ctx.openTerminal(f.id), `${nice(f.name)}: open the terminal`, h(`i.vh-dot.st-${f.status}`, { style: { marginRight: '5px' } }), h('b', { text: shortName(f) }), ` ${f.needsYou ? 'needs you' : JOB_LABEL[f.job].toLowerCase()}`))),
+        more(fs.length - 5, 'farmers')));
     }
     if (s.letters.length) notes.push(note('', () => ctx.panels.open('mailbox'),
       h('h4', null, icon(ICONS.mail), 'Latest letters'),

@@ -37,7 +37,19 @@ export interface Duckling { id: string; label: string; type: string; active: boo
 export interface FarmerView {
   /** pane id */
   id: string;
+  /**
+   * Full display name from the server (herdr agent name → tab label → basename(cwd), `·2` deduped). Can be a long path
+   * (live tab labels): HUD panels with room show it as a secondary line / tooltip; never draw it in the 3D world.
+   */
   name: string;
+  /** project directory name: basename of the entity's project (repo) or cwd. Not unique. */
+  project: string;
+  /**
+   * The in-world name (nameplates, speech bubbles, the interaction prompt, the noticeboard): `project`, unique within
+   * the field. Duplicates get a short distinguishing suffix (`claude-hq·flint` when every twin has a clean one-word
+   * name, else `claude-hq`, `claude-hq·2`, …). See `worldTags()`.
+   */
+  tag: string;
   kind: Exclude<Kind, 'shell'>;
   /** stable appearance seed */
   seed: string;
@@ -83,7 +95,12 @@ export interface FarmerView {
 /** Shell panes: not farmers but farm helpers (a scarecrow with a lantern). */
 export interface HelperView {
   id: string;
+  /** full display name (may be a long path; HUD panels only) */
   name: string;
+  /** project directory name (basename of project / cwd) */
+  project: string;
+  /** in-world name: `project`, unique among the field's helpers (same rule as FarmerView.tag) */
+  tag: string;
   plotId: string;
   spot: number;
   /** what the shell's foreground process is doing */

@@ -16,7 +16,9 @@ async function openValley(page: Page, origin: string, token: string): Promise<st
   return errors;
 }
 
-test.describe.configure({ timeout: 120_000 });
+// one worker for this file: two full 3D valleys rendering at once starve each other's frames and the timing-
+// sensitive HUD steps flake ('default' runs the tests in order without skipping the rest on a failure)
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 test('the valley HUD reaches every terminal: ledger, map click, needs-you answers', async ({ page, demoServer }) => {
   const errors = await openValley(page, demoServer.origin, demoServer.token);
@@ -105,5 +107,61 @@ test('the terminal drawer keeps Escape for the agent while in control', async ({
   await expect(drawer).toBeVisible();
   await page.getByTestId('drawer-close').click();
   await expect(drawer).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('every terminal is reachable by keyboard: map list, mailbox answers, the menu', async ({ page, demoServer }) => {
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  await expect(page.getByTestId('link-state')).toHaveText(/demo valley|live/i);
+  await expect(page.getByTestId('need-card').first()).toBeVisible();
+
+  // --- map: ↓ walks the side list (farmers and scarecrows), Enter opens that terminal ---
+  await page.keyboard.press('m');
+  await expect(page.getByTestId('panel-map')).toBeVisible();
+  await expect(page.getByTestId('map-helper').first()).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  const picked = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id ?? null);
+  expect(picked).toBeTruthy();
+  await page.keyboard.press('Enter');
+  const drawer = page.getByTestId('drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator(`.hq-thost[data-id="${picked}"]`)).toBeVisible();
+  await page.getByTestId('drawer-close').click();
+  await expect(drawer).toBeHidden();
+
+  // --- mailbox: J opens the Needs you tab with the first ask selected, a digit answers it ---
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-pause')).toBeVisible();
+  await page.keyboard.press('j');
+  await expect(page.getByTestId('panel-mailbox')).toBeVisible();
+  await expect(page.getByTestId('mail-tab-needs')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-testid="letter"].sel')).toHaveCount(1);
+  await page.keyboard.press('1');
+  await expect(page.getByTestId('toasts')).toContainText(/Answered/i);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-mailbox')).toBeHidden();
+
+  // --- Alt+0 folds the needs-you list down to its chip; the chip unfolds it (clickable above the pause menu) ---
+  const strip = page.getByTestId('needs-strip');
+  if (await strip.isVisible()) {
+    await page.keyboard.press('Alt+Digit0');
+    await expect(page.getByTestId('need-card')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('panel-pause')).toBeVisible();
+    await page.getByTestId('needs-chip').click();
+    await expect(page.getByTestId('need-card').first()).toBeVisible();
+  } else {
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('panel-pause')).toBeVisible();
+  }
+
+  // --- the menu's Terminals entry opens the drawer on somebody ---
+  await page.getByTestId('pause-terminals').click();
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator('.hq-thost')).toHaveCount(1);
+  await page.getByTestId('drawer-close').click();
+  await expect(drawer).toBeHidden();
+
   expect(errors).toEqual([]);
 });

@@ -367,10 +367,10 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     const farmers = [...v.farmers.values()];
     const plotLabel = (f: FarmerView) => v.plots.get(f.plotId)?.label ?? '';
     const where = (f: FarmerView) => { const l = plotLabel(f); return l ? ` · ${l}` : ''; };
-    for (const f of farmers) if (f.needsYou) out.push({ pin: 'red', title: f.name, tag: 'needs you', body: `${f.question ?? (f.detail || 'waiting for your answer')}${where(f)}` });
-    for (const f of farmers) if (!f.needsYou && f.struggle >= 2) out.push({ pin: 'orange', title: f.name, tag: 'struggling', body: `${f.detail || f.title || 'stuck on something'}${where(f)}` });
-    for (const f of farmers) if (!f.needsYou && f.unseenDone) out.push({ pin: 'green', title: f.name, tag: 'done ✓', body: `${f.title ?? (f.detail || 'all done')}${where(f)}` });
-    for (const f of farmers) if (f.todos && f.todos.total > 0 && f.todos.done < f.todos.total && !f.needsYou) out.push({ pin: 'blue', title: f.name, tag: `${f.todos.done}/${f.todos.total}`, body: f.todos.current ?? f.title ?? '' });
+    for (const f of farmers) if (f.needsYou) out.push({ pin: 'red', title: f.tag, tag: 'needs you', body: `${f.question ?? (f.detail || 'waiting for your answer')}${where(f)}` });
+    for (const f of farmers) if (!f.needsYou && f.struggle >= 2) out.push({ pin: 'orange', title: f.tag, tag: 'struggling', body: `${f.detail || f.title || 'stuck on something'}${where(f)}` });
+    for (const f of farmers) if (!f.needsYou && f.unseenDone) out.push({ pin: 'green', title: f.tag, tag: 'done ✓', body: `${f.title ?? (f.detail || 'all done')}${where(f)}` });
+    for (const f of farmers) if (f.todos && f.todos.total > 0 && f.todos.done < f.todos.total && !f.needsYou) out.push({ pin: 'blue', title: f.tag, tag: `${f.todos.done}/${f.todos.total}`, body: f.todos.current ?? f.title ?? '' });
     return out;
   }
   function arrowsFrom(v: ValleyState): Arrow[] {

@@ -44,7 +44,7 @@ function buildField(kind: PlotKind, o: AssetBuildOpts): THREE.Object3D {
     id: `gallery-${kind}`, label: LABELS[i % LABELS.length], site: 0, kind, colorIndex: i % WORKSPACE_COLORS.length, stage, stageSince: 0,
     growth: 0.8, vigor: 1, status: 'working', farmers: [], helpers: ['gallery-helper'],
   };
-  const helper: HelperView = { id: 'gallery-helper', name: 'dev server', plotId: plot.id, spot: 1, activity: 'serve', running: true, exit: 'ok', label: 'npm run dev', ports: [5173] };
+  const helper: HelperView = { id: 'gallery-helper', name: 'dev server', project: 'claude-hq', tag: 'claude-hq', plotId: plot.id, spot: 1, activity: 'serve', running: true, exit: 'ok', label: 'npm run dev', ports: [5173] };
   const batches = new Batches();
   const fx = new Fx(batches);
   const weedU = cropUniforms(0.22);

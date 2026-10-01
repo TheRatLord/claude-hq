@@ -5,7 +5,7 @@
  */
 import type { Letter, ValleyState } from '../model/types.ts';
 import { ICONS, LETTER_ICON, icon } from './icons.ts';
-import { ago, LETTER_LABEL, letterTitle, nice } from './format.ts';
+import { ago, LETTER_LABEL, letterTitle, nice, shortName } from './format.ts';
 import { framePanel, h, syncList, typingIn, type HudCtx, type Panel } from './ctx.ts';
 
 type Filter = 'needs' | 'unread' | 'all';
@@ -36,7 +36,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
   const tabBar = h('div.vh-tabs', { role: 'tablist' });
   for (const [f, label] of [['needs', 'Needs you'], ['unread', 'Unread'], ['all', 'All']] as const) {
     const b = h('button.vh-tab', { type: 'button', role: 'tab', 'data-testid': `mail-tab-${f}` }, label, h('span.n'));
-    b.addEventListener('click', () => { filter = f; sel = null; render(); });
+    b.addEventListener('click', () => setFilter(f));
     tabs.set(f, b);
     tabBar.append(b);
   }
@@ -50,6 +50,11 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     h('span', null, h('kbd.vh-k', { text: 'J' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.bar', null, tabBar, allBtn), listEl, foot);
   let shown: Letter[] = [];
+  /** the Needs you tab pre-selects the first ask (without marking it read), so 1–9 / Enter act on it straight away */
+  const setFilter = (f: Filter) => {
+    filter = f; sel = null; render();
+    if (f === 'needs' && shown[0]) { sel = shown[0].id; render(); }
+  };
 
   const pick = (letters: readonly Letter[], by: Filter = filter): Letter[] => {
     if (by === 'needs') return letters.filter((l) => l.kind === 'needs-you' && !l.resolved);
@@ -85,7 +90,8 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     ic.title = LETTER_LABEL[l.kind];
     (node.querySelector('.title') as HTMLElement).textContent = letterTitle(l);
     const from = node.querySelector('.from') as HTMLElement;
-    from.replaceChildren(`${nice(l.farmerName)}${l.plotLabel ? ` · ${l.plotLabel}` : ''}`, l.kind === 'needs-you' && l.resolved ? h('span.resolved-tag', { text: '  ✓ answered' }) : '');
+    const who = f ?? s?.helpers.get(l.farmerId);
+    from.replaceChildren(`${who ? shortName(who) : nice(l.farmerName)}${l.plotLabel ? ` · ${l.plotLabel}` : ''}`, l.kind === 'needs-you' && l.resolved ? h('span.resolved-tag', { text: '  ✓ answered' }) : '');
     (node.querySelector('.body') as HTMLElement).textContent = l.body || (live ? f?.question ?? '' : '');
     const answers = node.querySelector('.answers') as HTMLElement;
     answers.replaceChildren(...(live && f ? f.options.map((o) => h('button.vh-btn.small.gold.answer', {
@@ -114,7 +120,13 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     shown = pick(letters);
     syncList(listEl, shown, (l) => l.id, make, update);
     listEl.querySelector('.vh-empty')?.remove();
-    if (!shown.length) listEl.append(h('div.vh-empty', null, icon(ICONS.mail), filter === 'needs' ? 'Nobody is waiting on you. Lovely.' : filter === 'unread' ? 'All caught up.' : 'The mailbox is empty.'));
+    if (!shown.length) {
+      const away = s?.link === 'offline' || s?.link === 'herdr-offline' || s?.link === 'connecting';
+      listEl.append(h('div.vh-empty', null, icon(ICONS.mail),
+        filter === 'needs' ? 'Nobody is waiting on you. Lovely.' : filter === 'unread' ? 'All caught up.' : 'The mailbox is empty.',
+        away ? h('small', { text: 'The post is held up while herdr is out of reach; letters arrive once it is back.' })
+          : !s?.farmers.size ? h('small', { text: 'Farmers write when they finish, get stuck or need an answer.' }) : null));
+    }
   }
 
   const move = (dir: number) => {
@@ -132,9 +144,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     onOpen(arg) {
       const s = ctx.state();
       const waiting = mailOf(s).some((l) => l.kind === 'needs-you' && !l.resolved);
-      filter = arg === 'needs' || (arg === undefined && waiting) ? 'needs' : 'all';
-      sel = null;
-      render();
+      setFilter(arg === 'needs' || (arg === undefined && waiting) ? 'needs' : 'all');
     },
     refresh: render,
     key(e) {
@@ -151,8 +161,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
       }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         const order: Filter[] = ['needs', 'unread', 'all'];
-        filter = order[(order.indexOf(filter) + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
-        sel = null; render();
+        setFilter(order[(order.indexOf(filter) + (e.key === 'ArrowRight' ? 1 : 2)) % 3]);
         return true;
       }
       return false;

@@ -48,11 +48,16 @@ export function createStatus(ctx: HudCtx): StatusCorner {
     link.textContent = s.link === 'live' && s.demo ? 'Demo valley' : LINK_LABEL[s.link];
     let need = 0, work = 0, done = 0;
     for (const f of s.farmers.values()) { if (f.needsYou) need++; else if (f.status === 'working') work++; else if (f.unseenDone) done++; }
-    counts.replaceChildren(
+    const sig = `${need}|${work}|${done}|${s.farmers.size}|${s.link}`;
+    if (counts.dataset.sig !== sig) {
+      counts.dataset.sig = sig;
+      counts.replaceChildren(
+      ...(need ? [h('span.need', null, h('b', { text: String(need) }), need === 1 ? ' needs you' : ' need you')] : []),
       ...(work ? [h('span', null, h('b', { text: String(work) }), ' working')] : []),
       ...(done ? [h('span', null, h('b', { text: String(done) }), ' done')] : []),
-      ...(!work && !done && !need ? [h('span', { text: s.farmers.size ? 'all quiet' : 'no farmers yet' })] : []),
-    );
+      ...(!work && !done && !need ? [h('span', { text: s.farmers.size ? 'all quiet' : s.link === 'live' ? 'no farmers yet' : 'waiting for herdr' })] : []),
+      );
+    }
     // banner
     const off = s.link === 'offline' || s.link === 'herdr-offline';
     banner.classList.toggle('show', off);
