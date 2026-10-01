@@ -7,3 +7,5 @@ import './farmers/assets.ts';
 import './villagers/assets.ts';
 import './life/assets.ts';
 import './forage/assets.ts';
+import './yard/assets.ts';
+import './interior/assets.ts';

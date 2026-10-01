@@ -7,7 +7,7 @@
  */
 import type { FarmerView } from '../model/types.ts';
 import { farmerFace, ICONS, icon } from './icons.ts';
-import { ago, altName, seedHue, shortName } from './format.ts';
+import { ago, altName, askOrder, seedHue, shortName } from './format.ts';
 import { h, syncList, type HudCtx } from './ctx.ts';
 
 /** rows beyond this go behind "+N more" (they are all in the mailbox's Needs you tab) */
@@ -93,7 +93,7 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
   function refresh(): void {
     const s = ctx.state();
     // newest first: the ask that just arrived is the one you are most likely looking for
-    const list = s ? [...s.farmers.values()].filter((f) => f.needsYou).sort((a, b) => b.jobSince - a.jobSince || a.id.localeCompare(b.id)) : [];
+    const list = s ? [...s.farmers.values()].filter((f) => f.needsYou).sort((a, b) => askOrder({ since: a.jobSince, id: a.id }, { since: b.jobSince, id: b.id })) : [];
     current = list;
     const folded = ctx.prefs.compactStrip;
     el.style.display = list.length ? '' : 'none';

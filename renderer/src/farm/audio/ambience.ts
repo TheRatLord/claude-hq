@@ -21,6 +21,8 @@ interface Bed {
   scale: number;
   /** positional source (null: plain stereo bed) */
   pos: P3 | null;
+  /** skip the indoor muffle (the rain on the roof is right above you) */
+  dry?: boolean;
   opts: SpatialOpts;
   voice: LoopVoice | null;
   chain: PosChain | null;
@@ -50,7 +52,7 @@ export interface Ambience {
   dispose(): void;
 }
 
-export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () => void, externalThunderSince: () => number): Ambience {
+export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () => void, externalThunderSince: () => number, indoor: () => number = () => 0): Ambience {
   const wf = structure('waterfall'), fire = structure('campfire'), mill = structure('windmill');
   const env: LoopEnv = {
     cpu: () => ctx.valley.gauges?.cpu ?? 0.3,
@@ -65,6 +67,8 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
   const beds: Bed[] = [
     B('wind', 'wind', 0.42, (l) => l.wind),
     B('rain', 'rain', 0.6, (l) => l.rain),
+    // indoors (the farmhouse): the rain drums on the roof instead
+    { ...B('roof', 'roof', 0.75, (l) => l.rain * indoor()), dry: true },
     B('birds', 'birds', 1, (l) => l.birds),
     B('crickets', 'crickets', 0.9, (l) => l.crickets),
     B('owls', 'owls', 0.9, (l) => l.owls),
@@ -114,8 +118,8 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
     levels,
     env,
     update(now) {
-      const ac = eng.ac, amb = eng.bus('ambient');
-      if (!ac || !amb) return;
+      const ac = eng.ac, amb = eng.bus('ambient'), dry = eng.dry();
+      if (!ac || !amb || !dry) return;
       env.send = eng.send;
       measure();
       ambientLevels(inp, levels);
@@ -128,7 +132,7 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
           if (lv <= 0.004) continue;
           b.voice = buildLoop(b.kind, ac, env);
           if (b.pos) { b.chain = eng.chain(amb); b.voice.out.connect(b.chain.input); b.chain.input.gain.value = 1; }
-          else b.voice.out.connect(amb);
+          else b.voice.out.connect(b.dry ? dry : amb);
         } else if (now - b.quietSince > 8) {
           b.voice.stop();
           const ch = b.chain;

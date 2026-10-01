@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { AudioService, LightEmitter, LightsService, SceneCtx, SystemFactory } from '../context.ts';
+import type { AudioService, IndoorSpace, LightEmitter, LightsService, SceneCtx, SystemFactory } from '../context.ts';
 import type { FarmerView, Season, ValleyState } from '../../model/types.ts';
 import { unreadCount } from '../../model/valley.ts';
 import { SITES, STRUCTURES, WORLD, heightAt } from '../../world/map.ts';
@@ -343,7 +343,11 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     ctx.interact.add({ id: 'barn', kind: 'structure', verb: 'Read', label: gaugeLabel('Barn thermometer', () => (lvl.tempC == null ? 'no sensor' : `${Math.round(lvl.tempC)} °C`)), pos: vec('barn', BARN.thermo.x, 1.6, BARN.d / 2 + 0.3), reach: 4.5, use: () => ctx.ui.stats() }),
     ctx.interact.add({ id: 'signpost', kind: 'structure', verb: 'Read', label: () => 'Signpost', pos: vec('signpost', 0, 2.2, 0), reach: 3.6, use: () => ctx.ui.map() }),
     ctx.interact.add({ id: 'farmhouse:bell', kind: 'prop', verb: 'Ring', label: () => 'Bell', pos: vec('farmhouse', FARMHOUSE.bell.x + 0.5, 2.1, FARMHOUSE.bell.z), use: () => { ringBell(); say('Ding-a-ling! Everyone looks up… then back to work.'); } }),
-    ctx.interact.add({ id: 'farmhouse:door', kind: 'prop', verb: 'Knock on', label: () => 'Farmhouse door', pos: vec('farmhouse', 0, 1.6, FARMHOUSE.door.z + 0.1), use: () => say('Knock knock… nobody home. Everyone is out in the fields!') }),
+    // the door opens into the walk-in farmhouse (scene/interior, service 'indoors') when it is there
+    ctx.interact.add({ id: 'farmhouse:door', kind: 'prop', verb: 'Go inside', label: () => 'Farmhouse', pos: vec('farmhouse', 0, 1.6, FARMHOUSE.door.z + 0.1), hint: () => 'home: the hearth, the Almanac, your collections', use: () => {
+      const home = ctx.services.get('indoors') as IndoorSpace | undefined;
+      if (home) home.enter(); else say('Knock knock… nobody home. Everyone is out in the fields!');
+    } }),
     ctx.interact.add({ id: 'campfire', kind: 'structure', verb: 'Warm hands at', label: () => 'Campfire', pos: vec('campfire', 0, 0.6, 0), reach: 3.4, use: () => say(ctx.lighting.night > 0.5 ? 'Toasty. The stars are out over the valley. 🔥' : 'Warm and crackly. Someone left marshmallows.') }),
     ctx.interact.add({ id: 'dock', kind: 'structure', verb: 'Fish from', label: () => 'Dock', pos: vec('dock', 0, dockOpts(S('dock')).deckY + 0.6, DOCK.z1 - 0.8), reach: 3.2, hint: () => 'look out over the water and press E to cast', use: () => say('Look out over the water and press E to cast a line. Then E again when the bobber dips! 🎣') }),
     ctx.interact.add({ id: 'pergola', kind: 'structure', verb: 'Study', label: () => 'Checkers game', pos: vec('pergola', 0, PERGOLA.floor + 0.75, 0), reach: 3.2, use: () => say(CHECKERS_SAY[Math.floor(Math.random() * CHECKERS_SAY.length)]) }),

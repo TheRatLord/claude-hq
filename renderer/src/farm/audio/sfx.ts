@@ -272,6 +272,13 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
     bubble(c, out, t + 0.12, 620 * o.pitch, 0.08);
     return tone(c, out, t, { type: 'triangle', f: 1760 * o.pitch, gain: 0.09, a: 0.003, d: 0.25, delay: 0.05 });
   },
+  coins: (c, out, t, o) => {
+    // a little "cha-ching": a pocketful of bits clinking into the till, then a bright bell
+    let end = t;
+    for (let i = 0; i < 5; i++) end = tone(c, out, t, { type: 'triangle', f: (2300 + o.rnd() * 900) * o.pitch, gain: 0.07, a: 0.001, d: 0.09 + o.rnd() * 0.06, delay: i * 0.045 + o.rnd() * 0.02 });
+    noise(c, out, t, { kind: 'white', gain: 0.05, a: 0.001, d: 0.04, filter: 'bandpass', f: 5200, q: 3, delay: 0.02 });
+    return max(end, tone(c, out, t, { f: 1568 * o.pitch, f2: 2093 * o.pitch, glide: 0.02, gain: 0.08, a: 0.003, d: 0.35, delay: 0.26 }));
+  },
   reel: (c, out, t, o) => {
     let end = t;
     for (let i = 0; i < 14; i++) end = noise(c, out, t, { kind: 'white', gain: 0.1 * (1 - i / 20), a: 0.001, d: 0.018, filter: 'bandpass', f: (2600 + (i % 3) * 300) * o.pitch, q: 4, delay: i * 0.045 });

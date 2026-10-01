@@ -7,7 +7,7 @@
  * that are dropped. Debug: `__valley.ctx.services.get('audio')._debug` (unlock, stats, render, renderAll, music).
  */
 import * as THREE from 'three';
-import type { AudioService, FarmerLocator, SceneCtx, SfxName, SystemFactory } from '../scene/context.ts';
+import type { AudioService, FarmerLocator, IndoorSpace, SceneCtx, SfxName, SystemFactory } from '../scene/context.ts';
 import { SFX } from '../scene/context.ts';
 import type { Settings } from '../../core/settings.ts';
 import type { ValleyEvent } from '../model/types.ts';
@@ -134,7 +134,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
   interface ExtLoop { kind: LoopKind; pos: THREE.Vector3 | null; vol: number; voice: LoopVoice | null; chain: PosChain | null; dead: boolean }
   const loops = new Set<ExtLoop>();
   function startLoop(l: ExtLoop): void {
-    const ac = eng.ac, dest = eng.bus('ambient');
+    const ac = eng.ac, dest = eng.dry();
     if (!ac || !dest || l.voice || l.dead) return;
     l.voice = buildLoop(l.kind, ac, amb.env);
     l.voice.out.gain.value = 1;
@@ -157,7 +157,8 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     };
   }
 
-  const amb = createAmbience(ctx, eng, () => fire('thunder:ambient', SFX_RECIPES.thunder, 'ambient', { volume: 0.35 + rnd() * 0.3, pitch: 0.9 }, 0.4, SPATIAL.ambient), () => now() - lastExternalThunder);
+  let indoorK = 0;
+  const amb = createAmbience(ctx, eng, () => fire('thunder:ambient', SFX_RECIPES.thunder, 'ambient', { volume: 0.35 + rnd() * 0.3, pitch: 0.9 }, 0.4, SPATIAL.ambient), () => now() - lastExternalThunder, () => indoorK);
 
   // ---- the service
   const svc: ValleyAudio & { _debug: unknown } = {
@@ -168,6 +169,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     voice,
     loop,
     critter,
+    indoors(k) { indoorK = Math.max(0, Math.min(1, k)); eng.setIndoor(indoorK); },
     _debug: {
       unlock: () => eng.unlock(),
       stats: () => ({
@@ -179,7 +181,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       render: (name: string, seconds = 3) => renderOffline(name, seconds),
       async renderAll(seconds = 3) {
         const names = [...SFX, ...CRITTER_SOUNDS.map((c) => `critter:${c}`), 'voice:ann:happy:4', 'voice:bob:question:5', 'voice:cy:sad:4', 'voice:di:excited:8',
-          ...(['wind', 'rain', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs'] as const).map((k) => `loop:${k}:1`), 'music:day', 'music:night'];
+          ...(['wind', 'rain', 'roof', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs'] as const).map((k) => `loop:${k}:1`), 'music:day', 'music:night'];
         const out: Record<string, unknown> = {};
         for (const n of names) out[n] = await renderOffline(n, n.startsWith('loop:') || n.startsWith('music') ? 8 : seconds);
         return out;
@@ -224,7 +226,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // ---- music once unlocked
   eng.onReady((ac) => {
-    const dest = eng.bus('ambient');
+    const dest = eng.dry();
     if (dest) {
       // music has its own slider (volumeMusic) on top of the ambient bus
       const mg = ac.createGain();
@@ -317,7 +319,8 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       // jump / land from the player's feet vs the floor under them
       const p = ctx.player.pos;
       const ws = ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined;
-      const floor = Math.max(heightAt(p.x, p.z), ws?.(p.x, p.z) ?? -Infinity);
+      const room = ctx.services.get('indoors') as IndoorSpace | undefined;
+      const floor = room?.active ? room.floor(p.x, p.z) ?? p.y : Math.max(heightAt(p.x, p.z), ws?.(p.x, p.z) ?? -Infinity);
       const vy = f.dt > 0 ? (p.y - prevY) / f.dt : 0;
       prevY = p.y;
       if (!air && p.y - floor > 0.12 && vy > 2) { air = true; airTime = 0; play('jump'); }

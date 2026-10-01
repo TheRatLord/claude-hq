@@ -11,7 +11,7 @@ import { shortName } from './format.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'pause' | 'drawer';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'pause' | 'drawer';
 
 export interface Panel {
   id: PanelId;
@@ -63,10 +63,12 @@ export interface Prefs {
   compactStrip: boolean;
   /** terminal drawer height as a fraction of the viewport (0 = default) */
   drawerH: number;
+  /** opt-in desktop notifications (needs you / finished) while the window is in the background (notify.ts) */
+  notify: boolean;
 }
 const PREFS_KEY = 'valley.hud.prefs';
 export function loadPrefs(): Prefs {
-  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0 };
+  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false };
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (raw) return { ...def, ...(JSON.parse(raw) as Partial<Prefs>) };

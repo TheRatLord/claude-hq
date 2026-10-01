@@ -99,6 +99,14 @@ export interface UiPort {
   almanac(): void;
   /** the farm ledger (roster of every farmer by field); optional for fakes */
   roster?(): void;
+  /** the Collections book (forage + fishing finds); optional for fakes */
+  collection?(): void;
+  /**
+   * The General store panel (scene/yard, hud/shop.ts): buy decor, sell your basket, decorate your yard. `at` says who
+   * you're with: 'store' (buy + sell), 'bram' (sell), 'pocket' (look only); default 'store' ('pocket' for the yard).
+   * Optional for fakes.
+   */
+  shop?(tab?: 'buy' | 'sell' | 'yard', at?: 'store' | 'bram' | 'pocket'): void;
   /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the
@@ -184,6 +192,7 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'lights'      LightsService (scene/lights)      lighting: lamps, lanterns, windows, fires as local light
  *   'pets'        PetsService                       life package: the village dog and cat (idle farmers pet them)
  *   'villagers'   VillagersService                  villagers package: the persistent villager cast (map pins, dev)
+ *   'indoors'     IndoorSpace                       interior package: the walk-in farmhouse (controller, engine, sky, audio read it)
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
 export interface FarmerLocator {
@@ -239,6 +248,8 @@ export const SFX = Object.freeze([
   'fanfare', 'firework',
   // the player's pastimes (scene/forage): a cast whoosh, a bobber plop / nibble, the bite, reeling in
   'cast', 'plop', 'bite', 'reel',
+  // the economy (scene/yard, hud/shop): bits changing hands
+  'coins',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 
@@ -249,6 +260,8 @@ export interface AudioService {
   voice(seed: string, o?: { pos?: THREE.Vector3; mood?: 'happy' | 'question' | 'sad' | 'excited'; syllables?: number }): void;
   /** positional loop (fire crackle, water, windmill creak); returns a handle */
   loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
+  /** 0 outdoors … 1 indoors: the valley's ambience goes muffled behind walls, rain drums on the roof (optional) */
+  indoors?(k: number): void;
 }
 
 /**
@@ -313,4 +326,25 @@ export interface StructureSpots {
   get(name: string): StructureSpot | null;
   /** every seat (bench, log bench, picnic, porch rocker) */
   seats(): readonly StructureSpot[];
+}
+
+/**
+ * A walk-in room the player can be inside (the farmhouse interior, scene/interior; service 'indoors'). While `active`
+ * the controller walks on its floor and collides with its furniture instead of the terrain and the valley's colliders,
+ * the engine only offers the room's own interactables (`owns`), the sky dims its open-air fill, and the audio muffles
+ * the outdoors. Outdoor systems keep running; the room hides the outdoor scene while you are in it.
+ */
+export interface IndoorSpace {
+  readonly active: boolean;
+  /** world floor height at (x, z) inside the room, null outside its walls (not walkable) */
+  floor(x: number, z: number): number | null;
+  /** push a circle of radius r (world x / z, mutated) out of the room's furniture */
+  resolve(p: { x: number; z: number }, r: number): void;
+  /** is this interactable part of the room (offered while inside)? */
+  owns(i: Interactable): boolean;
+  /** go in / out (a short fade; `instant` skips it: shots, dev, map travel) */
+  enter(instant?: boolean): void;
+  leave(instant?: boolean): void;
+  /** dev / shots: stand at a named viewpoint inside (entering first); false if the name is unknown */
+  view?(name: string): boolean;
 }

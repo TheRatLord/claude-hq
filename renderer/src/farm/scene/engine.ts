@@ -8,7 +8,7 @@ import { createClock } from '../../core/time.ts';
 import { createLoop } from '../../core/loop.ts';
 import type { LoopState } from '../../core/loop.ts';
 import type { AgentPort, ValleyEvent, ValleyState } from '../model/types.ts';
-import type { Colliders, FrameInfo, Interactable, Interactions, Lighting, Quality, SceneCtx, System, SystemFactory, UiPort } from './context.ts';
+import type { Colliders, FrameInfo, IndoorSpace, Interactable, Interactions, Lighting, Quality, SceneCtx, System, SystemFactory, UiPort } from './context.ts';
 import { WORLD, heightAt } from '../world/map.ts';
 
 export interface PostService {
@@ -54,8 +54,12 @@ function createInteractions(ctx: () => SceneCtx): Interactions & { pick(): void 
       if (c.player.frozen) { focused = null; return; }
       c.camera.getWorldDirection(fwd);
       let best: Interactable | null = null, bestScore = Infinity;
+      // inside a room (the farmhouse) only its own things are in reach: nothing through the walls
+      const room = c.services.get('indoors') as IndoorSpace | undefined;
+      const inside = room?.active ? room : null;
       for (const i of items) {
         if (i.enabled && !i.enabled()) continue;
+        if (inside && !inside.owns(i)) continue;
         i.pos(p);
         to.subVectors(p, c.player.eye);
         const d = to.length();

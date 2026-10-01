@@ -19,6 +19,7 @@ import type { Stone } from './features.ts';
 import { rockGeometry } from './rocks.ts';
 import { MEADOW_GLSL, bloomColors } from './meadow.ts';
 import { WALL_RUNS, buildPathDecor } from './paths.ts';
+import { buildHorizon } from './horizon.ts';
 
 interface Chunk {
   mesh: THREE.Mesh;
@@ -364,12 +365,13 @@ const TERRAIN_FRAG = /* glsl */ `
   // cliff strata: the shelf's turf rolls over each ledge in ragged tongues (landB.w = nearness to the riser top),
   // with a cool shadow line under the overhang; snow caps in winter (uTurf)
   if (vLandB.w > 0.02 && wR > 0.02) {
-    float tongue = (svn(vSurfP.xz * 0.85 + 1.7) - 0.5) * 0.5 + (svn(vSurfP.xz * 3.3 + 5.0) - 0.5) * 0.16;
+    // shorter tongues from afar (a calm band from the top view instead of zigzag noise)
+    float tongue = ((svn(vSurfP.xz * 0.85 + 1.7) - 0.5) * 0.36 + (svn(vSurfP.xz * 3.3 + 5.0) - 0.5) * 0.16) * (1.0 - 0.55 * smoothstep(50.0, 130.0, sDist));
     float e = vLandB.w + tongue;
     float aa = sPw * 0.9 + 0.012;
-    float turf = sst(0.62, e, aa);
-    float under = sst(0.5, e, aa) * (1.0 - turf);
-    vec3 tc = uTurf * (0.86 + 0.26 * svn(vSurfP.xz * 2.1 + vSurfP.y * 0.6)) * (1.0 + 0.1 * sst(0.85, e, aa));
+    float turf = sst(0.7, e, aa);
+    float under = sst(0.58, e, aa) * (1.0 - turf);
+    vec3 tc = uTurf * (0.8 + 0.22 * svn(vSurfP.xz * 2.1 + vSurfP.y * 0.6)) * (1.0 + 0.1 * sst(0.85, e, aa));
     r = sval(r, -0.2 * under * wR);
     r = mix(r, tc, turf * wR);
   }
@@ -464,6 +466,8 @@ export const terrainSystem: SystemFactory = (ctx: SceneCtx) => {
   for (const r of rocks) root.add(r.mesh);
   const decor = buildPathDecor(season);
   root.add(decor.group);
+  const horizon = buildHorizon();
+  root.add(horizon);
   ctx.scene.add(root);
   const unCollide = WALL_RUNS.flatMap((run) => run.filter((_, i) => i % 2 === 0).map((p) => ctx.colliders.circle(p.x, p.z, 0.4)));
 
@@ -491,6 +495,8 @@ export const terrainSystem: SystemFactory = (ctx: SceneCtx) => {
       decor.dispose();
       for (const c of chunks) c.mesh.geometry.dispose();
       for (const r of rocks) r.mesh.geometry.dispose();
+      horizon.geometry.dispose();
+      (horizon.material as THREE.Material).dispose();
       mat.dispose();
     },
   };

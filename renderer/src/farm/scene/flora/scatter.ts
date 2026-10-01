@@ -15,7 +15,7 @@ import { wallDist } from '../terrain/paths.ts';
 import { OUTCROPS, RIVER_ROCKS, trickleDist } from '../terrain/features.ts';
 import { bloomColors, meadowAt } from '../terrain/meadow.ts';
 import type { MeadowAt } from '../terrain/meadow.ts';
-import { IVY_LEAN } from './species.ts';
+import type { IvyDrape } from './ivy.ts';
 import type { GroundSample } from '../terrain/ground.ts';
 import type { Item } from './cells.ts';
 import { SEASON_BIT } from './cells.ts';
@@ -41,8 +41,8 @@ export interface Scatter {
   logs: Item[];
   stumps: Item[];
   mushrooms: Item[];
-  /** ivy curtains hanging over the cliff strata ledges (s = length, the curtain leans with the riser) */
-  ivy: Item[];
+  /** ivy drapes hanging over the cliff strata ledges, in clusters (ivy.ts walks them down their risers) */
+  ivy: IvyDrape[];
   molehills: Item[];
   heroes: XZ[];
 }
@@ -236,21 +236,18 @@ export function scatter(): Scatter {
     const front = h - heightAt(px - ox * 1.4, pz - oz * 1.4);
     if (behind < 1.8 && front < 1.2) continue;
     if (front > 1.2 && heightAt(px - ox * 0.35, pz - oz * 0.35) > h - 0.25 && roll < 0.9) {
-      // ivy: the curtain's top sits at the lip, its strands lean with the riser below (skip overhangs and gentle banks)
-      let drop = 0, run = 0;
-      for (let k = 0.5; k <= 5; k += 0.25) { const d = h - heightAt(px - ox * k, pz - oz * k); if (d > drop) { drop = d; if (d < 6.5) run = k; } }
-      const lean = run / Math.max(0.1, drop);
-      if (drop < 2 || lean > 0.5) continue;
-      const L = Math.min(4.6, Math.max(1.6, drop * (0.65 + rl() * 0.3)));
-      // the strands must hang in front of the riser all the way down (it may bulge out below a steep lip): step the
-      // curtain out from the lip until they do
-      const hangs = (o: number) => [0.25, 0.5, 0.75, 1].every((k) => { const d = o + IVY_LEAN * L * k - 0.3; return heightAt(px - ox * d, pz - oz * d) < h - L * k + 0.45; });
-      let off = Math.max(0.25, (lean - IVY_LEAN) * L + 0.2);
-      while (off < 1.2 && !hangs(off)) off += 0.2;
-      const clear = off < 1.2;
-      const ix = px - ox * off, iz = pz - oz * off;
-      if (!clear || stoneDist(ix, iz) < 1.5 + L * 0.3 || !spaced(ix, iz, 2.2, L * 0.6) || out.ivy.some((q) => Math.hypot(q.x - ix, q.z - iz) < (q.s + L) * 0.5)) continue;
-      out.ivy.push({ x: ix, y: h + 0.06, z: iz, s: L, yaw: Math.atan2(-ox, -oz), tint: tint(rl, 0.18, 0.06) });
+      // ivy drapes from the lip, in clusters: a few ledges carry long runs of curtains, most stay bare rock
+      const heavy = ss(-0.25, 0.2, fbm(px / 46 + 11, pz / 46 - 7, 2));
+      if (rl() > 0.02 + 0.98 * heavy) continue;
+      let drop = 0;
+      for (let k = 0.5; k <= 5; k += 0.5) drop = Math.max(drop, h - heightAt(px - ox * k, pz - oz * k));
+      if (drop < 2) continue;
+      // never a lone speck: even an outlier is a proper curtain, and the heavy ledges carry long, wide runs
+      const w = 1.9 + rl() * 1.4 + heavy * 2.4;
+      const len = Math.min(drop * 0.92, 1.9 + rl() * 1.3 + heavy * 2);
+      if (trickleDist(px, pz) < 1.5 + w * 0.5 || stoneDist(px, pz) < 1 + w * 0.5 || !spaced(px, pz, 0.8 + w * 0.3) || bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < b.r + w * 0.45)
+        || out.ivy.some((q) => Math.hypot(q.x - px, q.z - pz) < (q.w + w) * 0.42)) continue;
+      out.ivy.push({ x: px, z: pz, dx: -ox, dz: -oz, w, len, seed: Math.floor(rl() * 1e6) });
       continue;
     }
     if (front > 1.2 || roll > 0.55) continue;
@@ -280,9 +277,10 @@ export function scatter(): Scatter {
       if (out.trees.oak.length + out.trees.round.length > n) { sinceTree = 0; return; }
     }
     if (!spaced(x, z, 2.2) || bushAt.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + 0.8)) return;
-    // a hedge is ~3.8 m long at scale 1: neighbours in a row just touch (step 3.1 m)
-    if (out.bushes.hedge.some((q) => Math.hypot(q.x - x, q.z - z) < 3)) return;
-    const hs = 0.74 + rhg() * 0.06, fp = footprint(x, z, 1.4);
+    // a hedge is ~3.8 m long at scale 1: neighbours in a row overlap a little (step 2.6 m) so a run reads as one
+    // continuous hedge, not a dotted line, from above
+    if (out.bushes.hedge.some((q) => Math.hypot(q.x - x, q.z - z) < 2.4)) return;
+    const hs = 0.8 + rhg() * 0.08, fp = footprint(x, z, 1.4);
     if (fp.spread > 0.32) return;
     bushAt.push({ x, z, r: 0.75 });
     out.bushes.hedge.push({ x, y: fp.min - 0.04, z, s: hs, sy: 0.9 + rhg() * 0.25, yaw: Math.atan2(-dz, dx) + (rhg() - 0.5) * 0.12, tint: tint(rhg, 0.1, 0.05) });
@@ -293,7 +291,7 @@ export function scatter(): Scatter {
       let d = 0;
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
-        for (let t = 0; t < l; t += 3.1, d += 3.1) {
+        for (let t = 0; t < l; t += 2.6, d += 2.6) {
           // runs of hedge where a slow noise along the track says so (hash per path and side)
           if (fbm(d / 26 + pi * 7.3 + side * 3.1, pi * 1.7) < -0.08) continue;
           const off = path.width / 2 + 2;
@@ -314,7 +312,7 @@ export function scatter(): Scatter {
       const l = Math.hypot(bx - ax, bz - az);
       // edge direction in world space (local x → (c, −s), local z → (s, c))
       const lx = (bx - ax) / l, lz = (bz - az) / l, wx = lx * c + lz * sn, wz = -lx * sn + lz * c;
-      for (let t = 1.2; t < l - 1; t += 3.1) {
+      for (let t = 1.2; t < l - 1; t += 2.6) {
         const p = siteToWorld(site, ax + lx * t, az + lz * t);
         if (fbm(p.x / 14 + 4, p.z / 14 - 2) < -0.25) continue;
         hedge(p.x, p.z, wx, wz);
@@ -347,7 +345,8 @@ export function scatter(): Scatter {
     const it: Item = { x: px, y: h - 0.03, z: pz, s: (0.8 + rt() * 0.5 + (c > 3 ? 0.15 : 0)) * (c < 1.2 ? 0.75 : 1), yaw: rt() * 6.28, sy: (0.8 + rt() * 0.5) * (c < 1.2 ? 0.7 : 1) };
     // keep off the painted path dirt (its edge sits at path ≈ 0.45); tufts right at the edge creep over it
     if (sm.path > 0.4) continue;
-    if (tall) { out.tall.push(it); out.tallSamples.push(sm); } else { out.tufts.push(it); out.tuftSamples.push(sm); }
+    // a wide tall tuft on a slope buries its uphill blades: smaller clumps there
+    if (tall) { it.s *= 1 - Math.min(0.4, slopeAt(px, pz) * 4); out.tall.push(it); out.tallSamples.push(sm); } else { out.tufts.push(it); out.tuftSamples.push(sm); }
     // a little crowd of small soft clumps around it: dense, varied ground cover near the camera
     if (sm.path < 0.2) {
       const k = 2 + Math.floor(rsh() * 3);

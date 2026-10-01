@@ -15,11 +15,13 @@ import type { CellOpts, Item } from './cells.ts';
 import { flowerColor, scatter } from './scatter.ts';
 import type { FlowerKind } from './scatter.ts';
 import {
-  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, ivyGeometry, leafCardGeometry, logGeometry, meadowRockGeometry, molehillGeometry,
+  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, leafCardGeometry, logGeometry, meadowRockGeometry, molehillGeometry,
   mushroomGeometry, stumpGeometry, treeGeometry, tuftGeometry,
 } from './species.ts';
 import type { BushKind } from './species.ts';
 import { WIND, sway, syncWind } from './wind.ts';
+import { ivyMesh, layoutIvy } from './ivy.ts';
+import { heightAt } from '../../world/map.ts';
 import { SURF, withSurfaces } from '../surface/index.ts';
 
 interface Set_ { inst: CellInstancer; build(season: Season): THREE.BufferGeometry; recolor?(season: Season): void }
@@ -135,7 +137,22 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   add('stumps', S.stumps, (s) => stumpGeometry(s, 1), solidMat, { cell: 24, far: 110, height: 1, keep: 12, castShadow: true });
   add('mushrooms', S.mushrooms, (s) => mushroomGeometry(s, 1), solidMat, { cell: 16, far: 50, height: 0.4 });
   add('molehills', S.molehills, (s) => molehillGeometry(s, 1), solidMat, { cell: 20, far: 90, height: 0.3 });
-  add('ivy', S.ivy, (s) => ivyGeometry(s, 1), solidMat, { cell: 30, far: 230, height: 4.5, colors: true });
+  // ivy drapes: walked down their risers once, merged into a few sector meshes (three frustum-culls them; no per-frame work)
+  const ivyLayout = layoutIvy(S.ivy, heightAt);
+  const ivyMat = toon(0xffffff, { vertexColors: true, shared: false });
+  mats.push(ivyMat);
+  const IVY_SECTORS = 6;
+  const ivySectors: number[][] = Array.from({ length: IVY_SECTORS }, () => []);
+  S.ivy.forEach((d, i) => ivySectors[Math.floor(((Math.atan2(d.z, d.x) / (Math.PI * 2)) + 1) * IVY_SECTORS) % IVY_SECTORS].push(i));
+  const ivyMeshes = ivySectors.filter((l) => l.length).map((list, i) => {
+    const m = new THREE.Mesh(ivyMesh(ivyLayout, season, list), ivyMat);
+    m.name = `ivy:${i}`;
+    m.receiveShadow = true;
+    m.matrixAutoUpdate = false;
+    root.add(m);
+    return { m, list };
+  });
+  const ivySeason = (s: Season) => { for (const { m, list } of ivyMeshes) { m.geometry.dispose(); m.geometry = ivyMesh(ivyLayout, s, list); } };
 
   // trunks are solid where the player can walk
   const unCollide: (() => void)[] = [];
@@ -163,6 +180,7 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
       set.inst.setGeometry(set.build(s));
       set.inst.setSeason(s);
     }
+    ivySeason(s);
     drift.setSeason(s);
     lastPos.set(Infinity, 0, 0);
   };
@@ -198,6 +216,7 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
       ctx.services.delete('floraSolids');
       for (const u of unCollide) u();
       for (const set of sets) set.inst.dispose();
+      for (const { m } of ivyMeshes) m.geometry.dispose();
       for (const m of mats) m.dispose();
       drift.mesh.geometry.dispose();
       (drift.mesh.material as THREE.Material).dispose();

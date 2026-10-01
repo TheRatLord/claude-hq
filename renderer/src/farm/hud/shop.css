@@ -1,0 +1,97 @@
+/* The General store panel (shop.ts): purse + tabs, the shelves, the basket, the yard map; the coin chip on the status sign. */
+.vh-shop { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(920px, var(--pw)); max-height: calc(100vh - 60px); --pw: calc(100vw - 40px - var(--lw, 0px)); margin-left: calc(var(--lw, 0px) / 2); }
+.vh-shop.open { animation: none; }
+.vh-shop .vh-body { overflow-y: auto; max-height: calc(100vh - 140px); display: flex; flex-direction: column; gap: 10px; }
+.vh-shop-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 2px 6px; }
+.vh-shop-head .purse { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px; }
+.vh-shop-head .coin { width: 48px; height: 48px; flex: none; filter: drop-shadow(0 3px 0 rgba(0,0,0,.15)); }
+.vh-shop-head .coin .vh-ico, .vh-shop-head .coin svg { width: 100%; height: 100%; }
+.vh-shop-head .amt { font: 700 26px/1.05 var(--serif); }
+.vh-shop-head .sub { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-top: 3px; }
+.vh-shop-tabs { display: flex; gap: 6px; }
+.vh-shop-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 2px solid rgba(122,82,49,.4);
+  background: rgba(255,250,240,.6); color: var(--ink-soft); font: 800 14px/1 var(--round); cursor: pointer; }
+.vh-shop-tab .vh-ico { width: 20px; height: 20px; }
+.vh-shop-tab:hover { background: #fff6e0; color: var(--ink); }
+.vh-shop-tab.on { background: #ffe9b8; color: var(--ink); border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-soft); }
+.vh-shop-tab .n:not(:empty) { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--berry); color: #fff; font-size: 11px; }
+.vh-shop .where { font-size: 13px; font-weight: 700; color: var(--ink-soft); padding: 6px 10px; border-radius: 10px; background: rgba(255,250,240,.55); border: 1.5px dashed rgba(122,82,49,.3); }
+.vh-shop .where.store, .vh-shop .where.bram { color: var(--leaf-dark); border-style: solid; border-color: rgba(63,127,44,.35); background: rgba(143,208,107,.15); }
+.vh-shop-main { display: grid; grid-template-columns: 1fr 280px; gap: 12px; align-items: start; }
+.vh-shop-main.sell, .vh-shop-main.yard { grid-template-columns: 1fr; }
+@media (max-width: 760px) { .vh-shop-main { grid-template-columns: 1fr; } }
+.vh-price { display: inline-flex; align-items: center; gap: 3px; font: 800 12.5px/1 var(--round); color: #8a4a1a; white-space: nowrap; }
+.vh-price .vh-ico { width: 14px; height: 14px; }
+
+/* shelves */
+.vh-shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; }
+.vh-shop-grid .item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 6px; border-radius: 11px; cursor: pointer;
+  background: #fffaf0; border: 2px solid rgba(122,82,49,.32); color: var(--ink); font: 700 12px/1.15 var(--round); }
+.vh-shop-grid .item:hover { transform: translateY(-1px); }
+.vh-shop-grid .item .ic { width: 44px; height: 44px; filter: drop-shadow(0 2px 0 rgba(0,0,0,.12)); }
+.vh-shop-grid .item .ic svg { width: 100%; height: 100%; }
+.vh-shop-grid .item .nm { text-align: center; min-height: 2.3em; display: flex; align-items: center; }
+.vh-shop-grid .item .lk { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; }
+.vh-shop-grid .item .lk .vh-ico { width: 12px; height: 12px; }
+.vh-shop-grid .item .own { position: absolute; top: 4px; left: 6px; font-size: 10.5px; color: var(--leaf-dark); font-weight: 800; }
+.vh-shop-grid .item .season { position: absolute; top: 4px; right: 6px; font-size: 9.5px; font-weight: 800; color: #a86a10; background: var(--gold-soft); border-radius: 999px; padding: 1px 5px; }
+.vh-shop-grid .item.locked { background: rgba(255,250,240,.45); border-style: dashed; color: var(--ink-faint); }
+.vh-shop-grid .item.locked .ic { filter: grayscale(.8) opacity(.55); }
+.vh-shop-grid .item.poor .vh-price { color: var(--berry); }
+.vh-shop-grid .item.sel { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-soft); }
+.vh-shop-detail { position: sticky; top: 0; padding: 12px; border-radius: 12px; background: #fffaf0; border: 2px solid rgba(122,82,49,.35); display: flex; flex-direction: column; gap: 7px; }
+.vh-shop-detail .big { width: 100px; height: 100px; align-self: center; filter: drop-shadow(0 3px 0 rgba(0,0,0,.14)); }
+.vh-shop-detail .big svg { width: 100%; height: 100%; }
+.vh-shop-detail .t { font: 700 19px/1.15 var(--serif); text-align: center; }
+.vh-shop-detail .blurb { font: italic 14px/1.4 var(--serif); }
+.vh-shop-detail .facts { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.vh-shop-detail .act { display: flex; justify-content: center; }
+.vh-shop .lock { font-size: 12.5px; font-weight: 700; color: #a8551a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vh-shop .lock.ok { color: var(--leaf-dark); }
+.vh-shop .empty { padding: 16px; text-align: center; font-size: 14px; color: var(--ink-soft); }
+
+/* basket */
+.vh-basket-wrap { display: flex; flex-direction: column; gap: 10px; }
+.vh-basket { display: flex; flex-direction: column; gap: 5px; }
+.vh-basket .row, .vh-pieces .row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 10px; background: #fffaf0; border: 2px solid rgba(122,82,49,.25); }
+.vh-basket .row .ic, .vh-pieces .row .ic { width: 34px; height: 34px; flex: none; }
+.vh-basket .row .ic svg, .vh-pieces .row .ic svg { width: 100%; height: 100%; }
+.vh-basket .row .nm { flex: 1; min-width: 0; }
+.vh-basket .row .rare { color: var(--gold); }
+.vh-basket .row .n { font-weight: 800; min-width: 38px; text-align: right; }
+.vh-basket .row .each { font-size: 12px; color: var(--ink-soft); min-width: 74px; }
+.vh-basket-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.vh-basket-foot .sub { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+
+/* yard */
+.vh-yard { display: grid; grid-template-columns: 300px 1fr; gap: 14px; align-items: start; }
+@media (max-width: 760px) { .vh-yard { grid-template-columns: 1fr; } }
+.vh-yardmap-wrap { padding: 8px; border-radius: 12px; background: linear-gradient(#a9d77a, #8fc35e); border: 3px solid #6e4a2a; box-shadow: inset 0 0 0 3px #fff6e0; }
+.vh-yardmap-wrap .cap { font: 800 10.5px/1 var(--round); color: #2f5a1f; text-align: center; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }
+.vh-yardmap-wrap .house { margin-top: 6px; padding: 5px; border-radius: 6px; background: #c2533e; color: #fff6e0; text-align: center; font: 800 11px/1 var(--round); text-transform: uppercase; letter-spacing: .08em; }
+.vh-yardmap { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.vh-yardmap .spot { aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; border: 2px dashed rgba(255,246,224,.85); background: rgba(255,255,255,.12); cursor: pointer; padding: 0; }
+.vh-yardmap .spot .ic { width: 70%; height: 70%; display: block; }
+.vh-yardmap .spot .ic svg { width: 100%; height: 100%; }
+.vh-yardmap .spot.full { border-style: solid; border-color: rgba(110,74,42,.5); background: rgba(255,250,240,.75); }
+.vh-yardmap .spot.can:hover { background: rgba(159,230,160,.75); border-color: #fff; }
+.vh-yardmap .spot.sel { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); background: #fff6e0; }
+.vh-yard-side { display: flex; flex-direction: column; gap: 8px; }
+.vh-yard-help { font-size: 13px; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vh-yard-help b { color: var(--ink); }
+.vh-pieces { display: flex; flex-direction: column; gap: 5px; max-height: 340px; overflow-y: auto; }
+.vh-pieces .row { cursor: pointer; flex-wrap: wrap; }
+.vh-pieces .row.sel { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-soft); }
+.vh-pieces .row .nm { flex: 1; min-width: 140px; display: flex; flex-direction: column; }
+.vh-pieces .row .sty { font-size: 12px; color: var(--ink-soft); }
+.vh-pieces .row .st { font-size: 11.5px; color: var(--ink-faint); font-weight: 700; }
+
+/* the coin chip on the status sign */
+.vh-coins { all: unset; box-sizing: border-box; position: relative; display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; cursor: pointer; font: 800 13px/1 var(--round); color: #8a4a1a; pointer-events: auto; }
+.vh-coins[hidden] { display: none; }
+.vh-coins .vh-ico { width: 17px; height: 17px; }
+.vh-coins:hover .amt { color: var(--ink); }
+.vh-coins:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+.vh-coins .float { position: absolute; left: 100%; top: 0; margin-left: 4px; font-size: 12px; color: var(--leaf-dark); opacity: 0; pointer-events: none; }
+.vh-coins .float.go { animation: vh-coin-float 1.6s ease-out; }
+@keyframes vh-coin-float { 0% { opacity: 0; transform: translateY(4px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }

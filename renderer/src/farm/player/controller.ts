@@ -2,11 +2,12 @@
  * First-person walker for the valley: pointer-lock mouse look, WASD, sprint, jump, terrain following, structure
  * collision, no swimming (deep water and cliffs push back), footstep-locked head bob.
  * Movement pauses whenever a modal UI owns the input (`player.frozen`).
+ * Indoors (service 'indoors', the farmhouse interior): its floor and furniture replace the terrain and colliders.
  * Fly mode (photo mode): the camera leaves the body and flies freely (WASD along the view, Space up, C down, Shift
  * fast, no collision); leaving it snaps the view back to where you stood.
  */
 import * as THREE from 'three';
-import type { FrameInfo, SceneCtx } from '../scene/context.ts';
+import type { FrameInfo, IndoorSpace, SceneCtx } from '../scene/context.ts';
 import { WORLD, heightAt, normalAt } from '../world/map.ts';
 import { bobAdvance, bobShape, stepIndex } from '../../player/feel.ts';
 import { damp, dampAngle } from '../../core/math.ts';
@@ -63,7 +64,10 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   addEventListener('mousemove', mm);
   canvas.addEventListener('click', click);
 
+  const indoors = (): IndoorSpace | null => { const r = ctx.services.get('indoors') as IndoorSpace | undefined; return r?.active ? r : null; };
   const walkable = (x: number, z: number): boolean => {
+    const room = indoors();
+    if (room) return room.floor(x, z) !== null;
     if (Math.hypot(x, z) > MAX_R) return false;
     const h = heightAt(x, z);
     if (h < WORLD.water - 0.75) return false; // deep water
@@ -108,8 +112,9 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
         p.speed = 0;
         return;
       }
+      const room = indoors();
       const h0 = heightAt(p.pos.x, p.pos.z);
-      const wading = h0 < WORLD.water - 0.1;
+      const wading = !room && h0 < WORLD.water - 0.1;
       const max = (sprint ? SPRINT : WALK) * (wading ? 0.45 : 1);
       const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
       let tx = -sy * fwd + cy * side, tz = -cy * fwd - sy * side;
@@ -124,11 +129,11 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       else if (walkable(nx, p.pos.z)) { p.pos.x = nx; vel.z = 0; }
       else if (walkable(p.pos.x, nz)) { p.pos.z = nz; vel.x = 0; }
       else { vel.x = 0; vel.z = 0; }
-      ctx.colliders.resolve(p.pos, RADIUS);
+      if (room) room.resolve(p.pos, RADIUS); else ctx.colliders.resolve(p.pos, RADIUS);
       // vertical
       if (grounded && keys.has('Space')) { vy = JUMP_V; grounded = false; }
-      const ground = Math.max(heightAt(p.pos.x, p.pos.z), WORLD.water - 0.6);
-      const walk = (ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined)?.(p.pos.x, p.pos.z) ?? null;
+      const ground = room ? room.floor(p.pos.x, p.pos.z) ?? p.pos.y : Math.max(heightAt(p.pos.x, p.pos.z), WORLD.water - 0.6);
+      const walk = room ? ground : (ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined)?.(p.pos.x, p.pos.z) ?? null;
       const floor = walk !== null ? Math.max(ground, walk) : ground;
       if (!grounded) {
         vy -= GRAVITY * dt;
@@ -159,7 +164,7 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       ctx.camera.rotation.set(p.pitch, p.yaw, 0);
     },
     teleport(x, z, yaw, pitch) {
-      p.pos.set(x, heightAt(x, z), z);
+      p.pos.set(x, indoors()?.floor(x, z) ?? heightAt(x, z), z);
       if (yaw !== undefined) p.yaw = yaw;
       if (pitch !== undefined) p.pitch = pitch;
       vel.set(0, 0, 0); vy = 0; grounded = true; look = null;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clock, dur, letterKey, letterTitle, matchCombo, matches, nice, parseCombo } from './format.ts';
+import { askOrder, clock, dur, letterKey, letterTitle, matchCombo, matches, nextAfter, nice, notifyCopy, parseCombo, rosterFilterHit } from './format.ts';
 
 const key = (o: Partial<KeyboardEvent>) => ({ key: '', code: '', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...o });
 
@@ -53,4 +53,40 @@ test('field-grouped lists show only the distinguishing part of the tag', async (
   assert.equal(fieldName({ name: 'x', tag: 'webshop·2' }), 'webshop·2');
   assert.equal(fieldName({ name: '~/src/claude-hq', tag: 'claude-hq' }), 'claude-hq');
   assert.equal(altName({ name: 'flint', tag: 'claude-hq·flint' }, 'flint'), '');
+});
+
+test('answer + next: the item that takes the answered one\'s place', () => {
+  assert.equal(nextAfter(['a', 'b', 'c'], 'a'), 'b');
+  assert.equal(nextAfter(['a', 'b', 'c'], 'b'), 'c');
+  assert.equal(nextAfter(['a', 'b', 'c'], 'c'), 'b', 'the last one falls back to the one before');
+  assert.equal(nextAfter(['a'], 'a'), null);
+  assert.equal(nextAfter(['a', 'b'], 'zz'), 'a', 'unknown: start at the top');
+  assert.equal(nextAfter([], 'zz'), null);
+  const asks = [{ since: 1, id: 'x' }, { since: 3, id: 'y' }, { since: 3, id: 'a' }];
+  assert.deepEqual(asks.sort(askOrder).map((a) => a.id), ['a', 'y', 'x'], 'newest first, ties by id');
+});
+
+test('ledger status chips split farmers without overlap', () => {
+  const f = (status: 'blocked' | 'working' | 'done' | 'idle' | 'unknown', needsYou = false, unseenDone = false) => ({ status, needsYou, unseenDone });
+  const all = [f('blocked', true), f('working'), f('done', false, true), f('done'), f('idle'), f('unknown')];
+  const hits = (k: Parameters<typeof rosterFilterHit>[0]) => all.filter((x) => rosterFilterHit(k, x)).length;
+  assert.equal(hits(null), 6);
+  assert.equal(hits('needs'), 1);
+  assert.equal(hits('working'), 1);
+  assert.equal(hits('done'), 2);
+  assert.equal(hits('idle'), 3, 'idle, away and reviewed-done');
+  assert.ok(rosterFilterHit(null, null) && !rosterFilterHit('needs', null), 'scarecrows only unfiltered');
+});
+
+test('desktop notification copy: one ping speaks for itself, a burst summarises asks first', () => {
+  assert.equal(notifyCopy([]), null);
+  assert.deepEqual(notifyCopy([{ kind: 'blocked', id: 'a', name: 'claude-hq·flint', text: 'Proceed?' }]), { title: 'claude-hq·flint needs you', body: 'Proceed?' });
+  assert.deepEqual(notifyCopy([{ kind: 'finished', id: 'a', name: 'tinker', text: '' }]), { title: 'tinker finished', body: 'Ready for your review' });
+  const many = notifyCopy([
+    { kind: 'finished', id: 'd', name: 'dune', text: '' },
+    { kind: 'blocked', id: 'a', name: 'atlas', text: 'q' }, { kind: 'blocked', id: 'b', name: 'birch', text: 'q' },
+    { kind: 'blocked', id: 'c', name: 'cobalt', text: 'q' }, { kind: 'blocked', id: 'e', name: 'ember', text: 'q' },
+  ]);
+  assert.equal(many?.title, 'Claude Valley: 4 need you · 1 finished');
+  assert.equal(many?.body, 'Waiting: atlas, birch, cobalt +1\nDone: dune');
 });

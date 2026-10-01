@@ -8,7 +8,7 @@ import type { NoiseKind } from './synth.ts';
 import { noise, noiseSrc, tone } from './synth.ts';
 import { cricketPeriod } from './mix.ts';
 
-export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs'] as const);
+export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs', 'roof'] as const);
 export type LoopKind = (typeof LOOP_KINDS)[number];
 
 export interface LoopEnv {
@@ -79,6 +79,18 @@ export function buildLoop(kind: LoopKind, c: C, env: LoopEnv): LoopVoice {
         const f = 1800 + rnd() * 2800;
         tone(c, out, at, { f, f2: f * 0.75, glide: 0.03, gain: 0.03 + rnd() * 0.05, a: 0.001, d: 0.03 });
         if (rnd() < 0.25) noise(c, out, at, { kind: 'white', gain: 0.08 * rnd(), a: 0.001, d: 0.02, filter: 'highpass', f: 3000 });
+      });
+      break;
+    }
+    case 'roof': {
+      // rain on the farmhouse roof, heard from inside: a soft muffled roar, close patter on the shingles, and now and
+      // then a fat drop from the eaves plinking onto the porch
+      bed('brown', 'lowpass', 520, 0.6, 0.55);
+      bed('pink', 'bandpass', 1100, 0.5, 0.18);
+      tick = (now, horizon, level) => every(now, horizon, level, () => (0.09 - 0.06 * level) * (0.4 + rnd()), (at) => {
+        const f = 240 + rnd() * 380;
+        tone(c, out, at, { f, f2: f * 0.6, glide: 0.04, gain: 0.04 + rnd() * 0.05, a: 0.002, d: 0.05 });
+        if (rnd() < 0.05) { const p = 900 + rnd() * 500; tone(c, out, at + 0.01, { f: p, f2: p * 0.55, glide: 0.08, gain: 0.05 + rnd() * 0.04, a: 0.002, d: 0.12 }); }
       });
       break;
     }

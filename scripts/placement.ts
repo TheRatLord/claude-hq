@@ -96,6 +96,8 @@ async function main(): Promise<void> {
           const h = (window as unknown as { __hud?: { dismissHint(): void } }).__hud;
           h?.dismissHint();
           const el = document.getElementById('hud'); if (el) el.style.display = 'none';
+          // a furnished yard behind the farmhouse (scene/yard: every decor piece on its slot gets audited too)
+          (window as unknown as { __valley: { furnish?(): number } }).__valley.furnish?.();
         });
         await page.waitForTimeout(7000); // tilling fences drop in, harvest carts arrive, crops settle
         await page.evaluate(() => (window as unknown as V).__valley.timeScale(0));

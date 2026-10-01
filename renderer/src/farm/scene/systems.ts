@@ -15,7 +15,9 @@ import { farmersSystem } from './farmers/farmers.ts';
 import { villagersSystem } from './villagers/villagers.ts';
 import { lifeSystem } from './life/life.ts';
 import { forageSystem } from './forage/forage.ts';
+import { yardSystem } from './yard/yard.ts';
 import { weatherSystem } from './weather/weather.ts';
+import { interiorSystem } from './interior/interior.ts';
 import { audioSystem } from '../audio/audio.ts';
 import { postSystem } from './post/post.ts';
 
@@ -31,7 +33,9 @@ export const SYSTEMS: readonly SystemFactory[] = [
   villagersSystem,
   lifeSystem,
   forageSystem,
+  yardSystem,
   weatherSystem,
+  interiorSystem,
   audioSystem,
   postSystem,
 ];

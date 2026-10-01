@@ -95,7 +95,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); if (confirming) void send(); else if (ta.value.trim()) { confirming = true; renderRow(); } }
     });
     renderRow();
-    return h('div.vh-prompt-box', null, h('div.vh-h3', { style: { fontSize: '14px' } }, icon(ICONS.send), 'Give a new task'), ta, row);
+    return h('div.vh-prompt-box', null, h('div.vh-h3', { style: { fontSize: '14px' } }, icon(ICONS.send), 'Give a new task', h('kbd.vh-k', { text: 'N', title: 'N jumps here' })), ta, row);
   }
 
   function helperView(hp: HelperView): void {
@@ -141,15 +141,31 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
   }
 
   const show = (x: string) => { if (id !== x) { draft = ''; confirming = false; } id = x; sig = ''; render(); };
+  /** N: straight into "Give a new task" (idle / finished farmers); false when this farmer has no prompt box */
+  const focusTask = (): boolean => {
+    const ta = el.querySelector<HTMLTextAreaElement>('[data-testid="card-prompt"]');
+    if (!ta) return false;
+    ta.focus({ preventScroll: true });
+    ta.scrollIntoView({ block: 'nearest' });
+    return true;
+  };
   return {
     id: 'card', el, light: true,
-    onOpen(arg) { if (typeof arg === 'string') show(arg); },
+    // arg: a pane id, or { id, task: true } to land in the new-task box (the ledger's N)
+    onOpen(arg) {
+      if (typeof arg === 'string') show(arg);
+      else if (arg && typeof arg === 'object' && typeof (arg as { id?: unknown }).id === 'string') {
+        show((arg as { id: string }).id);
+        if ((arg as { task?: boolean }).task) focusTask();
+      }
+    },
     onClose() { confirming = false; },
     refresh: render,
     key(e) {
       if (!id || typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return false;
       const f = ctx.farmer(id);
       if (e.code === 'KeyT') { ctx.openTerminal(id); return true; }
+      if (e.code === 'KeyN' && !e.shiftKey) return focusTask();
       if (e.code === 'KeyA' && f?.unseenDone) { (el.querySelector('[data-testid="card-ack"]') as HTMLButtonElement | null)?.click(); return true; }
       if (f?.needsYou && /^Digit[1-9]$/.test(e.code)) {
         const o = f.options[Number(e.code.slice(5)) - 1];

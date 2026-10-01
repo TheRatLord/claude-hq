@@ -213,7 +213,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     setTimeout(() => {
       switch (fn) {
         case 'mailbox': ctx.ui.mailbox(); break;
-        case 'roster': if (ctx.ui.roster) ctx.ui.roster(); else ctx.ui.noticeboard(); break;
+        // Bram buys your basket (scene/yard, model/wallet.ts) when you're carrying finds; otherwise the ledger as ever
+        case 'roster': if (basket() && ctx.ui.shop) ctx.ui.shop('sell', 'bram'); else if (ctx.ui.roster) ctx.ui.roster(); else ctx.ui.noticeboard(); break;
         case 'stats': ctx.ui.stats(); break;
         case 'noticeboard': ctx.ui.noticeboard(); break;
         case 'map': ctx.ui.map(); break;
@@ -221,12 +222,15 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     }, 850);
   }
 
+  /** finds in the player's basket (service 'wallet'): Bram buys them */
+  const basket = (): number => { try { return (ctx.services.get('wallet') as { basketCount(): number } | undefined)?.basketCount() ?? 0; } catch { return 0; } };
+
   /** the prompt's second line: what talking to them opens, with the number that matters */
   function hintFor(v: Villager): string {
     const s = ctx.valley;
     switch (v.fn) {
       case 'mailbox': { const n = s.letters.filter((l) => !l.read && !(l.kind === 'needs-you' && l.resolved)).length; return `${v.title} · opens the mailbox${n ? ` · ${n} unread` : ''}`; }
-      case 'roster': return `${v.title} · opens the farm ledger · ${s.commitsToday} shipped today`;
+      case 'roster': { const n = basket(); return n ? `${v.title} · buys your basket · ${n} ${n === 1 ? 'find' : 'finds'}` : `${v.title} · opens the farm ledger · ${s.commitsToday} shipped today`; }
       case 'stats': return `${v.title} · opens the system stats${s.gauges ? ` · CPU ${Math.round(s.gauges.cpu * 100)}%` : ''}`;
       case 'noticeboard': return `${v.title} · opens the noticeboard`;
       case 'map': return `${v.title} · opens the valley map`;

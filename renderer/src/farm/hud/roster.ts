@@ -1,16 +1,19 @@
 /**
  * The ledger (Tab): every farmer and scarecrow grouped by field, with status, job, time in status, ducklings.
- * Keyboard-first: type to filter, ↑/↓ to move, Enter = terminal, Shift+Enter (or W) = walk there, C = card.
+ * Keyboard-first: type to filter, ↑/↓ to move, Enter = terminal, Shift+Enter (or W) = walk there, Ctrl+I (or C) = card,
+ * Ctrl+Enter = give an idle / finished farmer a new task. The summary chips (needs you · working · done · idle) are
+ * status filters (click the active chip again for everyone); typing "needs", "working", "done" filters by text too.
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
-import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS } from './format.ts';
+import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, rosterFilterHit, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS, type RosterFilter } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 
+const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
 interface Group { plot: PlotView | null; rows: Row[] }
 
-function groups(s: ValleyState, q: string): Group[] {
+function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
   const out = new Map<string, Group>();
   const get = (plotId: string) => {
     let g = out.get(plotId);
@@ -19,10 +22,11 @@ function groups(s: ValleyState, q: string): Group[] {
   };
   for (const f of s.farmers.values()) {
     const plot = s.plots.get(f.plotId);
+    if (!rosterFilterHit(only, f)) continue;
     if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, f.needsYou ? 'needs blocked' : '')) continue;
     get(f.plotId).rows.push({ id: f.id, kind: 'farmer', f });
   }
-  for (const hp of s.helpers.values()) {
+  for (const hp of only ? [] : s.helpers.values()) {
     const plot = s.plots.get(hp.plotId);
     if (!matches(q, hp.name, hp.tag, hp.project, hp.label, plot?.label, 'shell scarecrow', HELPER_LABEL[hp.activity])) continue;
     get(hp.plotId).rows.push({ id: hp.id, kind: 'helper', hp });
@@ -45,10 +49,13 @@ export function createRoster(ctx: HudCtx): Panel {
     h('span', null, h('kbd.vh-k', { text: 'Enter' }), 'open terminal'),
     h('span', null, h('kbd.vh-k', { text: 'Shift+Enter' }), 'walk there'),
     h('span', null, h('kbd.vh-k', { text: 'Ctrl+I' }), 'details card'),
+    h('span', null, h('kbd.vh-k', { text: 'Ctrl+Enter' }), 'new task'),
     h('span', null, h('kbd.vh-k', { text: 'Tab' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.top', null, h('div.vh-search', null, input), summary), rowsEl, foot);
 
   let sel: string | null = null;
+  let only: RosterFilter = null;
+  const setOnly = (f: RosterFilter) => { only = only === f ? null : f; sel = null; summary.dataset.sig = ''; render(); };
   let visible: string[] = [];
   let sig = '';
   const rowEls = new Map<string, HTMLElement>();
@@ -61,6 +68,9 @@ export function createRoster(ctx: HudCtx): Panel {
   const open = (id: string, enterAt?: number) => ctx.openTerminal(id, { enterAt });
   const walk = (id: string) => { ctx.travel(id); ctx.panels.close(); };
   const card = (id: string) => ctx.panels.open('card', id);
+  /** an idle / finished farmer: the card with the new-task box focused */
+  const canTask = (f: FarmerView | undefined) => !!f && !f.needsYou && (f.status === 'idle' || f.status === 'done');
+  const task = (id: string) => ctx.panels.open('card', { id, task: canTask(ctx.farmer(id)) });
 
   const rowSig = (r: Row): string => r.kind === 'farmer'
     ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}`
@@ -80,6 +90,7 @@ export function createRoster(ctx: HudCtx): Panel {
     const acts = h('div.acts', null,
       h('button.vh-btn.small.term', { type: 'button', title: 'Open terminal (Enter)', onclick: (e: Event) => { e.stopPropagation(); open(id); } }, icon(ICONS.terminal), 'Terminal'),
       h('button.vh-btn.small', { type: 'button', title: 'Walk there (W)', 'aria-label': 'Walk there', onclick: (e: Event) => { e.stopPropagation(); walk(id); } }, icon(ICONS.walk)));
+    if (r.kind === 'farmer' && canTask(r.f)) acts.prepend(h('button.vh-btn.small.task', { type: 'button', title: 'Give a new task (Ctrl+Enter)', 'aria-label': 'Give a new task', 'data-testid': 'roster-task', onclick: (e: Event) => { e.stopPropagation(); task(id); } }, icon(ICONS.send)));
     const ago = h('span.t', { title: 'time since their last activity' });
     if (r.kind === 'farmer') {
       const f = r.f;
@@ -132,7 +143,7 @@ export function createRoster(ctx: HudCtx): Panel {
     const s = ctx.state();
     if (!s) return;
     const q = input.value;
-    const gs = groups(s, q);
+    const gs = groups(s, q, only);
     const order = gs.map((g) => `${g.plot?.id ?? '-'}:${g.rows.map((r) => r.id).join(',')}`).join('|');
     if (force) { rowsEl.replaceChildren(); rowEls.clear(); sig = ''; }
     if (order !== sig) {
@@ -154,7 +165,9 @@ export function createRoster(ctx: HudCtx): Panel {
       }
       for (const id of [...rowEls.keys()]) if (!live.has(id)) rowEls.delete(id);
       const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
-      if (!visible.length) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), q ? `Nobody matches "${q}".`
+      if (!visible.length && only) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), `Nobody ${only === 'needs' ? 'needs you' : `is ${only === 'done' ? 'done' : only}`}${q ? ` matching "${q}"` : ''} right now.`,
+        h('small', { text: 'Click the chip again to see everyone.' })));
+      else if (!visible.length) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), q ? `Nobody matches "${q}".`
         : away ? 'The ledger is waiting for herdr.' : 'No farmers in the valley yet.',
         h('small', { text: q ? 'Try a name, a field, a job (“testing”) or “needs”.' : away ? 'Your agents appear here the moment herdr answers again.' : 'Open a herdr workspace and start an agent: a field gets tilled and its farmer shows up here.' })));
       rowsEl.replaceChildren(...nodes);
@@ -181,16 +194,22 @@ export function createRoster(ctx: HudCtx): Panel {
       }
     }
     select(sel, false);
-    let need = 0, work = 0, done = 0;
-    for (const f of s.farmers.values()) { if (f.needsYou) need++; else if (f.status === 'working') work++; else if (f.unseenDone) done++; }
-    const ssig = `${need}|${work}|${done}|${s.farmers.size}|${s.helpers.size}`;
+    const n: Record<Exclude<RosterFilter, null>, number> = { needs: 0, working: 0, done: 0, idle: 0 };
+    for (const f of s.farmers.values()) for (const k of CHIPS) if (rosterFilterHit(k, f)) n[k]++;
+    const ssig = `${n.needs}|${n.working}|${n.done}|${n.idle}|${s.farmers.size}|${s.helpers.size}|${only}`;
     if (summary.dataset.sig !== ssig) {
       summary.dataset.sig = ssig;
+      const chip = (k: Exclude<RosterFilter, null>, cls: string, label: string) => (n[k] || only === k ? [h(`button.vh-pill.chip.${cls}${only === k ? '.on' : ''}`, {
+        type: 'button', 'aria-pressed': String(only === k), 'data-testid': `roster-chip-${k}`,
+        title: only === k ? 'Show everyone' : `Only farmers who ${k === 'needs' ? 'need you' : k === 'done' ? 'are done' : `are ${k}`}`,
+        onclick: () => setOnly(k),
+      }, `${n[k]} ${label}`)] : []);
       summary.replaceChildren(
-        ...(need ? [h('span.vh-pill.st-blocked', { text: `${need} need${need === 1 ? 's' : ''} you` })] : []),
-        ...(work ? [h('span.vh-pill.st-working', { text: `${work} working` })] : []),
-        ...(done ? [h('span.vh-pill.st-done', { text: `${done} done` })] : []),
-        h('span.vh-muted.count', { text: `${s.farmers.size} farmer${s.farmers.size === 1 ? '' : 's'}${s.helpers.size ? ` · ${s.helpers.size} scarecrow${s.helpers.size === 1 ? '' : 's'}` : ''}` }));
+        ...chip('needs', 'st-blocked', n.needs === 1 ? 'needs you' : 'need you'),
+        ...chip('working', 'st-working', 'working'),
+        ...chip('done', 'st-done', 'done'),
+        ...chip('idle', 'st-idle', 'idle'),
+        h('span.vh-muted.count', { text: `${s.farmers.size} farmer${s.farmers.size === 1 ? '' : 's'}${s.helpers.size ? ` · ${s.helpers.size} scarecrow${s.helpers.size === 1 ? '' : 's'}` : ''}${only ? ' · filtered' : ''}` }));
     }
   }
 
@@ -200,6 +219,7 @@ export function createRoster(ctx: HudCtx): Panel {
     id: 'roster', el,
     onOpen(arg) {
       input.value = '';
+      only = null;
       render(true);
       const s = ctx.state();
       if (arg && typeof arg === 'object' && (arg as { focus?: string }).focus === 'blocked' && s) {
@@ -222,6 +242,7 @@ export function createRoster(ctx: HudCtx): Panel {
         select(visible[Math.max(0, Math.min(visible.length - 1, i + (e.key === 'PageDown' ? 8 : -8)))]);
         return true;
       }
+      if (sel && e.ctrlKey && e.key === 'Enter') { if (ctx.farmer(sel)) task(sel); return true; }
       if (e.key === 'Enter' && sel && !(e.target instanceof HTMLButtonElement)) {
         if (e.shiftKey) walk(sel); else open(sel, e.timeStamp);
         return true;

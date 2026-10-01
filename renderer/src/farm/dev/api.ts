@@ -17,6 +17,9 @@
  *   __valley.force(id, patch)             demo backend: patch an entity (status, activity…)  (demo only)
  *   __valley.scenario(name, seed?)        demo backend: reset to a scenario             (demo only)
  *   __valley.forage(day?)  forageGo(i)  fish(step?)  collect(n)   pastimes (scene/forage): today's finds, walk up, cast at the dock, fill the book
+ *   __valley.coins(n)  buy(id, free?)  sell()  yard(step?)  furnish()   the economy (model/wallet.ts, scene/yard): add bits,
+ *                                         buy decor, sell the basket, stand in the yard / at the store, a furnished demo yard
+ *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
  *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
@@ -27,9 +30,11 @@ import type { Engine } from '../scene/engine.ts';
 import type { Controller } from '../player/controller.ts';
 import type { Valley } from '../model/valley.ts';
 import type { Season, WeatherKind } from '../model/types.ts';
-import type { FarmerLocator, StructureSpots, VillagersService } from '../scene/context.ts';
+import type { FarmerLocator, IndoorSpace, StructureSpots, VillagersService } from '../scene/context.ts';
 import type { ForageDebug } from '../scene/forage/forage.ts';
 import type { CollectionService } from '../model/collection.ts';
+import type { WalletService } from '../model/wallet.ts';
+import type { YardService } from '../scene/yard/yard.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
 import type { StructureId } from '../world/map.ts';
 
@@ -121,6 +126,13 @@ export function installDevApi(d: DevDeps): void {
     force: (id: string, patch: Record<string, unknown>) => d.demoForce?.(id, patch),
     scenario: (name: string, seed?: number) => d.demoScenario?.(name, seed),
     interact() { ctx.interact.focused()?.use(); },
+    /** the farmhouse interior (scene/interior): inside('hearth') stands at a viewpoint, inside(false) steps out to the porch */
+    inside(view: string | false = 'door') {
+      const home = ctx.services.get('indoors') as IndoorSpace | undefined;
+      if (!home) return false;
+      if (view === false) { home.leave(true); return true; }
+      return home.view?.(view) ?? false;
+    },
     villagers: () => (ctx.services.get('villagers') as VillagersService | undefined)?.list().map((p) => ({ ...p })) ?? [],
     villager: (id: string) => (ctx.services.get('villagers') as VillagersService | undefined)?.debug(id.startsWith('villager:') ? id : `villager:${id}`) ?? null,
     focused() { const f = ctx.interact.focused(); return f ? { id: f.id, kind: f.kind, verb: f.verb, label: f.label() } : null; },
@@ -159,6 +171,36 @@ export function installDevApi(d: DevDeps): void {
     },
     /** mark the first n entries of the Collections book found (shots: panel=collection) */
     collect: (n = 12) => (ctx.services.get('collection') as CollectionService | undefined)?.devFill(n),
+    /** add (or take, negative) bits; returns the balance */
+    coins(n = 500) { const w = ctx.services.get('wallet') as WalletService | undefined; w?.devCoins(n); return w?.coins() ?? 0; },
+    /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
+    buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },
+    /** sell the whole basket (as at Bram's) */
+    sell: () => (ctx.services.get('wallet') as WalletService | undefined)?.sellAll() ?? null,
+    /** stand in your yard ('store': at the General store; 'carry': pick up the first placed piece to move it) */
+    yard(step?: 'store' | 'carry') {
+      const y = ctx.services.get('yard') as YardService | undefined;
+      if (!y) return null;
+      freeCam = null;
+      if (step === 'store') { y.gotoStore(); return y.store; }
+      y.goto();
+      if (step === 'carry') { const p = (ctx.services.get('wallet') as WalletService | undefined)?.data().pieces.find((x) => x.slot !== null); if (p) y.carry(p.uid); }
+      return y.slots();
+    },
+    /** a furnished demo yard (free pieces, a few styles and turns): shots of the yard */
+    furnish() {
+      const w = ctx.services.get('wallet') as WalletService | undefined;
+      if (!w) return 0;
+      const s = valley.state.sky.season;
+      const plan = ['lights', 'planter', 'lamppost', 'bench', 'planter', 'gnome', 'birdbath', 'topiary', 'scarecrow', 'flamingo', 'petbed', 'chime', 'birdhouse', 'lamppost',
+        s === 'autumn' ? 'pumpkin' : s === 'winter' ? 'snowman' : s === 'spring' ? 'sapling' : 'parasol'];
+      for (const id of plan) {
+        const r = w.buy(id, { rank: 9, season: s, autoPlace: true, free: true });
+        if (r.ok && (id === 'gnome' || id === 'scarecrow')) w.restyle(r.piece.uid);
+        if (r.ok && (id === 'bench' || id === 'gnome')) w.rotate(r.piece.uid, id === 'bench' ? 0 : 1);
+      }
+      return w.data().pieces.length;
+    },
     // placement audit: loaded on demand (three-mesh-bvh stays out of the game bundle's hot path)
     audit: async (o?: import('./placement.ts').AuditOpts) => (await import('./placement.ts')).audit(ctx, valley.state, o),
     async auditShow(keys: string[], focus: import('./placementCore.ts').Box, view = 0) {

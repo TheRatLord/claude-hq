@@ -66,7 +66,7 @@ interface Item extends ItemRef {
   mesh: THREE.Mesh;
 }
 
-const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots', 'forage', 'sitters'];
+const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots', 'forage', 'yard', 'sitters'];
 /** ground cover and foliage: grounding checks only, never an overlap (grass through a fence is fine) */
 const SOFT = /grass|flowers-|clover|meadow|pebbles|reeds|cattails|lily-(pads|flowers)|paver#|soilBed#|\/ground$|\/(clod|pentile|decor|weed)#/;
 

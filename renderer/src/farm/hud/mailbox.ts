@@ -2,10 +2,12 @@
  * Mailbox (J, the dock button, or the in-world mailbox): letters from the farmers. Filter Needs you / Unread / All;
  * each letter expands to its full text with actions (terminal, quick answers for unresolved asks, walk there).
  * Opening a letter marks it read; read state persists across reloads (see hud.ts).
+ * Answer + next: the Needs you tab lists asks in the strip's order (newest first), and answering one (1–9 or a click)
+ * moves the selection to the next ask, so J, 1, 1, 2, Esc clears a queue without touching the mouse.
  */
 import type { Letter, ValleyState } from '../model/types.ts';
 import { ICONS, LETTER_ICON, icon } from './icons.ts';
-import { ago, LETTER_LABEL, letterTitle, nice, shortName } from './format.ts';
+import { ago, askOrder, LETTER_LABEL, letterTitle, nextAfter, nice, shortName } from './format.ts';
 import { framePanel, h, syncList, typingIn, type HudCtx, type Panel } from './ctx.ts';
 
 type Filter = 'needs' | 'unread' | 'all';
@@ -50,6 +52,25 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     h('span', null, h('kbd.vh-k', { text: 'J' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.bar', null, tabBar, allBtn), listEl, foot);
   let shown: Letter[] = [];
+  /** farmers with an answer in flight (a second 1 must not send twice) */
+  const answering = new Set<string>();
+  /** answer an ask, then select the next one in view so the next key press acts on it */
+  const answer = async (l: Letter, key: string, label: string): Promise<void> => {
+    if (answering.has(l.farmerId)) return;
+    const before = shown.filter((x) => x.kind === 'needs-you' && !x.resolved).map((x) => x.id);
+    answering.add(l.farmerId); render();
+    let ok = false;
+    try { ok = await ctx.answer(l.farmerId, key, label); } finally { answering.delete(l.farmerId); }
+    if (ok) {
+      mark.read(l);
+      // the answered letter may linger a beat until the farmer unblocks: skip it, and asks from the same farmer
+      const next = nextAfter(before.filter((id) => id === l.id || shown.find((x) => x.id === id)?.farmerId !== l.farmerId), l.id);
+      if (sel === l.id || sel === null) sel = next;
+      ctx.sfx('page');
+    }
+    render();
+    if (sel) listEl.querySelector(`[data-key="${CSS.escape(sel)}"]`)?.scrollIntoView({ block: 'nearest' });
+  };
   /** the Needs you tab pre-selects the first ask (without marking it read), so 1–9 / Enter act on it straight away */
   const setFilter = (f: Filter) => {
     filter = f; sel = null; render();
@@ -57,7 +78,11 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
   };
 
   const pick = (letters: readonly Letter[], by: Filter = filter): Letter[] => {
-    if (by === 'needs') return letters.filter((l) => l.kind === 'needs-you' && !l.resolved);
+    if (by === 'needs') {
+      // the same order as the needs-you strip (Alt+1 there is the first ask here)
+      const since = (l: Letter) => ctx.farmer(l.farmerId)?.jobSince ?? l.at;
+      return letters.filter((l) => l.kind === 'needs-you' && !l.resolved).sort((a, b) => askOrder({ since: since(a), id: a.farmerId }, { since: since(b), id: b.farmerId }));
+    }
     if (by === 'unread') return letters.filter((l) => !l.read && !(l.kind === 'needs-you' && l.resolved));
     return [...letters];
   };
@@ -80,8 +105,9 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     const open = sel === l.id;
     const f = s?.farmers.get(l.farmerId);
     const live = l.kind === 'needs-you' && !l.resolved && !!f?.needsYou;
-    node.className = `vh-letter k-${l.kind}${l.read ? ' read' : ' unread'}${l.resolved ? ' resolved' : ''}${open ? ' sel' : ''}`;
-    const sig = `${l.title}|${l.body}|${l.read}|${l.resolved}|${open}|${live ? f?.options.map((o) => o.label).join('|') : ''}|${!!f}`;
+    const busy = answering.has(l.farmerId);
+    node.className = `vh-letter k-${l.kind}${l.read ? ' read' : ' unread'}${l.resolved ? ' resolved' : ''}${open ? ' sel' : ''}${busy ? ' busy' : ''}`;
+    const sig = `${l.title}|${l.body}|${l.read}|${l.resolved}|${open}|${live ? f?.options.map((o) => o.label).join('|') : ''}|${!!f}|${busy}`;
     (node.querySelector('.when') as HTMLElement).textContent = s ? ago(l.at, s.now) : '';
     if (node.dataset.sig === sig) return;
     node.dataset.sig = sig;
@@ -96,7 +122,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     const answers = node.querySelector('.answers') as HTMLElement;
     answers.replaceChildren(...(live && f ? f.options.map((o) => h('button.vh-btn.small.gold.answer', {
       type: 'button', title: o.label, 'data-testid': 'letter-answer',
-      onclick: async () => { if (await ctx.answer(f.id, o.key, o.label)) { mark.read(l); render(); } },
+      onclick: () => void answer(l, o.key, o.label),
     }, h('span.num', { text: o.key }), h('span.lab', { text: o.label }))) : []));
     answers.style.display = live && (open || filter === 'needs') ? '' : 'none';
     const acts = node.querySelector('.acts') as HTMLElement;
@@ -159,7 +185,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
       if (cur && /^Digit[1-9]$/.test(e.code) && !e.altKey && !e.ctrlKey) {
         const f = ctx.farmer(cur.farmerId);
         const o = cur.kind === 'needs-you' && !cur.resolved && f?.needsYou ? f.options[Number(e.code.slice(5)) - 1] : undefined;
-        if (o && f) { void ctx.answer(f.id, o.key, o.label).then((ok) => { if (ok) { mark.read(cur); render(); } }); return true; }
+        if (o && f) { void answer(cur, o.key, o.label); return true; }
       }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         const order: Filter[] = ['needs', 'unread', 'all'];

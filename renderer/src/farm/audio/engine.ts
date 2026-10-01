@@ -7,6 +7,8 @@
  *   voice┼─▶ master ─▶ limiter ─▶ destination
  *   notify┘     ▲
  *   ambient ─▶ hiddenDuck      (ambience + music hush to 30% while the window is hidden; notify stays full)
+ *   outdoor ─▶ muffle ─▶ ambient   (bus('ambient'): the valley's beds and critters, low-passed indoors; music, loops
+ *                                  and the rain on the roof go to `dry()`, the ambient bus itself)
  *   reverb send ─▶ convolver ─▶ master
  */
 import type { Settings } from '../../core/settings.ts';
@@ -22,6 +24,10 @@ export interface Listener { x: number; y: number; z: number; rx: number; rz: num
 export interface AudioEngine {
   readonly ac: AudioContext | null;
   bus(name: BusName): GainNode | null;
+  /** the ambient bus without the indoor muffle (music, other packages' loops, the rain on the roof) */
+  dry(): GainNode | null;
+  /** 0 outdoors … 1 indoors: muffle the outdoor ambience (low-pass, quieter, less valley reverb) */
+  setIndoor(k: number): void;
   /** reverb send input (null until unlocked) */
   readonly send: GainNode | null;
   readonly listener: Listener;
@@ -43,6 +49,14 @@ export function createAudioEngine(settings: Settings | undefined): AudioEngine {
   let ac: AudioContext | null = null;
   const buses: Partial<Record<BusName, GainNode>> = {};
   let master: GainNode | null = null, duck: GainNode | null = null, send: GainNode | null = null;
+  let outdoor: GainNode | null = null, muffle: BiquadFilterNode | null = null, muffleGain: GainNode | null = null, indoor = 0;
+  const applyIndoor = () => {
+    if (!ac || !muffle || !muffleGain || !send) return;
+    const t = ac.currentTime;
+    muffle.frequency.setTargetAtTime(20000 * Math.pow(650 / 20000, indoor), t, 0.15);
+    muffleGain.gain.setTargetAtTime(1 - 0.45 * indoor, t, 0.15);
+    send.gain.setTargetAtTime(0.6 * (1 - 0.65 * indoor), t, 0.2);
+  };
   const ready: ((ac: AudioContext) => void)[] = [];
   const gains = busGains({});
   const listener: Listener = { x: 0, y: 0, z: 0, rx: 1, rz: 0 };
@@ -86,12 +100,17 @@ export function createAudioEngine(settings: Settings | undefined): AudioEngine {
     duck.connect(master);
     for (const b of ['sfx', 'notify', 'voice'] as const) { const g = ac.createGain(); g.connect(master); buses[b] = g; }
     const amb = ac.createGain(); amb.connect(duck); buses.ambient = amb;
+    outdoor = ac.createGain();
+    muffle = ac.createBiquadFilter(); muffle.type = 'lowpass'; muffle.Q.value = 0.4; muffle.frequency.value = 20000;
+    muffleGain = ac.createGain();
+    outdoor.connect(muffle).connect(muffleGain).connect(amb);
     const conv = ac.createConvolver();
     conv.buffer = valleyImpulse(ac);
     send = ac.createGain();
     send.gain.value = 0.6;
     send.connect(conv).connect(master);
     apply();
+    applyIndoor();
     document.addEventListener('visibilitychange', onVisibility);
     for (const fn of ready.splice(0)) { try { fn(ac); } catch (e) { console.error('[audio] ready hook', e); } }
   };
@@ -104,7 +123,9 @@ export function createAudioEngine(settings: Settings | undefined): AudioEngine {
 
   return {
     get ac() { return ac; },
-    bus: (n) => buses[n] ?? null,
+    bus: (n) => (n === 'ambient' ? outdoor : buses[n] ?? null),
+    dry: () => buses.ambient ?? null,
+    setIndoor(k) { indoor = Math.max(0, Math.min(1, k)); applyIndoor(); },
     get send() { return send; },
     listener,
     gains,

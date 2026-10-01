@@ -271,6 +271,8 @@ for (const s of STRUCTURES) {
 export const GARDEN = Object.freeze({ x0: 7.6, x1: 12.4, z0: -25.5, z1: -18.2 });
 /** The laundry line's yard (west of the house, hub dressing): the line runs along x between the two poles; kept clear of scatter. */
 export const LAUNDRY = Object.freeze({ x: -8.9, z0: -25.0, z1: -19.4 });
+/** The player's yard behind the farmhouse (scene/yard: a low fence; decor bought at the General store stands on its slots): kept clear of scatter. */
+export const YARD = Object.freeze({ x0: -6.2, x1: 6.2, z0: -32.2, z1: -24.4 });
 {
   const fh = pads.find((q) => q.top && rectSdf(STRUCTURES[0].x, STRUCTURES[0].z, q) < 0)!;
   const g = padOf((GARDEN.x0 + GARDEN.x1) / 2, (GARDEN.z0 + GARDEN.z1) / 2, GARDEN.x1 - GARDEN.x0 + 4, GARDEN.z1 - GARDEN.z0 + 4, 0, 4, fh.y);
@@ -497,6 +499,7 @@ export function clearance(x: number, z: number): number {
   let d = rectSdf(x, z, { x: HUB.x, z: HUB.z + 1, hw: 13, hd: 11, yaw: 0 });
   for (const s of STRUCTURES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.size[0] / 2, hd: s.size[1] / 2, yaw: s.yaw }));
   d = Math.min(d, rectSdf(x, z, { x: (GARDEN.x0 + GARDEN.x1) / 2, z: (GARDEN.z0 + GARDEN.z1) / 2, hw: (GARDEN.x1 - GARDEN.x0) / 2, hd: (GARDEN.z1 - GARDEN.z0) / 2, yaw: 0 }));
+  d = Math.min(d, rectSdf(x, z, { x: (YARD.x0 + YARD.x1) / 2, z: (YARD.z0 + YARD.z1) / 2, hw: (YARD.x1 - YARD.x0) / 2, hd: (YARD.z1 - YARD.z0) / 2, yaw: 0 }));
   d = Math.min(d, rectSdf(x, z, { x: LAUNDRY.x, z: (LAUNDRY.z0 + LAUNDRY.z1) / 2, hw: 1.0, hd: (LAUNDRY.z1 - LAUNDRY.z0) / 2 + 0.5, yaw: 0 }));
   for (const s of SITES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw }));
   for (const p of PATHS) d = Math.min(d, distToPolyline(x, z, p.points) - p.width / 2);

@@ -6,6 +6,7 @@
  *
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
+ *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior)
  */
 import './hud/base.css';
 import { R2S } from '../../../shared/protocol.ts';
@@ -16,6 +17,8 @@ import { createPlatform } from '../ui/platform.ts';
 import { createValley } from './model/valley.ts';
 import { demoAlmanac } from './model/almanac.ts';
 import { createCollection } from './model/collection.ts';
+import { createWallet } from './model/wallet.ts';
+import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
@@ -26,7 +29,7 @@ import { createHud } from './hud/hud.ts';
 import type { HudNet } from './hud/port.ts';
 import { installDevApi, POSES } from './dev/api.ts';
 import { installOverlay } from './dev/overlay.ts';
-import type { AudioService, FarmerLocator, VillagersService } from './scene/context.ts';
+import type { AudioService, FarmerLocator, IndoorSpace, VillagersService } from './scene/context.ts';
 import { SITES } from './world/map.ts';
 
 const params = new URLSearchParams(location.search);
@@ -90,6 +93,16 @@ const collection = createCollection({
 });
 collection.onFind((r) => { if (r.isNew) valley.harvest('found'); });
 engine.ctx.services.set('collection', collection);
+// the wallet (bits, the basket of finds, yard decor: model/wallet.ts; the store + yard are scene/yard, the panel hud/shop.ts):
+// browser-local; finds go into the basket, real agent work pays a few bits a day (capped)
+const WALLET_KEY = 'claude-valley.wallet.v1';
+const wallet = createWallet({
+  load: () => { const raw = localStorage.getItem(WALLET_KEY); return raw ? JSON.parse(raw) : null; },
+  save: (d) => localStorage.setItem(WALLET_KEY, JSON.stringify(d)),
+}, { seed: () => Object.fromEntries(Object.entries(collection.data().found).map(([id, f]) => [id, f.n])) });
+collection.onFind((r) => wallet.stash(r.def.id));
+valley.on((e) => { wallet.work(e.kind); });
+engine.ctx.services.set('wallet', wallet);
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
@@ -126,6 +139,8 @@ hud.bind({
   camera: () => engine.ctx.camera,
   sfx: (name) => (engine.ctx.services.get('audio') as AudioService | undefined)?.play(name),
   collection: () => collection,
+  wallet: () => wallet,
+  yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
 });
 engine.onFrame((f) => hud.update(f));
 
@@ -145,6 +160,8 @@ if (pose) {
   const nums = pose.split(',').map(Number);
   if (named) controller.teleport(named[0], named[1], named[2], named[3]);
   else if (nums.length >= 2 && nums.every(Number.isFinite)) controller.teleport(nums[0], nums[1], nums[2], nums[3]);
+  // pose=inside (or inside:hearth, inside:shelf … see INSIDE_VIEWS in scene/interior/layout.ts): the farmhouse interior
+  else if (/^inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(pose.split(':')[1] || 'door');
 }
 
 engine.start();

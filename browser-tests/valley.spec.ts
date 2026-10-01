@@ -223,3 +223,145 @@ test('pastimes: pick up a forageable, catch a fish, both land in the Collections
   await expect(book).toContainText('2 of 28 found');
   expect(errors).toEqual([]);
 });
+
+test('power-user loop: answer + next, ? for keys, ledger chips + new task, background notifications', async ({ page, demoServer }) => {
+  test.slow(); // software rendering
+  // a fake Notification API and a switchable window focus, so "in the background" can be staged headless
+  await page.addInitScript(() => {
+    const w = window as unknown as { __notes: { title: string; body: string }[]; __away: boolean; Notification: unknown };
+    w.__notes = []; w.__away = false;
+    class FakeNotification {
+      static permission = 'default';
+      static async requestPermission() { FakeNotification.permission = 'granted'; return 'granted'; }
+      onclick: (() => void) | null = null;
+      constructor(title: string, o?: { body?: string }) { w.__notes.push({ title, body: o?.body ?? '' }); }
+      close() {}
+    }
+    w.Notification = FakeNotification;
+    document.hasFocus = () => !w.__away;
+  });
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
+  await expect(page.getByTestId('need-card').first()).toBeVisible();
+
+  // --- mailbox: answering the selected ask selects the next one (same order as the needs-you strip) ---
+  const stripOrder = await page.locator('[data-testid="need-card"]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
+  await page.keyboard.press('j');
+  await expect(page.getByTestId('mail-tab-needs')).toHaveAttribute('aria-selected', 'true');
+  const selFrom = () => page.locator('[data-testid="letter"].sel .from').textContent();
+  const first = await selFrom();
+  if (stripOrder.length >= 2) {
+    await page.keyboard.press('1');
+    await expect(page.getByTestId('toasts')).toContainText(/Answered/i);
+    await expect.poll(selFrom).not.toBe(first);
+    await expect(page.locator('[data-testid="letter"].sel')).toHaveCount(1);
+  }
+  await page.keyboard.press('Escape');
+
+  // --- ? opens every key, grouped ---
+  await page.keyboard.press('Shift+Slash');
+  await expect(page.getByTestId('panel-pause')).toBeVisible();
+  await expect(page.getByTestId('controls')).toContainText('collections book');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-pause')).toBeHidden();
+
+  // --- ledger: the idle chip filters; the new-task button lands in the card's prompt box; Ctrl+Enter twice sends ---
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('panel-roster')).toBeVisible();
+  await page.getByTestId('roster-chip-idle').click();
+  await expect(page.getByTestId('roster-chip-idle')).toHaveAttribute('aria-pressed', 'true');
+  const statuses = await page.locator('[data-testid="roster-row"]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.status));
+  expect(statuses.length).toBeGreaterThan(0);
+  expect(statuses.every((s) => s === 'idle' || s === 'unknown' || s === 'done')).toBe(true);
+  await page.getByTestId('roster-task').first().click();
+  await expect(page.getByTestId('panel-card')).toBeVisible();
+  await expect(page.getByTestId('card-prompt')).toBeFocused();
+  await page.keyboard.type('Write the changelog');
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('panel-card')).toContainText(/Send this to/);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('toasts')).toContainText(/Sent to/);
+  await expect(page.getByTestId('panel-card')).toBeHidden();
+
+  // --- notifications: opt in (Settings → Alerts), go "away", a farmer gets blocked → one notification + icon badge ---
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-pause')).toBeVisible();
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByTestId('set-notify').check();
+  await expect(page.getByTestId('toasts')).toContainText(/notifications on/i);
+  await page.keyboard.press('Escape');
+  const calm = await page.evaluate(() => {
+    const s = (window as unknown as { __valley: { state(): { farmers: { id: string; status: string }[] | Record<string, { id: string; status: string }> } } }).__valley.state();
+    const fs = Array.isArray(s.farmers) ? s.farmers : Object.values(s.farmers);
+    return fs.find((f) => f.status === 'working')?.id ?? null;
+  });
+  expect(calm).toBeTruthy();
+  await page.evaluate((id) => {
+    (window as unknown as { __away: boolean }).__away = true;
+    (window as unknown as { __valley: { force(id: string, p: Record<string, unknown>): unknown } }).__valley.force(id!, { status: 'blocked' });
+  }, calm);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __notes: { title: string }[] }).__notes.map((n) => n.title).join('|')), { timeout: 15_000 }).toMatch(/needs you/);
+  await expect(page.locator('link[rel~="icon"]')).toHaveAttribute('data-badge', /^n/);
+  await expect.poll(() => page.title()).toMatch(/need/);
+  expect(errors).toEqual([]);
+});
+
+test('economy: sell your basket at the General store, buy decor, it stands in your yard, carry + put away', async ({ page, demoServer }) => {
+  test.slow(); // software rendering
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  type W = { stash(id: string, n?: number): void; coins(): number; data(): { pieces: { uid: number; id: string; slot: number | null }[] } };
+  type V = { yard(step?: string): unknown; focused(): { id: string } | null; ctx: { services: Map<string, unknown> } };
+  const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
+  await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
+  // a basket of finds (as if picked and caught), then walk up to the store's counter
+  await v((x) => { (x.ctx.services.get('wallet') as W).stash('acorn', 3); (x.ctx.services.get('wallet') as W).stash('carp', 1); });
+  await v((x) => x.yard('store'));
+  await expect.poll(() => v((x) => x.focused()?.id ?? '')).toBe('yard:store');
+  // F: sell your basket
+  await page.keyboard.press('KeyF');
+  const shop = page.getByTestId('panel-shop');
+  await expect(shop).toBeVisible();
+  await expect(page.getByTestId('basket').locator('.row')).toHaveCount(2);
+  const before = await v((x) => (x.ctx.services.get('wallet') as W).coins());
+  await page.getByTestId('basket-sell-all').click();
+  await expect.poll(() => v((x) => (x.ctx.services.get('wallet') as W).coins())).toBeGreaterThanOrEqual(before + 40);
+  await expect(page.getByTestId('basket').locator('.row')).toHaveCount(0);
+  // the Shop tab: buy a flamingo; it goes straight into the yard
+  await page.getByTestId('shop-tab-buy').click();
+  await page.getByTestId('shop-grid').locator('[data-id="flamingo"]').click();
+  await page.getByTestId('shop-buy').click();
+  await expect.poll(() => v((x) => (x.ctx.services.get('wallet') as W).data().pieces.map((p) => `${p.id}@${p.slot}`).join())).toBe('flamingo@0');
+  await page.getByTestId('shop-tab-yard').click();
+  await expect(page.getByTestId('yard-pieces')).toContainText('Pink flamingo');
+  await expect(page.getByTestId('yard-map').locator('.spot.full')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(shop).toBeHidden();
+  // in the yard: pick it up (carry), X puts it away in storage
+  await v((x) => x.yard('carry'));
+  await expect.poll(() => v((x) => (x.ctx.services.get('yard') as { carrying(): number | null }).carrying())).not.toBeNull();
+  await page.keyboard.press('KeyX');
+  await expect.poll(() => v((x) => (x.ctx.services.get('wallet') as W).data().pieces[0].slot)).toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test('the farmhouse: E on the door walks in, the room has its own interactables, E on the inside door steps out', async ({ page, demoServer }) => {
+  test.slow(); // software rendering
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  type V = { inside(view: string | false): boolean; look(x: number, y: number, z: number): void; focused(): { id: string } | null; ctx: { services: Map<string, unknown> } };
+  const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
+  const active = () => v((x) => (x.ctx.services.get('indoors') as { active: boolean }).active);
+  await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
+  // stand on the porch (inside(false) from outdoors just puts you there) and face the front door
+  await v((x) => { x.inside('door'); x.inside(false); });
+  expect(await active()).toBe(false);
+  await v((x) => x.look(0, 2.8, -17.15));
+  await expect.poll(() => v((x) => x.focused()?.id ?? '')).toBe('farmhouse:door');
+  await page.keyboard.press('KeyE');
+  await expect.poll(active, { timeout: 15_000 }).toBe(true);
+  // inside, only the room's things answer the crosshair
+  await v((x) => x.look(0, 3.0, -17.15));
+  await expect.poll(() => v((x) => x.focused()?.id ?? '')).toBe('interior:door');
+  await page.keyboard.press('KeyE');
+  await expect.poll(active, { timeout: 15_000 }).toBe(false);
+  expect(errors).toEqual([]);
+});

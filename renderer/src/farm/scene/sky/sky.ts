@@ -14,7 +14,7 @@ import { createDome } from './dome.ts';
 import { createClouds } from './clouds.ts';
 import { createWind } from './wind.ts';
 import { createMeteors, showerOn } from './meteors.ts';
-import type { AudioService } from '../context.ts';
+import type { AudioService, IndoorSpace } from '../context.ts';
 
 const SHADOW_SPAN = 72;
 const NIGHT_DIR = new THREE.Vector3(-0.42, 0.78, 0.46).normalize();
@@ -22,6 +22,8 @@ const OVERCAST_GREY = new THREE.Color(0x9aa4ae);
 const FOG_GREY = new THREE.Color(0xc4cad0);
 const SNOW_GREY = new THREE.Color(0xd6dde6);
 const STORM_GREY = new THREE.Color(0x4a5260);
+/** indoors (the farmhouse): what the open-sky fill turns into under a roof — warm bounce off plaster and planks */
+const ROOM_SKY = new THREE.Color(0xd8c4a8), ROOM_GROUND = new THREE.Color(0x8a5a3a);
 
 interface WeatherTarget { overcast: number; rain: number; snow: number; storm: number; fog: number }
 const target = (kind: WeatherKind, k: number, clouds: number): WeatherTarget => ({
@@ -161,6 +163,13 @@ export const skySystem: SystemFactory = (ctx) => {
       hemi.groundColor.copy(mix.hemiGround);
       if (sky.season === 'winter') hemi.groundColor.lerp(tmpC.setHex(0x9aa6b8), 0.35);
       hemi.intensity = hemiI;
+      // under a roof (scene/interior): only the windows' share of the sky reaches in, bounced warm off the room
+      const indoor = (ctx.services.get('indoors') as IndoorSpace | undefined)?.active ? 1 : 0;
+      if (indoor) {
+        hemi.intensity = hemiI * 0.62;
+        hemi.color.lerp(ROOM_SKY, 0.35);
+        hemi.groundColor.lerp(ROOM_GROUND, 0.6);
+      }
 
       // shadow camera: centred a little ahead of the player, snapped to shadow texels in light space (no shimmer)
       const p = ctx.player.pos;
@@ -274,6 +283,8 @@ export const skySystem: SystemFactory = (ctx) => {
       g.inkStrength = 0.75 - mix.night * 0.2 - fg * 0.3;
       a.mist = Math.min(2, mix.mist * (sky.season === 'summer' ? 0.6 : 1) * (0.5 + 0.5 * clamp01(wet + fg + oc * 0.5)) + fg * 1.6 + rn * 0.25);
       a.cloudShadow = clamp01(sky.daylight * (1 - oc) * smooth(0.08, 0.35, a.cover) * 0.8);
+      // no cloud shadows or valley mist drifting through the farmhouse
+      if (indoor) { a.cloudShadow = 0; a.mist = 0; g.vignette += 0.06; }
     },
     stats: () => ({ hour: +ctx.valley.sky.hour.toFixed(2), moon: +a.moonPhase.toFixed(2), sunI: +key.intensity.toFixed(2), night: +L.night.toFixed(2) }),
     dispose() {

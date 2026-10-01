@@ -34,8 +34,12 @@ import { createNoticeboard, createStats } from './boards.ts';
 import { createAlmanac } from './almanac.ts';
 import { createCollectionPanel } from './collection.ts';
 import type { CollectionService } from '../model/collection.ts';
+import { createShopPanel } from './shop.ts';
+import type { YardPort } from './shop.ts';
+import type { WalletService } from '../model/wallet.ts';
 import { UPGRADES } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
+import { createNotifier } from './notify.ts';
 
 export interface HudBindings {
   valley: () => ValleyState;
@@ -60,6 +64,9 @@ export interface HudBindings {
   camera?(): Camera;
   /** optional: the player's Collections book (forage + fishing, model/collection.ts) */
   collection?(): CollectionService;
+  /** optional: the player's wallet (bits, basket, yard decor: model/wallet.ts) and the scene's yard (scene/yard) */
+  wallet?(): WalletService;
+  yard?(): YardPort | undefined;
 }
 
 export interface Hud {
@@ -126,6 +133,7 @@ export function createHud(d: HudDeps): Hud {
   const anchors = createAnchors(() => prompt.focused() ?? safeFocus(), () => b?.interact.all() ?? null);
   const safeFocus = () => { try { return b?.interact.focused() ?? null; } catch { return null; } };
   const toasts = createToasts(ctx);
+  const notifier = createNotifier(ctx);
   const greetFestival = festivalGreeter((t) => toasts.push(t));
   const minimap = createMinimap(ctx);
   const hint = createHint();
@@ -148,7 +156,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createPause(ctx), drawer]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createPause(ctx), drawer]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -169,8 +177,9 @@ export function createHud(d: HudDeps): Hud {
   const hints = h('div.vh-hints', null, freehint,
     h('span.opt', null, h('kbd.vh-k', { text: 'E' }), 'talk'), h('span.opt', null, h('kbd.vh-k', { text: 'F' }), 'terminal'),
     h('span', null, h('kbd.vh-k', { text: 'M' }), 'map'), h('span', null, h('kbd.vh-k', { text: 'Tab' }), 'ledger'),
-    h('span', null, h('kbd.vh-k', { text: 'J' }), 'mail'), h('span', null, h('kbd.vh-k', { text: 'B' }), 'board'),
-    h('span', null, leaderKbd, 'terminals'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'));
+    h('span', null, h('kbd.vh-k', { text: 'J' }), 'mail'),
+    h('span', null, leaderKbd, 'terminals'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'),
+    h('span', null, h('kbd.vh-k', { text: '?' }), 'all keys'));
   const syncLeader = () => {
     const spec = d.settings.get('leaderKey') || 'Ctrl+`';
     leaderKbd.textContent = spec;
@@ -246,16 +255,20 @@ export function createHud(d: HudDeps): Hud {
         return;
       }
       if (typing || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
       if (e.code === 'KeyJ') { handled(e); panels.toggle('mailbox'); return; }
       if (e.code === 'KeyM') { handled(e); panels.toggle('map'); return; }
       if (e.code === 'KeyH') { handled(e); panels.toggle('almanac'); return; }
       if (e.code === 'KeyK') { handled(e); panels.toggle('collection'); return; }
+      if (e.code === 'KeyI') { handled(e); panels.toggle('shop', { tab: 'sell', at: 'pocket' }); return; }
       if (e.key === 'Tab' && cur.id !== 'pause') { handled(e); panels.toggle('roster'); return; }
       if (e.code === 'KeyE' && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
     }
     if (typing || e.ctrlKey || e.metaKey) return;
     if (e.altKey) return;
+    // ? (Shift+/ on most layouts): every key, grouped (the pause menu's Controls tab)
+    if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
     switch (e.code) {
       case 'KeyE': { const f = prompt.focused(); if (f) { handled(e); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
       case 'KeyF': {
@@ -270,6 +283,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyB': handled(e); panels.open('noticeboard'); return;
       case 'KeyH': handled(e); panels.open('almanac'); return;
       case 'KeyK': handled(e); panels.open('collection'); return;
+      case 'KeyI': handled(e); panels.open('shop', { tab: 'sell', at: 'pocket' }); return;
       case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Tab': handled(e); panels.open('roster'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
@@ -291,6 +305,8 @@ export function createHud(d: HudDeps): Hud {
     layer.classList.toggle('modal', panels.modal);
     // a big panel (not a side card) is up: corner furniture steps back (toasts shrink, the banner docks, hints hide)
     layer.classList.toggle('covered', panels.modal && !panels.current()?.light);
+    // a side card is up (right edge): toasts step left of it so they never sit on its buttons
+    layer.classList.toggle('side', panels.modal && !!panels.current()?.light);
     const idle = !locked && !panels.modal;
     hint.classList.toggle('show', idle && !prefs.hinted && !!b);
     freehint.classList.toggle('show', idle && prefs.hinted && !!b);
@@ -310,6 +326,7 @@ export function createHud(d: HudDeps): Hud {
     const s = ctx.state();
     status.refresh();
     if (!s || !b) return;
+    notifier.tick(s);
     for (const l of s.letters) if (!l.read && readKeys.has(letterKey(l))) { b.markRead(l.id); l.read = true; }
     if (!pointerDown) needs.refresh();
     toasts.watchLetters(s.letters);
@@ -349,6 +366,8 @@ export function createHud(d: HudDeps): Hud {
     dismissHint: () => { prefs.hinted = true; savePrefs(prefs); overlays(); },
     /** map hit targets in canvas css px (browser tests click farmers by these) */
     mapHits: () => mapPanel.hits().map((x) => ({ ...x })),
+    /** the last desktop notification's copy and the tab icon's badge ('n3', 'd', '') */
+    notify: () => notifier.debug(),
   };
 
   return {
@@ -361,6 +380,8 @@ export function createHud(d: HudDeps): Hud {
       stats: () => panels.open('stats'),
       almanac: () => panels.open('almanac'),
       roster: () => panels.open('roster'),
+      collection: () => panels.open('collection'),
+      shop: (tab, at) => panels.open('shop', { tab: tab ?? 'buy', at: at ?? (tab === 'yard' ? 'pocket' : 'store') }),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
@@ -368,6 +389,7 @@ export function createHud(d: HudDeps): Hud {
     bind(x) {
       b = x;
       x.onValley((e) => {
+        notifier.event(e);
         if (e.kind === 'blocked') { mailBtn.classList.remove('bounce'); void mailBtn.offsetWidth; mailBtn.classList.add('bounce'); }
         else if (e.kind === 'plot-opened') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `A new field was tilled: ${p.label}`, sub: 'a workspace opened in herdr', icon: ICONS.sprout, level: 'good' }); }
         else if (e.kind === 'level-up') {

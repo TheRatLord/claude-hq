@@ -202,3 +202,56 @@ export function pinGlyph(p: { name: string; tag?: string }): string {
   const w = i >= 0 ? t.slice(i + 1) : t;
   return (/^\d+$/.test(w) ? w : w[0] ?? '?').toUpperCase();
 }
+
+/**
+ * "Answer + next": after `done` leaves a list (answered, resolved), the item that takes its place: the one after it,
+ * else the one before it, else null. `ids` is the list as it was when the action started.
+ */
+export function nextAfter(ids: readonly string[], done: string): string | null {
+  const i = ids.indexOf(done);
+  if (i < 0) return ids[0] ?? null;
+  return ids[i + 1] ?? ids[i - 1] ?? null;
+}
+
+/** The order asks are worked through everywhere (the needs-you strip, the mailbox's Needs you tab): newest first. */
+export function askOrder(a: { since: number; id: string }, b: { since: number; id: string }): number {
+  return b.since - a.since || a.id.localeCompare(b.id);
+}
+
+/** Ledger status filters (the summary chips). `null` = everyone. */
+export type RosterFilter = 'needs' | 'working' | 'done' | 'idle' | null;
+export function rosterFilterHit(f: RosterFilter, p: Pick<FarmerView, 'needsYou' | 'status' | 'unseenDone'> | null): boolean {
+  if (!f) return true;
+  if (!p) return false; // scarecrows only show unfiltered
+  if (f === 'needs') return p.needsYou;
+  if (f === 'working') return !p.needsYou && p.status === 'working';
+  if (f === 'done') return !p.needsYou && (p.unseenDone || p.status === 'done');
+  return !p.needsYou && (p.status === 'idle' || p.status === 'unknown' || (p.status === 'done' && !p.unseenDone));
+}
+
+/** One OS / favicon attention item: a farmer who just got blocked or finished while the window was in the background. */
+export interface Ping { kind: 'blocked' | 'finished'; id: string; name: string; text: string }
+/**
+ * Desktop-notification copy for a burst of pings (merged within a short window): one ping speaks for itself, several
+ * become a summary that leads with the asks.
+ */
+export function notifyCopy(pings: readonly Ping[]): { title: string; body: string } | null {
+  if (!pings.length) return null;
+  const asks = pings.filter((p) => p.kind === 'blocked');
+  const done = pings.filter((p) => p.kind === 'finished');
+  if (pings.length === 1) {
+    const p = pings[0];
+    return p.kind === 'blocked'
+      ? { title: `${p.name} needs you`, body: p.text || 'Waiting for your answer' }
+      : { title: `${p.name} finished`, body: p.text || 'Ready for your review' };
+  }
+  const names = (l: readonly Ping[]) => {
+    const n = [...new Set(l.map((p) => p.name))];
+    return n.length > 3 ? `${n.slice(0, 3).join(', ')} +${n.length - 3}` : n.join(', ');
+  };
+  const parts = [asks.length ? `${asks.length} need${asks.length === 1 ? 's' : ''} you` : '', done.length ? `${done.length} finished` : ''].filter(Boolean);
+  return {
+    title: `Claude Valley: ${parts.join(' · ')}`,
+    body: [asks.length ? `Waiting: ${names(asks)}` : '', done.length ? `Done: ${names(done)}` : ''].filter(Boolean).join('\n'),
+  };
+}

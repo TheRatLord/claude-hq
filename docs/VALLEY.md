@@ -119,6 +119,41 @@ the lead.
   line of flavour; persisted per browser profile (`claude-valley.collection.v1`, service `collection`, `HudBindings.collection`).
   A first-ever find is a `found` harvest in the Almanac (+5, three a day). Dev: `__valley.forage(day?)`, `forageGo(i)`,
   `fish()` / `fish('bite' | 'hook' | 'demo')`, `collect(n)`; gallery assets `forage`, `catch`, `fishing-rod`.
+* **Bits, the General store and your yard (I).** The valley's little economy (pure + tested `model/shop.ts` catalogue
+  and prices, `model/wallet.ts` purse/basket/yard; `scene/yard/`, system `yard`, service `wallet`; HUD `hud/shop.ts`,
+  panel `shop`). The coin is the **bit** (a copper coin stamped with a sprout), shown on the status sign's coin chip.
+  Every forage/fish/junk find goes into your **basket**; sell it to Bram (talk to him at the shipping bin when the basket
+  has something) or at the **General store**, a green striped cart on the meadow south-east of the square, placed level
+  beside a road (`storeSpot`): E browse, F sell your basket. Bram pays by rarity (forage), size and rarity (fish), 2 for
+  junk. Real agent work pays a capped trickle (ship 4, celebrate 2, finished 3, …; max 40 bits a day, a "+n" floats on
+  the chip). The store stocks 17 yard decor pieces: always (planters, flamingo, gnome, birdhouse, wind chime, Biscuit's
+  bed, bench, bird bath, scarecrow with three hats), seasonal (jack-o'-lantern, snowman, blossom sapling, parasol), and
+  Almanac-rank-gated (lamp post r2, fairy-light arch r3, Clawd topiary r4, golden gnome r7); each extra copy costs +35%,
+  each item has a max. **Your yard** is the picket-fenced garden behind the farmhouse (`world/map.ts` `YARD`, reserved in
+  `clearance()`): 15 slots (5×3) with ghost rings while carrying. Look at a piece → E Move / F Turn; carrying snaps to the
+  slot you look at (tint: free / taken = swap), E puts it down, F turns, X puts it away. The sign at the gate (E) and the
+  shop's Yard tab (map + piece list: place, move, turn, restyle, put away) do the same from the HUD. Glowing pieces
+  (lamp post, arch, pumpkin) register `LightEmitter`s. Persisted per profile (`claude-valley.wallet.v1`). Keys: I opens
+  your pockets (basket; 1/2/3 tabs). Dev: `__valley.coins(n)`, `buy(id, free?)`, `sell()`, `furnish()` (fill the yard),
+  `yard()` / `yard('store' | 'carry')`; gallery assets `decor` (variant `id` or `id:style`), `general-store`.
+* **The farmhouse has a walk-in interior** (`scene/interior/`, system `interior`, service `indoors` = `IndoorSpace`).
+  E on the front door ("Go inside") fades (real-time, works at timescale 0) into one warm room built in place in the
+  farmhouse's own frame (`layout.ts` is pure + tested: room box, windows, furniture anchors, colliders, viewpoints).
+  Inside: a stone hearth with an instanced fire + flickering `LightEmitter` (E stokes it), the Valley Almanac open on a
+  desk (E → Almanac panel, live page drawn on a canvas), the Collections shelf (every forage/junk find fills its slot,
+  unfound slots wear a "?" tag; E → Collections book) with the biggest catch mounted over the mantel, a fish tank
+  swimming every species caught (one merged mesh, vertex-shader swim), a CRT terminal desk (phosphor list of farmers,
+  amber blink when one needs you; E → roster), bed (E naps: time skips in demo, a cozy line live), Mochi's cat bed,
+  grandfather clock on the real time (ticks), bookshelf, plants, rug, armchair. While inside the outdoor scene is hidden;
+  the windows show the real valley: each view (front, east) is captured to an HDR target + depth from just outside and
+  re-projected on backdrops (refreshed when night/wet/sun angle drift, max one per 1.5 s), with rain running down the
+  glass. The existing shadow-casting sun throws real patches through the window holes plus soft additive shafts by day;
+  lamps and the hearth carry the night; the farmhouse windows keep glowing outward. Audio: outdoor ambience goes
+  through a low-pass/duck (`AudioService.indoors(k)`), music and the new `roof` rain loop stay dry. Controller, pick and
+  sky read the service (room floor/colliders, only `interior:*` interactables, warmer dimmer hemi). Leaving: E on the
+  door (back to the porch) or any travel out of the room. Budget: ~24 draw calls inside **including post**, ~0.15 ms
+  system time; outside it is not in the scene (one `active` check per frame). Dev: `pose=inside[:view]` (door room
+  hearth shelf desk bed tank window sun), `__valley.inside(view | false)`; gallery `farmhouse-interior` (cutaway/closed).
 * **The calendar has festivals** (`model/calendar.ts`, pure + tested; `ValleyState.sky.festival` = `{ active, next }`):
   **Blossom Fair** (Apr 24 – May 3: maypole, garlands, cherry petals), **Lantern Night** (Aug 10–16: paper lanterns round
   the pond, floating lanterns, sky lanterns after dark), **Founders' Day** (Sep 28, the first commit: cake, pennants),
@@ -183,15 +218,21 @@ the lead.
   the rim + 6 m outward and never at the waterfall): level shelves, steep risers, a 1.25 m grid there, the wall's
   normals leaned toward the smooth slope and rock coloured per vertex so ledges read as clean bands. Shelves carry
   turf; `landB.w` (terrain.ts `lipField`) marks riser tops and the shader paints ragged **turf lips** rolling over each
-  ledge with a shadow line (`uTurf`: moss green, autumn gold, winter snow). Bushes, small pines and **ivy curtains**
-  (flora `ivy`; Virginia-creeper red in autumn) cling to the shelves; outcrops sit on shelves, not stuck to faces;
+  ledge with a shadow line (`uTurf`: moss green, autumn gold, winter snow; tongues shorten with distance). Bushes and
+  small pines cling to the shelves; **ivy drapes** (`flora/ivy.ts`) hang in clusters (a slow noise picks the heavy
+  ledges, most stay bare): a leafy mat on the shelf rolls over the lip and strands walk down the riser against
+  `heightAt` (hugging it, ragged hem, longest mid-curtain), merged into 6 sector meshes (no per-frame work; parts
+  `ivy#n` for the audit); summer deep green, autumn muted creeper wine / rust / bronze, winter sparse evergreen with
+  frosted mats. Outcrops sit on shelves, not stuck to faces;
   four little **cascades** (`TRICKLES` in features.ts, drawn by water.ts as one ribbon) spill down the strata, white
   on the risers and glassy across the shelves. The floor has a **meadow mosaic** (`terrain/meadow.ts`: one value
   noise shared by GLSL and TS): darker clover drifts, sunny bleached patches with rough tall grass, and wildflower
   drifts (a colour wash from afar, petals up close, seasonal colours via `bloomColors`) with clover and flowers planted
-  in the same places. Field structure: **hedgerows** along tracks and round the backs / sides of the field sites (now
+  in the same places. Field structure: **hedgerows** (overlapping runs, continuous from above) along tracks and round the backs / sides of the field sites (now
   and then a hedgerow tree), dry-stone walls wandering and following tracks, **kerb stones** where the roads leave the
-  square, fairy rings of mushrooms and molehill runs. Everything placed keeps `clearance()` and is audited.
+  square, fairy rings of mushrooms and molehill runs. Everything placed keeps `clearance()` and is audited. Beyond the
+  far tiles a **horizon ring** (`terrain/horizon.ts`, one unlit draw tinted from the live fog colour) layers two
+  hazy distant ranges at 650 / 760 m; it shows from up high and through gaps in the rim, never over it.
 
 ## In-world UI (names, speech bubbles, the interaction tag)
 
@@ -225,8 +266,24 @@ the lead.
 * **Every terminal is a menu away.** Ledger (Tab), map (M: click a pin, or ↑/↓ + Enter in the side list, which lists
   farmers *and* scarecrows), mailbox (J: the Needs you tab pre-selects the first ask, 1–9 answers it, Enter opens the
   terminal), the needs-you strip (Alt+1…9), the pause menu's Terminals entry, the dock's terminal button and the leader
-  key (Ctrl+`). `browser-tests/valley.spec.ts` checks the ledger, map-click, map-keyboard, mailbox and needs-you paths:
-  add a flow there when you add one.
+  key (Ctrl+`). `browser-tests/valley.spec.ts` checks the ledger, map-click, map-keyboard, mailbox and needs-you paths
+  and the power-user loop below: add a flow there when you add one.
+* **The power-user loop (5–15 agents):**
+  * *Answer + next.* The mailbox's Needs you tab lists asks in the strip's order (`askOrder`, newest first, so Alt+1 is
+    the top letter); answering one (1–9 or a click) selects the next (`nextAfter`, `format.ts`), so `J 1 1 2 Esc` clears
+    a queue. A second key press while an answer is in flight is ignored (no double answers).
+  * *New tasks.* An idle / finished farmer's card has **Give a new task** (`AgentPort.prompt`, a confirm step, Ctrl+Enter
+    twice); `N` in the card jumps into it, and the ledger reaches it directly: the paper-plane row button or Ctrl+Enter
+    on the selected row opens the card with the box focused (`panels.open('card', { id, task: true })`).
+  * *Ledger chips.* The ledger's summary pills (needs you · working · done · idle; `rosterFilterHit`) are status filters
+    (click again for everyone); text filtering still matches names, fields, jobs and questions.
+  * *Away from the window.* The tab title counts asks / finishes (`status.ts`) and the tab icon is a canvas-drawn Clawd
+    with a gold count badge for asks or a blue dot for unreviewed finishes (`notify.ts`). Opt-in **desktop
+    notifications** (Settings → Alerts, HUD pref `notify`; asks the browser for permission) fire on `blocked` /
+    `finished` only while the window is hidden or unfocused: bursts merge (`notifyCopy`), one per farmer per 15 s;
+    clicking opens that terminal (several asks: the mailbox). `__hud.notify()` shows the last copy and the icon badge.
+  * *Every key.* `?` opens the pause menu's Controls tab from anywhere outside a terminal: grouped (getting around,
+    agents, mailbox, ledger, card & terminal, the valley). Add new keys there and to the hints bar's budget sparingly.
 * **Names:** compact spots (needs-you cards, map pins and the side lists, ledger rows, the drawer's list and header,
   the farmer card's title) use `shortName()` = the in-world `tag`; the full herdr name goes on a secondary line or a
   tooltip via `altName()` (`hud/format.ts`, tested). Map pins carry one glyph (`pinGlyph()`: the tag's suffix).
@@ -237,12 +294,13 @@ the lead.
   buttons, the rest one-line rows (click / Enter opens one; the green button opens its terminal).
 * **Layer classes** (on `.vh-layer`, set by `hud.ts` / `needs.ts`; style against them instead of measuring): `modal` (any
   panel), `covered` (a big panel, not the side card: hints hide, toasts shrink to two compact ones and only asks /
-  errors pop, the offline banner docks bottom-left), `has-needs` (the strip is unfolded: centred panels shift right by
+  errors pop, the offline banner docks bottom-left), `side` (the side card is open: toasts stand to its left, off its
+  buttons), `has-needs` (the strip is unfolded: centred panels shift right by
   `--lw` so the strip stays clickable beside them; the mailbox sits between the strip and the dock).
 * **Empty and offline states:** every list says what is going on and what to do (no farmers yet → open a herdr
   workspace; herdr offline → it comes back on its own); never an empty frame.
 * **Drawer:** bottom-anchored; drag the grip on its top edge (or ↑/↓ on the focused grip) to resize, double-click to
-  reset; the height is the `drawerH` HUD pref (browser-local, like `minimap`, `toasts`, `compactStrip`).
+  reset; the height is the `drawerH` HUD pref (browser-local, like `minimap`, `toasts`, `compactStrip`, `notify`).
 * **Performance:** the 4 Hz tick refreshes only what changed (keyed rows with per-row signatures: `syncList`, the
   ledger's row cache); nothing in the HUD reads layout per frame except the map canvas, which redraws only while open.
   Check with `npm run shoot -- --scenario crowd40 --shot name=r,pose=hub,panel=roster` (fps in the printed perf).
@@ -269,11 +327,12 @@ the lead.
 | **villagers** | `scene/villagers/*` (role hats / wear / lantern data live in `farmers/mascots.ts` + `geo.ts`, drawn by the shared rig) | the persistent villager cast, routines, dialogue, service `villagers` (`VillagersService`: map pins, debug) |
 | **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), services `audio`, `pets` |
 | **hud** | `hud/*` | every DOM overlay, terminal drawer, `UiPort` |
+| **interior** | `scene/interior/*` | the walk-in farmhouse room, service `indoors` (`IndoorSpace`) |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
 ## Budgets (1600×900 on the Radeon 780M iGPU, 12–16 agents, `mixed` demo)
 
-60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10,
+60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), interior ≤ 40 (only while inside),
 atmosphere ≤ 30 + post. One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 Check `__valley.perf()` → `calls`, `tris`, `systemMs`.
 
@@ -297,6 +356,13 @@ npm run shoot -- --shot name=f,pose=square,festival=hallowtide,hour=21   # a fes
 npm run shoot -- --shot "name=c,pose=hub,panel=collection,eval=__valley.collect(16)"   # the Collections book
 npm run shoot -- --shot "name=f,pose=hub,eval=__valley.fish('demo'),frames=9,every=450"  # cast, bite, catch (flipbook)
 npm run shoot -- --shot "name=p,pose=hub,eval=__valley.forageGo(0)"                       # stand over today's first find
+npm run shoot -- --shot "name=y,hour=11,eval=__valley.furnish();__valley.yard()"   # your yard, filled (hour=21 for the lights)
+npm run shoot -- --shot "name=yc,hour=11,eval=__valley.furnish();__valley.yard('carry')"   # carrying: slot rings + ghost
+npm run shoot -- --shot "name=st,hour=11,eval=__valley.yard('store')"     # the General store cart
+npm run shoot -- --shot "name=sp,pose=hub,eval=__valley.coins(800);__hud.open('shop',{tab:'buy',at:'store'})"  # shop panel (tab buy|sell|yard)
+npm run shoot -- --shot name=d,gallery=decor,variant=scarecrow:2     # one decor piece (id or id:style)
+npm run shoot -- --shot name=i,pose=inside,hour=10          # farmhouse interior (inside:hearth|shelf|desk|bed|tank|window|sun|room)
+npm run shoot -- --shot "name=ir,pose=inside:hearth,hour=21,weather=rain,eval=__valley.collect(28)"  # night, rain on the glass, full shelf
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
