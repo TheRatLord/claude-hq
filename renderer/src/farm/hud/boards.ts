@@ -6,6 +6,8 @@ import type { Gauges } from '../model/types.ts';
 import { ICONS, KIND_ICON, LETTER_ICON, SEASON_ICON, WEATHER_ICON, icon } from './icons.ts';
 import { ago, bytesRate, clock, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL, shortName, STAGE_LABEL, STATUS_RANK, WEATHER_LABEL } from './format.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
+import { FESTIVAL_ICON } from './festival.ts';
+import { SOON_DAYS, dayText, inDaysText } from '../model/calendar.ts';
 
 export function createNoticeboard(ctx: HudCtx): Panel {
   const { el, body, closeBtn } = framePanel('noticeboard', 'Noticeboard', ICONS.board);
@@ -34,7 +36,7 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     const done = farmers.filter((f) => f.unseenDone);
     const working = farmers.filter((f) => f.status === 'working');
     const plots = [...s.plots.values()].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.label.localeCompare(b.label));
-    const nsig = JSON.stringify([need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0, s.almanac.points]);
+    const nsig = JSON.stringify([need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0, s.almanac.points, s.sky.festival?.active?.id, s.sky.festival?.active?.day, s.sky.festival?.next?.inDays]);
     if (nsig === sig) return;
     sig = nsig;
     const notes: HTMLElement[] = [];
@@ -43,6 +45,18 @@ export function createNoticeboard(ctx: HudCtx): Panel {
       h('div.big', { text: String(need.length) }),
       need.length ? h('ul', null, ...need.slice(0, 5).map((f) => go(() => ctx.panels.open('card', f.id), `${nice(f.name)}: answer`, h('b', { text: shortName(f) }), `: ${f.question ?? 'waiting'}`))) : h('p', { text: 'Nobody is waiting. Enjoy the sunshine.' }),
       more(need.length - 5, 'waiting')));
+    // the festival poster (model/calendar.ts): what's on, or what's coming up soon
+    const fa = s.sky.festival?.active, fn = s.sky.festival?.next;
+    if (fa) notes.push(note('.fest', null,
+      h('h4', null, icon(FESTIVAL_ICON[fa.id]), 'Festival'),
+      h('div.big', { text: fa.name }),
+      h('p', { text: fa.blurb }),
+      h('p.vh-muted', { text: `${dayText(fa)}${fn && fn.inDays <= SOON_DAYS * 2 ? ` · next: ${fn.name} ${inDaysText(fn.inDays)}` : ''}`, style: { fontSize: '12px' } })));
+    else if (fn && fn.inDays <= SOON_DAYS) notes.push(note('.fest', null,
+      h('h4', null, icon(FESTIVAL_ICON[fn.id]), 'Coming up'),
+      h('div.big', { text: fn.name }),
+      h('p', { text: fn.blurb }),
+      h('p.vh-muted', { text: `${inDaysText(fn.inDays)[0].toUpperCase()}${inDaysText(fn.inDays).slice(1)} · ${fn.start}`, style: { fontSize: '12px' } })));
     const wk = s.sky.weather.kind === 'clear' && s.sky.daylight < 0.25 ? 'night' : s.sky.weather.kind;
     notes.push(note('', () => ctx.panels.open('stats'),
       h('h4', null, icon(WEATHER_ICON[wk]), 'Today in the valley'),

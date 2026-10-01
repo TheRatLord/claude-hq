@@ -1,0 +1,401 @@
+// @pure
+/**
+ * Collections: the player's own cozy pastime between checking on the agents. Forageables turn up around the valley
+ * each real day (season-appropriate, deterministic per date) and fish bite at the pond and the river by season, hour
+ * and weather. Everything found goes into the Collections book (count, first-found date, best size for fish).
+ *
+ * Pure: no DOM, no three; the clock and the store are injected (browser-local storage in the app, memory in tests).
+ * Days are local calendar days (`YYYY-MM-DD`, see `dayKey` in almanac.ts).
+ */
+import type { Season, WeatherKind } from './types.ts';
+import { dayKey } from './almanac.ts';
+
+export type CollectKind = 'forage' | 'fish';
+/** where a forageable grows: open meadow, under / beside trees, the water's edge, the foot of the cliffs */
+export type Habitat = 'meadow' | 'wood' | 'shore' | 'cliff';
+export type WaterKind = 'pond' | 'river';
+/** when a fish bites: any time, daylight only, dark only, around dawn and dusk */
+export type FishTime = 'any' | 'day' | 'night' | 'twilight';
+/** weather a fish needs: any, rain (or storm) only, clear skies only */
+export type FishWeather = 'any' | 'rain' | 'clear';
+
+interface Base {
+  id: string;
+  name: string;
+  /** flavour text in the valley's voice */
+  blurb: string;
+  seasons: readonly Season[];
+  /** relative odds among what is possible right now */
+  weight: number;
+  rare?: boolean;
+  /** one css colour for swatches and the HUD icon */
+  color: string;
+}
+export interface ForageDef extends Base { kind: 'forage'; habitat: Habitat }
+export interface FishDef extends Base {
+  kind: 'fish';
+  water: readonly WaterKind[];
+  time: FishTime;
+  weather: FishWeather;
+  /** size range, cm */
+  cm: readonly [number, number];
+  /** not a fish (boots, bottles): no size */
+  junk?: boolean;
+  /** body colours for the 3D catch and the HUD icon: back, belly, fins / accent */
+  look: readonly [string, string, string];
+}
+export type CollectDef = ForageDef | FishDef;
+
+const ALL: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
+const F = (id: string, name: string, seasons: readonly Season[], habitat: Habitat, weight: number, color: string, blurb: string, rare = false): ForageDef =>
+  ({ kind: 'forage', id, name, seasons, habitat, weight, color, blurb, ...(rare ? { rare } : {}) });
+const FISH = (id: string, name: string, o: Omit<FishDef, 'kind' | 'id' | 'name'>): FishDef => ({ kind: 'fish', id, name, ...o });
+
+/** Every collectible, in book order (forage by season, then fish). Ids are stable (they are the save keys). */
+export const CATALOG: readonly CollectDef[] = Object.freeze([
+  F('morel', 'Morel', ['spring'], 'wood', 3, '#b08a5a',
+    'A honeycomb cap hiding under last year\'s leaves. Fern swears they come up the morning after a thunderstorm.'),
+  F('wildleek', 'Wild leeks', ['spring'], 'wood', 3, '#6cbf55',
+    'Ramps, if you\'re from over the ridge. The whole wood smells of garlic for a week in April.'),
+  F('violet', 'Sweet violet', ['spring'], 'meadow', 3, '#8e5fc2',
+    'Tiny, purple and shy. Posy presses one into every letter that goes out in spring.'),
+  F('berries', 'Wild strawberries', ['summer'], 'meadow', 3, '#e0404a',
+    'No bigger than a fingernail and twice as sweet as the garden ones. Nobody has ever brought a full basket home.'),
+  F('feather', 'Jay feather', ['summer'], 'meadow', 2, '#4f8fd8',
+    'Barred blue, dropped by a jay on its way somewhere important. Nimbus says it means fair weather. Nimbus says that about everything.'),
+  F('shell', 'Pond mussel shell', ['summer'], 'shore', 2, '#e8d6c8',
+    'Pearly inside and pleasingly heavy. Hold it to your ear and you can hear… the pond.'),
+  F('skipstone', 'Skipping stone', ['summer'], 'shore', 2, '#8f9aa6',
+    'Perfectly flat, perfectly round. Far too good to skip, really.'),
+  F('chanterelle', 'Chanterelle', ['autumn'], 'wood', 3, '#f0a83a',
+    'Golden trumpets that smell faintly of apricots. Hazel trades a sack of flour for a basket.'),
+  F('acorn', 'Acorn', ['autumn'], 'wood', 3, '#a8763f',
+    'Still wearing its little hat. The squirrels have counted these and they will notice.'),
+  F('hazelnut', 'Hazelnut', ['autumn'], 'wood', 2, '#b9824a',
+    'Cracks with a satisfying pop. The Mayor insists the miller is named after them; Hazel insists otherwise.'),
+  F('mapleleaf', 'Maple leaf', ['autumn'], 'meadow', 3, '#d8452a',
+    'Red on one side, gold on the other, and not another one like it anywhere in the valley.'),
+  F('holly', 'Holly sprig', ['winter'], 'wood', 3, '#2f7a3f',
+    'Glossy leaves and three red berries. Bram hangs one over the shipping bin for luck.'),
+  F('pinecone', 'Pinecone', ['winter'], 'wood', 3, '#8a5a32',
+    'Closes up tight when rain is coming. A better forecaster than some we could name.'),
+  F('crystal', 'Frost crystal', ['winter'], 'cliff', 1, '#9fd8f0',
+    'A clear quartz point from the foot of the cliffs. The standing stones hum when you carry one past.', true),
+
+  FISH('minnow', 'Minnow', { seasons: ALL, water: ['pond', 'river'], time: 'any', weather: 'any', weight: 5, cm: [4, 9], color: '#a9b8b8', look: ['#8fa3a6', '#e8eee8', '#c7d2cc'],
+    blurb: 'Small, silver and in a tremendous hurry. Everybody\'s first catch.' }),
+  FISH('bluegill', 'Bluegill', { seasons: ['spring', 'summer'], water: ['pond'], time: 'day', weather: 'any', weight: 4, cm: [10, 22], color: '#5a86b8', look: ['#4f7aa8', '#f2c25a', '#2f4f78'],
+    blurb: 'Round as a coin with a blue cheek. Bites at anything at all, bless it.' }),
+  FISH('carp', 'Mirror carp', { seasons: ALL, water: ['pond'], time: 'any', weather: 'any', weight: 3, cm: [35, 80], color: '#b8913f', look: ['#9a7a3a', '#e8cf8a', '#c8955a'],
+    blurb: 'Big, slow and wise. It has been in the pond longer than the dock has.' }),
+  FISH('perch', 'Perch', { seasons: ['autumn', 'winter', 'spring'], water: ['pond', 'river'], time: 'day', weather: 'any', weight: 3, cm: [15, 35], color: '#8fae4a', look: ['#7a9a3f', '#f0e4b0', '#e8742c'],
+    blurb: 'Striped like a deckchair. They swim in shoals, so where there\'s one…' }),
+  FISH('trout', 'Rainbow trout', { seasons: ['spring', 'autumn'], water: ['river'], time: 'any', weather: 'any', weight: 4, cm: [25, 55], color: '#d8879a', look: ['#7f9a6a', '#f2e6dc', '#e07a8f'],
+    blurb: 'Flashes pink in the riffles below the waterfall. Fern knows a spot. Fern will not tell you the spot.' }),
+  FISH('salmon', 'Salmon', { seasons: ['autumn'], water: ['river'], time: 'any', weather: 'any', weight: 2, cm: [50, 90], color: '#e07a5a', look: ['#7a6a72', '#f0d0c0', '#d8604a'],
+    blurb: 'Homeward bound up the river, and not best pleased about the detour.' }),
+  FISH('pike', 'Pike', { seasons: ['autumn', 'winter'], water: ['river', 'pond'], time: 'twilight', weather: 'any', weight: 2, cm: [45, 100], color: '#6f8f4a', look: ['#5a7a3a', '#e8e4b8', '#9ab05a'],
+    blurb: 'All teeth and opinions. Fern calls this one the Mayor of the Reeds, but never where the Mayor can hear.' }),
+  FISH('catfish', 'Catfish', { seasons: ALL, water: ['pond', 'river'], time: 'night', weather: 'any', weight: 3, cm: [30, 70], color: '#7a6a5a', look: ['#5f5248', '#d8cbb8', '#3f352e'],
+    blurb: 'Whiskers like a village elder. Only comes up after dark to see what the fuss is about.' }),
+  FISH('eel', 'Eel', { seasons: ['spring', 'summer', 'autumn'], water: ['river'], time: 'night', weather: 'rain', weight: 2, cm: [40, 90], color: '#5a6a3a', look: ['#4a5a32', '#c8c08a', '#3a4428'], rare: true,
+    blurb: 'A rainy-night rarity. Wriggles out of your hands and straight back into the story.' }),
+  FISH('koi', 'Golden koi', { seasons: ['summer'], water: ['pond'], time: 'day', weather: 'clear', weight: 1, cm: [30, 60], color: '#f0a020', look: ['#f29a2a', '#fff4e0', '#ffffff'], rare: true,
+    blurb: 'Somebody let a koi go in the pond years ago. Admire it, wish on it, put it back. (You put it back.)' }),
+  FISH('stormbass', 'Thunder bass', { seasons: ['spring', 'summer', 'autumn'], water: ['pond'], time: 'any', weather: 'rain', weight: 2, cm: [30, 60], color: '#5a6e8a', look: ['#46597a', '#d8dfe8', '#f2c33a'], rare: true,
+    blurb: 'Only bites when the rain is really coming down. Looks personally offended by the weather.' }),
+  FISH('char', 'Moonlit char', { seasons: ['winter'], water: ['river', 'pond'], time: 'night', weather: 'clear', weight: 2, cm: [25, 50], color: '#c8d8f0', look: ['#8aa0c8', '#f8f4ec', '#e86a4a'], rare: true,
+    blurb: 'Pale as moonlight and cold as the stream it came from. Only bites on clear winter nights.' }),
+  FISH('boot', 'Old boot', { seasons: ALL, water: ['pond', 'river'], time: 'any', weather: 'any', weight: 1, cm: [0, 0], junk: true, color: '#6e4a2a', look: ['#6e4a2a', '#a0703f', '#3b2a1e'],
+    blurb: 'Size eleven, left foot. If you ever find the right one, Posy will happily post the pair home.' }),
+  FISH('bottle', 'Message in a bottle', { seasons: ALL, water: ['river'], time: 'any', weather: 'any', weight: 0.4, cm: [0, 0], junk: true, rare: true, color: '#7fc3a0', look: ['#8fd0b0', '#fff6e0', '#a0703f'],
+    blurb: '"Dear whoever finds this: the valley is lovely this time of year. Wish you were here." Unsigned.' }),
+] as CollectDef[]);
+
+export const FORAGE: readonly ForageDef[] = CATALOG.filter((d): d is ForageDef => d.kind === 'forage');
+export const FISHES: readonly FishDef[] = CATALOG.filter((d): d is FishDef => d.kind === 'fish');
+const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
+export const collectDef = (id: string): CollectDef | undefined => BY_ID.get(id);
+
+// ---------------------------------------------------------------------------------------------
+// Deterministic randomness (same mixing as shared/identity, kept local so the module stays standalone)
+
+export function hashKey(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+export function rand(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const weighted = <T extends { weight: number }>(xs: readonly T[], r: () => number): T => {
+  let sum = 0;
+  for (const x of xs) sum += x.weight;
+  let v = r() * sum;
+  for (const x of xs) { v -= x.weight; if (v < 0) return x; }
+  return xs[xs.length - 1];
+};
+
+// ---------------------------------------------------------------------------------------------
+// Forage: what turns up today
+
+export const FORAGE_PER_DAY = Object.freeze({ min: 8, max: 12 });
+export interface ForageSpawn {
+  /** stable per day (`YYYY-MM-DD:season:i`): the save key once picked */
+  key: string;
+  id: string;
+  /** placement seed for the scene (position, turn, size) */
+  seed: number;
+}
+
+export const forageFor = (season: Season): ForageDef[] => FORAGE.filter((d) => d.seasons.includes(season));
+
+/** Today's forageables: 8–12 of the season's kinds, every kind at least once, deterministic per date + season. */
+export function forageDay(day: string, season: Season): ForageSpawn[] {
+  const kinds = forageFor(season);
+  if (!kinds.length) return [];
+  const r = rand(hashKey(`forage:${day}:${season}`));
+  const n = FORAGE_PER_DAY.min + Math.floor(r() * (FORAGE_PER_DAY.max - FORAGE_PER_DAY.min + 1));
+  const out: ForageSpawn[] = [];
+  // the commons once each first (rares stay a rare treat), then by weight
+  const commons = kinds.filter((k) => !k.rare);
+  for (let i = 0; i < n; i++) {
+    const d = i < commons.length ? commons[i] : weighted(kinds, r);
+    out.push({ key: `${day}:${season}:${i}`, id: d.id, seed: hashKey(`forage:${day}:${season}:${i}`) });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fishing: what bites
+
+export interface FishConditions {
+  season: Season;
+  /** local fractional hour */
+  hour: number;
+  weather: WeatherKind;
+  water: WaterKind;
+}
+export const isNight = (hour: number): boolean => hour >= 20 || hour < 5;
+export const isTwilight = (hour: number): boolean => (hour >= 4.5 && hour < 8) || (hour >= 17.5 && hour < 21.5);
+const rainy = (w: WeatherKind) => w === 'rain' || w === 'storm';
+const clearSky = (w: WeatherKind) => w === 'clear' || w === 'cloudy';
+
+export function canBite(d: FishDef, c: FishConditions): boolean {
+  if (!d.seasons.includes(c.season) || !d.water.includes(c.water)) return false;
+  if (d.time === 'day' && isNight(c.hour)) return false;
+  if (d.time === 'night' && !isNight(c.hour)) return false;
+  if (d.time === 'twilight' && !isTwilight(c.hour)) return false;
+  if (d.weather === 'rain' && !rainy(c.weather)) return false;
+  if (d.weather === 'clear' && !clearSky(c.weather)) return false;
+  return true;
+}
+
+/** Everything that can bite right now, with odds (rain and dusk wake the rarer fish up a little). */
+export function fishOdds(c: FishConditions): { def: FishDef; weight: number }[] {
+  const boost = (rainy(c.weather) ? 1.4 : 1) * (isTwilight(c.hour) ? 1.25 : 1);
+  return FISHES.filter((d) => canBite(d, c)).map((d) => ({ def: d, weight: d.weight * (d.rare && !d.junk ? boost : 1) }));
+}
+
+/** One catch: which fish and how big (cm, 0 for junk). */
+export function rollFish(r: () => number, c: FishConditions): { id: string; cm: number } {
+  const odds = fishOdds(c);
+  const pick = odds.length ? weighted(odds, r).def : FISHES[0];
+  // sizes lean small: the big ones are stories
+  const cm = pick.junk ? 0 : Math.round(pick.cm[0] + (pick.cm[1] - pick.cm[0]) * Math.pow(r(), 1.6));
+  return { id: pick.id, cm };
+}
+
+/** seconds until a bite: shorter in the rain and at dawn / dusk, never long */
+export function biteDelay(r: () => number, c: Pick<FishConditions, 'hour' | 'weather'>): number {
+  const k = (rainy(c.weather) ? 0.75 : 1) * (isTwilight(c.hour) ? 0.8 : 1);
+  return (2.2 + r() * 4.5) * k;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The book (persisted)
+
+export interface FoundRec {
+  n: number;
+  /** YYYY-MM-DD */
+  first: string;
+  /** fish: biggest, cm */
+  best?: number;
+}
+export interface CollectionData {
+  v: 1;
+  found: Record<string, FoundRec>;
+  /** today's picked forage spawn keys (they stay gone until tomorrow's batch) */
+  picked: { day: string; keys: string[] };
+  /** fish caught today (a small daily tally for the book's footer) */
+  fishDay?: { day: string; n: number };
+}
+
+export const emptyCollection = (): CollectionData => ({ v: 1, found: {}, picked: { day: '', keys: [] } });
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Tolerant parse of stored data (anything malformed → null; unknown ids are dropped). */
+export function parseCollection(raw: unknown): CollectionData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (o.v !== 1 || !o.found || typeof o.found !== 'object') return null;
+  const found: Record<string, FoundRec> = {};
+  for (const [id, v] of Object.entries(o.found as Record<string, unknown>)) {
+    if (!BY_ID.has(id) || !v || typeof v !== 'object') continue;
+    const f = v as Record<string, unknown>;
+    if (typeof f.n !== 'number' || !(f.n >= 1) || typeof f.first !== 'string' || !DAY_RE.test(f.first)) continue;
+    found[id] = { n: Math.floor(f.n), first: f.first, ...(typeof f.best === 'number' && f.best > 0 ? { best: f.best } : {}) };
+  }
+  const p = o.picked as Record<string, unknown> | undefined;
+  const picked = p && typeof p.day === 'string' && Array.isArray(p.keys)
+    ? { day: p.day, keys: p.keys.filter((k): k is string => typeof k === 'string').slice(0, 64) }
+    : { day: '', keys: [] };
+  const fd = o.fishDay as Record<string, unknown> | undefined;
+  return {
+    v: 1, found, picked,
+    ...(fd && typeof fd.day === 'string' && typeof fd.n === 'number' ? { fishDay: { day: fd.day, n: Math.max(0, Math.floor(fd.n)) } } : {}),
+  };
+}
+
+export interface FindResult {
+  def: CollectDef;
+  /** first time ever */
+  isNew: boolean;
+  n: number;
+  /** fish: a new personal best size */
+  record: boolean;
+}
+
+/** Record one find (mutates `data`). */
+export function recordFind(data: CollectionData, id: string, nowMs: number, cm = 0): FindResult | null {
+  const def = BY_ID.get(id);
+  if (!def) return null;
+  const day = dayKey(nowMs);
+  const prev = data.found[id];
+  const rec: FoundRec = prev ? { ...prev, n: prev.n + 1 } : { n: 1, first: day };
+  const record = cm > 0 && cm > (prev?.best ?? 0);
+  if (record) rec.best = cm;
+  data.found[id] = rec;
+  if (def.kind === 'fish') data.fishDay = { day, n: (data.fishDay?.day === day ? data.fishDay.n : 0) + 1 };
+  return { def, isNew: !prev, n: rec.n, record: record && !!prev };
+}
+
+/** Which of `day`'s forage spawns were already picked. */
+export const pickedOn = (data: CollectionData, day: string): ReadonlySet<string> => new Set(data.picked.day === day ? data.picked.keys : []);
+
+/** Pick a forage spawn: records the find and remembers the spot as picked for the day (once). */
+export function pickForage(data: CollectionData, spawn: ForageSpawn, nowMs: number): FindResult | null {
+  const day = spawn.key.slice(0, 10);
+  if (data.picked.day !== day) data.picked = { day, keys: [] };
+  if (data.picked.keys.includes(spawn.key)) return null;
+  data.picked.keys.push(spawn.key);
+  return recordFind(data, spawn.id, nowMs);
+}
+
+export interface CollectionEntry {
+  def: CollectDef;
+  found: boolean;
+  n: number;
+  first: string | null;
+  best: number | null;
+  /** can be found / caught in `season` */
+  inSeason: boolean;
+}
+export interface CollectionView {
+  entries: CollectionEntry[];
+  found: number;
+  total: number;
+  forage: { found: number; total: number };
+  fish: { found: number; total: number };
+  fishToday: number;
+}
+
+export function collectionView(data: CollectionData, season: Season, nowMs: number): CollectionView {
+  const entries = CATALOG.map((def) => {
+    const f = data.found[def.id];
+    return { def, found: !!f, n: f?.n ?? 0, first: f?.first ?? null, best: f?.best ?? null, inSeason: def.seasons.includes(season) };
+  });
+  const count = (k: CollectKind) => ({ found: entries.filter((e) => e.def.kind === k && e.found).length, total: entries.filter((e) => e.def.kind === k).length });
+  return {
+    entries, found: entries.filter((e) => e.found).length, total: entries.length,
+    forage: count('forage'), fish: count('fish'),
+    fishToday: data.fishDay?.day === dayKey(nowMs) ? data.fishDay.n : 0,
+  };
+}
+
+/** A plain-language "where / when" for an entry (the book's hint line; silhouettes show it too). */
+export function whereText(d: CollectDef): string {
+  const seasons = d.seasons.length === 4 ? 'all year' : d.seasons.join(' & ');
+  if (d.kind === 'forage') {
+    const where = { meadow: 'in the meadows', wood: 'under the trees', shore: 'along the water\'s edge', cliff: 'at the foot of the cliffs' }[d.habitat];
+    return `${where}, ${seasons}`;
+  }
+  const water = d.water.length === 2 ? 'pond or river' : `the ${d.water[0]}`;
+  const time = { any: '', day: ', by day', night: ', at night', twilight: ', at dawn and dusk' }[d.time];
+  const weather = { any: '', rain: ', in the rain', clear: ', under clear skies' }[d.weather];
+  return `${water}, ${seasons}${time}${weather}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The live book: data + store + listeners (main.ts creates one; the scene finds, the HUD reads)
+
+export interface CollectionStore {
+  load(): unknown;
+  save(data: CollectionData): void;
+}
+
+export interface CollectionService {
+  /** bumps on every change (cheap HUD signatures) */
+  readonly version: number;
+  data(): CollectionData;
+  view(season: Season): CollectionView;
+  /** a caught fish (or junk) */
+  catch(id: string, cm: number): FindResult | null;
+  /** a picked forageable (once per spawn per day) */
+  pick(spawn: ForageSpawn): FindResult | null;
+  picked(day: string): ReadonlySet<string>;
+  onFind(fn: (r: FindResult) => void): () => void;
+  /** dev: mark the first n catalog entries found (shots, the HUD panel) */
+  devFill(n: number): void;
+  /** dev: forget everything */
+  devReset(): void;
+}
+
+export function createCollection(store: CollectionStore | undefined, now: () => number = Date.now): CollectionService {
+  let data: CollectionData;
+  try { data = parseCollection(store?.load()) ?? emptyCollection(); } catch { data = emptyCollection(); }
+  let version = 0;
+  const fns = new Set<(r: FindResult) => void>();
+  const save = () => { version++; try { store?.save(data); } catch (err) { console.warn('[collection] save failed', err); } };
+  const after = (r: FindResult | null) => {
+    if (!r) return null;
+    save();
+    for (const f of [...fns]) { try { f(r); } catch (err) { console.error('[collection] listener threw', err); } }
+    return r;
+  };
+  return {
+    get version() { return version; },
+    data: () => data,
+    view: (season) => collectionView(data, season, now()),
+    catch: (id, cm) => after(recordFind(data, id, now(), cm)),
+    pick: (spawn) => after(pickForage(data, spawn, now())),
+    picked: (day) => pickedOn(data, day),
+    onFind(fn) { fns.add(fn); return () => fns.delete(fn); },
+    devFill(n) {
+      const day = dayKey(now());
+      CATALOG.slice(0, Math.max(0, n)).forEach((d, i) => {
+        if (data.found[d.id]) return;
+        data.found[d.id] = { n: 1 + (i % 4), first: day, ...(d.kind === 'fish' && !d.junk ? { best: Math.round((d.cm[0] + d.cm[1]) / 2) } : {}) };
+      });
+      save();
+    },
+    devReset() { data = emptyCollection(); save(); },
+  };
+}

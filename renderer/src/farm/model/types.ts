@@ -8,6 +8,7 @@
  */
 import type { Kind, ModelTier, Status } from '../../../../shared/protocol.ts';
 import type { AlmanacView } from './almanac.ts';
+import type { FestivalView } from './calendar.ts';
 
 /** What a farmer is visibly doing. Coarse on purpose: tool churn inside a family never shows as a switch. */
 export const JOBS = Object.freeze([
@@ -219,6 +220,8 @@ export interface Sky {
   season: Season;
   dayOfYear: number;
   weather: Weather;
+  /** the real-calendar festival on today, and the next one (model/calendar.ts) */
+  festival: FestivalView;
 }
 
 /** One-shot reactions for the presentation layer. */

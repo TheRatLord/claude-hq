@@ -9,13 +9,14 @@
  *   __valley.cam(x, y, z, yaw, pitch)     free camera (detached from the player); cam(null) re-attaches
  *   __valley.goTo(id)                     stand in front of a farmer / helper / plot / structure / villager id ('villager:posy' or 'posy')
  *   __valley.villagers()                  the villager pins, and __valley.villager(id) → what one is doing
- *   __valley.setHour(h|null)  setWeather(kind|null, intensity?)  setSeason(s|null)
+ *   __valley.setHour(h|null)  setWeather(kind|null, intensity?)  setSeason(s|null)  festival(id|null)
  *   __valley.timeScale(k)                 animation speed (0 freezes animation)
  *   __valley.perf()                       fps, draw calls, triangles, per-system ms
  *   __valley.systems()                    system names
  *   __valley.debug(flag, on?)             toggle ctx.debug flags (e.g. 'labels', 'colliders', 'nav')
  *   __valley.force(id, patch)             demo backend: patch an entity (status, activity…)  (demo only)
  *   __valley.scenario(name, seed?)        demo backend: reset to a scenario             (demo only)
+ *   __valley.forage(day?)  forageGo(i)  fish(step?)  collect(n)   pastimes (scene/forage): today's finds, walk up, cast at the dock, fill the book
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
  *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
@@ -26,7 +27,9 @@ import type { Engine } from '../scene/engine.ts';
 import type { Controller } from '../player/controller.ts';
 import type { Valley } from '../model/valley.ts';
 import type { Season, WeatherKind } from '../model/types.ts';
-import type { FarmerLocator, VillagersService } from '../scene/context.ts';
+import type { FarmerLocator, StructureSpots, VillagersService } from '../scene/context.ts';
+import type { ForageDebug } from '../scene/forage/forage.ts';
+import type { CollectionService } from '../model/collection.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
 import type { StructureId } from '../world/map.ts';
 
@@ -109,6 +112,8 @@ export function installDevApi(d: DevDeps): void {
     setHour: (h: number | null) => valley.setSky({ hour: h }),
     setWeather: (w: WeatherKind | null, intensity?: number) => valley.setSky({ weather: w, intensity: intensity ?? null }),
     setSeason: (s: Season | null) => valley.setSky({ season: s }),
+    /** force a festival (model/calendar.ts id: blossom lantern founders harvest hallowtide starlight newyear), null = the calendar */
+    festival: (id: string | null) => valley.setSky({ festival: id }),
     timeScale: (k: number) => engine.setTimeScale(k),
     perf: () => engine.perf(),
     systems: () => engine.systems().map((s) => s.name),
@@ -126,6 +131,34 @@ export function installDevApi(d: DevDeps): void {
     meteor: () => (ctx.services.get('meteors') as { launch(c: THREE.Camera): void } | undefined)?.launch(ctx.camera),
     /** a firework show over the south meadow (town upgrades) */
     fireworks: (seconds = 20) => (ctx.services.get('upgrades') as { fireworks(s: number): void } | undefined)?.fireworks(seconds),
+    /** today's forageables (scene/forage); forage('2026-10-02') re-rolls another day's batch */
+    forage(day?: string) { const f = ctx.services.get('forage') as ForageDebug | undefined; if (day) f?.respawn(day); return f?.items() ?? []; },
+    /** stand beside forageable i, looking down at it (then interact() picks it up) */
+    forageGo(i = 0, dist = 1.7) {
+      const it = api.forage()[i];
+      if (!it) throw new Error(`no forageable #${i}`);
+      const a = Math.atan2(it.x, it.z), px = it.x - Math.sin(a) * dist, pz = it.z - Math.cos(a) * dist;
+      api.teleport(px, pz, Math.atan2(-(it.x - px), -(it.z - pz)), -0.62);
+      return it;
+    },
+    /** walk to the end of the dock facing the pond and cast; fish('bite') makes the fish bite now, fish('hook') reels it in;
+     *  fish('demo') does the lot (cast, a bite 1.6 s later, hooked 0.5 s after that) for flipbook shots */
+    async fish(step?: 'bite' | 'hook' | 'demo') {
+      if (step === 'demo') {
+        await api.fish();
+        setTimeout(() => { void api.fish('bite'); setTimeout(() => void api.fish('hook'), 500); }, 1600);
+        return true;
+      }
+      const f = ctx.services.get('forage') as ForageDebug | undefined;
+      if (step === 'bite') return f?.bite();
+      if (step === 'hook') { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE' })); return f?.phase(); }
+      const end = (ctx.services.get('structureSpots') as StructureSpots | undefined)?.get('dockEnd');
+      if (end) api.teleport(end.x, end.z, end.yaw + Math.PI, -0.32);
+      await new Promise((r) => setTimeout(r, 250));
+      return f?.cast() ?? false;
+    },
+    /** mark the first n entries of the Collections book found (shots: panel=collection) */
+    collect: (n = 12) => (ctx.services.get('collection') as CollectionService | undefined)?.devFill(n),
     // placement audit: loaded on demand (three-mesh-bvh stays out of the game bundle's hot path)
     audit: async (o?: import('./placement.ts').AuditOpts) => (await import('./placement.ts')).audit(ctx, valley.state, o),
     async auditShow(keys: string[], focus: import('./placementCore.ts').Box, view = 0) {

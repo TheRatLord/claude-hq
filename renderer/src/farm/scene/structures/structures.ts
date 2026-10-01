@@ -27,6 +27,7 @@ import { BRIDGE, CAMPFIRE_SEATS, DOCK, bridgeDeck, buildBridge, buildCampfire, b
 import type { BridgeOpts, DeckOpts } from './leisure.ts';
 import { buildDressing } from './dressing.ts';
 import { createUpgrades, type Upgrades } from './upgrades.ts';
+import { createFestivals, type Festivals } from './festivals.ts';
 import { LOOKOUT, PERGOLA, PICNIC, SPRING, buildHotSpring, buildLookout, buildPergola, buildPicnic, lookoutFloor, lookoutSeats, springSeats, telescopeStand } from './nooks.ts';
 import type { NookSeat } from './nooks.ts';
 import { HAY, ORCHARD, STONES, SWING, buildHayMeadow, buildOrchard, buildStones, buildSwingTree, hayNaps, standingStones, stoneSeats } from './countryside.ts';
@@ -65,6 +66,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   let placed = new Map<StructureId, Placed>();
   let dressingRig: Rig | undefined;
   let upgrades: Upgrades | undefined;
+  let festivals: Festivals | undefined;
   const lights = ctx.services.get('lights') as LightsService | undefined;
   const lightOffs: (() => void)[] = [];
   /** move kit/root-local emitters to world space (in place: rigs keep mutating them) and register them */
@@ -140,6 +142,8 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     group.add(dr.root);
     dressingRig = rigOf(dr.root);
     upgrades = createUpgrades(ctx, { season, lamps: dr.lamps, blocked: (x, z, r) => flora?.blocked(x, z, r) ?? false });
+    const up = upgrades;
+    festivals = createFestivals(ctx, { season, lamps: dr.lamps, blocked: (x, z, r) => flora?.blocked(x, z, r) ?? false, taken: [...up.taken, ...dr.circles.map(([x, z, r]) => ({ x, z, r })), ...dr.rects.map(([x, z, w, d]) => ({ x, z, r: Math.hypot(w, d) / 2 }))], parent: group, confetti: (p) => up.confetti(p), fireworks: (s) => up.fireworks(s) });
     group.updateMatrixWorld(true);
     // animated lights (campfire, barn lantern) live on their structure's root
     for (const p of placed.values()) addLights(p.root.userData.lights as LightEmitter[] | undefined, p.root.matrixWorld);
@@ -289,6 +293,8 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
   }
 
   function disposeAll(): void {
+    festivals?.dispose();
+    festivals = undefined;
     upgrades?.dispose();
     upgrades = undefined;
     for (const f of removers.splice(0)) f();
@@ -339,7 +345,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     ctx.interact.add({ id: 'farmhouse:bell', kind: 'prop', verb: 'Ring', label: () => 'Bell', pos: vec('farmhouse', FARMHOUSE.bell.x + 0.5, 2.1, FARMHOUSE.bell.z), use: () => { ringBell(); say('Ding-a-ling! Everyone looks up… then back to work.'); } }),
     ctx.interact.add({ id: 'farmhouse:door', kind: 'prop', verb: 'Knock on', label: () => 'Farmhouse door', pos: vec('farmhouse', 0, 1.6, FARMHOUSE.door.z + 0.1), use: () => say('Knock knock… nobody home. Everyone is out in the fields!') }),
     ctx.interact.add({ id: 'campfire', kind: 'structure', verb: 'Warm hands at', label: () => 'Campfire', pos: vec('campfire', 0, 0.6, 0), reach: 3.4, use: () => say(ctx.lighting.night > 0.5 ? 'Toasty. The stars are out over the valley. 🔥' : 'Warm and crackly. Someone left marshmallows.') }),
-    ctx.interact.add({ id: 'dock', kind: 'structure', verb: 'Fish from', label: () => 'Dock', pos: vec('dock', 0, dockOpts(S('dock')).deckY + 0.6, DOCK.z1 - 0.8), reach: 3.2, use: () => say('You cast a line… the fish seem busy compiling. 🎣') }),
+    ctx.interact.add({ id: 'dock', kind: 'structure', verb: 'Fish from', label: () => 'Dock', pos: vec('dock', 0, dockOpts(S('dock')).deckY + 0.6, DOCK.z1 - 0.8), reach: 3.2, hint: () => 'look out over the water and press E to cast', use: () => say('Look out over the water and press E to cast a line. Then E again when the bobber dips! 🎣') }),
     ctx.interact.add({ id: 'pergola', kind: 'structure', verb: 'Study', label: () => 'Checkers game', pos: vec('pergola', 0, PERGOLA.floor + 0.75, 0), reach: 3.2, use: () => say(CHECKERS_SAY[Math.floor(Math.random() * CHECKERS_SAY.length)]) }),
     ctx.interact.add({ id: 'picnic', kind: 'structure', verb: 'Nibble at', label: () => 'Picnic', pos: vec('picnic', 0, 0.3, 0), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'The firefly jar glows. Someone saved you a slice of pie. 🥧' : 'Lemonade, sandwiches, a cherry pie. Help yourself! 🧺') }),
     ctx.interact.add({ id: 'lookout:telescope', kind: 'prop', verb: 'Look through', label: () => 'Telescope', pos: vec('lookout', LOOKOUT.telescope.x, LOOKOUT.deck + 1.05, LOOKOUT.telescope.z), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'So many stars… is that one shaped like a crab? ✨' : 'You can see every field from up here. Tiny farmers, hard at work. 🔭') }),
@@ -447,6 +453,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
       for (const p of placed.values()) p.rig?.update(env);
       dressingRig?.update(env);
       upgrades?.update(env, ctx.valley.almanac, ctx.valley.sky.hour);
+      festivals?.update(env, ctx.valley.sky);
     },
     stats: () => ({ baked: baked.length, structures: placed.size }),
     dispose() {

@@ -191,3 +191,35 @@ test('photo mode: P hides the HUD and flies the camera, P again puts the view ba
   expect(Math.abs(after.y - before.y)).toBeLessThan(0.3);
   expect(errors).toEqual([]);
 });
+
+test('pastimes: pick up a forageable, catch a fish, both land in the Collections book (K)', async ({ page, demoServer }) => {
+  test.slow(); // software rendering
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  type V = { forage(): { id: string; picked: boolean }[]; forageGo(i: number): unknown; fish(step?: string): Promise<unknown>; focused(): { id: string } | null; ctx: { services: Map<string, unknown> } };
+  const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
+  await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
+  // the book starts empty, every entry a silhouette
+  await page.keyboard.press('KeyK');
+  const book = page.getByTestId('panel-collection');
+  await expect(book).toBeVisible();
+  await expect(book).toContainText('0 of 28 found');
+  await page.keyboard.press('Escape');
+  await expect(book).toBeHidden();
+  // today's forageables lie about the valley; walk up to one and press E
+  await expect.poll(() => v((x) => x.forage().length)).toBeGreaterThanOrEqual(8);
+  await v((x) => x.forageGo(0));
+  await expect.poll(() => v((x) => x.focused()?.id ?? '')).toMatch(/^forage:/);
+  await page.keyboard.press('KeyE');
+  await expect.poll(() => v((x) => x.forage()[0].picked)).toBe(true);
+  // fishing at the dock: cast, the bobber dips, E hooks it
+  expect(await v((x) => x.fish())).toBe(true);
+  await expect.poll(() => v((x) => (x.ctx.services.get('forage') as { phase(): string }).phase()), { timeout: 15_000 }).toBe('wait');
+  await v((x) => x.fish('bite'));
+  await expect.poll(() => v((x) => (x.ctx.services.get('forage') as { phase(): string }).phase())).toBe('bite');
+  await page.keyboard.press('KeyE');
+  await expect.poll(() => v((x) => (x.ctx.services.get('forage') as { phase(): string }).phase()), { timeout: 15_000 }).toMatch(/show|idle/);
+  await page.keyboard.press('KeyK');
+  await expect(book).toBeVisible();
+  await expect(book).toContainText('2 of 28 found');
+  expect(errors).toEqual([]);
+});

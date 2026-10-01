@@ -23,6 +23,7 @@ import { createNeeds } from './needs.ts';
 import { createPrompt } from './prompt.ts';
 import { createAnchors } from './anchors.ts';
 import { createToasts } from './toasts.ts';
+import { festivalGreeter } from './festival.ts';
 import { createMapPanel, createMinimap } from './map.ts';
 import { warmBase } from './mapdraw.ts';
 import { createMailbox, mailOf } from './mailbox.ts';
@@ -31,6 +32,8 @@ import { createCard } from './cards.ts';
 import { createDrawer } from './drawer.ts';
 import { createNoticeboard, createStats } from './boards.ts';
 import { createAlmanac } from './almanac.ts';
+import { createCollectionPanel } from './collection.ts';
+import type { CollectionService } from '../model/collection.ts';
 import { UPGRADES } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
 
@@ -55,6 +58,8 @@ export interface HudBindings {
   villagers?(): readonly VillagerPin[];
   /** optional: the scene camera, for the anchored overlays (nameplates, speech bubbles, the interaction tag) */
   camera?(): Camera;
+  /** optional: the player's Collections book (forage + fishing, model/collection.ts) */
+  collection?(): CollectionService;
 }
 
 export interface Hud {
@@ -121,6 +126,7 @@ export function createHud(d: HudDeps): Hud {
   const anchors = createAnchors(() => prompt.focused() ?? safeFocus(), () => b?.interact.all() ?? null);
   const safeFocus = () => { try { return b?.interact.focused() ?? null; } catch { return null; } };
   const toasts = createToasts(ctx);
+  const greetFestival = festivalGreeter((t) => toasts.push(t));
   const minimap = createMinimap(ctx);
   const hint = createHint();
   // the free-mouse reminder is the first item of the key-hints bar (one bar at the bottom, not two)
@@ -142,7 +148,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createPause(ctx), drawer]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createPause(ctx), drawer]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -243,6 +249,7 @@ export function createHud(d: HudDeps): Hud {
       if (e.code === 'KeyJ') { handled(e); panels.toggle('mailbox'); return; }
       if (e.code === 'KeyM') { handled(e); panels.toggle('map'); return; }
       if (e.code === 'KeyH') { handled(e); panels.toggle('almanac'); return; }
+      if (e.code === 'KeyK') { handled(e); panels.toggle('collection'); return; }
       if (e.key === 'Tab' && cur.id !== 'pause') { handled(e); panels.toggle('roster'); return; }
       if (e.code === 'KeyE' && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
@@ -262,6 +269,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyM': handled(e); panels.open('map'); return;
       case 'KeyB': handled(e); panels.open('noticeboard'); return;
       case 'KeyH': handled(e); panels.open('almanac'); return;
+      case 'KeyK': handled(e); panels.open('collection'); return;
       case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Tab': handled(e); panels.open('roster'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
@@ -305,6 +313,7 @@ export function createHud(d: HudDeps): Hud {
     for (const l of s.letters) if (!l.read && readKeys.has(letterKey(l))) { b.markRead(l.id); l.read = true; }
     if (!pointerDown) needs.refresh();
     toasts.watchLetters(s.letters);
+    greetFestival(s);
     const mail = mailOf(s, synthRead);
     const unread = unreadCount(mail);
     const badge = mailBtn.querySelector('.badge') as HTMLElement;
@@ -369,6 +378,12 @@ export function createHud(d: HudDeps): Hud {
         }
         else if (e.kind === 'plot-closed') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `Harvest time at ${p.label}`, sub: 'the workspace closed', icon: ICONS.sprout }); }
       });
+      // a first-ever find for the Collections book
+      try {
+        x.collection?.().onFind((r) => {
+          if (r.isNew) toasts.push({ text: `New in your collection: ${r.def.name}`, sub: `${r.def.rare ? 'a rare one! · ' : ''}K for the Collections book`, icon: ICONS.book, level: 'good', key: `find|${r.def.id}` });
+        });
+      } catch { /* optional */ }
       tick();
       warmBase();
       if (pendingOpen) { const p = pendingOpen; pendingOpen = null; openTerminal(p.id, p.enterAt); }

@@ -8,7 +8,7 @@
  * Pure: no DOM, no three, the clock is passed in. Days are local calendar days (`YYYY-MM-DD`).
  */
 
-export const HARVEST_KINDS = Object.freeze(['commit', 'tests', 'finished', 'answered', 'tilled', 'ducklings'] as const);
+export const HARVEST_KINDS = Object.freeze(['commit', 'tests', 'finished', 'answered', 'tilled', 'ducklings', 'found'] as const);
 export type HarvestKind = (typeof HARVEST_KINDS)[number];
 
 /** points per harvest, and how many of each count toward points per day (busy test loops can't farm the almanac) */
@@ -19,6 +19,8 @@ export const HARVEST: Readonly<Record<HarvestKind, { points: number; cap: number
   answered: { points: 3, cap: 60, label: 'questions answered', one: 'answer' },
   tilled: { points: 5, cap: 12, label: 'fields tilled', one: 'new field' },
   ducklings: { points: 1, cap: 40, label: 'ducklings hatched', one: 'duckling' },
+  // the player's own pastime: a first-ever find for the Collections book (model/collection.ts)
+  found: { points: 5, cap: 3, label: 'new finds collected', one: 'new find' },
 });
 
 /** Town upgrades, one per rank above the first (the scene builds them; ids are stable). */
@@ -247,6 +249,7 @@ export function recapLetter(v: AlmanacView): { title: string; body: string } {
   if (c.answered) bits.push(`got ${count(c.answered, 'answer', 'answers')} from you`);
   if (c.tilled) bits.push(`tilled ${count(c.tilled, 'new field', 'new fields')}`);
   if (c.ducklings) bits.push(`hatched ${count(c.ducklings, 'duckling', 'ducklings')}`);
+  if (c.found) bits.push(`added ${count(c.found, 'new find', 'new finds')} to your collection`);
   const lines = [`Today the valley ${list(bits) || 'kept busy'}: ${v.today.points} prosperity in all.`];
   const cheers: string[] = [];
   if (v.today.points >= v.best && v.week.slice(0, -1).some((d) => d.points > 0)) cheers.push('That\'s our best day on record!');

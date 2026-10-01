@@ -5,12 +5,12 @@
  */
 import { HARVEST, HARVEST_KINDS, RANKS, STAR_POINTS, UPGRADES } from '../model/almanac.ts';
 import type { AlmanacView, HarvestKind } from '../model/almanac.ts';
-import { ICONS, LETTER_ICON, icon } from './icons.ts';
+import { ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
 export const HARVEST_ICON: Record<HarvestKind, string> = {
   commit: LETTER_ICON.commit, tests: LETTER_ICON['test-pass'], finished: LETTER_ICON.finished,
-  answered: ICONS.bang, tilled: ICONS.sprout, ducklings: ICONS.duck,
+  answered: ICONS.bang, tilled: ICONS.sprout, ducklings: ICONS.duck, found: KIND_ICON.berries,
 };
 
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -38,8 +38,11 @@ export function rankChip(ctx: HudCtx): { el: HTMLElement; refresh(a: AlmanacView
 }
 
 export function createAlmanac(ctx: HudCtx): Panel {
-  const { el, body, closeBtn } = framePanel('almanac', 'Valley Almanac', ICONS.rosette);
+  const { el, body, head: frameHead, closeBtn } = framePanel('almanac', 'Valley Almanac', ICONS.rosette);
   closeBtn.addEventListener('click', () => ctx.panels.close());
+  const toBook = h('button.vh-col-tab', { type: 'button', title: 'Collections (K)', 'data-testid': 'almanac-collection' }, icon(ICONS.book), 'Collections');
+  toBook.addEventListener('click', () => ctx.panels.open('collection'));
+  frameHead.insertBefore(toBook, closeBtn);
 
   // rank header
   const rName = h('div.rk-name');

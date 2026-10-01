@@ -1,6 +1,7 @@
 /**
  * Stylised toon water for the river and the pond (one mesh, one shader), the waterfall on the north cliff (a falling
- * sheet with scrolling foam bands, splash foam in the pool, drifting mist sprites) and the shore plants (lily pads,
+ * sheet with scrolling foam bands, splash foam in the pool, drifting mist sprites), the little cascades spilling down
+ * the cliff strata (one ribbon mesh) and the shore plants (lily pads,
  * reeds, cattails; see shore.ts).
  *
  * A DataTexture baked once over the world carries, per texel: water depth (R), distance to the shore (G) and the
@@ -12,7 +13,7 @@ import * as THREE from 'three';
 import type { SceneCtx, SystemFactory } from '../context.ts';
 import type { Season } from '../../model/types.ts';
 import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, heightAt, structure } from '../../world/map.ts';
-import { WATER_STONES } from './features.ts';
+import { TRICKLES, WATER_STONES } from './features.ts';
 import { buildShore } from './shore.ts';
 
 const HALF = WORLD.half;
@@ -466,6 +467,79 @@ function fallMaterial(u: WaterUniforms): THREE.ShaderMaterial {
   });
 }
 
+/** The cliff cascades (features.ts TRICKLES): one ribbon mesh; uv.y in metres along the flow, `steep` per vertex. */
+function buildTrickles(): THREE.BufferGeometry | null {
+  if (!TRICKLES.length) return null;
+  const pos: number[] = [], uv: number[] = [], st: number[] = [], idx: number[] = [];
+  for (const t of TRICKLES) {
+    const base = pos.length / 3, n = t.pts.length;
+    let along = 0;
+    for (let i = 0; i < n; i++) {
+      const p = t.pts[i], a = t.pts[Math.max(0, i - 1)], b = t.pts[Math.min(n - 1, i + 1)];
+      const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+      if (i) along += Math.hypot(p.x - t.pts[i - 1].x, p.y - t.pts[i - 1].y, p.z - t.pts[i - 1].z);
+      // narrow at the spring, a little wider as it gathers; the white water fans out on the risers
+      const w = t.width * (0.55 + 0.45 * Math.min(1, along / 10)) * (1 + t.steep[i] * 0.25);
+      for (const side of [-1, 1]) {
+        const x = p.x + (-dz / l) * side * w / 2, z = p.z + (dx / l) * side * w / 2;
+        pos.push(x, Math.max(p.y - 0.05, heightAt(x, z) + 0.1), z);
+        uv.push(side < 0 ? 0 : 1, along);
+        st.push(t.steep[i], Math.min(1, along / 2.5) * Math.min(1, (n - 1 - i) / 4));
+      }
+      if (i) { const k = base + i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('flow', new THREE.Float32BufferAttribute(st, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+}
+
+function trickleMaterial(u: WaterUniforms): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uTime: u.uTime, uNight: u.uNight, uSun: u.uSun, uSunColor: u.uSunColor, uWinter: u.uWinter,
+      uBody: { value: new THREE.Color(0x6fbedb) }, uFoam: { value: new THREE.Color(0xf6fcff) } },
+    fog: true, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    vertexShader: /* glsl */ `
+      attribute vec2 flow;
+      varying vec2 vUv; varying vec2 vFlow;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main() { vUv = uv; vFlow = flow; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime, uNight, uSun, uWinter; uniform vec3 uBody, uFoam, uSunColor;
+      varying vec2 vUv; varying vec2 vFlow;
+      #include <common>
+      #include <fog_pars_fragment>
+      ${NOISE_GLSL}
+      void main() {
+        float u = vUv.x, v = vUv.y, t = uTime, st = vFlow.x;
+        float speed = 0.8 + st * 2.2;
+        float streak = vnoise(vec2(u * 6.0, v * 0.7 - t * speed));
+        float n = vnoise(vec2(u * 5.0 + 3.0, v * 2.2 - t * speed * 1.4));
+        // white water on the risers, glassy blue runs with a few foam flecks across the shelves
+        float white = step(0.62 - st * 0.42, streak * 0.75 + n * 0.35);
+        white = max(white, step(0.8, fract(v * 0.9 - t * speed * 0.5 + n * 0.4)) * step(0.35, st));
+        vec3 col = mix(uBody * (0.82 + streak * 0.3), uFoam, white);
+        float edge = 0.18 + vnoise(vec2(v * 2.0 - t * 1.5, u * 3.0)) * 0.16;
+        float a = smoothstep(0.0, edge, u) * smoothstep(1.0, 1.0 - edge, u) * vFlow.y * (0.78 + white * 0.22);
+        col = mix(col, vec3(0.86, 0.94, 1.0), uWinter * 0.5);
+        col *= mix(vec3(1.0), uSunColor, 0.25) * clamp(uSun / 2.2, 0.2, 1.1);
+        col = mix(col, col * vec3(0.14, 0.2, 0.36), uNight);
+        gl_FragColor = vec4(col, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+}
+
 /** Mist: soft sprites rising and spreading from the plunge pool (one draw, animated on the GPU). */
 function buildMist(base: THREE.Vector3, u: WaterUniforms): THREE.Points {
   const n = 34;
@@ -521,6 +595,9 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
   sheet.renderOrder = 2;
   const mist = buildMist(fall.base, u);
   root.add(surface, sheet, mist);
+  const trickleGeo = buildTrickles();
+  const trickles = trickleGeo ? new THREE.Mesh(trickleGeo, trickleMaterial(u)) : null;
+  if (trickles) { trickles.name = 'cascades'; trickles.renderOrder = 2; root.add(trickles); }
 
   let season: Season = ctx.valley.sky.season;
   let shore = buildShore(season);
@@ -553,6 +630,7 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
       surface.geometry.dispose(); (surface.material as THREE.Material).dispose();
       sheet.geometry.dispose(); (sheet.material as THREE.Material).dispose();
       mist.geometry.dispose(); (mist.material as THREE.Material).dispose();
+      if (trickles) { trickles.geometry.dispose(); (trickles.material as THREE.Material).dispose(); }
       data.dispose(); lanes.dispose();
       shore.dispose();
     },

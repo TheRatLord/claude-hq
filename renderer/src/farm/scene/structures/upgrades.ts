@@ -34,6 +34,10 @@ export interface Upgrades {
   update(env: Env, almanac: AlmanacView, hour: number): void;
   /** a short firework show (level-ups, dev) */
   fireworks(seconds: number): void;
+  /** a confetti burst at p (pop-ins, festivals) */
+  confetti(p: THREE.Vector3): void;
+  /** ground the upgrades claimed (x, z, r): festival dressing keeps out of it */
+  readonly taken: readonly { x: number; z: number; r: number }[];
   dispose(): void;
 }
 
@@ -51,7 +55,7 @@ const easeOutBack = (x: number) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 
 // ---------------------------------------------------------------------------------------------------------------
 // Placement
 
-function structDist(x: number, z: number): number {
+export function structDist(x: number, z: number): number {
   let d = Infinity;
   for (const s of STRUCTURES) {
     const dx = x - s.x, dz = z - s.z, c = Math.cos(s.yaw), sn = Math.sin(s.yaw);
@@ -61,11 +65,11 @@ function structDist(x: number, z: number): number {
   }
   return d;
 }
-const pathDist = (x: number, z: number) => Math.min(...PATHS.map((p) => distToPolyline(x, z, p.points) - p.width / 2));
-const wet = (x: number, z: number, r: number) => distToPolyline(x, z, RIVER) < RIVER_HALF_WIDTH + 2 + r || Math.hypot(x - POND.x, z - POND.z) < POND.r + 2 + r || heightAt(x, z) < WORLD.water + 0.4;
+export const pathDist = (x: number, z: number) => Math.min(...PATHS.map((p) => distToPolyline(x, z, p.points) - p.width / 2));
+export const wet = (x: number, z: number, r: number) => distToPolyline(x, z, RIVER) < RIVER_HALF_WIDTH + 2 + r || Math.hypot(x - POND.x, z - POND.z) < POND.r + 2 + r || heightAt(x, z) < WORLD.water + 0.4;
 
 /** the nearest point on any road to (x, z) */
-function nearestRoad(x: number, z: number): { x: number; z: number } {
+export function nearestRoad(x: number, z: number): { x: number; z: number } {
   let best = { x, z }, bd = Infinity;
   for (const p of PATHS) for (let i = 0; i < p.points.length - 1; i++) {
     const a = p.points[i], b = p.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
@@ -760,6 +764,8 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
       updateFireworks(e.dt, e.t);
     },
     fireworks: svc.fireworks,
+    confetti,
+    taken,
     dispose() {
       for (const b of built) hide(b);
       flashOff?.();

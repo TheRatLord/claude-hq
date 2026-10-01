@@ -7,12 +7,15 @@
 import * as THREE from 'three';
 import { seeded } from '../../../core/rng.ts';
 import type { Season } from '../../model/types.ts';
-import { HANGOUTS, POND, RIVER, RIVER_HALF_WIDTH, WORLD, clearance, distToPolyline, heightAt, slopeAt } from '../../world/map.ts';
+import { HANGOUTS, PATHS, POND, RIVER, RIVER_HALF_WIDTH, SITES, STRUCTURES, WORLD, clearance, distToPolyline, heightAt, siteToWorld, slopeAt } from '../../world/map.ts';
 import type { XZ } from '../../world/map.ts';
 import { fbm, hash2 } from '../../world/noise.ts';
 import { sampleGround } from '../terrain/ground.ts';
 import { wallDist } from '../terrain/paths.ts';
-import { OUTCROPS, RIVER_ROCKS } from '../terrain/features.ts';
+import { OUTCROPS, RIVER_ROCKS, trickleDist } from '../terrain/features.ts';
+import { bloomColors, meadowAt } from '../terrain/meadow.ts';
+import type { MeadowAt } from '../terrain/meadow.ts';
+import { IVY_LEAN } from './species.ts';
 import type { GroundSample } from '../terrain/ground.ts';
 import type { Item } from './cells.ts';
 import { SEASON_BIT } from './cells.ts';
@@ -38,6 +41,9 @@ export interface Scatter {
   logs: Item[];
   stumps: Item[];
   mushrooms: Item[];
+  /** ivy curtains hanging over the cliff strata ledges (s = length, the curtain leans with the riser) */
+  ivy: Item[];
+  molehills: Item[];
   heroes: XZ[];
 }
 
@@ -58,9 +64,14 @@ const CROWN: Record<TreeKind, number> = { round: 2.0, lolly: 1.6, bushy: 2.0, oa
 /** Height of the lowest crown tier above the trunk base at scale 1. */
 const CROWN_BASE: Record<TreeKind, number> = { round: 2.0, lolly: 2.0, bushy: 1.5, oak: 2.0, birch: 2.2, pine: 1.1, fir: 0.8, willow: 1.2, hero: 2.5 };
 /** Does the hillside rise into the lower crown (a tree on a cliff with its branches in the rock)? */
-const crownInSlope = (kind: TreeKind, x: number, z: number, y: number, s: number) => {
-  const r = CROWN[kind] * s * 0.8, top = y + CROWN_BASE[kind] * s * 0.7;
+const crownInSlope = (kind: TreeKind, x: number, z: number, y: number, s: number, rk = 1) => {
+  const r = CROWN[kind] * s * 0.8 * rk, top = y + CROWN_BASE[kind] * s * 0.7;
   for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; if (heightAt(x + Math.cos(a) * r, z + Math.sin(a) * r) > top) return true; }
+  return false;
+};
+/** Does the ground anywhere within radius r (two rings) rise above `top`? (a strata riser behind a ledge plant) */
+const slopeRises = (x: number, z: number, r: number, top: number) => {
+  for (const k of [0.5, 1]) for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; if (heightAt(x + Math.cos(a) * r * k, z + Math.sin(a) * r * k) > top) return true; }
   return false;
 };
 /**
@@ -97,21 +108,24 @@ export function scatter(): Scatter {
     bushes: { bush: [], berry: [], hedge: [] },
     tufts: [], tuftSamples: [], tall: [], tallSamples: [], short: [], shortSamples: [],
     flowers: { daisy: [], bell: [], tall: [] }, flowerSlot: new Map(),
-    clover: [], rocks: [], logs: [], stumps: [], mushrooms: [], heroes: heroSpots(),
+    clover: [], rocks: [], logs: [], stumps: [], mushrooms: [], ivy: [], molehills: [], heroes: heroSpots(),
   };
   const H = WORLD.half - 2;
   const trees: XZ[] = [];
   // spatial hash for tree spacing (the list gets long)
   const grid = new Map<string, (XZ & { r: number })[]>();
   const gk = (x: number, z: number) => `${Math.floor(x / 8)},${Math.floor(z / 8)}`;
-  const addTree = (kind: TreeKind, x: number, z: number, s: number, r: () => number, sink = 0.1) => {
+  const addTree = (kind: TreeKind, x: number, z: number, s: number, r: () => number, sink = 0.1, crownK = 1) => {
     // low-skirted conifers keep their lowest tier off the old stone walls
     if (wallDist(x, z) < (CROWN_BASE[kind] < 1.5 ? Math.max(1.5, CROWN[kind] * s * 1.05) : 1.5) || inOpen(x, z) || stoneDist(x, z) < 0.6 + CROWN[kind] * s * 0.5) return;
+    if (trickleDist(x, z) < 1.2 + CROWN[kind] * s * 0.6) return;
     if (!spaced(x, z, 0, CROWN[kind] * s)) return;
     const fp = footprint(x, z, 0.3 * s);
     if (fp.spread > 0.45) return; // too steep under the trunk: its uphill side would vanish into the slope
     const y = fp.min - sink; // the trunk's downhill side meets the ground
-    if (crownInSlope(kind, x, z, y, s)) return;
+    if (crownInSlope(kind, x, z, y, s, crownK)) return;
+    // up on the strata wall: no riser right behind the trunk (it would swallow the lower crown)
+    if (ringR(x, z) > 92 && ((slopeRises(x, z, CROWN[kind] * s * 0.9, y + 0.3 + CROWN_BASE[kind] * s * 0.2) || slopeRises(x, z, CROWN[kind] * s * 1.15, y + CROWN_BASE[kind] * s * 0.6)) || footprint(x, z, 0.55 * s).spread > 0.3)) return;
     const it: Item = { x, y, z, s, yaw: r() * Math.PI * 2, tint: tint(r, kind === 'pine' || kind === 'fir' ? 0.16 : 0.12, 0.06), tx: (r() - 0.5) * 0.08, tz: (r() - 0.5) * 0.08 };
     out.trees[kind].push(it);
     const p = { x, z, r: CROWN[kind] * s };
@@ -201,14 +215,116 @@ export function scatter(): Scatter {
     const kind: BushKind = rb() < 0.25 ? 'berry' : 'bush';
     const bs = 0.75 + rb() * 0.6, yaw = rb() * 6.28, bt = tint(rb, 0.14, 0.05);
     const fp = footprint(px, pz, 0.8 * bs);
-    if (fp.spread > Math.min(0.4 * bs, 0.42)) continue; // too steep: the uphill half would vanish into the slope
+    if (fp.spread > Math.min(0.4 * bs, 0.42) || slopeRises(px, pz, 1.1 * bs, fp.min + 0.45 * bs)) continue; // too steep: the uphill half would vanish into the slope
     if (bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < 0.75 * (b.r + 0.9 * bs))) continue; // two bushes fused into one blob
     bushAt.push({ x: px, z: pz, r: 0.9 * bs });
     out.bushes[kind].push({ x: px, y: fp.min - 0.06, z: pz, s: bs, yaw, tint: bt });
   }
 
+  // cliff strata: bushes and small pines cling to the shelves, ivy hangs over the ledges (terraced wall, map.ts)
+  const rl = seeded('flora:ledges');
+  for (let z = -H; z < H; z += 2.3) for (let x = -H; x < H; x += 2.3) {
+    const px = x + (rl() - 0.5) * 2.1, pz = z + (rl() - 0.5) * 2.1;
+    const roll = rl(), pick = rl();
+    const R = ringR(px, pz);
+    if (R < 92 || R > 150) continue;
+    const h = heightAt(px, pz);
+    if (h < 8 || h > 42 || slopeAt(px, pz) > 0.22 || trickleDist(px, pz) < 2.5 || Math.hypot(px - FALL.x, pz - FALL.z) < 22) continue;
+    // outward (up the wall) and inward (toward the valley): a shelf has a riser behind it and/or a drop in front
+    const ox = px / Math.hypot(px, pz), oz = pz / Math.hypot(px, pz);
+    const behind = heightAt(px + ox * 3, pz + oz * 3) - h;
+    const front = h - heightAt(px - ox * 1.4, pz - oz * 1.4);
+    if (behind < 1.8 && front < 1.2) continue;
+    if (front > 1.2 && heightAt(px - ox * 0.35, pz - oz * 0.35) > h - 0.25 && roll < 0.9) {
+      // ivy: the curtain's top sits at the lip, its strands lean with the riser below (skip overhangs and gentle banks)
+      let drop = 0, run = 0;
+      for (let k = 0.5; k <= 5; k += 0.25) { const d = h - heightAt(px - ox * k, pz - oz * k); if (d > drop) { drop = d; if (d < 6.5) run = k; } }
+      const lean = run / Math.max(0.1, drop);
+      if (drop < 2 || lean > 0.5) continue;
+      const L = Math.min(4.6, Math.max(1.6, drop * (0.65 + rl() * 0.3)));
+      // the strands must hang in front of the riser all the way down (it may bulge out below a steep lip): step the
+      // curtain out from the lip until they do
+      const hangs = (o: number) => [0.25, 0.5, 0.75, 1].every((k) => { const d = o + IVY_LEAN * L * k - 0.3; return heightAt(px - ox * d, pz - oz * d) < h - L * k + 0.45; });
+      let off = Math.max(0.25, (lean - IVY_LEAN) * L + 0.2);
+      while (off < 1.2 && !hangs(off)) off += 0.2;
+      const clear = off < 1.2;
+      const ix = px - ox * off, iz = pz - oz * off;
+      if (!clear || stoneDist(ix, iz) < 1.5 + L * 0.3 || !spaced(ix, iz, 2.2, L * 0.6) || out.ivy.some((q) => Math.hypot(q.x - ix, q.z - iz) < (q.s + L) * 0.5)) continue;
+      out.ivy.push({ x: ix, y: h + 0.06, z: iz, s: L, yaw: Math.atan2(-ox, -oz), tint: tint(rl, 0.18, 0.06) });
+      continue;
+    }
+    if (front > 1.2 || roll > 0.55) continue;
+    if (pick < 0.3 && slopeAt(px, pz) < 0.14 && h < 36) {
+      addTree(rl() < 0.6 ? 'pine' : 'fir', px, pz, 0.42 + rl() * 0.3, rl, 0.15);
+    } else {
+      const bs = 0.5 + rl() * 0.45, fp = footprint(px, pz, 1.05 * bs);
+      if (fp.spread > 0.26 * bs || slopeRises(px, pz, 1.6 * bs, fp.min + 0.3 * bs) || stoneDist(px, pz) < 1.2 || !spaced(px, pz, 2.6) || bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < 0.75 * (b.r + 0.9 * bs))) continue;
+      bushAt.push({ x: px, z: pz, r: 0.9 * bs });
+      out.bushes[rl() < 0.2 ? 'berry' : 'bush'].push({ x: px, y: fp.min - 0.05, z: pz, s: bs, yaw: rl() * 6.28, tint: tint(rl, 0.16, 0.06) });
+    }
+  }
+
+  // hedgerows: along the farm tracks (runs with gaps) and round the back and sides of the field sites, never on a
+  // road, a plot or a structure; now and then a hedgerow oak or round tree stands in the line
+  const rhg = seeded('flora:hedgerows');
+  let sinceTree = 0;
+  const hedge = (x: number, z: number, dx: number, dz: number) => {
+    const R = ringR(x, z);
+    if (R < 24 || R > 88 || Math.hypot(x, z + 1) < 26) return;
+    let ok = clearance(x, z) > 1.1;
+    for (const e of [-1.6, 1.6]) ok = ok && clearance(x + dx * e, z + dz * e) > 0.9;
+    if (!ok || nearWater(x, z) < 2.5 || wallDist(x, z) < 2 || stoneDist(x, z) < 1.2 || inOpen(x, z) || trickleDist(x, z) < 3 || slopeAt(x, z) > 0.18) return;
+    if (++sinceTree > 6 && rhg() < 0.3 && clearance(x, z) > 2.6 && footprint(x, z, 1.3).spread < 0.18) {
+      const n = out.trees.oak.length + out.trees.round.length;
+      addTree(rhg() < 0.6 ? 'oak' : 'round', x, z, 0.75 + rhg() * 0.3, rhg);
+      if (out.trees.oak.length + out.trees.round.length > n) { sinceTree = 0; return; }
+    }
+    if (!spaced(x, z, 2.2) || bushAt.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + 0.8)) return;
+    // a hedge is ~3.8 m long at scale 1: neighbours in a row just touch (step 3.1 m)
+    if (out.bushes.hedge.some((q) => Math.hypot(q.x - x, q.z - z) < 3)) return;
+    const hs = 0.74 + rhg() * 0.06, fp = footprint(x, z, 1.4);
+    if (fp.spread > 0.32) return;
+    bushAt.push({ x, z, r: 0.75 });
+    out.bushes.hedge.push({ x, y: fp.min - 0.04, z, s: hs, sy: 0.9 + rhg() * 0.25, yaw: Math.atan2(-dz, dx) + (rhg() - 0.5) * 0.12, tint: tint(rhg, 0.1, 0.05) });
+  };
+  for (const [pi, path] of PATHS.entries()) {
+    const pts = path.points;
+    for (const side of [-1, 1]) {
+      let d = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+        for (let t = 0; t < l; t += 3.1, d += 3.1) {
+          // runs of hedge where a slow noise along the track says so (hash per path and side)
+          if (fbm(d / 26 + pi * 7.3 + side * 3.1, pi * 1.7) < -0.08) continue;
+          const off = path.width / 2 + 2;
+          hedge(a.x + dx * (t / l) - (dz / l) * off * side, a.z + dz * (t / l) + (dx / l) * off * side, dx / l, dz / l);
+        }
+      }
+    }
+  }
+  for (const site of SITES) {
+    // back (−lz) and both sides; the front is the gate side
+    const c = Math.cos(site.yaw), sn = Math.sin(site.yaw);
+    const edges: [number, number, number, number][] = [
+      [-site.w / 2 - 0.5, -site.d / 2 - 2.1, site.w / 2 + 0.5, -site.d / 2 - 2.1],
+      [-site.w / 2 - 2.1, -site.d / 2 - 0.5, -site.w / 2 - 2.1, site.d / 2 - 1],
+      [site.w / 2 + 2.1, -site.d / 2 - 0.5, site.w / 2 + 2.1, site.d / 2 - 1],
+    ];
+    for (const [ax, az, bx, bz] of edges) {
+      const l = Math.hypot(bx - ax, bz - az);
+      // edge direction in world space (local x → (c, −s), local z → (s, c))
+      const lx = (bx - ax) / l, lz = (bz - az) / l, wx = lx * c + lz * sn, wz = -lx * sn + lz * c;
+      for (let t = 1.2; t < l - 1; t += 3.1) {
+        const p = siteToWorld(site, ax + lx * t, az + lz * t);
+        if (fbm(p.x / 14 + 4, p.z / 14 - 2) < -0.25) continue;
+        hedge(p.x, p.z, wx, wz);
+      }
+    }
+  }
+
   // ground cover: short grass everywhere open, tall grass in meadows, clover, wildflower patches
   const rt = seeded('flora:tufts'), rsh = seeded('flora:short');
+  const md: MeadowAt = { clover: 0, sun: 0, bloom: 0, slot: 0 };
   const step = 1.05;
   for (let z = -120; z < 120; z += step) for (let x = -124; x < 124; x += step) {
     const px = x + (rt() - 0.5) * step * 0.95, pz = z + (rt() - 0.5) * step * 0.95;
@@ -225,7 +341,9 @@ export function scatter(): Scatter {
     if (h > 26 || slopeAt(px, pz) > 0.45) continue;
     { const bx = px - POND.x, bz = pz - POND.z, bd = Math.hypot(bx, bz); if (bd < POND.r + 7 && (bx * 0.26 + bz * 0.97) / bd > 0.25) continue; }
     const sm = sampleGround(px, pz, h);
-    const tall = c > 2.2 && meadow > 0.05 && roll2 < 0.45 + meadow * 0.5;
+    meadowAt(px, pz, md);
+    // tall grass in the meadows, and in rough clumps across the sunny bleached patches
+    const tall = c > 2.2 && ((meadow > 0.05 && roll2 < 0.45 + meadow * 0.5) || (md.sun > 0.5 && roll2 < 0.4));
     const it: Item = { x: px, y: h - 0.03, z: pz, s: (0.8 + rt() * 0.5 + (c > 3 ? 0.15 : 0)) * (c < 1.2 ? 0.75 : 1), yaw: rt() * 6.28, sy: (0.8 + rt() * 0.5) * (c < 1.2 ? 0.7 : 1) };
     // keep off the painted path dirt (its edge sits at path ≈ 0.45); tufts right at the edge creep over it
     if (sm.path > 0.4) continue;
@@ -241,8 +359,17 @@ export function scatter(): Scatter {
         out.shortSamples.push(sm);
       }
     }
-    // clover close to the edges of paths and in lawns
-    if (c > 0.3 && c < 2.5 && rt() < 0.07) out.clover.push({ x: px + 0.3, y: h - 0.02, z: pz - 0.2, s: 0.8 + rt() * 0.6, yaw: rt() * 6.28, seasons: 15 });
+    // clover close to the edges of paths and in lawns, thick in the painted clover drifts (meadow.ts)
+    const cl = rt();
+    if (c > 0.3 && (cl < (c < 2.5 ? 0.07 : 0) + md.clover * 0.45)) out.clover.push({ x: px + 0.3, y: h - 0.02, z: pz - 0.2, s: 0.8 + rt() * 0.6, yaw: rt() * 6.28, seasons: 15 });
+    // wildflowers thick in the painted drifts, in the drift's colour (flowerColor slots 6..8)
+    if (md.bloom > 0.4 && c > 0.8 && rt() < 0.32 * md.bloom && h < 22) {
+      const fx = px + (rt() - 0.5) * 0.6, fz = pz + (rt() - 0.5) * 0.6, kr = rt();
+      const kind: FlowerKind = kr < 0.55 ? 'daisy' : kr < 0.75 ? 'bell' : 'tall';
+      const it: Item = { x: fx, y: heightAt(fx, fz) - 0.02, z: fz, s: 0.8 + rt() * 0.5, yaw: rt() * 6.28, seasons: SEASON_BIT.spring | SEASON_BIT.summer | (rt() < 0.5 ? SEASON_BIT.autumn : 0), tint: new THREE.Color(1, 1, 1) };
+      out.flowers[kind].push(it);
+      out.flowerSlot.set(it, 6 + md.slot);
+    }
   }
 
   // wildflower patches (colour slot per patch; the flora system paints them per season)
@@ -276,10 +403,12 @@ export function scatter(): Scatter {
     const h = heightAt(px, pz);
     const forest = ss(66, 92, R);
     const near = trees.length && !spaced(px, pz, 5);
+    const byBush = bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < b.r + 2.2); // hedges and bushes keep their room
     // slope-aware: props sit on the lowest ground under their footprint, and skip spots too steep for them (and trunks: a stump inside a fir)
+    if (byBush && roll < 0.13 + forest * 0.16) continue;
     if (roll < 0.08 + forest * 0.08) {
       const s = 0.35 + rr() * 0.6 + forest * 0.5, yaw = rr() * 6.28, sy = 0.8 + rr() * 0.5, fp = footprint(px, pz, 0.8 * s);
-      if (fp.spread < 0.5 * s * sy && spaced(px, pz, 1.2)) out.rocks.push({ x: px, y: Math.min(h - 0.1, fp.min + 0.05), z: pz, s, yaw, sy });
+      if (fp.spread < 0.5 * s * sy && spaced(px, pz, 1.2) && !slopeRises(px, pz, 1.1 * s, fp.min + 0.45 * s * sy)) out.rocks.push({ x: px, y: Math.min(h - 0.1, fp.min + 0.05), z: pz, s, yaw, sy });
     } else if (roll < 0.1 + forest * 0.12 && slopeAt(px, pz) < 0.3 && c > 2.5) {
       const s = 0.8 + rr() * 0.4, yaw = rr() * 6.28, fp = footprint(px, pz, 1.1 * s);
       if (fp.spread < 0.2 && spaced(px, pz, 1.8)) out.logs.push({ x: px, y: fp.min - 0.03, z: pz, s, yaw });
@@ -287,15 +416,50 @@ export function scatter(): Scatter {
       const s = 0.8 + rr() * 0.5, yaw = rr() * 6.28, fp = footprint(px, pz, 0.55 * s);
       if (fp.spread < Math.min(0.22 * s, 0.24) && spaced(px, pz, 1.6)) out.stumps.push({ x: px, y: fp.min - 0.04, z: pz, s, yaw });
     }
-    else if (near && roll < 0.3) {
+    else if (near && roll < 0.3 && spaced(px, pz, 1.1)) {
       const autumnOnly = rr() < 0.65;
       out.mushrooms.push({ x: px, y: h - 0.02, z: pz, s: 0.9 + rr() * 0.6, yaw: rr() * 6.28, seasons: autumnOnly ? SEASON_BIT.autumn : SEASON_BIT.autumn | SEASON_BIT.summer | SEASON_BIT.spring });
+    }
+  }
+  // fairy rings: mushrooms in a circle out in the open meadow (summer and autumn)
+  const rm = seeded('flora:rings');
+  for (let tries = 0, rings = 0; tries < 1500 && rings < 9; tries++) {
+    const a = rm() * 6.28, d = 22 + rm() * 62, cx = Math.cos(a) * d, cz = Math.sin(a) * d, rad = 1.5 + rm() * 1.1;
+    if (clearance(cx, cz) < rad + 1.5 || slopeAt(cx, cz) > 0.12 || STRUCTURES.some((st) => Math.hypot(st.x - cx, st.z - cz) < Math.max(st.size[0], st.size[1]) / 2 + 7 + rad) || nearWater(cx, cz) < 4 || !spaced(cx, cz, rad + 1.5) || wallDist(cx, cz) < rad + 2) continue;
+    if (bushAt.some((b) => Math.hypot(b.x - cx, b.z - cz) < b.r + rad + 1) || stoneDist(cx, cz) < rad + 1) continue;
+    rings++;
+    const n = 9 + Math.floor(rm() * 5);
+    for (let i = 0; i < n; i++) {
+      if (rm() < 0.12) continue; // a gap or two
+      const t = (i / n) * 6.28 + (rm() - 0.5) * 0.25, rr = rad * (0.92 + rm() * 0.16);
+      const x = cx + Math.cos(t) * rr, z = cz + Math.sin(t) * rr;
+      if (out.mushrooms.some((m) => Math.hypot(m.x - x, m.z - z) < 0.8)) continue;
+      out.mushrooms.push({ x, y: footprint(x, z, 0.22).min - 0.01, z, s: 0.75 + rm() * 0.4, yaw: rm() * 6.28, seasons: SEASON_BIT.summer | SEASON_BIT.autumn });
+    }
+  }
+
+  // molehills: little runs of fresh earth mounds across the open grass
+  const rmh = seeded('flora:molehills');
+  for (let tries = 0, runs = 0; tries < 600 && runs < 16; tries++) {
+    const a = rmh() * 6.28, d = 18 + rmh() * 70;
+    let x = Math.cos(a) * d, z = Math.sin(a) * d, dir = rmh() * 6.28;
+    if (clearance(x, z) < 3 || slopeAt(x, z) > 0.15 || nearWater(x, z) < 4 || inOpen(x, z)) continue;
+    runs++;
+    const n = 3 + Math.floor(rmh() * 4);
+    for (let i = 0; i < n; i++) {
+      x += Math.sin(dir) * (0.9 + rmh() * 0.9); z += Math.cos(dir) * (0.9 + rmh() * 0.9); dir += (rmh() - 0.5) * 1.2;
+      const s = 0.7 + rmh() * 0.5;
+      if (clearance(x, z) < 1.2 || !spaced(x, z, 1.2) || [...out.stumps, ...out.logs, ...out.rocks].some((q) => Math.hypot(q.x - x, q.z - z) < 1.3 + q.s) || wallDist(x, z) < 1 || stoneDist(x, z) < 0.6 || bushAt.some((b) => Math.hypot(b.x - x, b.z - z) < b.r + 0.4)) continue;
+      const fp = footprint(x, z, 0.32 * s);
+      if (fp.spread > 0.08) continue;
+      out.molehills.push({ x, y: fp.min, z, s, sy: 0.7 + rmh() * 0.4, yaw: rmh() * 6.28 });
     }
   }
   return out;
 }
 
-/** Wildflower colours by season and palette slot. */
+const BLOOM: [THREE.Color, THREE.Color, THREE.Color] = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
+/** Wildflower colours by season and palette slot (6..8: the painted drift colours, meadow.ts). */
 export function flowerColor(season: Season, slot: number, out: THREE.Color): THREE.Color {
   const pal: Record<Season, number[]> = {
     spring: [0xf6d23a, 0xffffff, 0xf08aa8, 0xb08ae0, 0x6a9ae8, 0xfff0a0],
@@ -303,5 +467,6 @@ export function flowerColor(season: Season, slot: number, out: THREE.Color): THR
     autumn: [0x9a6ad0, 0xf0a030, 0xf6d23a, 0xc05a8a, 0xe8703a, 0xb070d0],
     winter: [0xffffff, 0xffffff, 0xffffff, 0xffffff, 0xffffff, 0xffffff],
   };
+  if (slot >= 6) { bloomColors(season, BLOOM); return out.copy(BLOOM[Math.min(2, slot - 6)]); }
   return out.set(pal[season][slot % 6]);
 }

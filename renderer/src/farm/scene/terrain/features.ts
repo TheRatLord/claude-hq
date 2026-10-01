@@ -3,7 +3,7 @@
  * mid-stream boulders, the stepping-stone ford, bank pebbles, mountainside outcrops.
  */
 import { seeded } from '../../../core/rng.ts';
-import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, clearance, distToPolyline, heightAt, slopeAt, structure } from '../../world/map.ts';
+import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, clearance, distToPolyline, heightAt, normalAt, slopeAt, structure } from '../../world/map.ts';
 import type { XZ } from '../../world/map.ts';
 
 /** Height of a river-rock geometry above its base per unit radius (rocks.ts, flat 0.62). */
@@ -90,6 +90,13 @@ export const BANK_PEBBLES: readonly Stone[] = (() => {
   return out;
 })();
 
+/** Does the ground fall away under a boulder's footprint (radius ≈ 1.35 r)? */
+function onLedgeEdge(x: number, z: number, r: number): boolean {
+  const h = heightAt(x, z);
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; if (h - heightAt(x + Math.cos(a) * r * 1.3, z + Math.sin(a) * r * 1.3) > r * 0.55) return true; }
+  return false;
+}
+
 /** Big faceted outcrops on the mountain ring and a few cliff boulders at its foot. */
 export const OUTCROPS: readonly Stone[] = (() => {
   const r = seeded('land:outcrops');
@@ -101,14 +108,69 @@ export const OUTCROPS: readonly Stone[] = (() => {
     if (Math.abs(x) > WORLD.half - 4 || Math.abs(z) > WORLD.half - 4) continue;
     const h = heightAt(x, z);
     const sl = slopeAt(x, z);
-    if (h < 2 || clearance(x, z) < 4 || sl < 0.06) continue;
+    // on the strata shelves and at the foot of the risers, not stuck to the steep faces
+    if (h < 2 || clearance(x, z) < 4 || sl < 0.06 || sl > 0.42) continue;
     if (Math.hypot(x + 25, z + 109) < 24) continue; // keep the waterfall face clear
-    if (out.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 3)) continue;
     const big = rr > WORLD.rim + 14 ? 1.8 + r() * 2.2 : 0.9 + r() * 1.4;
+    if (out.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r + big) * 1.4 + 1)) continue;
+    if (onLedgeEdge(x, z, big)) continue; // would hang off a strata shelf over the riser below
     out.push({ x, z, y: h, r: big, yaw: r() * 6.28, seed: 300 + (i % 6), hy: 0.55 + r() * 0.5 });
   }
   return out;
 })();
+
+export interface Trickle {
+  /** ribbon centre line, source (top of the wall) first; y already lifted clear of the terrain */
+  pts: { x: number; y: number; z: number }[];
+  /** 0 calm run across a shelf … 1 white water down a riser, per point */
+  steep: number[];
+  width: number;
+}
+
+/**
+ * Little cascades down the cliff wall: a spring high on the strata spills over each ledge in turn (white water on the
+ * risers, a glassy run across every shelf) and sinks into the forest at the foot. Water draws them; flora and
+ * outcrops keep clear (`trickleDist`).
+ */
+export const TRICKLES: readonly Trickle[] = (() => {
+  const out: Trickle[] = [];
+  // around the ring where the wall is in view from the farm (east, south-east, west of the river, north-east)
+  for (const a0 of [0.12, 0.95, 3.55, 5.35]) {
+    let x = 0, z = 0;
+    for (let r = WORLD.rim; r < WORLD.rim + 60; r += 1) {
+      x = Math.cos(a0) * r; z = (Math.sin(a0) * r) / 1.05;
+      if (heightAt(x, z) > 30) break;
+    }
+    const pts: Trickle['pts'] = [], steep: number[] = [];
+    let len = 0;
+    for (let i = 0; i < 160; i++) {
+      const h = heightAt(x, z);
+      const n = normalAt(x, z, 0.8);
+      const inw = Math.hypot(x, z) || 1;
+      // mostly straight down the wall toward the valley, bending a little with the slope
+      let dx = -x / inw * 0.65 + n.x * 0.35 / Math.max(0.05, Math.hypot(n.x, n.z)), dz = -z / inw * 0.65 + n.z * 0.35 / Math.max(0.05, Math.hypot(n.x, n.z));
+      const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const up = Math.max(h, heightAt(x - dx * 0.7, z - dz * 0.7), heightAt(x + dz * 0.6, z - dx * 0.6), heightAt(x - dz * 0.6, z + dx * 0.6));
+      pts.push({ x, y: up + 0.14, z });
+      steep.push(Math.min(1, Math.max(0, (1 - n.y - 0.12) * 2.2)));
+      if (h < 7 || Math.hypot(x, z * 1.05) < WORLD.rim - 6) break;
+      x += dx * 0.7; z += dz * 0.7; len += 0.7;
+    }
+    if (len > 12) out.push({ pts, steep, width: 1.1 + out.length * 0.15 });
+  }
+  return out;
+})();
+
+/** Distance (xz) to the nearest cascade's centre line. */
+export function trickleDist(x: number, z: number): number {
+  let d = Infinity;
+  for (const t of TRICKLES) {
+    const a = t.pts[0], b = t.pts[t.pts.length - 1];
+    if (Math.min(Math.hypot(x - a.x, z - a.z), Math.hypot(x - b.x, z - b.z)) > 80) continue;
+    d = Math.min(d, distToPolyline(x, z, t.pts));
+  }
+  return d;
+}
 
 /** Stones in the stream bed (for water foam): river boulders + ford stones. */
 export const WATER_STONES: readonly Stone[] = [...RIVER_ROCKS, ...FORD_STONES];

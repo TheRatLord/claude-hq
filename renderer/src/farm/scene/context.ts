@@ -237,6 +237,8 @@ export const SFX = Object.freeze([
   'greet', 'voice', 'splash', 'bell', 'creak', 'pop', 'sparkle', 'thunder',
   // the almanac: the valley reached a new rank; fireworks over the square
   'fanfare', 'firework',
+  // the player's pastimes (scene/forage): a cast whoosh, a bobber plop / nibble, the bite, reeling in
+  'cast', 'plop', 'bite', 'reel',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 

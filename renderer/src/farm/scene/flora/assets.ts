@@ -4,8 +4,8 @@ import { defineAsset } from '../assets.ts';
 import type { AssetBuildOpts } from '../assets.ts';
 import { surfaceMaterial } from '../surface/index.ts';
 import {
-  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, logGeometry, meadowRockGeometry, mushroomGeometry, stumpGeometry,
-  treeGeometry, tuftGeometry,
+  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, ivyGeometry, logGeometry, meadowRockGeometry, molehillGeometry, mushroomGeometry,
+  stumpGeometry, treeGeometry, tuftGeometry,
 } from './species.ts';
 import type { BushKind } from './species.ts';
 import { flowerColor } from './scatter.ts';
@@ -64,6 +64,9 @@ defineAsset({
 });
 defineAsset({ name: 'clover', group: 'plant', build: (o) => solid(cloverGeometry(o.season, 1), true) });
 defineAsset({ name: 'mushrooms', group: 'plant', variants: ['red', 'brown'], note: 'autumn woods', build: (o) => solid(mushroomGeometry(o.season, o.variant === 'brown' ? 2 : 1)) });
+defineAsset({ name: 'molehill', group: 'plant', note: 'little runs of fresh earth across the open meadow', build: (o) => solid(molehillGeometry(o.season, 1)) });
+defineAsset({ name: 'ivy', group: 'plant', note: 'curtains over the cliff strata ledges (scaled 1.4–4.2 m; autumn = Virginia-creeper red)',
+  build: (o) => { const m = solid(ivyGeometry(o.season, 1)); m.scale.setScalar(2.5); m.position.y = 2.5; return m; } });
 defineAsset({ name: 'fallen-log', group: 'plant', build: (o) => solid(logGeometry(o.season, 1)) });
 defineAsset({ name: 'stump', group: 'plant', build: (o) => solid(stumpGeometry(o.season, 1)) });
 defineAsset({ name: 'reeds', group: 'plant', note: 'pond + calm river banks', build: (o) => solid(reedGeometry(o.season), true) });

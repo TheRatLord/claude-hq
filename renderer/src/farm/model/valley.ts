@@ -60,6 +60,8 @@ export interface Valley {
   setAlmanac(points: number): void;
   /** switch where the almanac lives (the demo valley swaps in its own), loading what that store holds */
   useAlmanac(store: AlmanacStore): void;
+  /** a harvest that is not a valley event (the player's first-ever finds for the Collections book): points, maybe a rank */
+  harvest(kind: HarvestKind): number;
 }
 
 /** Where the almanac persists (browser-local storage in the app; nothing in tests unless given). */
@@ -80,15 +82,18 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
   let alData = loadAlmanac(alStore);
   let alDay = '';
   const saveAlmanac = () => { try { alStore?.save(alData); } catch (err) { console.warn('[valley] almanac save failed', err); } };
+  const harvest = (h: HarvestKind): number => {
+    const { earned, rankUp } = recordHarvest(alData, h, wallNow());
+    state.almanac = almanacView(alData, wallNow());
+    if (!earned && !rankUp) return 0;
+    saveAlmanac();
+    if (rankUp) send({ kind: 'level-up', id: 'valley', detail: state.almanac.name });
+    return earned;
+  };
   const emit = (e: ValleyEvent) => {
     send(e);
     const h = HARVEST_OF[e.kind];
-    if (!h) return;
-    const { earned, rankUp } = recordHarvest(alData, h, wallNow());
-    if (!earned && !rankUp) { state.almanac = almanacView(alData, wallNow()); return; }
-    state.almanac = almanacView(alData, wallNow());
-    saveAlmanac();
-    if (rankUp) send({ kind: 'level-up', id: 'valley', detail: state.almanac.name });
+    if (h) harvest(h);
   };
   const farmerRecs = new Map<string, FarmerRec>();
   const plotRecs = new Map<string, PlotRec>();
@@ -378,6 +383,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       alData = loadAlmanac(st);
       state.almanac = almanacView(alData, wallNow());
     },
+    harvest,
     setAlmanac(points) {
       const before = state.almanac.rank;
       alData = { ...alData, points: Math.max(0, points) };

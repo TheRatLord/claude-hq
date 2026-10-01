@@ -6,6 +6,7 @@
  */
 import { hash32, mulberry32 } from '../../../../shared/identity.ts';
 import type { Season, Sky, Weather, WeatherKind } from './types.ts';
+import { festivalAt, festivalById } from './calendar.ts';
 
 const BLOCK_H = 3;
 const EDGE_H = 0.4;
@@ -51,13 +52,14 @@ export function daylightAt(hour: number, doy: number): number {
   return smooth(rise - 0.8, rise + 1.2, hour) * (1 - smooth(set - 1.2, set + 0.8, hour));
 }
 
-export interface SkyOverrides { hour?: number | null; weather?: WeatherKind | null; season?: Season | null; intensity?: number | null }
+/** `festival`: force a festival (model/calendar.ts id) on any date; the season follows it unless `season` is set too */
+export interface SkyOverrides { hour?: number | null; weather?: WeatherKind | null; season?: Season | null; intensity?: number | null; festival?: string | null }
 
 export function skyAt(date: Date, o: SkyOverrides = {}): Sky {
   const realHour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
   const hour = o.hour ?? realHour;
   const doy = dayOfYear(date);
-  const season = o.season ?? seasonOf(date.getMonth());
+  const season = o.season ?? (o.festival ? festivalById(o.festival)?.season : undefined) ?? seasonOf(date.getMonth());
   const block = Math.floor(realHour / BLOCK_H);
   const { kind, r } = blockWeather(date.getFullYear(), doy, block, season);
   const inBlock = realHour - block * BLOCK_H;
@@ -73,5 +75,5 @@ export function skyAt(date: Date, o: SkyOverrides = {}): Sky {
   const cloudBase: Record<WeatherKind, number> = { clear: 0.15, cloudy: 0.7, rain: 0.9, storm: 1, fog: 0.6, snow: 0.85 };
   w.clouds = cloudBase[w.kind] * (w.kind === 'clear' ? 1 : 0.5 + 0.5 * w.intensity);
   if (w.kind === 'storm') w.wind += 5;
-  return { hour, daylight: daylightAt(hour, doy), season, dayOfYear: doy, weather: w };
+  return { hour, daylight: daylightAt(hour, doy), season, dayOfYear: doy, weather: w, festival: festivalAt(date, o.festival) };
 }

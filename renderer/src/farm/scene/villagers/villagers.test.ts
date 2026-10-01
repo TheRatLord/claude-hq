@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { CAST, villagerLook } from './cast.ts';
 import type { Villager } from './cast.ts';
 import { entryAt, hoursInto, nextBeat, roundStop, stormy, whereAt } from './schedule.ts';
+import { festivalAt } from '../../model/calendar.ts';
 import { brief, callOut, clock, lineFor, partOfDay, shipLine } from './lines.ts';
 import { KIND_COLORS, ROLE_HAT_NAMES, WEAR_NAMES, roleHat, wear } from '../farmers/mascots.ts';
 import { ACTS } from '../farmers/pose.ts';
@@ -116,7 +117,7 @@ const letter = (id: string, o: Partial<Letter> = {}): Letter => ({ id, at: 0, ki
 function state(o: Partial<ValleyState> = {}): ValleyState {
   return {
     now: 0, link: 'live', demo: true, farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
-    sky: { hour: 14.5, daylight: 1, season: 'autumn', dayOfYear: 274, weather: { kind: 'rain', intensity: 0.5, clouds: 0.8, wind: 3, windDir: 0 } },
+    sky: { hour: 14.5, daylight: 1, season: 'autumn', dayOfYear: 274, weather: { kind: 'rain', intensity: 0.5, clouds: 0.8, wind: 3, windDir: 0 }, festival: { active: null, next: null } },
     almanac: almanacView(emptyAlmanac(), 0),
     ...o,
   };
@@ -159,4 +160,26 @@ test('lines: clerk, miller, mayor, ranger, weather-watcher', () => {
   assert.equal(lineFor('weather', brief(state())), '14:30 on a rainy autumn afternoon. Steady rain. The crops are grateful.');
   assert.equal(partOfDay(22), 'night');
   assert.equal(clock(9.25), '9:15');
+});
+
+test('lines: festivals on alternate chats, the next one when it is near', () => {
+  const on = (d: Date) => state({ sky: { ...state().sky, festival: festivalAt(d) } });
+  const harvest = brief(on(new Date(2026, 9, 1, 12)));
+  assert.deepEqual(harvest.festival, { id: 'harvest', name: 'Harvest Festival', day: 10, days: 23 });
+  assert.match(lineFor('mayor', harvest, 1), /giant pumpkin/);
+  assert.match(lineFor('mayor', harvest, 0), /quiet valley/);   // the useful report comes first
+  assert.match(lineFor('weather', harvest, 3), /Harvest weather/);
+  // last day: the mayor says so
+  assert.match(lineFor('mayor', brief(on(new Date(2026, 9, 14, 12))), 1), /^Last day of the Harvest Festival!/);
+  // somebody needs you: the postmaster says that instead
+  const needy = brief(state({ sky: on(new Date(2026, 9, 1)).sky, farmers: new Map([['flint', farmer('flint', { needsYou: true })]]) }));
+  assert.match(lineFor('postmaster', needy, 1), /Flint/);
+  // no festival on, Hallowtide in 5 days: every fourth chat mentions it
+  const soon = brief(on(new Date(2026, 9, 19, 12)));
+  assert.equal(soon.festival, null);
+  assert.deepEqual(soon.upcoming, { id: 'hallowtide', name: 'Hallowtide', inDays: 5 });
+  assert.match(lineFor('mayor', soon, 1), /Hallowtide is in 5 days/);
+  assert.doesNotMatch(lineFor('mayor', soon, 3), /Hallowtide/);
+  // far off: nothing
+  assert.equal(brief(on(new Date(2026, 6, 1))).upcoming, null);
 });

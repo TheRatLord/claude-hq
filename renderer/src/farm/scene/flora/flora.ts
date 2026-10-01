@@ -15,8 +15,8 @@ import type { CellOpts, Item } from './cells.ts';
 import { flowerColor, scatter } from './scatter.ts';
 import type { FlowerKind } from './scatter.ts';
 import {
-  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, leafCardGeometry, logGeometry, meadowRockGeometry, mushroomGeometry,
-  stumpGeometry, treeGeometry, tuftGeometry,
+  TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, ivyGeometry, leafCardGeometry, logGeometry, meadowRockGeometry, molehillGeometry,
+  mushroomGeometry, stumpGeometry, treeGeometry, tuftGeometry,
 } from './species.ts';
 import type { BushKind } from './species.ts';
 import { WIND, sway, syncWind } from './wind.ts';
@@ -92,7 +92,7 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   const tallMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.32, fade: 56 });
   const flowerMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.4, fade: 60, maskTint: true });
   const cloverMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.1, fade: 32 });
-  const solidMat = withSurfaces(toon(0xffffff, { vertexColors: true, shared: false }), { surfaces: ['rock', 'logs', 'bark'] });
+  const solidMat = withSurfaces(toon(0xffffff, { vertexColors: true, shared: false }), { surfaces: ['rock', 'logs', 'bark', 'dirt'] });
   const mats = [treeMat, bushMat, grassMat, tallMat, flowerMat, cloverMat, solidMat];
 
   const sets: Set_[] = [];
@@ -134,6 +134,8 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   add('logs', S.logs, (s) => logGeometry(s, 1), solidMat, { cell: 24, far: 130, height: 1, keep: 12, castShadow: true });
   add('stumps', S.stumps, (s) => stumpGeometry(s, 1), solidMat, { cell: 24, far: 110, height: 1, keep: 12, castShadow: true });
   add('mushrooms', S.mushrooms, (s) => mushroomGeometry(s, 1), solidMat, { cell: 16, far: 50, height: 0.4 });
+  add('molehills', S.molehills, (s) => molehillGeometry(s, 1), solidMat, { cell: 20, far: 90, height: 0.3 });
+  add('ivy', S.ivy, (s) => ivyGeometry(s, 1), solidMat, { cell: 30, far: 230, height: 4.5, colors: true });
 
   // trunks are solid where the player can walk
   const unCollide: (() => void)[] = [];

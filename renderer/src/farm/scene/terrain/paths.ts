@@ -1,11 +1,12 @@
 /**
- * Path dressing and field boundaries: pebbles scattered along the dirt path edges, and a few old dry-stone walls
- * wandering across the meadows (mossy, snow-capped in winter). Static: two draw calls.
+ * Path dressing and field boundaries: pebbles scattered along the dirt path edges, kerb stones edging the roads where
+ * they leave the square, and old dry-stone walls (mossy, snow-capped in winter): a few wandering across the meadows,
+ * more following the farm tracks a couple of metres off the road. Static: three draw calls.
  */
 import * as THREE from 'three';
 import { seeded } from '../../../core/rng.ts';
 import type { Season } from '../../model/types.ts';
-import { PATHS, WORLD, clearance, heightAt, slopeAt } from '../../world/map.ts';
+import { PATHS, WORLD, clearance, heightAt, pathAt, slopeAt } from '../../world/map.ts';
 import { fbm } from '../../world/noise.ts';
 import { SURF, surfaceMaterial } from '../surface/index.ts';
 import { merge } from '../flora/geom.ts';
@@ -38,7 +39,35 @@ function pebbles(): Peb[] {
   return out;
 }
 
-/** Old dry-stone walls: short wandering runs in open meadow. */
+/** Kerb stones along both edges of each road for its first few metres out of the square. */
+function kerbs(): Peb[] {
+  const r = seeded('land:kerbs');
+  const out: Peb[] = [];
+  for (const p of PATHS) {
+    for (let i = 0; i < p.points.length - 1; i++) {
+      const a = p.points[i], b = p.points[i + 1];
+      const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+      for (let d = 0; d < l; d += 0.62) {
+        const cx = a.x + (dx * d) / l, cz = a.z + (dz * d) / l, hd = Math.hypot(cx - HUB.x, cz - HUB.z);
+        if (hd < 10.2 || hd > 15.5 - r() * 2) continue;
+        for (const side of [-1, 1]) {
+          const off = p.width / 2 + 0.1;
+          const x = cx - (dz / l) * off * side, z = cz + (dx / l) * off * side;
+          // only where this edge is a real edge (not inside another road or the square) and the ground is dry
+          if (pathAt(x, z) > 0.75 || Math.hypot(x - HUB.x, z - HUB.z) < 10.2 || clearance(x, z) < -0.4 - p.width / 2) continue;
+          if (out.some((o) => Math.hypot(o.x - x, o.z - z) < 0.72)) continue;
+          const hs = [heightAt(x, z), heightAt(x + 0.3, z), heightAt(x - 0.3, z), heightAt(x, z + 0.3), heightAt(x, z - 0.3)];
+          const y = Math.min(...hs);
+          if (Math.max(...hs) - y > 0.09) continue; // a kink in the ground (pad edge): the terrain mesh cuts the chord
+          out.push({ x, y: y + 0.03, z, s: 0.19 + r() * 0.04, yaw: Math.atan2(dx, dz) + (r() - 0.5) * 0.25 });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Old dry-stone walls: short wandering runs in open meadow, and runs following the farm tracks. */
 function walls(): { x: number; z: number; y: number }[][] {
   const r = seeded('land:walls');
   const runs: { x: number; z: number; y: number }[][] = [];
@@ -58,6 +87,30 @@ function walls(): { x: number; z: number; y: number }[][] {
     if (!ok || run.length < 16) continue;
     if (runs.some((o) => o.some((p) => Math.hypot(p.x - run[0].x, p.z - run[0].z) < 25))) continue;
     runs.push(run);
+  }
+  // field walls along the tracks: parallel to a road, a couple of metres off its edge, broken where anything's in the way
+  const rp = seeded('land:track-walls');
+  for (let tries = 0, added = 0; tries < 300 && added < 9; tries++) {
+    const p = PATHS[Math.floor(rp() * PATHS.length)];
+    if (p.width < 2) continue;
+    const pts = p.points, i0 = Math.floor(rp() * (pts.length - 1)), side = rp() < 0.5 ? -1 : 1, off = p.width / 2 + 2.6;
+    const len = 9 + rp() * 10;
+    const run: { x: number; z: number; y: number }[] = [];
+    let ok = true;
+    for (let i = i0, acc = 0; i < pts.length - 1 && acc < len; i++) {
+      const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+      for (let t = i === i0 ? rp() * l * 0.5 : 0; t < l && acc < len; t += 0.5, acc += 0.5) {
+        const x = a.x + (dx * t) / l - (dz / l) * off * side, z = a.z + (dz * t) / l + (dx / l) * off * side;
+        const R = Math.hypot(x, z * 1.05);
+        if (R < 26 || R > 86 || clearance(x, z) < 1.5 || slopeAt(x, z) > 0.22 || heightAt(x, z) < WORLD.water + 0.6) { ok = false; break; }
+        run.push({ x, z, y: heightAt(x, z) });
+      }
+      if (!ok) break;
+    }
+    if (!ok || run.length < 16) continue;
+    if (runs.some((o) => o.some((q) => run.some((w) => Math.hypot(q.x - w.x, q.z - w.z) < 8)))) continue;
+    runs.push(run);
+    added++;
   }
   return runs;
 }
@@ -112,16 +165,25 @@ export function buildPathDecor(season: Season): PathDecor {
   const wm = new THREE.Mesh(wallGeometry(runs, season), mat);
   wm.castShadow = true; wm.receiveShadow = true;
   wm.name = 'stone-walls';
-  group.add(pm, wm);
+  const kb = kerbs();
+  const kerbGeo = (se: Season) => rockGeometry({ seed: 33, season: se, detail: 0, flat: 0.42, warm: 0.35, stretch: 1.5 });
+  const km = new THREE.InstancedMesh(kerbGeo(season), mat, Math.max(1, kb.length));
+  kb.forEach((p, i) => km.setMatrixAt(i, m.compose(v.set(p.x, p.y, p.z), q.setFromAxisAngle(up, p.yaw + Math.PI / 2), s.set(p.s * 1.25, p.s, p.s))));
+  km.count = kb.length;
+  km.computeBoundingSphere();
+  km.receiveShadow = true;
+  km.name = 'kerb-stones';
+  group.add(pm, wm, km);
   return {
     group,
     setSeason(se) {
-      const a = pm.geometry, b = wm.geometry;
+      const a = pm.geometry, b = wm.geometry, c = km.geometry;
       pm.geometry = rockGeometry({ seed: 21, season: se, detail: 0, flat: 0.5, warm: 0.6 });
       wm.geometry = wallGeometry(runs, se);
-      a.dispose(); b.dispose();
+      km.geometry = kerbGeo(se);
+      a.dispose(); b.dispose(); c.dispose();
     },
-    dispose() { pm.geometry.dispose(); wm.geometry.dispose(); },
+    dispose() { pm.geometry.dispose(); wm.geometry.dispose(); km.geometry.dispose(); },
   };
 }
 

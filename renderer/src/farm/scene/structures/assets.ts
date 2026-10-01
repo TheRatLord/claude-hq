@@ -9,6 +9,9 @@ import type { Board } from './hub.ts';
 import { buildBridge, buildCampfire, buildDock } from './leisure.ts';
 import { buildHotSpring, buildLookout, buildPergola, buildPicnic } from './nooks.ts';
 import { buildHayMeadow, buildOrchard, buildStones, buildSwingTree } from './countryside.ts';
+import { buildFestivalPreview } from './festivals.ts';
+import { FESTIVALS } from '../../model/calendar.ts';
+import type { FestivalId } from '../../model/calendar.ts';
 import { Kit } from './kit.ts';
 import * as P from './props.ts';
 import { levelsFromParam, newLevels, rigOf } from './rig.ts';
@@ -55,6 +58,7 @@ defineAsset({ name: 'orchard', group: 'structure', note: 'countryside nook: seas
 defineAsset({ name: 'stones', group: 'structure', note: 'countryside nook: a ring of standing stones round an altar, runes glow cyan after dark', build: (o) => tag(buildStones(opts(o)), o), animate });
 defineAsset({ name: 'haymeadow', group: 'structure', note: 'countryside nook: round bales on mown stripes, a loaded hay wagon, bales to doze against', build: (o) => tag(buildHayMeadow(opts(o)), o), animate });
 defineAsset({ name: 'swingtree', group: 'structure', note: 'countryside nook: a big lone oak, a rope swing in the wind (poke "push"), a log bench', build: (o) => tag(buildSwingTree(opts(o)), o), animate: (obj, t, dt, p) => { if (Math.floor(t / 6) !== Math.floor((t - dt) / 6)) rigOf(obj)?.poke?.('push'); animate(obj, t, dt, p); } });
+defineAsset({ name: 'festival', group: 'structure', variants: FESTIVALS.map((f) => f.id), note: "real-calendar festivals (model/calendar.ts): each one's centrepiece, a string of its lights / garlands, side pieces and the banner; in the valley: ?festival=ID", build: (o) => buildFestivalPreview((o.variant ?? 'harvest') as FestivalId, o.season, o.night ?? 0) });
 
 // small props (the hub dressing merges these; registered for the gallery)
 const prop = (name: string, fn: (k: Kit, o: AssetBuildOpts) => void, note?: string) => defineAsset({ name, group: 'prop', note, build: (o) => { const k = new Kit(o.seed); fn(k, o); return k.build(new THREE.Group(), o.night ?? 0); } });

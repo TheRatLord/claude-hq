@@ -5,7 +5,7 @@
  * Nothing below this file crosses those lines.
  *
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
- *             ?almanac=POINTS (demo: the almanac's starting prosperity)
+ *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  */
 import './hud/base.css';
 import { R2S } from '../../../shared/protocol.ts';
@@ -15,6 +15,7 @@ import { createSettings } from '../core/settings.ts';
 import { createPlatform } from '../ui/platform.ts';
 import { createValley } from './model/valley.ts';
 import { demoAlmanac } from './model/almanac.ts';
+import { createCollection } from './model/collection.ts';
 import { installPhotoMode } from './photo.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
@@ -66,6 +67,7 @@ const hour = params.get('hour');
 if (hour !== null && hour !== '') valley.setSky({ hour: Number(hour) });
 if (params.get('weather')) valley.setSky({ weather: params.get('weather') as WeatherKind });
 if (params.get('season')) valley.setSky({ season: params.get('season') as Season });
+if (params.get('festival')) valley.setSky({ festival: params.get('festival') });
 store.on('event', (e) => valley.ingest(e));
 store.on('hello', (h) => settings._applyServer(h.settings));
 
@@ -80,6 +82,14 @@ const controller = createController(engine.ctx, canvas);
 engine.onFrame((f) => controller.update(f));
 engine.ctx.services.set('controller', controller);
 engine.ctx.services.set('settings', settings);
+// the Collections book (forage + fishing, scene/forage): browser-local like the almanac; a first-ever find is a harvest
+const COLLECTION_KEY = 'claude-valley.collection.v1';
+const collection = createCollection({
+  load: () => { const raw = localStorage.getItem(COLLECTION_KEY); return raw ? JSON.parse(raw) : null; },
+  save: (d) => localStorage.setItem(COLLECTION_KEY, JSON.stringify(d)),
+});
+collection.onFind((r) => { if (r.isNew) valley.harvest('found'); });
+engine.ctx.services.set('collection', collection);
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
@@ -115,6 +125,7 @@ hud.bind({
   villagers: () => (engine.ctx.services.get('villagers') as VillagersService | undefined)?.list() ?? [],
   camera: () => engine.ctx.camera,
   sfx: (name) => (engine.ctx.services.get('audio') as AudioService | undefined)?.play(name),
+  collection: () => collection,
 });
 engine.onFrame((f) => hud.update(f));
 

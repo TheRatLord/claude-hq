@@ -167,7 +167,18 @@ function landHeight(x: number, z: number): number {
   const ridge = 1 - Math.abs(fbm(x / 48 + 9, z / 48 - 4, 4));
   h += foot * (8 + 5 * crag) + cliff * (16 + 24 * crag * ridge) + far * (20 + 80 * ridge * ridge);
   h += smooth(-88, -112, z) * 16 * smooth(60, 0, Math.abs(x + 25));
-  return h;
+  // the cliff wall steps up in rock strata: level grassy shelves and steep risers (not near the waterfall's face)
+  const tw = smooth(rim + 6, rim + 18, r) * (1 - smooth(rim + 48, rim + 72, r)) * smooth(18, 34, Math.hypot(x + 25, z + 106));
+  return tw > 0 ? lerp(h, terraceHeight(x, z, h), tw) : h;
+}
+
+/** Strata steps: shelves of varying width (noise) and steep risers, heights wandering a little around the ring. */
+function terraceHeight(x: number, z: number, h: number): number {
+  const T = 6.4 + 2.2 * fbm(x / 90 - 4, z / 90 + 6, 2);
+  const warp = 1.8 * fbm(x / 34 + 2, z / 34 - 5, 2);
+  const u = (h + warp) / T, i = Math.floor(u), f = u - i;
+  const shelf = 0.5 + 0.22 * fbm(x / 21 - 7, z / 21 + 1, 2);
+  return (i + smooth(shelf, 0.97, f)) * T - warp;
 }
 
 interface Pad { x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number; /** landmark terraces sit on top of the plaza */ top?: boolean; /** a field: its core (fence and all) wins over everything */ field?: boolean }

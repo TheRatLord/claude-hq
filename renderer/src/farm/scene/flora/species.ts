@@ -325,7 +325,8 @@ export function bushGeometry(kind: BushKind, season: Season, seed = 1): THREE.Bu
   const parts: THREE.BufferGeometry[] = [];
   const winter = season === 'winter';
   const L = kind === 'berry' ? { dark: C(0x2f6a3a), light: C(0x5ea04c) }
-    : season === 'autumn' ? { dark: C(0x5a6a2a), light: C(0xa8a040), accent: C(0xe0803a) } : leaves(season === 'winter' ? 'autumn' : season, kind === 'hedge' ? 1 : 3)!;
+    : season === 'autumn' ? (kind === 'hedge' ? { dark: C(0x3f6430), light: C(0x7f9a3c), accent: C(0xc8662e) } : { dark: C(0x5a6a2a), light: C(0xa8a040), accent: C(0xe0803a) })
+    : leaves(season === 'winter' ? 'autumn' : season, kind === 'hedge' ? 1 : 3)!;
   const dark = winter ? C(0x6a6040) : L.dark;
   const light = winter ? C(0x9a8a5a) : L.light;
   const blobs: [number, number, number, number][] = kind === 'hedge'
@@ -496,6 +497,56 @@ export function cloverGeometry(season: Season, seed = 1): THREE.BufferGeometry {
 
 export function meadowRockGeometry(season: Season, seed = 1): THREE.BufferGeometry {
   return rockGeometry({ seed: 60 + seed, season, detail: 1, flat: 0.6, moss: 0.35, warm: 0.45 });
+}
+
+/**
+ * Ivy curtain hanging over a cliff ledge: origin at the lip, strands hang 1 unit down (−y) and lean 0.3 out (+z) so
+ * they follow the strata risers (scatter checks each riser's lean). Chunky leaf clusters on dark stems: summer green,
+ * spring bright with a few white flowers, autumn the red / orange of Virginia creeper, winter bare stems.
+ */
+export const IVY_LEAN = 0.3;
+export function ivyGeometry(season: Season, seed = 1): THREE.BufferGeometry {
+  const r = mulberry32(seed + 611);
+  const parts: THREE.BufferGeometry[] = [];
+  const pal = season === 'autumn' ? [0xc8402a, 0xe0702e, 0xa83a2e, 0xe8a03a] : season === 'spring' ? [0x6fb84a, 0x8acc58, 0x5aa040] : season === 'winter' ? [0x6a5a44] : [0x3f8a3a, 0x2f7034, 0x58a046];
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const x0 = ((i + 0.5) / n - 0.5) * 0.9 + (r() - 0.5) * 0.08;
+    const len = 0.45 + r() * 0.55;
+    const sway = (r() - 0.5) * 0.12;
+    const at = (t: number) => new THREE.Vector3(x0 + Math.sin(t * 3 + i) * 0.025 + sway * t, -t, IVY_LEAN * t + 0.02);
+    parts.push(paint(limb(at(0), at(len), 0.014, 0.008, 3), C(0x5a4632)));
+    if (season === 'winter') {
+      if (r() < 0.5) parts.push(paint(new THREE.IcosahedronGeometry(0.035, 0).scale(1, 0.6, 0.5).translate(at(len * 0.3).x, -len * 0.3, at(len * 0.3).z + 0.02), C(0x6a7a4a)));
+      continue;
+    }
+    for (let t = 0.03; t < len; t += 0.055 + r() * 0.03) {
+      const p = at(t), side = r() < 0.5 ? -1 : 1, rad = (0.06 + r() * 0.035) * (1 - t * 0.3);
+      const leaf = new THREE.IcosahedronGeometry(rad, 0).scale(1.15, 0.85, 0.45).rotateZ((r() - 0.5) * 0.8);
+      leaf.translate(p.x + side * rad * 0.7, p.y, p.z + 0.015);
+      parts.push(paint(leaf, tc.set(pal[Math.floor(r() * pal.length)]).multiplyScalar(0.9 + r() * 0.2)));
+    }
+    if (season === 'spring' && r() < 0.6) { const p = at(len * (0.3 + r() * 0.5)); parts.push(paint(new THREE.IcosahedronGeometry(0.03, 0).translate(p.x, p.y, p.z + 0.05), C(0xfaf4ec))); }
+  }
+  return merge(parts);
+}
+
+/** A molehill: a low, lumpy mound of fresh dark earth (frosted in winter). */
+export function molehillGeometry(season: Season, seed = 1): THREE.BufferGeometry {
+  const r = mulberry32(seed + 97);
+  const g = blob(0.36, seed * 3 + 5, { squash: 0.42, detail: 1, lump: 0.24 });
+  g.translate(0, 0.12, 0); // a mound: only its foot sits in the turf
+  const crumbs: THREE.BufferGeometry[] = [];
+  const mound = paintFaces(g, (y, ny, rr) => {
+    if (season === 'winter' && ny > 0.55) return tc.set(0xeef2f6);
+    return tc.set(0x4e3a2a).lerp(C(0x6e5238), Math.min(1, Math.max(0, y * 3))).multiplyScalar(0.88 + rr() * 0.22);
+  }, seed);
+  crumbs.push(tagSurface(mound, SURF.dirt));
+  for (let i = 0; i < 4; i++) {
+    const a = r() * 6.28, d = 0.32 + r() * 0.12;
+    crumbs.push(tagSurface(paint(new THREE.IcosahedronGeometry(0.05 + r() * 0.03, 0).scale(1, 0.6, 1).translate(Math.cos(a) * d, 0.02, Math.sin(a) * d), C(0x5e4632)), SURF.dirt));
+  }
+  return merge(crumbs);
 }
 
 /** A falling leaf / petal card. */

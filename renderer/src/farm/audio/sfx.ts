@@ -254,6 +254,29 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
     for (let i = 0; i < 14; i++) end = max(end, noise(c, out, t, { kind: 'white', gain: 0.05 + o.rnd() * 0.05, a: 0.001, d: 0.02 + o.rnd() * 0.03, filter: 'highpass', f: 3000 + o.rnd() * 3000, delay: boom + 0.15 + i * 0.05 + o.rnd() * 0.06 }));
     return end;
   },
+  // ---- the player's pastimes (scene/forage)
+  cast: (c, out, t, o) => {
+    // the rod's whoosh, the reel's quick buzz, the bobber's plip as it lands (~0.55 s later)
+    noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.05, d: 0.22, filter: 'bandpass', f: 600 * o.pitch, f2: 2600 * o.pitch, q: 1.4 });
+    for (let i = 0; i < 6; i++) noise(c, out, t, { kind: 'white', gain: 0.04, a: 0.001, d: 0.015, filter: 'bandpass', f: 3800, q: 3, delay: 0.12 + i * 0.035 });
+    return tone(c, out, t, { f: 360 * o.pitch, f2: 1200 * o.pitch, glide: 0.06, gain: 0.16, a: 0.002, d: 0.08, delay: 0.55 });
+  },
+  plop: (c, out, t, o) => {
+    noise(c, out, t, { kind: 'pink', gain: 0.08, a: 0.002, d: 0.06, filter: 'lowpass', f: 1600 });
+    return tone(c, out, t, { f: 320 * o.pitch, f2: 1150 * o.pitch, glide: 0.07, gain: 0.22, a: 0.002, d: 0.08 });
+  },
+  bite: (c, out, t, o) => {
+    // a deep bloop as the float goes under, a splashy kick, and a bright "!" ping so it can't be missed
+    tone(c, out, t, { f: 520 * o.pitch, f2: 150 * o.pitch, glide: 0.12, gain: 0.32, a: 0.002, d: 0.16 });
+    noise(c, out, t, { kind: 'white', gain: 0.22, a: 0.004, d: 0.22, filter: 'lowpass', f: 3800, f2: 600, delay: 0.03 });
+    bubble(c, out, t + 0.12, 620 * o.pitch, 0.08);
+    return tone(c, out, t, { type: 'triangle', f: 1760 * o.pitch, gain: 0.09, a: 0.003, d: 0.25, delay: 0.05 });
+  },
+  reel: (c, out, t, o) => {
+    let end = t;
+    for (let i = 0; i < 14; i++) end = noise(c, out, t, { kind: 'white', gain: 0.1 * (1 - i / 20), a: 0.001, d: 0.018, filter: 'bandpass', f: (2600 + (i % 3) * 300) * o.pitch, q: 4, delay: i * 0.045 });
+    return max(end, noise(c, out, t, { kind: 'pink', gain: 0.18, a: 0.01, d: 0.25, filter: 'lowpass', f: 2400, f2: 600, delay: 0.62 }));
+  },
 };
 
 export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {

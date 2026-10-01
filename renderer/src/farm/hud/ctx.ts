@@ -11,7 +11,7 @@ import { shortName } from './format.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'pause' | 'drawer';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'pause' | 'drawer';
 
 export interface Panel {
   id: PanelId;

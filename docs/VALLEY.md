@@ -103,6 +103,36 @@ the lead.
   and evening fireworks over the south meadow at nine. A new rank pops its upgrade in with confetti, fires a short
   firework show and toasts with a fanfare; Mayor Marigold talks about the rank every third chat. The status sign's
   rank chip opens the panel (rank, today's harvest, the week, streak, upgrades). Logic is pure: `model/almanac.ts`.
+* **Pastimes: foraging, fishing and the Collections book (K).** The player's own cozy hobby between check-ins
+  (`scene/forage/`, system `forage`; pure + tested `model/collection.ts`). Each real day 8–12 of the season's
+  forageables lie around the valley, deterministic per date (`forageDay` + `place.ts`: meadows a short walk off a road,
+  beside trees, the pond beach / river banks, the foot of the cliffs; never on roads, in fields, water or structures):
+  spring morels, wild leeks, violets; summer wild strawberries, jay feathers, mussel shells and skipping stones by the
+  water; autumn chanterelles, acorns, hazelnuts, maple leaves; winter holly, pinecones and the rare frost crystal. One
+  instanced draw per kind in season plus one additive draw of twinkling glints so they can be spotted; look at one →
+  `[E] Pick up` (a pop, sparkles, sfx); a picked spot stays empty until tomorrow. **Fishing:** look at open water near
+  the pond or the river → `[E] Cast a line`; the held rod casts the bobber, it nibbles, then dips with a splash and a
+  `bite` ping → E within ~1.2 s (a second chance if you miss) reels in, and the catch is held up in view. What bites
+  depends on season, hour (night-only catfish / eels / moonlit char, dawn-and-dusk pike), weather (rain-only thunder
+  bass and eels) and water (`rollFish`); old boots and a message in a bottle come up too. The book (K, or the tab on the
+  Almanac panel) shows all 28 entries as silhouettes until found, then count, first-found date, biggest catch and a
+  line of flavour; persisted per browser profile (`claude-valley.collection.v1`, service `collection`, `HudBindings.collection`).
+  A first-ever find is a `found` harvest in the Almanac (+5, three a day). Dev: `__valley.forage(day?)`, `forageGo(i)`,
+  `fish()` / `fish('bite' | 'hook' | 'demo')`, `collect(n)`; gallery assets `forage`, `catch`, `fishing-rod`.
+* **The calendar has festivals** (`model/calendar.ts`, pure + tested; `ValleyState.sky.festival` = `{ active, next }`):
+  **Blossom Fair** (Apr 24 – May 3: maypole, garlands, cherry petals), **Lantern Night** (Aug 10–16: paper lanterns round
+  the pond, floating lanterns, sky lanterns after dark), **Founders' Day** (Sep 28, the first commit: cake, pennants),
+  **Harvest Festival** (Sep 22 – Oct 14: giant prize pumpkin, cornucopia, hay stacks, scarecrow contest), **Hallowtide**
+  (Oct 24 – Nov 1: jack-o'-lanterns that light the roads, bats, wisps), **Starlight** (Dec 1–30: decorated tree, string
+  lights, snow lanterns) and **New Year** (Dec 31 – Jan 1: fireworks over the south meadow at midnight). A short festival
+  wins a day it shares with a long one. `scene/structures/festivals.ts` builds the active set (centrepiece on the
+  square's north-west quadrant, strings between the hub lamps, a banner over the south exit, one interactable: judge
+  the pumpkin, vote for a scarecrow, dance round the maypole, light a wish lantern, trick-or-treat, hang an ornament,
+  blow out the candles, raise a glass); a live change pops the new set in. ≤ 9 draw calls (3 merged meshes + banner +
+  swarms). Villagers talk about it on alternate chats and mention the next one within 14 days (`lines.ts`), the
+  noticeboard pins a poster, and a toast greets you once per load (`hud/festival.ts`). Force one on any date with
+  `?festival=ID` / `__valley.festival(id)` (the season follows unless `?season=` is set); service `festivals`
+  (`where()`: piece positions for shots). Gallery: `festival` (variant per id).
 
 ## Art direction
 
@@ -149,6 +179,19 @@ the lead.
 * **Everything alive sways/breathes:** wind service uniforms for foliage; idle squash-and-stretch; nothing freezes.
 * **No external assets.** All geometry, textures (canvas), sounds (WebAudio synthesis) and fonts (system) are made
   in code. No downloads, no image/model/audio files.
+* **The land (land package).** The cliff wall steps up in **rock strata** (`terraceHeight` in `world/map.ts`, only from
+  the rim + 6 m outward and never at the waterfall): level shelves, steep risers, a 1.25 m grid there, the wall's
+  normals leaned toward the smooth slope and rock coloured per vertex so ledges read as clean bands. Shelves carry
+  turf; `landB.w` (terrain.ts `lipField`) marks riser tops and the shader paints ragged **turf lips** rolling over each
+  ledge with a shadow line (`uTurf`: moss green, autumn gold, winter snow). Bushes, small pines and **ivy curtains**
+  (flora `ivy`; Virginia-creeper red in autumn) cling to the shelves; outcrops sit on shelves, not stuck to faces;
+  four little **cascades** (`TRICKLES` in features.ts, drawn by water.ts as one ribbon) spill down the strata, white
+  on the risers and glassy across the shelves. The floor has a **meadow mosaic** (`terrain/meadow.ts`: one value
+  noise shared by GLSL and TS): darker clover drifts, sunny bleached patches with rough tall grass, and wildflower
+  drifts (a colour wash from afar, petals up close, seasonal colours via `bloomColors`) with clover and flowers planted
+  in the same places. Field structure: **hedgerows** along tracks and round the backs / sides of the field sites (now
+  and then a hedgerow tree), dry-stone walls wandering and following tracks, **kerb stones** where the roads leave the
+  square, fairy rings of mushrooms and molehill runs. Everything placed keeps `clearance()` and is audited.
 
 ## In-world UI (names, speech bubbles, the interaction tag)
 
@@ -230,7 +273,7 @@ the lead.
 
 ## Budgets (1600×900 on the Radeon 780M iGPU, 12–16 agents, `mixed` demo)
 
-60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40,
+60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10,
 atmosphere ≤ 30 + post. One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 Check `__valley.perf()` → `calls`, `tris`, `systemMs`.
 
@@ -249,7 +292,11 @@ npm run shoot -- --url 'http://127.0.0.1:PORT/?t=TOKEN' --shot name=live,pose=hu
 npm run shoot -- --shot name=g,gallery=windmill,param=0.8   # one asset in the gallery
 npm run shoot -- --shot name=g,grid=structure        # every asset of a group
 npm run shoot -- --shot name=u,pose=square,almanac=3400,hour=22,eval=__valley.fireworks(30)  # every town upgrade + a show
+npm run shoot -- --shot name=f,pose=square,festival=hallowtide,hour=21   # a festival (blossom lantern founders harvest hallowtide starlight newyear)
 # __valley.almanac(points) sets prosperity live (crossing a rank pops its upgrade in)
+npm run shoot -- --shot "name=c,pose=hub,panel=collection,eval=__valley.collect(16)"   # the Collections book
+npm run shoot -- --shot "name=f,pose=hub,eval=__valley.fish('demo'),frames=9,every=450"  # cast, bite, catch (flipbook)
+npm run shoot -- --shot "name=p,pose=hub,eval=__valley.forageGo(0)"                       # stand over today's first find
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
