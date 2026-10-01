@@ -1,10 +1,11 @@
-/** Faceted boulders: river rocks, outcrops, pebbles, stepping stones. Vertex coloured, deterministic per seed. */
+/** Faceted boulders: river rocks, outcrops, pebbles, stepping stones. Vertex coloured, tagged `rock`, deterministic per seed. */
 import * as THREE from 'three';
 import { mulberry32 } from '../../../../../shared/identity.ts';
 import type { Season } from '../../model/types.ts';
 import { facet } from '../toon.ts';
 import { hash2 } from '../../world/noise.ts';
 import { GROUND } from './ground.ts';
+import { SURF, tagSurface } from '../surface/index.ts';
 
 export interface RockOpts {
   seed: number;
@@ -62,6 +63,7 @@ export function rockGeometry(o: RockOpts): THREE.BufferGeometry {
     for (let k = 0; k < 3; k++) { col[(f + k) * 3] = c.r; col[(f + k) * 3 + 1] = c.g; col[(f + k) * 3 + 2] = c.b; }
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  tagSurface(g, SURF.rock);
   g.computeBoundingSphere();
   return g;
 }

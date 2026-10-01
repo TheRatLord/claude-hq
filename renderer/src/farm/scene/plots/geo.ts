@@ -5,6 +5,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash32, mulberry32 } from '../../../../../shared/identity.ts';
+import { ensureSurface, tagSurface } from '../surface/index.ts';
+import type { SurfId, SurfName, TagOpts } from '../surface/index.ts';
+import { paintCode } from './materials.ts';
+import type { PaintName } from './materials.ts';
 
 export type V3 = readonly [number, number, number];
 /** position, rotation [tilt x, yaw y, roll z] applied roll → tilt → yaw (Euler YXZ), scale (uniform or per axis) */
@@ -37,6 +41,8 @@ function finish(g: THREE.BufferGeometry, color: number | THREE.Color, t?: Xf): T
 }
 
 export const box = (w: number, h: number, d: number, color: number, t?: Xf) => finish(new THREE.BoxGeometry(w, h, d), color, t);
+/** paint + place any geometry (for custom shapes) */
+export const painted = (g: THREE.BufferGeometry, color: number, t?: Xf) => finish(g, color, t);
 /** cylinder standing on y=0 when `base` (default centred) */
 export const cyl = (rt: number, rb: number, h: number, seg: number, color: number, t?: Xf) => finish(new THREE.CylinderGeometry(rt, rb, h, seg), color, t);
 export const cone = (r: number, h: number, seg: number, color: number, t?: Xf) => finish(new THREE.ConeGeometry(r, h, seg), color, t);
@@ -49,7 +55,7 @@ export const plane = (w: number, h: number, color: number, t?: Xf) => finish(new
 export const torus = (r: number, tube: number, rs: number, ts: number, color: number, t?: Xf, arc = Math.PI * 2) =>
   finish(new THREE.TorusGeometry(r, tube, rs, ts, arc), color, t);
 
-/** A flat leaf: a diamond card with a slight fold, pointing +z from the origin. */
+/** A flat leaf: a diamond card with a slight fold, pointing +z from the origin (painted with veins). */
 export function leaf(len: number, wid: number, color: number, t?: Xf, fold = 0.25): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const h = wid / 2, f = wid * fold;
@@ -61,7 +67,21 @@ export function leaf(len: number, wid: number, color: number, t?: Xf, fold = 0.2
     0, 0, 0, h, f, len * 0.4, 0, 0, len,
   ];
   g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  // veins: aux = 0 on the midrib (base → tip) … 1 at the side corners
+  const code = paintCode('veins'), sa = new Float32Array(12 * 4);
+  for (let i = 0; i < 12; i++) sa.set([code, 1, 1, [1, 5, 8, 10].includes(i) ? 1 : 0], i * 4);
+  g.setAttribute('surface', new THREE.BufferAttribute(sa, 4));
   return finish(g, color, t);
+}
+
+/** Tag a part with a library surface (returns it): `S(box(…), 'planks', { axis: 'h' })`. */
+export const S = (g: THREE.BufferGeometry, surf: SurfId | SurfName, o?: TagOpts): THREE.BufferGeometry => tagSurface(g, surf, o);
+/** Tag a part with a field-only paint (pumpkin ribs, leaf veins, sunflower seeds, tilled soil). */
+export const paint = (g: THREE.BufferGeometry, p: PaintName, strength = 1): THREE.BufferGeometry => {
+  tagSurface(g, 'plain', { strength });
+  const a = g.attributes.surface.array as Float32Array, code = paintCode(p);
+  for (let i = 0; i < a.length; i += 4) a[i] = code;
+  return g;
 }
 
 /** An extruded prism from a 2D outline in the xy plane, depth along z (centred). */
@@ -72,11 +92,17 @@ export function prism(pts: readonly [number, number][], depth: number, color: nu
   return finish(g, color, t);
 }
 
-/** Merge painted parts into one faceted geometry (flat normals). */
+/**
+ * Merge painted parts into one faceted geometry (flat normals). Parts flagged `userData.smoothNormals` (foliage blobs
+ * from `foliageBlob`) keep their bent normals.
+ */
 export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  if (parts.some((p) => p.attributes.surface)) for (const p of parts) ensureSurface(p);
+  const smooth = parts.some((p) => p.userData.smoothNormals && p.attributes.normal);
+  if (smooth) for (const p of parts) if (!p.userData.smoothNormals || !p.attributes.normal) p.computeVertexNormals();
   const g = parts.length === 1 ? parts[0] : mergeGeometries(parts, false);
   if (!g) throw new Error('[plots] merge failed');
-  g.computeVertexNormals();
+  if (!smooth) g.computeVertexNormals();
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;

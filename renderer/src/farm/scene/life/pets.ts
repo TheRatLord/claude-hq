@@ -1,126 +1,42 @@
 /**
- * The village pets.
- *  - Biscuit (dog): pads around the square, runs to greet you when you come near, follows you for a while, sits
- *    when you stop, wags; visits idle farmers; sleeps on the porch at night and shelters from storms. Pet him.
- *  - Mochi (cat): naps in warm spots (porch, noticeboard, the campfire at night), stretches, strolls, grooms, looks
- *    at you when you pass, sometimes sits with a farmer. Pet her for a purr.
- * Each pet is one rigged mesh (one draw call + its shadow).
+ * The village pets (bodies: petBody.ts).
+ *  - Biscuit (dog): pads round the square sniffing in bursts, sits and lies about; gallops to greet you, play-bows
+ *    and runs circles round you, then heels at your side; when you stop he comes round, sits and looks up, tilting
+ *    his head when you look at him. Visits idle farmers. Sleeps curled on the porch at night, shelters from storms
+ *    and shakes himself off after. Pet him: eyes close happy, ears back, leans in, tail blur, hearts, a bark; pet
+ *    him three times quickly and he rolls over for belly rubs.
+ *  - Mochi (cat): naps (curled, or loafed) in warm spots, stretches front then back when she wakes, grooms, strolls,
+ *    kneads before settling on the porch, walks the back fence of a field (hopping the posts), trots over tail-up to
+ *    greet you and winds round your legs. Look at her and she slow-blinks. Pet her: purr, head bumps, hearts.
+ * Each pet is one skinned mesh (one draw call; real shadow) plus a soft contact blob.
  */
 import * as THREE from 'three';
 import type { FarmerLocator, FrameInfo, SceneCtx } from '../context.ts';
-import { WORLD, heightAt, slopeAt, structure } from '../../world/map.ts';
+import { SITES, WORLD, heightAt, siteToWorld, slopeAt, structure } from '../../world/map.ts';
 import { seeded } from '../../../core/rng.ts';
-import { rigMaterial } from './rig.ts';
-import type { RigMaterial } from './rig.ts';
-import { cat, dog } from './models.ts';
+import { PetBody, petInput } from './petBody.ts';
+import type { PetInput, PetPose } from './petBody.ts';
+import { Affection, LookTilt } from './mood.ts';
 import type { Activity } from './schedule.ts';
-import { audioOf, clamp, critterSound, damp, dampAngle, groundY, openGround, wrap } from './util.ts';
+import { TAU, audioOf, clamp, critterSound, damp, dampAngle, groundY, openGround, smooth01, wrap } from './util.ts';
 import type { Fx, Rng } from './util.ts';
 
-export type PetKind = 'dog' | 'cat';
-export type PetPose = 'stand' | 'walk' | 'sit' | 'lie' | 'stretch' | 'loaf' | 'curl';
+type DogState = 'wander' | 'greet' | 'play' | 'heel' | 'visit' | 'shelter' | 'sleep' | 'petted' | 'belly' | 'shake';
+type CatState = 'nap' | 'watch' | 'stretch' | 'stroll' | 'groom' | 'greet' | 'wind' | 'knead' | 'fence' | 'visit' | 'petted';
 
-export interface PoseInput {
-  pose: PetPose;
-  /** m/s over the ground (gait) */
-  speed: number;
-  /** 0 calm … 1 overjoyed (tail) */
-  wag: number;
-  /** head turn / tilt relative to the body (rad) */
-  lookYaw: number;
-  lookPitch: number;
-  /** 0..1 excited bouncing on the spot */
-  bounce: number;
-  /** nose to the ground */
-  sniff: boolean;
+interface Mover {
+  x: number; z: number; y: number; yaw: number;
+  /** commanded speed */
+  v: number;
+  stuck: number; r: number; wp: number;
+  /** measured ground speed along the facing and yaw rate (what the legs animate) */
+  gs: number; turn: number;
+  px: number; pz: number; pyaw: number;
+  /** extra height (jumps, fence rail) */
+  lift: number;
+  /** how close to the player's feet it may come */
+  personal: number;
 }
-
-interface PoseTarget { pitch: number; lift: number; legs: [number, number, number, number]; headP: number; tailL: number }
-
-const POSES: Record<PetKind, Record<PetPose, PoseTarget>> = {
-  dog: {
-    stand: { pitch: 0, lift: 0, legs: [0, 0, 0, 0], headP: 0, tailL: 0.1 },
-    walk: { pitch: 0, lift: 0, legs: [0, 0, 0, 0], headP: 0.05, tailL: 0.1 },
-    sit: { pitch: -0.55, lift: -0.08, legs: [0.55, 0.55, -1.15, -1.15], headP: -0.35, tailL: -0.3 },
-    lie: { pitch: 0, lift: -0.29, legs: [-1.45, -1.45, 1.35, 1.35], headP: 0.3, tailL: -0.5 },
-    stretch: { pitch: 0.35, lift: -0.06, legs: [-0.9, -0.9, 0.35, 0.35], headP: -0.4, tailL: 0.4 },
-    loaf: { pitch: 0, lift: -0.29, legs: [-1.45, -1.45, 1.35, 1.35], headP: 0.3, tailL: -0.5 },
-    curl: { pitch: 0, lift: -0.31, legs: [-1.45, -1.45, 1.35, 1.35], headP: 0.55, tailL: -0.6 },
-  },
-  cat: {
-    stand: { pitch: 0, lift: 0, legs: [0, 0, 0, 0], headP: 0, tailL: 0 },
-    walk: { pitch: 0, lift: 0, legs: [0, 0, 0, 0], headP: 0.05, tailL: 0.1 },
-    sit: { pitch: -0.6, lift: -0.05, legs: [0.6, 0.6, -1.2, -1.2], headP: -0.45, tailL: -1.1 },
-    lie: { pitch: 0, lift: -0.15, legs: [-1.5, -1.5, 1.4, 1.4], headP: 0.15, tailL: -1.2 },
-    stretch: { pitch: 0.4, lift: -0.04, legs: [-1.0, -1.0, 0.4, 0.4], headP: -0.5, tailL: 0.5 },
-    loaf: { pitch: 0, lift: -0.15, legs: [-1.55, -1.55, -1.5, -1.5], headP: 0.1, tailL: -1.25 },
-    curl: { pitch: 0, lift: -0.16, legs: [-1.55, -1.55, -1.5, -1.5], headP: 0.6, tailL: -1.3 },
-  },
-};
-
-/** A pet's body: rigged mesh + pose blending + gait. The brain moves `root`; the body animates inside it. */
-export class PetBody {
-  readonly root = new THREE.Group();
-  readonly mesh: THREE.Mesh;
-  readonly mat: RigMaterial;
-  private pitch = 0; private lift = 0; private readonly legs = [0, 0, 0, 0]; private headP = 0; private headY = 0; private tailL = 0;
-  private gait = 0; private wagT = 0; private bounceT = 0; private wagAmp = 0;
-  readonly kind: PetKind;
-  constructor(kind: PetKind) {
-    this.kind = kind;
-    const m = kind === 'dog' ? dog() : cat();
-    this.mat = rigMaterial(m.spec, { instanced: false });
-    this.mesh = new THREE.Mesh(m.geo, this.mat);
-    this.mesh.rotation.order = 'YXZ';
-    this.mesh.castShadow = true;
-    this.mesh.frustumCulled = false;
-    this.mesh.name = `life:${kind}`;
-    this.root.add(this.mesh);
-  }
-  animate(dt: number, t: number, o: PoseInput): void {
-    const T = POSES[this.kind][o.pose];
-    const r = 9;
-    this.pitch = damp(this.pitch, T.pitch + (o.sniff ? 0.05 : 0), r, dt);
-    this.lift = damp(this.lift, T.lift, r, dt);
-    this.headP = damp(this.headP, T.headP + o.lookPitch + (o.sniff ? 0.55 + Math.sin(t * 7) * 0.08 : 0), r, dt);
-    this.headY = dampAngle(this.headY, clamp(o.lookYaw, -1, 1), 6, dt);
-    this.tailL = damp(this.tailL, T.tailL + o.wag * 0.25, 5, dt);
-    const moving = o.speed > 0.15 && (o.pose === 'walk' || o.pose === 'stand');
-    const legLen = this.kind === 'dog' ? 0.36 : 0.2;
-    this.gait += (o.speed / legLen) * dt * 0.95;
-    const amp = moving ? Math.min(0.85, 0.25 + o.speed * 0.13) : 0;
-    const run = o.speed > 3.2;
-    for (let i = 0; i < 4; i++) {
-      // trot: diagonal pairs; gallop: front pair then rear pair
-      const ph = run ? (i < 2 ? 0 : Math.PI * 0.8) + (i % 2) * 0.35 : (i === 0 || i === 3 ? 0 : Math.PI);
-      const swing = Math.sin(this.gait + ph) * amp;
-      this.legs[i] = damp(this.legs[i], T.legs[i] + swing, moving ? 30 : r, dt);
-    }
-    this.wagAmp = damp(this.wagAmp, o.wag, 4, dt);
-    this.wagT += dt * (4 + this.wagAmp * (this.kind === 'dog' ? 18 : 3));
-    const wag = this.kind === 'dog'
-      ? Math.sin(this.wagT) * (0.12 + this.wagAmp * 0.7)
-      : (o.pose === 'loaf' || o.pose === 'curl' ? 1.3 + Math.sin(this.wagT * 0.5) * 0.08 : Math.sin(this.wagT * 0.6) * (0.25 + this.wagAmp * 0.25));
-    this.bounceT += dt * 11;
-    const bob = moving ? Math.abs(Math.sin(this.gait)) * (run ? 0.07 : 0.025) : 0;
-    const hop = o.bounce > 0 ? Math.abs(Math.sin(this.bounceT)) * 0.12 * o.bounce : 0;
-    const breathe = o.pose === 'lie' || o.pose === 'loaf' || o.pose === 'curl' ? Math.sin(t * 1.6) * 0.012 : Math.sin(t * 2.4) * 0.006;
-    this.mesh.position.y = this.lift + bob + hop;
-    this.mesh.rotation.x = this.pitch + (run && moving ? Math.sin(this.gait) * 0.08 : 0);
-    this.mesh.scale.set(1, 1 + breathe, 1);
-    this.mat.userData.animA.set(this.legs[0], this.legs[1], this.legs[2], this.legs[3]);
-    this.mat.userData.animB.set(this.headP, this.headY + (o.bounce > 0 ? Math.sin(this.bounceT * 0.5) * 0.25 : 0), wag, this.tailL);
-  }
-  dispose(): void { this.mesh.geometry.dispose(); this.mat.dispose(); }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Brains
-
-type DogState = 'home' | 'greet' | 'follow' | 'visit' | 'shelter' | 'sleep' | 'petted';
-type CatState = 'nap' | 'stretch' | 'stroll' | 'groom' | 'visit' | 'petted' | 'watch';
-
-interface Mover { x: number; z: number; y: number; yaw: number; v: number; stuck: number; r: number; wp: number }
 
 export interface Pets {
   meshes: THREE.Object3D[];
@@ -129,8 +45,11 @@ export interface Pets {
   dispose(): void;
 }
 
-const DOG_SAY = ['Biscuit wiggles all over!', 'Good boy, Biscuit!', 'Biscuit gives you a happy lick.', 'Biscuit\'s tail is a blur.', 'Biscuit rolls over for belly rubs.'];
+const DOG_SAY = ['Biscuit wiggles all over!', 'Good boy, Biscuit!', 'Biscuit gives you a happy lick.', 'Biscuit\'s tail is a blur.', 'Biscuit leans into your hand.'];
+const DOG_BELLY = ['Biscuit flops over for belly rubs!', 'Belly rubs! Biscuit\'s back leg kicks.'];
 const CAT_SAY = ['Mochi purrs contentedly.', 'Mochi headbutts your hand.', 'Mochi slow-blinks at you.', 'Mochi kneads the air, very pleased.', 'Mochi tolerates this. Graciously.'];
+
+const mover = (x: number, z: number, yaw: number, r: number): Mover => ({ x, z, y: 0, yaw, v: 0, stuck: 0, r, wp: 0, gs: 0, turn: 0, px: x, pz: z, pyaw: yaw, lift: 0, personal: 0.6 });
 
 export function createPets(ctx: SceneCtx, fx: Fx): Pets {
   const rng: Rng = seeded('life:pets');
@@ -144,12 +63,12 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
   });
   // the farmhouse porch (farmhouse-local: deck x ±4.95, z 2.0…4.6, railings with a gap at the steps, x ±1.1)
   const L = (lx: number, lz: number) => ({ x: fh.x + lx * Math.cos(fh.yaw) + lz * Math.sin(fh.yaw), z: fh.z - lx * Math.sin(fh.yaw) + lz * Math.cos(fh.yaw) });
-  const local = (x: number, z: number, out: { x: number; z: number }) => {
-    const dx = x - fh.x, dz = z - fh.z, c = Math.cos(fh.yaw), sn = Math.sin(fh.yaw);
-    out.x = dx * c - dz * sn; out.z = dx * sn + dz * c; return out;
-  };
   const lp = { x: 0, z: 0 };
-  const onPorch = (x: number, z: number) => { local(x, z, lp); return Math.abs(lp.x) <= 4.8 && lp.z >= 1.8 && lp.z <= 4.5; };
+  const onPorch = (x: number, z: number) => {
+    const dx = x - fh.x, dz = z - fh.z, c = Math.cos(fh.yaw), sn = Math.sin(fh.yaw);
+    lp.x = dx * c - dz * sn; lp.z = dx * sn + dz * c;
+    return Math.abs(lp.x) <= 4.8 && lp.z >= 1.8 && lp.z <= 4.5;
+  };
   const stepsOut = L(0, 6.3), stepsIn = L(0, 3.7);
   const home = { x: 3, z: -4 };
   const dogBed = L(3.7, 2.9);
@@ -159,25 +78,28 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
 
   const dogBody = new PetBody('dog'), catBody = new PetBody('cat');
   ctx.scene.add(dogBody.root, catBody.root);
-
-  const dogM: Mover = { x: home.x, z: home.z, y: 0, yaw: 0, v: 0, stuck: 0, r: 0.35, wp: 0 };
-  const catM: Mover = { x: catSpots[0].x, z: catSpots[0].z, y: 0, yaw: fh.yaw + 0.9, v: 0, stuck: 0, r: 0.25, wp: 0 };
+  const dogM = mover(home.x, home.z, 0, 0.35), catM = mover(catSpots[0].x, catSpots[0].z, fh.yaw + 0.9, 0.22);
+  const di: PetInput = petInput('stand'), ci: PetInput = petInput('loaf');
+  const dogAff = new Affection(9, 3, 0.35), catAff = new Affection(30, 99, 0.2);
+  const dogTilt = new LookTilt();
   const tmp = { x: 0, z: 0 };
+  let now = 0;
 
-  function step(m: Mover, tx: number, tz: number, speed: number, dt: number): number {
+  function step(m: Mover, tx: number, tz: number, speed: number, dt: number, turnRate = 7): number {
     const dx = tx - m.x, dz = tz - m.z, d = Math.hypot(dx, dz);
-    if (d < 0.08) { m.v = damp(m.v, 0, 10, dt); return d; }
+    if (d < 0.06) { m.v = damp(m.v, 0, 10, dt); return d; }
     const want = Math.atan2(dx, dz);
-    m.yaw = dampAngle(m.yaw, want, 7, dt);
-    const face = Math.max(0.15, Math.cos(wrap(want - m.yaw)));
-    m.v = damp(m.v, Math.min(speed, d * 2.5) * face, 5, dt);
+    m.yaw = dampAngle(m.yaw, want, turnRate, dt);
+    const face = Math.max(0.1, Math.cos(wrap(want - m.yaw)));
+    // ease into the stop (arrive), accelerate like a body with weight
+    m.v = damp(m.v, Math.min(speed, d * 2.2) * face, speed > 3 ? 3 : 4.5, dt);
     const nx = m.x + Math.sin(m.yaw) * m.v * dt, nz = m.z + Math.cos(m.yaw) * m.v * dt;
     if (heightAt(nx, nz) < W + 0.12 || slopeAt(nx, nz) > 0.45) { m.v = 0; m.stuck += dt; return d; }
     const px = m.x, pz = m.z;
     tmp.x = nx; tmp.z = nz;
     ctx.colliders.resolve(tmp, m.r);
     // keep a polite distance from the player's feet
-    const ex = tmp.x - player.x, ez = tmp.z - player.z, ed = Math.hypot(ex, ez), min = m.r + 0.55;
+    const ex = tmp.x - player.x, ez = tmp.z - player.z, ed = Math.hypot(ex, ez), min = m.r + m.personal;
     if (ed < min && ed > 1e-4) { tmp.x = player.x + (ex / ed) * min; tmp.z = player.z + (ez / ed) * min; }
     m.x = tmp.x; m.z = tmp.z;
     const moved = Math.hypot(m.x - px, m.z - pz);
@@ -197,13 +119,17 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
     m.wp = 0;
     return step(m, tx, tz, speed, dt);
   }
-  const lookAt = (m: Mover, x: number, y: number, z: number, out: { yaw: number; pitch: number }, headY: number) => {
-    const dx = x - m.x, dz = z - m.z;
-    out.yaw = wrap(Math.atan2(dx, dz) - m.yaw);
-    out.pitch = clamp(-(y - (m.y + headY)) / Math.max(1, Math.hypot(dx, dz)), -0.6, 0.5);
-    if (Math.abs(out.yaw) > 1.4) { out.yaw = 0; out.pitch = 0; }
+  const halt = (m: Mover, dt: number) => { m.v = damp(m.v, 0, 8, dt); };
+  const face = (m: Mover, x: number, z: number, dt: number, rate = 5) => { m.yaw = dampAngle(m.yaw, Math.atan2(x - m.x, z - m.z), rate, dt); };
+  const pdist = (m: Mover) => Math.hypot(player.x - m.x, player.z - m.z);
+  /** is the player looking (roughly) straight at this pet */
+  const lookedAt = (m: Mover, h: number, maxD: number): boolean => {
+    const e = ctx.player.eye, dx = m.x - e.x, dz = m.z - e.z, dy = m.y + h - e.y, d = Math.hypot(dx, dz);
+    if (d > maxD || d < 0.3) return false;
+    const fx = -Math.sin(ctx.player.yaw) * Math.cos(ctx.player.pitch), fz = -Math.cos(ctx.player.yaw) * Math.cos(ctx.player.pitch), fy = Math.sin(ctx.player.pitch);
+    const dot = (fx * dx + fy * dy + fz * dz) / Math.hypot(dx, dy, dz);
+    return dot > Math.cos(0.2 + 0.25 / d);
   };
-  const look = { yaw: 0, pitch: 0 };
   const farmerSpot = (out: { x: number; z: number; id: string }): boolean => {
     const loc = ctx.services.get('farmers') as FarmerLocator | undefined;
     if (!loc) return false;
@@ -216,218 +142,484 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
     if (!pick) return false;
     const p = loc.position(pick);
     if (!p) return false;
-    const a = rng() * Math.PI * 2;
+    const a = rng() * TAU;
     out.x = p.x + Math.cos(a) * 1.2; out.z = p.z + Math.sin(a) * 1.2; out.id = pick;
     return openGround(ctx, out.x, out.z, 0.3);
   };
+  const audio = () => audioOf(ctx);
 
   // ------------------------------------------------------------------ Biscuit
-  let dogState: DogState = 'home', dogPrev: DogState = 'home';
-  let dogT = 0, dogTarget = { x: home.x, z: home.z }, dogGreetCool = 4, dogFollow = 0, dogStill = 0, dogBarkIn = 0, dogPet = 0;
-  let dogPose: PetPose = 'stand', dogSniff = false, dogWag = 0.3, dogBounce = 0, dogVisitT = 60 + rng() * 60;
+  let dogState: DogState = 'wander', dogPrev: DogState = 'wander';
+  let dogT = 0, dogAct: PetPose | 'sniff' | 'walk' = 'stand', dogActT = 0, dogSniffWalk = false;
+  let greetCool = 4, heelT = 0, still = 0, barkIn = 0, visitIn = 60 + rng() * 60, sniffIn = 3, pant = 0, circleA = 0, circleN = 0, wet = 0, shakeNext: DogState = 'wander';
+  const dogTarget = { x: home.x, z: home.z };
   const dogVisit = { x: 0, z: 0, id: '' };
   const pickHomeSpot = () => {
     for (let i = 0; i < 12; i++) {
       const x = home.x + (rng() - 0.5) * 18, z = home.z + (rng() - 0.5) * 14;
-      if (openGround(ctx, x, z, 0.5)) { dogTarget = { x, z }; return; }
+      if (openGround(ctx, x, z, 0.5)) { dogTarget.x = x; dogTarget.z = z; return; }
     }
-    dogTarget = { x: home.x, z: home.z };
+    dogTarget.x = home.x; dogTarget.z = home.z;
   };
-  const bark = (n = 1) => { for (let i = 0; i < n; i++) setTimeout(() => critterBark(), i * 280); };
-  const critterBark = () => { const a = audioOf(ctx); if (a && Math.hypot(player.x - dogM.x, player.z - dogM.z) < 45) a.play('bark', { pos: dogBody.root.position, pitch: 0.95 + rng() * 0.15 }); };
+  let barkQ = 0, barkGap = 0;
+  const bark = (n = 1) => { barkQ = Math.max(barkQ, n); };
+  function barkTick(dt: number) {
+    barkGap -= dt;
+    if (barkQ > 0 && barkGap <= 0) {
+      barkQ--; barkGap = 0.26 + rng() * 0.08;
+      if (pdist(dogM) < 45) audio()?.play('bark', { pos: dogBody.root.position, pitch: 0.95 + rng() * 0.15 });
+    }
+  }
+  const setDog = (s: DogState, t = 0) => { dogState = s; dogT = t; };
 
   function dogBrain(dt: number, act: Activity) {
-    dogT -= dt; dogGreetCool -= dt; dogVisitT -= dt;
-    const pd = Math.hypot(player.x - dogM.x, player.z - dogM.z);
+    dogT -= dt; greetCool -= dt; visitIn -= dt; dogActT -= dt; sniffIn -= dt;
+    dogAff.update(dt);
+    const pd = pdist(dogM);
     const moving = ctx.player.speed > 0.5;
-    dogStill = moving ? 0 : dogStill + dt;
-    dogSniff = false; dogBounce = damp(dogBounce, 0, 3, dt);
+    still = moving ? 0 : still + dt;
+    wet = act.shelter || ctx.lighting.wet > 0.35 ? Math.min(1, wet + dt * 0.05) : wet;
+    // defaults for this frame
+    di.pose = 'stand'; di.sniff = 0; di.ears = 0; di.happy = 0; di.lean = 0; di.bump = 0; di.tilt = 0; di.narrow = 0;
+    let speed = 0;
     const rest = act.sleep ? 'sleep' : act.shelter ? 'shelter' : null;
-    if (rest && dogState !== rest && dogState !== 'petted' && dogState !== 'follow') { dogState = rest; }
-    if (!rest && (dogState === 'sleep' || dogState === 'shelter')) { dogState = 'home'; dogT = 0; }
+    if (rest && dogState !== rest && dogState !== 'petted' && dogState !== 'belly' && dogState !== 'heel' && dogState !== 'shake') setDog(rest);
+    if (!rest && (dogState === 'sleep' || dogState === 'shelter')) {
+      if (wet > 0.3) { setDog('shake', 1.4); shakeNext = 'wander'; } else setDog('wander');
+    }
     switch (dogState) {
-      case 'home': {
-        if (pd < 16 && pd > 2.5 && dogGreetCool <= 0 && !ctx.player.frozen) {
-          dogState = 'greet'; bark(2); critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 30, 0.7);
+      case 'wander': {
+        if (pd < 16 && pd > 3 && greetCool <= 0 && !ctx.player.frozen) {
+          setDog('greet'); bark(2); dogAff.cheer(0.4); critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 30, 0.7);
           break;
         }
-        if (dogVisitT <= 0 && pd > 25) {
-          dogVisitT = 80 + rng() * 80;
-          if (farmerSpot(dogVisit)) { dogState = 'visit'; dogT = 60; break; }
+        if (visitIn <= 0 && pd > 25) { visitIn = 80 + rng() * 80; if (farmerSpot(dogVisit)) { setDog('visit', 60); break; } }
+        if (dogAct === 'walk') {
+          const d = goTo(dogM, dogTarget.x, dogTarget.z, dogSniffWalk ? 0.55 : 1.05, dt);
+          speed = dogM.v;
+          if (dogSniffWalk && sniffIn <= 0) { sniffIn = 2 + rng() * 2; critterSound(ctx, 'sniff', dogM.x, dogM.y + 0.4, dogM.z, 10, 0.6); }
+          di.sniff = dogSniffWalk ? 1 : 0;
+          if (d < 0.3 || dogM.stuck > 1.5) {
+            dogM.stuck = 0;
+            const r = rng();
+            dogAct = r < 0.28 ? 'sit' : r < 0.42 ? 'lie' : r < 0.62 ? 'sniff' : r < 0.7 && wet > 0.3 ? 'shake' : 'stand';
+            dogActT = dogAct === 'lie' ? 9 + rng() * 10 : dogAct === 'sniff' ? 2.5 + rng() * 2 : 3 + rng() * 6;
+            if (dogAct === 'shake') { setDog('shake', 1.4); shakeNext = 'wander'; dogAct = 'stand'; }
+          }
+        } else {
+          halt(dogM, dt);
+          if (dogAct === 'sniff') { di.sniff = 1; if (sniffIn <= 0) { sniffIn = 1.3; critterSound(ctx, 'sniff', dogM.x, dogM.y + 0.3, dogM.z, 10, 0.6); } }
+          else if (dogAct !== 'stand') di.pose = dogAct;
+          if (dogActT <= 0) { dogAct = 'walk'; pickHomeSpot(); dogSniffWalk = rng() < 0.4; }
         }
-        const d = goTo(dogM, dogTarget.x, dogTarget.z, 1.5, dt);
-        if (d < 0.3 || dogM.stuck > 1.5) {
-          dogM.stuck = 0;
-          if (dogT <= 0) { dogT = 3 + rng() * 9; pickHomeSpot(); dogPose = rng() < 0.4 ? 'sit' : rng() < 0.2 ? 'lie' : 'stand'; }
-        } else { dogPose = 'walk'; dogSniff = rng() < 0.5 && dogM.v < 1.6 && (Math.floor(dogT) % 3 === 0); }
-        dogWag = 0.25;
+        di.joy = dogAff.joy;
         break;
       }
       case 'greet': {
-        const d = goTo(dogM, player.x, player.z, 6.2, dt);
-        dogPose = 'walk'; dogWag = 1;
-        if (d < 1.6) { dogState = 'follow'; dogFollow = 45 + rng() * 30; dogBounce = 1; dogT = 1.5; }
-        if (pd > 40 || dogM.stuck > 3) { dogState = 'home'; dogGreetCool = 30; dogM.stuck = 0; }
+        // gallop in, slow to a trot, arrive with a skid of joy
+        const d = goTo(dogM, player.x, player.z, clamp((pd - 1.1) * 1.6, 1.2, 6.4), dt);
+        speed = dogM.v; pant = Math.min(1, pant + dt * 0.3);
+        di.joy = 1; di.ears = speed > 4 ? -0.4 : 0.6;
+        if (d < 1.9 || pd < 1.9) { if (rng() < 0.55) { setDog('play', 1.3); bark(1); circleN = 0; } else { setDog('heel', 0); heelT = 50 + rng() * 40; } }
+        if (pd > 40 || dogM.stuck > 3) { setDog('wander'); greetCool = 30; dogM.stuck = 0; }
         break;
       }
-      case 'follow': {
-        dogFollow -= dt;
-        // trot beside the player while walking; when they stop, come round in front, sit and look up at them
-        const sy = Math.sin(ctx.player.yaw), cy = Math.cos(ctx.player.yaw);
-        const front = dogStill > 0.6;
-        const fwd = front ? -1.75 : 0.5, side = front ? 0.45 : 1.3;
-        const tx = player.x + sy * fwd + cy * side, tz = player.z + cy * fwd - sy * side;
-        const d = Math.hypot(tx - dogM.x, tz - dogM.z);
-        if (d > 1.0 || moving) {
-          goTo(dogM, tx, tz, clamp(d * 1.6, 1.2, 8.5), dt);
-          dogPose = dogM.v > 0.2 ? 'walk' : 'stand';
+      case 'play': {
+        // a play-bow, then zoomies round you
+        di.joy = 1;
+        if (dogT > 0) {
+          halt(dogM, dt); face(dogM, player.x, player.z, dt, 8);
+          di.pose = 'bow'; di.ears = 1; di.lookPitch = -0.1;
+          circleA = Math.atan2(dogM.x - player.x, dogM.z - player.z);
         } else {
-          dogM.v = damp(dogM.v, 0, 8, dt);
-          dogM.yaw = dampAngle(dogM.yaw, Math.atan2(player.x - dogM.x, player.z - dogM.z), 4, dt);
-          dogPose = dogStill > 1.4 ? 'sit' : 'stand';
+          const r = 2.3;
+          circleA += dt * 4.4 / r;
+          circleN += dt * 4.4 / (TAU * r);
+          const tx = player.x + Math.sin(circleA + 0.5) * r, tz = player.z + Math.cos(circleA + 0.5) * r;
+          goTo(dogM, tx, tz, 4.6, dt);
+          speed = dogM.v; pant = Math.min(1, pant + dt * 0.3); di.ears = -0.3;
+          if (circleN > 1.6 || dogM.stuck > 2) { setDog('heel'); heelT = 50 + rng() * 40; bark(1); }
         }
-        dogWag = dogPose === 'sit' ? 0.75 : 0.55;
-        if (dogT > 0) dogBounce = 1;
-        dogBarkIn -= dt;
-        if (dogStill > 1.2 && dogBarkIn <= 0 && pd < 6) { dogBarkIn = 25 + rng() * 30; if (rng() < 0.5) bark(1); else critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 15, 0.6); }
-        if (dogFollow <= 0 || pd > 35 || rest) { dogState = rest ?? 'home'; dogGreetCool = 150 + rng() * 60; dogT = 0; pickHomeSpot(); }
+        break;
+      }
+      case 'heel': {
+        heelT -= dt;
+        // walk at your left side; when you stop, come round in front, sit and look up at you
+        const sy = Math.sin(ctx.player.yaw), cy = Math.cos(ctx.player.yaw);
+        const inFront = still > 0.8;
+        const fwd = inFront ? 1.5 : -0.15, side = inFront ? 0.1 : 0.95;
+        // player forward = (−sin yaw, −cos yaw); left = (−cos yaw, sin yaw)
+        const tx = player.x - sy * fwd - cy * side, tz = player.z - cy * fwd + sy * side;
+        const d = Math.hypot(tx - dogM.x, tz - dogM.z);
+        if (d > 0.35 || moving) {
+          goTo(dogM, tx, tz, clamp(ctx.player.speed * 1.05 + d * 2.2, 0.6, 7.5), dt);
+          speed = dogM.v;
+        } else {
+          halt(dogM, dt); face(dogM, player.x, player.z, dt, 4);
+          di.pose = still > 14 ? 'lie' : still > 1.6 ? 'sit' : 'stand';
+          di.tilt = dogTilt.update(dt, lookedAt(dogM, 0.7, 6));
+          if (di.tilt !== 0) di.ears = 1;
+        }
+        di.joy = Math.max(0.55, dogAff.joy);
+        barkIn -= dt;
+        if (still > 3 && barkIn <= 0 && pd < 6) { barkIn = 25 + rng() * 30; if (rng() < 0.4) bark(1); else critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 15, 0.6); }
+        if (heelT <= 0 || pd > 35 || rest) { setDog(rest ?? 'wander'); greetCool = 120 + rng() * 60; dogAct = 'walk'; pickHomeSpot(); }
         break;
       }
       case 'visit': {
-        const d = goTo(dogM, dogVisit.x, dogVisit.z, 2.2, dt);
-        dogPose = d > 0.3 ? 'walk' : 'sit';
-        dogWag = d > 0.3 ? 0.4 : 0.6;
-        if (d < 0.3) { dogT = Math.min(dogT, 30); const loc = ctx.services.get('farmers') as FarmerLocator | undefined; const p = loc?.position(dogVisit.id); if (p) dogM.yaw = dampAngle(dogM.yaw, Math.atan2(p.x - dogM.x, p.z - dogM.z), 3, dt); }
-        if (dogT <= 0 || dogM.stuck > 3) { dogState = 'home'; dogM.stuck = 0; dogT = 0; }
-        if (pd < 12 && dogGreetCool <= 0) { dogState = 'greet'; bark(2); }
+        const d = goTo(dogM, dogVisit.x, dogVisit.z, 1.6, dt);
+        speed = dogM.v;
+        if (d < 0.3) {
+          di.pose = 'sit'; dogT = Math.min(dogT, 30);
+          const p = (ctx.services.get('farmers') as FarmerLocator | undefined)?.position(dogVisit.id);
+          if (p) face(dogM, p.x, p.z, dt, 3);
+        }
+        di.joy = 0.55;
+        if (dogT <= 0 || dogM.stuck > 3) { setDog('wander'); dogM.stuck = 0; dogAct = 'walk'; pickHomeSpot(); }
+        if (pd < 12 && greetCool <= 0) { setDog('greet'); bark(2); }
         break;
       }
       case 'sleep':
       case 'shelter': {
-        const d = goTo(dogM, dogBed.x, dogBed.z, dogState === 'shelter' ? 4 : 1.6, dt);
-        if (d < 0.35) { dogPose = dogState === 'sleep' ? 'curl' : 'lie'; dogM.yaw = dampAngle(dogM.yaw, fh.yaw + 0.6, 2, dt); }
-        else dogPose = 'walk';
-        dogWag = pd < 3 ? 0.35 : 0;
+        const d = goTo(dogM, dogBed.x, dogBed.z, dogState === 'shelter' ? 2.8 : 1.1, dt);
+        speed = dogM.v;
+        if (d < 0.35) { di.pose = dogState === 'sleep' ? 'curl' : 'lie'; dogM.yaw = dampAngle(dogM.yaw, fh.yaw + 0.6, 2, dt); }
+        di.joy = pd < 3 ? 0.3 : 0.05;
+        break;
+      }
+      case 'shake': {
+        halt(dogM, dt); di.pose = 'shake';
+        if (dogT > 1.3 && dogT - dt <= 1.3) {
+          critterSound(ctx, 'shake', dogM.x, dogM.y + 0.4, dogM.z, 20, 0.9);
+          fx.drops(dogM.x, dogM.y + 0.45, dogM.z, 16, 1.6, 0.35);
+        }
+        if (dogT <= 0) { wet = 0; setDog(shakeNext); dogAct = 'stand'; dogActT = 1; }
         break;
       }
       case 'petted': {
-        dogPet -= dt;
-        dogM.v = damp(dogM.v, 0, 10, dt);
-        dogWag = 1; dogBounce = dogPrev === 'sleep' ? 0 : 1;
-        dogPose = dogPrev === 'sleep' || dogPrev === 'shelter' ? 'lie' : dogPet > 1.2 ? 'stand' : 'sit';
-        if (dogPet <= 0) {
-          dogState = dogPrev === 'home' || dogPrev === 'visit' || dogPrev === 'greet' ? 'follow' : dogPrev;
-          if (dogState === 'follow') { dogFollow = Math.max(dogFollow, 40); dogGreetCool = 60; }
+        halt(dogM, dt); face(dogM, player.x, player.z, dt, 5);
+        const asleep = dogPrev === 'sleep' || dogPrev === 'shelter';
+        di.pose = asleep ? 'lie' : dogT > 1.6 ? 'stand' : 'sit';
+        di.happy = 1; di.ears = -1; di.joy = 1; di.lean = Math.sin(now * 1.3) * 0.25 + 0.55; di.lookPitch = -0.35;
+        if (dogT <= 0) {
+          setDog(dogPrev === 'wander' || dogPrev === 'visit' || dogPrev === 'greet' || dogPrev === 'play' ? 'heel' : dogPrev);
+          if ((dogState as DogState) === 'heel') { heelT = Math.max(heelT, 40); greetCool = 60; }
         }
         break;
       }
+      case 'belly': {
+        halt(dogM, dt);
+        di.pose = 'belly'; di.joy = 1; di.happy = 1;
+        if (Math.floor(dogT * 1.1) !== Math.floor((dogT + dt) * 1.1)) fx.heartsAt(dogM.x, dogM.y + 0.45, dogM.z, 1, rng);
+        if (dogT <= 0) { setDog('shake', 1.4); shakeNext = dogPrev === 'sleep' || dogPrev === 'shelter' ? dogPrev : 'heel'; heelT = Math.max(heelT, 40); greetCool = 60; }
+        break;
+      }
     }
+    pant = Math.max(0, pant - dt * (speed > 3 ? -0.2 : 0.06));
+    di.pant = smooth01(pant * 1.4);
+    if (di.pose === 'curl') di.pant = 0;
+    return speed;
   }
   function petDog() {
-    if (dogState !== 'petted') dogPrev = dogState;
-    dogState = 'petted'; dogPet = 2.4;
+    if (dogState !== 'petted' && dogState !== 'belly') dogPrev = dogState === 'shake' ? 'wander' : dogState;
+    const r = dogAff.pet(now);
     const hx = dogM.x + Math.sin(dogM.yaw) * 0.35, hz = dogM.z + Math.cos(dogM.yaw) * 0.35;
-    fx.heartsAt(hx, dogM.y + 0.95, hz, 4, rng);
-    const a = audioOf(ctx);
-    a?.play('pet', { pos: dogBody.root.position });
-    setTimeout(() => critterBark(), 380);
+    if (r === 'rollover' && dogPrev !== 'sleep') {
+      setDog('belly', 4.5);
+      fx.heartsAt(dogM.x, dogM.y + 0.6, dogM.z, 6, rng);
+      ctx.ui.say(DOG_BELLY[Math.floor(rng() * DOG_BELLY.length)], 2400);
+    } else {
+      setDog('petted', 2.4);
+      fx.heartsAt(hx, dogM.y + 0.95, hz, 4, rng);
+      ctx.ui.say(DOG_SAY[Math.floor(rng() * DOG_SAY.length)], 2200);
+    }
+    audio()?.play('pet', { pos: dogBody.root.position });
+    barkGap = 0.35; bark(1);
     critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 10, 0.8);
-    ctx.ui.say(DOG_SAY[Math.floor(rng() * DOG_SAY.length)], 2200);
   }
 
   // ------------------------------------------------------------------ Mochi
-  let catState: CatState = 'nap', catT = 30 + rng() * 40, catSpot = 0, catPet = 0, catPrev: CatState = 'nap', catMeowCool = 10, catVisitT = 90 + rng() * 90;
-  let catPose: PetPose = 'loaf', catWag = 0;
+  let catState: CatState = 'nap', catT = 30 + rng() * 40, catSpot = 0, catPrev: CatState = 'nap', meowCool = 10, catVisitIn = 90 + rng() * 90, catGreetCool = 20, fenceIn = 40 + rng() * 60;
+  let catNapPose: PetPose = 'loaf', purrIn = 0, windA = 0, windDir = 1, bumpT = 0;
   const catVisit = { x: 0, z: 0, id: '' };
-  let catTarget = { x: catSpots[0].x, z: catSpots[0].z };
-  const catNapSpot = (act: Activity) => act.sleep && !act.shelter ? catNight : catSpots[act.shelter ? 0 : catSpot];
+  const catTarget = { x: catSpots[0].x, z: catSpots[0].z };
+  const napSpot = (act: Activity) => (act.sleep && !act.shelter ? catNight : catSpots[act.shelter ? 0 : catSpot]);
+  const setCat = (s: CatState, t: number) => { catState = s; catT = t; };
+  const meow = () => audio()?.play('meow', { pos: catBody.root.position, pitch: 1 + rng() * 0.15 });
+  // fence walk: the back rail of a fenced field
+  const fence = { site: -1, y: 0, a: 0, b: 0, lz: 0, phase: 0 as 0 | 1 | 2 | 3, t: 0, fx: 0, fz: 0, fy: 0, tx: 0, tz: 0, ty: 0 };
+  function pickFence(): boolean {
+    const svc = ctx.services.get('plots') as { field(id: string): { site: { index: number }; built: number } | null } | undefined;
+    let best = -1, bd = 45;
+    for (const p of ctx.valley.plots.values()) {
+      if (p.stage !== 'thriving' && p.stage !== 'growing' && p.stage !== 'resting') continue;
+      const f = svc?.field(p.id);
+      if (svc && (!f || f.built < 0.95)) continue;
+      const st = SITES[p.site];
+      const d = Math.hypot(st.x - catM.x, st.z - catM.z);
+      if (d < bd) { bd = d; best = p.site; }
+    }
+    if (best < 0) return false;
+    const st = SITES[best];
+    const hw = st.w / 2;
+    const k = Math.floor(rng() * (Math.round(st.w / 2) - 2));
+    const post = -hw + 2 * (k + 1);
+    fence.site = best; fence.y = st.y + 0.92; fence.lz = -st.d / 2 + 0.05;
+    const dir = rng() < 0.5 ? 1 : -1;
+    fence.a = post - dir * 0.7; fence.b = post + dir * (2 + 0.7);
+    fence.phase = 0; fence.t = 0;
+    return true;
+  }
+  function fenceWalk(dt: number): boolean {
+    const st = SITES[fence.site];
+    const out = siteToWorld(st, fence.a, fence.lz - 0.75);
+    catM.personal = 0.6;
+    ci.narrow = 0;
+    if (fence.phase === 0) {
+      const d = goTo(catM, out.x, out.z, 1.0, dt);
+      if (d < 0.25 || catM.stuck > 3) {
+        if (catM.stuck > 3) return false;
+        fence.phase = 1; fence.t = 0; fence.fx = catM.x; fence.fz = catM.z; fence.fy = 0;
+        const on = siteToWorld(st, fence.a, fence.lz);
+        fence.tx = on.x; fence.tz = on.z;
+      }
+      return true;
+    }
+    const railDir = Math.atan2(Math.cos(st.yaw) * Math.sign(fence.b - fence.a), -Math.sin(st.yaw) * Math.sign(fence.b - fence.a));
+    if (fence.phase === 1 || fence.phase === 3) {
+      // crouch, spring, land (a 0.55 s arc)
+      fence.t += dt;
+      const k = fence.t / 0.75;
+      const crouch = k < 0.25;
+      const u = smooth01((k - 0.25) / 0.6);
+      catM.v = 0; catM.gs = 0;
+      const gy = groundY(ctx, catM.x, catM.z);
+      if (fence.phase === 1) {
+        if (!crouch) { catM.x = fence.fx + (fence.tx - fence.fx) * u; catM.z = fence.fz + (fence.tz - fence.fz) * u; }
+        catM.lift = crouch ? 0 : (fence.y - gy) * u + Math.sin(u * Math.PI) * 0.25;
+        catM.yaw = dampAngle(catM.yaw, crouch ? Math.atan2(fence.tx - catM.x, fence.tz - catM.z) : railDir, crouch ? 10 : 4, dt);
+      } else {
+        if (!crouch) { catM.x = fence.fx + (fence.tx - fence.fx) * u; catM.z = fence.fz + (fence.tz - fence.fz) * u; }
+        catM.lift = crouch ? fence.y - gy : (fence.y - gy) * (1 - u) + Math.sin(u * Math.PI) * 0.18;
+      }
+      ci.pose = crouch ? 'sit' : 'stand';
+      ci.narrow = fence.phase === 1 ? smooth01(u) : 1 - smooth01(u);
+      if (k >= 1) {
+        if (fence.phase === 1) { fence.phase = 2; catBody.snap(); }
+        else { catM.lift = 0; return false; }
+      }
+      return true;
+    }
+    // on the rail: careful little steps, balance, hop the post
+    const cur = localX(st, catM.x, catM.z);
+    const dir = Math.sign(fence.b - fence.a);
+    const next = cur + dir * 0.45 * dt;
+    const w = siteToWorld(st, next, fence.lz);
+    catM.x = w.x; catM.z = w.z; catM.v = 0.45;
+    catM.yaw = dampAngle(catM.yaw, railDir, 6, dt);
+    const post = Math.round((next + st.w / 2) / 2) * 2 - st.w / 2;
+    const dp = Math.abs(next - post);
+    catM.lift = fence.y - groundY(ctx, catM.x, catM.z) + (dp < 0.22 ? Math.cos((dp / 0.22) * Math.PI / 2) * 0.24 : 0);
+    ci.narrow = 1; ci.joy = 0.25;
+    if ((next - fence.b) * dir >= 0) {
+      fence.phase = 3; fence.t = 0; fence.fx = catM.x; fence.fz = catM.z;
+      const down = siteToWorld(st, fence.b + dir * 0.2, fence.lz - 0.8);
+      fence.tx = down.x; fence.tz = down.z;
+    }
+    return true;
+  }
+  const localX = (st: (typeof SITES)[number], x: number, z: number) => { const dx = x - st.x, dz = z - st.z; return dx * Math.cos(st.yaw) - dz * Math.sin(st.yaw); };
 
   function catBrain(dt: number, act: Activity) {
-    catT -= dt; catMeowCool -= dt; catVisitT -= dt;
-    const pd = Math.hypot(player.x - catM.x, player.z - catM.z);
+    catT -= dt; meowCool -= dt; catVisitIn -= dt; catGreetCool -= dt; fenceIn -= dt; purrIn -= dt;
+    catAff.update(dt);
+    const pd = pdist(catM);
+    ci.pose = 'stand'; ci.happy = 0; ci.ears = 0; ci.lean = 0; ci.bump = 0; ci.tilt = 0; ci.narrow = 0; ci.slowBlink = false; ci.sniff = 0; ci.pant = 0;
+    ci.joy = catAff.joy;
+    catM.personal = 0.6;
+    let speed = 0;
+    const awake = catState !== 'nap' && catState !== 'fence' && catState !== 'petted' && catState !== 'knead';
+    if (act.shelter && catState !== 'nap' && catState !== 'petted') { if (catState === 'fence') catM.lift = 0; setCat('nap', 40); catNapPose = 'loaf'; }
+    if (awake && catGreetCool <= 0 && pd < 8 && pd > 2 && !act.sleep && !ctx.player.frozen && catState !== 'greet' && catState !== 'wind') {
+      catGreetCool = 90 + rng() * 60;
+      if (rng() < 0.55) { setCat('greet', 12); meow(); }
+    }
     switch (catState) {
       case 'nap': {
-        const spot = catNapSpot(act);
-        const d = goTo(catM, spot.x, spot.z, act.shelter ? 3 : 1.0, dt);
-        catPose = d > 0.3 ? 'walk' : act.sleep || catT > 20 ? 'curl' : 'loaf';
-        catWag = 0;
-        if (d < 0.3 && pd < 3.5 && !act.sleep && catMeowCool <= 0) { catState = 'watch'; catT = 4; catMeowCool = 25; ctxMeow(); break; }
-        if (catT <= 0 && !act.shelter && !act.sleep) { catState = 'stretch'; catT = 2.6; }
+        const spot = napSpot(act);
+        const d = goTo(catM, spot.x, spot.z, act.shelter ? 2.2 : 0.8, dt);
+        speed = catM.v;
+        if (d > 0.3) break;
+        ci.pose = act.sleep || catT > 25 ? 'curl' : catNapPose;
+        if (ci.pose === 'loaf') { ci.slowBlink = lookedAt(catM, 0.3, 5) && Math.sin(now * 0.9) > 0.3; }
+        if (pd < 3.5 && !act.sleep && ci.pose === 'loaf' && meowCool <= 0) { setCat('watch', 5); meowCool = 25; meow(); break; }
+        if (catT <= 0 && !act.shelter && !act.sleep) setCat('stretch', 4.3);
         break;
       }
       case 'watch': {
-        catM.v = damp(catM.v, 0, 8, dt);
-        catPose = 'sit'; catWag = 0.4;
-        if (catT <= 0) { catState = 'nap'; catT = 20 + rng() * 30; }
+        halt(catM, dt); face(catM, player.x, player.z, dt, 2);
+        ci.pose = 'sit'; ci.joy = 0.4; ci.ears = 0.4;
+        ci.slowBlink = lookedAt(catM, 0.3, 6) && (catT % 2.5) < 1.2;
+        if (catT <= 0) setCat('nap', 20 + rng() * 30);
         break;
       }
       case 'stretch':
-        catM.v = 0; catPose = 'stretch';
+        halt(catM, dt); ci.pose = 'stretch';
         if (catT <= 0) {
-          if (catVisitT <= 0 && farmerSpot(catVisit)) { catVisitT = 120 + rng() * 120; catState = 'visit'; catT = 50; }
-          else { catState = 'stroll'; catSpot = (catSpot + 1 + Math.floor(rng() * (catSpots.length - 1))) % catSpots.length; catTarget = catSpots[catSpot]; catT = 60; }
+          if (fenceIn <= 0 && pickFence()) { fenceIn = 120 + rng() * 120; setCat('fence', 60); }
+          else if (catVisitIn <= 0 && farmerSpot(catVisit)) { catVisitIn = 120 + rng() * 120; setCat('visit', 50); }
+          else { catSpot = (catSpot + 1 + Math.floor(rng() * (catSpots.length - 1))) % catSpots.length; catTarget.x = catSpots[catSpot].x; catTarget.z = catSpots[catSpot].z; setCat('stroll', 60); }
         }
         break;
       case 'stroll': {
-        const d = goTo(catM, catTarget.x, catTarget.z, 1.0, dt);
-        catPose = 'walk'; catWag = 0.2;
-        if (d < 0.3 || catT <= 0 || catM.stuck > 3) { catM.stuck = 0; catState = 'groom'; catT = 4 + rng() * 4; }
+        const d = goTo(catM, catTarget.x, catTarget.z, 0.75, dt);
+        speed = catM.v; ci.joy = 0.3;
+        if (d < 0.3 || catT <= 0 || catM.stuck > 3) { catM.stuck = 0; setCat('groom', 5 + rng() * 4); }
         break;
       }
       case 'groom':
-        catM.v = damp(catM.v, 0, 8, dt); catPose = 'sit';
-        if (catT <= 0) { catState = 'nap'; catT = 45 + rng() * 80; }
+        halt(catM, dt); ci.pose = 'groom';
+        if (catT <= 0) {
+          catNapPose = rng() < 0.6 ? 'loaf' : 'curl';
+          if (catSpot === 0 && rng() < 0.6) setCat('knead', 3.5); else setCat('nap', 45 + rng() * 80);
+        }
         break;
-      case 'visit': {
-        const d = goTo(catM, catVisit.x, catVisit.z, 1.1, dt);
-        catPose = d > 0.3 ? 'walk' : 'loaf';
-        if (catT <= 0 || catM.stuck > 3) { catM.stuck = 0; catState = 'stroll'; catTarget = catSpots[catSpot]; catT = 60; }
+      case 'knead':
+        halt(catM, dt); ci.pose = 'knead'; ci.joy = 0.7;
+        if (purrIn <= 0) { purrIn = 3; audio()?.play('purr', { pos: catBody.root.position, volume: 0.5 }); }
+        if (catT <= 0) setCat('nap', 45 + rng() * 80);
+        break;
+      case 'greet': {
+        // tail-up trot over, then wind round your legs
+        const d = goTo(catM, player.x, player.z, pd > 3 ? 1.6 : 1.0, dt);
+        speed = catM.v; ci.joy = 1; ci.ears = 0.5;
+        if (d < 1.0 || pd < 1.0) { setCat('wind', 6 + rng() * 3); windA = Math.atan2(catM.x - player.x, catM.z - player.z); windDir = rng() < 0.5 ? 1 : -1; }
+        if (catT <= 0 || pd > 14 || catM.stuck > 3) { catM.stuck = 0; setCat('stroll', 30); catTarget.x = catSpots[catSpot].x; catTarget.z = catSpots[catSpot].z; }
         break;
       }
-      case 'petted':
-        catPet -= dt; catWag = 0.9;
-        catM.v = 0;
-        catPose = catPrev === 'nap' ? 'loaf' : 'sit';
-        if (catPet <= 0) { catState = catPrev === 'petted' ? 'nap' : catPrev; if (catState === 'watch') catState = 'nap'; catT = Math.max(catT, 20); }
+      case 'wind': {
+        // figure-eight round the player's feet, leaning in, tail up, the odd head bump
+        catM.personal = 0.05;
+        windA += dt * 1.5 * windDir;
+        const r = 0.5, a = windA;
+        const tx = player.x + Math.sin(a) * r * 1.25, tz = player.z + Math.sin(a) * Math.cos(a) * r * 1.4;
+        step(catM, tx, tz, 0.85, dt, 9);
+        speed = catM.v; ci.joy = 1; ci.lean = 0.7 * Math.sign(Math.cos(a)) * windDir;
+        bumpT -= dt;
+        if (bumpT <= 0) { bumpT = 1.6 + rng() * 1.5; }
+        ci.bump = bumpT > 1.2 ? Math.sin((bumpT - 1.2) / 0.4 * Math.PI) : 0;
+        if (purrIn <= 0) { purrIn = 3; audio()?.play('purr', { pos: catBody.root.position, volume: 0.6 }); }
+        if (catT <= 0 || ctx.player.speed > 2.5) setCat('watch', 5);
         break;
+      }
+      case 'fence':
+        ci.pose = 'stand';
+        if (!fenceWalk(dt) || catT <= 0) { catM.lift = 0; setCat('stroll', 40); catTarget.x = catSpots[catSpot].x; catTarget.z = catSpots[catSpot].z; }
+        speed = catM.v;
+        break;
+      case 'visit': {
+        const d = goTo(catM, catVisit.x, catVisit.z, 0.9, dt);
+        speed = catM.v;
+        if (d < 0.3) ci.pose = 'loaf';
+        if (catT <= 0 || catM.stuck > 3) { catM.stuck = 0; setCat('stroll', 60); catTarget.x = catSpots[catSpot].x; catTarget.z = catSpots[catSpot].z; }
+        break;
+      }
+      case 'petted': {
+        halt(catM, dt);
+        ci.pose = catPrev === 'nap' || catPrev === 'knead' ? 'loaf' : 'sit';
+        ci.happy = catT > 2.4 ? 0.9 : 0.4; ci.joy = 0.9; ci.ears = -0.3;
+        ci.bump = catT > 2.2 && catT < 3.0 ? Math.sin((3.0 - catT) / 0.8 * Math.PI) : 0;
+        ci.slowBlink = catT < 1.6 && catT > 0.3;
+        ci.lean = 0.5;
+        face(catM, player.x, player.z, dt, 2);
+        if (catT <= 0) { setCat(catPrev === 'petted' || catPrev === 'fence' ? 'nap' : catPrev, 20 + rng() * 20); if ((catState as CatState) === 'watch') setCat('nap', 30); }
+        break;
+      }
     }
+    return speed;
   }
-  const ctxMeow = () => { const a = audioOf(ctx); if (a) a.play('meow', { pos: catBody.root.position, pitch: 1 + rng() * 0.15 }); };
   function petCat() {
+    if (catState === 'fence' && catM.lift > 0.2) return;
     if (catState !== 'petted') catPrev = catState;
-    catState = 'petted'; catPet = 3.2;
-    fx.heartsAt(catM.x + Math.sin(catM.yaw) * 0.22, catM.y + 0.55, catM.z + Math.cos(catM.yaw) * 0.22, 3, rng);
-    const a = audioOf(ctx);
+    catAff.pet(now);
+    setCat('petted', 3.4);
+    fx.heartsAt(catM.x + Math.sin(catM.yaw) * 0.22, catM.y + catM.lift + 0.55, catM.z + Math.cos(catM.yaw) * 0.22, 3, rng);
+    const a = audio();
     a?.play('pet', { pos: catBody.root.position, volume: 0.7 });
     a?.play('purr', { pos: catBody.root.position });
+    purrIn = 3;
     ctx.ui.say(CAT_SAY[Math.floor(rng() * CAT_SAY.length)], 2200);
   }
 
   // ------------------------------------------------------------------ interactables
-  const headPos = (m: Mover, fwd: number, up: number, out: THREE.Vector3) => out.set(m.x + Math.sin(m.yaw) * fwd, m.y + up, m.z + Math.cos(m.yaw) * fwd);
-  const offDog = ctx.interact.add({ id: 'life:dog', kind: 'animal', verb: 'Pet', label: () => 'Biscuit', pos: (o) => headPos(dogM, 0.2, 0.6, o), reach: 3.4, use: petDog });
-  const offCat = ctx.interact.add({ id: 'life:cat', kind: 'animal', verb: 'Pet', label: () => 'Mochi', pos: (o) => headPos(catM, 0.1, 0.35, o), reach: 3.2, use: petCat });
+  const headPos = (m: Mover, fwd: number, up: number, out: THREE.Vector3) => out.set(m.x + Math.sin(m.yaw) * fwd, m.y + m.lift + up, m.z + Math.cos(m.yaw) * fwd);
+  const offDog = ctx.interact.add({ id: 'life:dog', kind: 'animal', verb: 'Pet', label: () => 'Biscuit', pos: (o) => headPos(dogM, 0.2, dogBody.headHeight() * 0.8, o), reach: 3.4, use: petDog });
+  const offCat = ctx.interact.add({ id: 'life:cat', kind: 'animal', verb: 'Pet', label: () => 'Mochi', pos: (o) => headPos(catM, 0.1, catBody.headHeight() * 0.8, o), reach: 3.2, use: petCat });
 
-  function place(b: PetBody, m: Mover, dt: number, t: number, pose: PetPose, wag: number, bounce: number, sniff: boolean, headY: number) {
+  const look = { yaw: 0, pitch: 0 };
+  function place(b: PetBody, m: Mover, inp: PetInput, dt: number, t: number, headH: number, lookRange: number) {
     m.y = groundY(ctx, m.x, m.z);
-    b.root.position.set(m.x, m.y, m.z);
+    // measured motion drives the legs, so feet never slide even when a collider or the player blocks the way
+    if (dt > 1e-4) {
+      const dx = m.x - m.px, dz = m.z - m.pz;
+      const gs = (dx * Math.sin(m.yaw) + dz * Math.cos(m.yaw)) / dt;
+      m.gs = Math.abs(gs) > 12 ? m.gs : gs;
+      m.turn = damp(m.turn, clamp(wrap(m.yaw - m.pyaw) / dt, -8, 8), 12, dt);
+    }
+    m.px = m.x; m.pz = m.z; m.pyaw = m.yaw;
+    b.root.position.set(m.x, m.y + m.lift, m.z);
     b.root.rotation.y = m.yaw;
-    const pd = Math.hypot(player.x - m.x, player.z - m.z);
-    const asleep = pose === 'curl';
-    if (pd < 7 && !asleep) lookAt(m, ctx.player.eye.x, ctx.player.eye.y, ctx.player.eye.z, look, headY);
-    else { look.yaw = 0; look.pitch = 0; }
-    b.animate(dt, t, { pose, speed: m.v, wag, lookYaw: look.yaw, lookPitch: look.pitch, bounce, sniff });
-    fx.shadow(m.x, m.y, m.z, b.kind === 'dog' ? 0.38 : 0.24, 1.6, m.yaw);
+    const pd = pdist(m);
+    const asleep = inp.pose === 'curl';
+    if (pd < lookRange && !asleep && inp.pose !== 'belly' && inp.pose !== 'groom' && inp.pose !== 'shake') {
+      const e = ctx.player.eye, dx = e.x - m.x, dz = e.z - m.z;
+      look.yaw = wrap(Math.atan2(dx, dz) - m.yaw);
+      look.pitch = clamp(-(e.y - (m.y + m.lift + headH)) / Math.max(0.8, Math.hypot(dx, dz)), -0.7, 0.5);
+      if (Math.abs(look.yaw) > 1.7) { look.yaw = 0; look.pitch = 0; }
+      if (inp.sniff > 0) { look.yaw *= 0.3; look.pitch = 0; }
+    } else { look.yaw = 0; look.pitch = 0; }
+    inp.lookYaw = damp(inp.lookYaw, look.yaw, 5, dt);
+    inp.lookPitch = damp(inp.lookPitch, look.pitch + (inp.happy > 0.5 ? -0.3 : 0), 5, dt);
+    inp.speed = m.gs; inp.turn = m.turn;
+    b.animate(dt, t, inp);
+    if (m.lift < 0.3) fx.shadow(m.x, m.y, m.z, b.kind === 'dog' ? 0.3 : 0.18, 1.7, m.yaw);
   }
+
+  // dev hook (scripts / screenshots): __valley.ctx.services.get('lifeDebug').pets
+  const debug = {
+    state: () => ({ dog: dogState, dogPose: di.pose, cat: catState, catPose: ci.pose, dx: dogM.x, dz: dogM.z, cx: catM.x, cz: catM.z }),
+    /** put a pet at (x, z) facing yaw, in a state (dog: wander heel sleep …; cat: nap watch groom …) for t seconds */
+    dog(state: DogState, x?: number, z?: number, yaw?: number, t = 30) {
+      if (x !== undefined && z !== undefined) { dogM.x = dogM.px = x; dogM.z = dogM.pz = z; dogBody.snap(); }
+      if (yaw !== undefined) dogM.yaw = dogM.pyaw = yaw;
+      dogPrev = 'wander'; setDog(state, t); heelT = t; greetCool = t;
+      if (state === 'shake') shakeNext = 'wander';
+    },
+    cat(state: CatState, x?: number, z?: number, yaw?: number, t = 30) {
+      if (x !== undefined && z !== undefined) { catM.x = catM.px = x; catM.z = catM.pz = z; catBody.snap(); }
+      if (yaw !== undefined) catM.yaw = catM.pyaw = yaw;
+      catPrev = 'nap'; setCat(state, t); catGreetCool = t;
+      if (state === 'fence' && !pickFence()) setCat('stroll', 30);
+      if (state === 'wind') { windA = 0; windDir = 1; }
+    },
+    petDog, petCat,
+    fence: () => (fence.site < 0 ? null : { site: fence.site, ...siteToWorld(SITES[fence.site], (fence.a + fence.b) / 2, fence.lz), y: fence.y, yaw: SITES[fence.site].yaw, phase: fence.phase }),
+  };
+  const dbg = (ctx.services.get('lifeDebug') as Record<string, unknown> | undefined) ?? {};
+  dbg.pets = debug;
+  ctx.services.set('lifeDebug', dbg);
 
   return {
     meshes: [dogBody.root, catBody.root],
     update(f, act) {
       const dt = f.dt;
+      now = f.time;
       dogBrain(dt, act);
       catBrain(dt, act);
-      place(dogBody, dogM, dt, f.time, dogPose, dogWag, dogBounce, dogSniff, 0.7);
-      place(catBody, catM, dt, f.time, catPose, catWag, 0, false, 0.4);
+      barkTick(dt);
+      place(dogBody, dogM, di, dt, f.time, 0.7, 7);
+      place(catBody, catM, ci, dt, f.time, 0.4, 5);
+      fx.dogX = dogM.x; fx.dogZ = dogM.z; fx.dogSpeed = Math.abs(dogM.gs);
     },
     stats: () => ({ dog: dogState, cat: catState }),
     dispose() {

@@ -25,16 +25,15 @@ export function buildWindmill(o: BuildOpts): THREE.Group {
   const k = new Kit(o.seed * 17 + 3);
   const W = WINDMILL;
   // stone plinth + tapered octagonal tower (whitewashed, stone base)
-  k.cyl(W.r0 + 0.35, 0.6, PAL.stone, { y: 0.3 }, 8);
-  k.cyl(W.r0, 2.2, 0xcfc7b6, { y: 0.6 + 1.1, ry: Math.PI / 8 }, 8, W.r0 - 0.2);
-  for (let i = 0; i < 18; i++) {
-    const a = (i / 18) * Math.PI * 2, y = 0.9 + (i % 3) * 0.55;
-    k.box(0.5, 0.2, 0.12, i % 2 ? PAL.rockDark : 0xa29a8c, { x: Math.sin(a) * (W.r0 - 0.05), y, z: Math.cos(a) * (W.r0 - 0.05), ry: a });
-  }
-  k.cyl(W.r0 - 0.2, W.h - 2.8, PAL.wallWhite, { y: 2.8 + (W.h - 2.8) / 2, ry: Math.PI / 8 }, 8, W.r1);
+  k.surf(['fieldstone', { axis: 'h' }], () => {
+    k.cyl(W.r0 + 0.35, 0.6, PAL.stone, { y: 0.3 }, 8);
+    k.cyl(W.r0, 2.2, 0xcfc7b6, { y: 0.6 + 1.1, ry: Math.PI / 8 }, 8, W.r0 - 0.2);
+  });
+  // smock tower clad in whitewashed wooden shingles (rows stay level on the taper)
+  k.surf(['shingle', { scale: 1.2, strength: 0.75 }], () => k.cyl(W.r0 - 0.2, W.h - 2.8, PAL.wallWhite, { y: 2.8 + (W.h - 2.8) / 2, ry: Math.PI / 8 }, 8, W.r1));
   // gallery balcony (wooden deck + railing) around the waist
   const gy = 4.4, gr = 2.9;
-  k.cyl(gr, 0.16, PAL.plank, { y: gy }, 12);
+  k.surf(['planks', { axis: 'x', scale: 0.9 }], () => k.cyl(gr, 0.16, PAL.plank, { y: gy }, 12));
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2, a2 = ((i + 1) / 12) * Math.PI * 2;
     k.beam(Math.sin(a) * (gr - 0.1), gy - 0.9, Math.cos(a) * (gr - 0.1), Math.sin(a) * (W.r0 - 0.5), gy - 1.8, Math.cos(a) * (W.r0 - 0.5), 0.1, PAL.woodDark);
@@ -44,10 +43,12 @@ export function buildWindmill(o: BuildOpts): THREE.Group {
   // cap: wooden boat-shaped roof
   k.cyl(W.r1 + 0.25, 0.3, PAL.woodDark, { y: W.h + 0.1 }, 10);
   k.at({ y: W.h + 0.2 }, () => {
-    k.ball(W.r1 + 0.35, PAL.roofBrown, { y: 0.1, s: [1, 0.95, 1.2] }, 1);
-    k.cone(0.25, 0.8, PAL.roofBrown, { y: 2.1 }, 6);
+    k.surf(['shingle', { variant: 1, scale: 0.9 }], () => {
+      k.ball(W.r1 + 0.35, PAL.roofBrown, { y: 0.1, s: [1, 0.95, 1.2] }, 1);
+      k.cone(0.25, 0.8, PAL.roofBrown, { y: 2.1 }, 6);
+    });
     k.ball(0.14, PAL.yellow, { y: 2.55 });
-    k.box(0.9, 0.9, 0.9, PAL.roofBrown, { y: 0.9, z: W.r1 + 0.1 });
+    k.surf(['planks', { variant: 1, scale: 0.7 }], () => k.box(0.9, 0.9, 0.9, PAL.roofBrown, { y: 0.9, z: W.r1 + 0.1 }));
     k.box(0.12, 0.12, 1.8, PAL.woodDark, { y: 0.2, z: -W.r1 - 0.6, rx: -0.4 }); // tail pole
   });
   // axle housing
@@ -55,11 +56,11 @@ export function buildWindmill(o: BuildOpts): THREE.Group {
   // front door, steps, windows
   k.at({ z: W.r0 - 0.05 }, () => {
     k.box(1.4, 2.3, 0.3, PAL.woodDark, { y: 0.6 + 1.1 });
-    k.box(1.1, 2.05, 0.1, 0x8a5a3a, { y: 0.6 + 1.0, z: 0.14 });
+    k.surf(['planks', { variant: 1 }], () => k.box(1.1, 2.05, 0.1, 0x8a5a3a, { y: 0.6 + 1.0, z: 0.14 }));
     k.cyl(0.55, 0.3, PAL.woodDark, { y: 2.8, rx: Math.PI / 2 }, 8);
     k.box(0.05, 1.9, 0.02, PAL.woodDark, { y: 1.6, z: 0.2 });
     k.ball(0.06, PAL.yellow, { x: 0.35, y: 1.6, z: 0.22 });
-    for (let i = 0; i < 2; i++) k.box(1.6, 0.2, 0.4, PAL.stone, { y: 0.1 + i * 0.2, z: 0.45 - i * 0.2 });
+    k.surf('rock', () => { for (let i = 0; i < 2; i++) k.box(1.6, 0.2, 0.4, PAL.stone, { y: 0.1 + i * 0.2, z: 0.45 - i * 0.2 }); });
   });
   for (const [a, y] of [[0.9, 3.2], [-1.2, 6.4], [2.6, 6.2], [0.2, 7.2]] as const) {
     const r = W.r0 - 0.2 - ((W.r0 - 0.2 - W.r1) * (y - 2.8)) / (W.h - 2.8);
@@ -85,7 +86,7 @@ export function buildWindmill(o: BuildOpts): THREE.Group {
       // lattice + cloth on the trailing side
       for (let j = 0; j < 7; j++) sk.box(1.25, 0.07, 0.07, PAL.woodLight, { x: 0.6, y: 1.1 + j * 0.8, z: 0.12 });
       sk.box(0.07, 5.0, 0.07, PAL.woodLight, { x: 1.2, y: 3.6, z: 0.12 });
-      sk.box(1.05, 4.6, 0.03, i % 2 ? PAL.cloth : 0xf3e6cc, { x: 0.62, y: 3.7, z: 0.07 });
+      sk.surf(['fabric', { scale: 0.8 }], () => sk.box(1.05, 4.6, 0.03, i % 2 ? PAL.cloth : 0xf3e6cc, { x: 0.62, y: 3.7, z: 0.07 }));
     });
   }
   const sails = sk.mesh();
@@ -170,20 +171,17 @@ export function buildWaterTower(o: BuildOpts): THREE.Group {
     k.beam(ax * f, fy, az * f, bx * f, fy, bz * f, 0.14, PAL.wood);
   }
   // platform + railing
-  k.cyl(2.75, 0.2, PAL.plank, { y: top + 0.1 }, 12);
+  k.surf(['planks', { axis: 'x' }], () => k.cyl(2.75, 0.2, PAL.plank, { y: top + 0.1 }, 12));
   for (let i = 0; i < 16; i++) {
     const a = (i / 16) * Math.PI * 2, a2 = ((i + 1) / 16) * Math.PI * 2;
     k.box(0.07, 0.7, 0.07, PAL.metalDark, { x: Math.sin(a) * 2.65, y: top + 0.55, z: Math.cos(a) * 2.65 });
     k.beam(Math.sin(a) * 2.65, top + 0.88, Math.cos(a) * 2.65, Math.sin(a2) * 2.65, top + 0.88, Math.cos(a2) * 2.65, 0.06, PAL.metalDark);
   }
   // barrel tank with hoops, conical roof
-  k.cyl(T.tankR, T.tankH, PAL.woodLight, { y: top + 0.2 + T.tankH / 2 }, 16);
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2 + 0.2;
-    k.box(0.03, T.tankH, 0.05, PAL.wood, { x: Math.sin(a) * (T.tankR + 0.01), y: top + 0.2 + T.tankH / 2, z: Math.cos(a) * (T.tankR + 0.01), ry: a });
-  }
-  for (const f of [0.12, 0.5, 0.88]) k.cyl(T.tankR + 0.05, 0.12, PAL.metalDark, { y: top + 0.2 + T.tankH * f }, 16);
-  k.cone(T.tankR + 0.45, 1.8, PAL.roofBlue, { y: top + 0.2 + T.tankH + 0.9 }, 12);
+  // wooden staves (one per facet-ish) held by iron hoops
+  k.surf(['planks', { scale: 1.6 }], () => k.cyl(T.tankR, T.tankH, PAL.woodLight, { y: top + 0.2 + T.tankH / 2 }, 16));
+  k.surf(['metal', { variant: 2, scale: 0.5, strength: 0.7 }], () => { for (const f of [0.12, 0.5, 0.88]) k.cyl(T.tankR + 0.05, 0.12, PAL.metalDark, { y: top + 0.2 + T.tankH * f }, 16); });
+  k.surf(['shingle', { scale: 1.1 }], () => k.cone(T.tankR + 0.45, 1.8, PAL.roofBlue, { y: top + 0.2 + T.tankH + 0.9 }, 12));
   k.cyl(T.tankR + 0.45, 0.12, 0x3d5f88, { y: top + 0.2 + T.tankH + 0.02 }, 12);
   k.cyl(0.08, 0.6, PAL.metalDark, { y: top + T.tankH + 2.2 }, 5);
   k.ball(0.15, PAL.red, { y: top + T.tankH + 2.55 });
@@ -267,10 +265,9 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   // gambrel profile (x, y): walls to wh, steep lower roof, shallow upper
   const kneeX = hw - 1.1, kneeY = wh + 2.2, ridgeY = wh + 3.6;
   const prof: [number, number][] = [[-hw, 0], [hw, 0], [hw, wh], [kneeX, kneeY], [0, ridgeY], [-kneeX, kneeY], [-hw, wh]];
-  k.box(B.w + 0.3, 0.3, B.d + 0.3, PAL.stone, { y: 0.15 });
-  k.prism(prof, B.d, BARN_RED, {});
-  // vertical board lines on the side walls
-  for (const s of [-1, 1]) for (let z = -hd + 0.4; z < hd; z += 0.5) k.box(0.03, wh - 0.3, 0.05, 0x9e3a2e, { x: s * (hw + 0.01), y: wh / 2 + 0.15, z });
+  k.surf(['fieldstone', { axis: 'h', scale: 0.8 }], () => k.box(B.w + 0.3, 0.3, B.d + 0.3, PAL.stone, { y: 0.15 }));
+  // red board siding, boards running up the walls and gables
+  k.surf(['planks', { variant: 2, scale: 1.3 }], () => k.prism(prof, B.d, BARN_RED, {}));
   // white trim: corners, eaves, gable outline, X-braces
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.25, wh, 0.25, BARN_TRIM, { x: x * hw, y: wh / 2, z: z * hd });
   for (const zs of [-1, 1]) {
@@ -286,34 +283,30 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   for (const s of [-1, 1]) for (const [ax, ay, bx, by] of segs) {
     const nx = (by - ay), ny = -(bx - ax), nl = Math.hypot(nx, ny);
     const ox = (s * nx) / nl * 0.12, oy = Math.abs(ny / nl) * 0.12;
-    k.beam(s * ax + ox, ay + oy, 0, s * bx + ox, by + oy, 0, 0.24, BARN_ROOF, 'solid', B.d + 0.8);
-    const L = Math.hypot(bx - ax, by - ay), rows = Math.floor(L / 0.45);
-    for (let i = 1; i < rows; i++) {
-      const f = i / rows;
-      k.beam(s * (ax + (bx - ax) * f) + ox * 2.1, ay + (by - ay) * f + oy * 2.1, 0, s * (ax + (bx - ax) * (f + 0.03)) + ox * 2.1, ay + (by - ay) * (f + 0.03) + oy * 2.1, 0, 0.06, 0x5a3a2c, 'solid', B.d + 0.82);
-    }
+    // beam frame: y runs along the slope, so shingle rows (axis y) lie level across it
+    k.surf(['shingle', { variant: 1, scale: 1.25 }], () => k.beam(s * ax + ox, ay + oy, 0, s * bx + ox, by + oy, 0, 0.24, BARN_ROOF, 'solid', B.d + 0.8));
     if (o.season === 'winter') k.beam(s * ax + ox * 2.5, ay + oy * 2.5, 0, s * bx + ox * 2.5, by + oy * 2.5, 0, 0.14, PAL.snow, 'solid', B.d + 0.6);
   }
   k.box(0.4, 0.25, B.d + 0.85, 0x5a3a2c, { y: ridgeY + 0.2 });
   // cupola on the ridge
   k.at({ y: ridgeY + 0.1 }, () => {
-    k.box(1.3, 1.1, 1.3, BARN_TRIM, { y: 0.55 });
+    k.surf(['planks', { axis: 'h', variant: 2, scale: 0.6, strength: 0.6 }], () => k.box(1.3, 1.1, 1.3, BARN_TRIM, { y: 0.55 }));
     for (const r of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) k.at({ ry: r }, () => { for (let i = 0; i < 4; i++) k.box(0.9, 0.06, 0.05, PAL.woodDark, { y: 0.3 + i * 0.18, z: 0.66, rx: 0.4 }); });
-    k.cone(1.15, 0.9, BARN_ROOF, { y: 1.55, ry: Math.PI / 4 }, 4);
+    k.surf(['shingle', { scale: 0.7 }], () => k.cone(1.15, 0.9, BARN_ROOF, { y: 1.55, ry: Math.PI / 4 }, 4));
     k.cyl(0.04, 0.9, PAL.metalDark, { y: 2.3 }, 4);
     k.box(0.6, 0.04, 0.04, PAL.metalDark, { y: 2.4 });
     k.prism([[-0.2, 0], [0.15, 0], [0.2, 0.15], [0.05, 0.28], [-0.05, 0.18], [-0.25, 0.25]], 0.03, PAL.ink, { y: 2.55 });
   });
   // front: open doorway with dark interior, open doors, hayloft
   const dw = 3.8, dh = 3.7, fz = hd + 0.02;
-  k.box(dw, dh, 0.1, 0x2a1d16, { y: dh / 2 + 0.3, z: fz - 0.05 });
+  k.surf(['planks', { variant: 1, scale: 1.3 }], () => k.box(dw, dh, 0.1, 0x2a1d16, { y: dh / 2 + 0.3, z: fz - 0.05 }));
   k.box(dw + 0.3, 0.25, 0.2, BARN_TRIM, { y: dh + 0.42, z: fz + 0.05 });
   for (const s of [-1, 1]) k.box(0.22, dh + 0.2, 0.2, BARN_TRIM, { x: s * (dw / 2 + 0.05), y: dh / 2 + 0.3, z: fz + 0.05 });
   for (const s of [-1, 1]) {
     // door leaf hinged at the outer edge, swung open ~115°
     k.at({ x: s * (dw / 2 + 0.1), y: 0.32, z: fz + 0.12, ry: s * 2.0 }, () => {
       const lw = dw / 2;
-      k.box(lw, dh, 0.12, BARN_RED, { x: -s * lw / 2, y: dh / 2 });
+      k.surf(['planks', { variant: 2, scale: 1.3 }], () => k.box(lw, dh, 0.12, BARN_RED, { x: -s * lw / 2, y: dh / 2 }));
       k.box(lw, 0.18, 0.16, BARN_TRIM, { x: -s * lw / 2, y: 0.1 });
       k.box(lw, 0.18, 0.16, BARN_TRIM, { x: -s * lw / 2, y: dh - 0.1 });
       k.box(0.18, dh, 0.16, BARN_TRIM, { x: -s * 0.09, y: dh / 2 });
@@ -326,7 +319,12 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   // sliding-door rail above
   k.box(dw * 2.1, 0.12, 0.12, PAL.metalDark, { y: dh + 0.65, z: fz + 0.12 });
   // hayloft door with hay, pulley beam
-  k.box(1.7, 1.5, 0.1, 0x2a1d16, { y: wh + 1.0, z: fz - 0.02 });
+  k.surf(['planks', { variant: 1 }], () => k.box(1.7, 1.5, 0.1, 0x2a1d16, { y: wh + 1.0, z: fz - 0.02 }));
+  k.at({ x: 0.98, y: wh + 0.28, z: fz + 0.14, ry: 2.2 }, () => {
+    k.surf(['planks', { variant: 1, scale: 0.9 }], () => k.box(0.85, 1.42, 0.08, PAL.plank, { x: -0.43, y: 0.71 }));
+    for (const y of [0.25, 1.17]) k.box(0.8, 0.12, 0.1, PAL.woodDark, { x: -0.43, y, z: 0.05 });
+    k.box(0.1, 1.05, 0.1, PAL.woodDark, { x: -0.43, y: 0.71, z: 0.05, rz: 0.72 });
+  });
   k.box(1.9, 0.14, 0.18, BARN_TRIM, { y: wh + 1.8, z: fz + 0.04 });
   k.box(1.9, 0.14, 0.18, BARN_TRIM, { y: wh + 0.22, z: fz + 0.04 });
   for (const s of [-1, 1]) k.box(0.14, 1.6, 0.18, BARN_TRIM, { x: s * 0.9, y: wh + 1.0, z: fz + 0.04 });
@@ -338,7 +336,7 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   k.box(0.18, 0.3, 0.1, PAL.metalDark, { y: 1.3, z: fz + 1.3 });
   // interior: hay bales, loft floor, a lantern glow deep inside
   k.at({ z: 0 }, () => {
-    k.box(B.w - 0.6, 0.2, B.d - 0.6, PAL.plank, { y: wh + 0.05 });
+    k.surf(['planks', { axis: 'x', variant: 1 }], () => k.box(B.w - 0.6, 0.2, B.d - 0.6, PAL.plank, { y: wh + 0.05 }));
     hayBale(k, { x: -1.2, y: 0.3, z: hd - 1.4, ry: 0.2 });
     hayBale(k, { x: 1.0, y: 0.3, z: hd - 1.8, ry: -0.3 });
     hayBale(k, { x: -0.8, y: 0.85, z: hd - 1.5, ry: 0.5 });
@@ -360,7 +358,7 @@ export function buildBarn(o: BuildOpts): THREE.Group {
   // thermometer board on the front wall (right of the door)
   const T = B.thermo;
   k.at({ x: T.x, z: fz + 0.1 }, () => {
-    k.box(0.95, 3.2, 0.14, BARN_TRIM, { y: T.y + 1.45 });
+    k.surf(['planks', { variant: 2, strength: 0.5 }], () => k.box(0.95, 3.2, 0.14, BARN_TRIM, { y: T.y + 1.45 }));
     k.box(0.85, 3.1, 0.02, 0xf6efe0, { y: T.y + 1.45, z: 0.08 });
     k.cyl(0.22, 0.1, 0xd83a36, { y: T.y + 0.1, z: 0.13, rx: Math.PI / 2 }, 10);
     k.box(0.16, 2.55, 0.05, 0xdbe6ee, { y: T.y + 1.55, z: 0.12 });
@@ -444,15 +442,17 @@ export function buildSilo(o: BuildOpts): THREE.Group {
   root.name = 'silo';
   const k = new Kit(o.seed * 23 + 11);
   const S = SILO;
-  k.cyl(S.r + 0.35, 0.5, PAL.stone, { y: 0.25 }, 14);
-  k.cyl(S.r, S.h, 0xd9d2c4, { y: 0.5 + S.h / 2 }, 14);
-  // concrete staves + steel hoops
-  for (let i = 0; i < 14; i++) {
-    const y = 0.5 + (i + 0.5) * (S.h / 14);
-    k.cyl(S.r + 0.03, 0.06, i % 2 ? PAL.metalDark : 0xb8b0a0, { y }, 14);
-  }
-  // red roof dome with vent
-  k.add(new THREE.SphereGeometry(S.r + 0.15, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2), PAL.roofRed, { y: 0.5 + S.h, s: [1, 0.7, 1] });
+  k.surf(['fieldstone', { axis: 'h' }], () => k.cyl(S.r + 0.35, 0.5, PAL.stone, { y: 0.25 }, 14));
+  k.surf(['metal', { axis: 'h', variant: 1, scale: 1.2 }], () => k.cyl(S.r, S.h, 0xd9d2c4, { y: 0.5 + S.h / 2 }, 14));
+  // steel hoops
+  k.surf(['metal', { variant: 2, strength: 0.6 }], () => {
+    for (let i = 0; i < 14; i++) {
+      const y = 0.5 + (i + 0.5) * (S.h / 14);
+      k.cyl(S.r + 0.03, 0.06, i % 2 ? PAL.metalDark : 0xb8b0a0, { y }, 14);
+    }
+  });
+  // red roof dome with vent (panels run up to the crown)
+  k.surf(['metal', { scale: 0.6, strength: 0.8 }], () => k.add(new THREE.SphereGeometry(S.r + 0.15, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2), PAL.roofRed, { y: 0.5 + S.h, s: [1, 0.7, 1] }));
   k.cyl(S.r + 0.2, 0.15, 0x9e3d2e, { y: 0.5 + S.h }, 14);
   k.cyl(0.3, 0.5, PAL.metalDark, { y: 0.5 + S.h + 1.7 }, 6);
   k.cone(0.45, 0.35, PAL.metalDark, { y: 0.5 + S.h + 2.1 }, 6);

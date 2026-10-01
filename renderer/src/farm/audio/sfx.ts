@@ -278,6 +278,28 @@ export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
     for (let i = 0; i < 4; i++) end = noise(c, out, t, { kind: 'pink', gain: 0.3, a: 0.02, d: 0.07, filter: 'bandpass', f: 1300 * o.pitch, q: 1.6, delay: i * 0.16 });
     return end;
   },
+  sniff: (c, out, t, o) => {
+    let end = t;
+    const n = 3 + Math.floor(o.rnd() * 2);
+    for (let i = 0; i < n; i++) end = noise(c, out, t, { kind: 'white', gain: 0.16, a: 0.012, d: 0.05, filter: 'bandpass', f: 2600 * o.pitch, q: 1.2, delay: i * 0.09 });
+    return end;
+  },
+  shake: (c, out, t, o) => {
+    let end = t;
+    for (let i = 0; i < 9; i++) end = noise(c, out, t, { kind: 'pink', gain: 0.22 * (1 - i / 11), a: 0.01, d: 0.06, filter: 'bandpass', f: (900 + (i % 2) * 500) * o.pitch, q: 1.1, delay: i * 0.075 });
+    for (let i = 0; i < 5; i++) noise(c, out, t, { kind: 'white', gain: 0.05, a: 0.002, d: 0.03, filter: 'highpass', f: 3000, delay: 0.2 + o.rnd() * 0.6 });
+    return end;
+  },
+  caw: (c, out, t, o) => {
+    const p = o.pitch;
+    let end = t;
+    const n = 1 + Math.floor(o.rnd() * 2);
+    for (let i = 0; i < n; i++) {
+      noise(c, out, t, { kind: 'pink', gain: 0.18, a: 0.02, hold: 0.12, d: 0.14, filter: 'bandpass', f: 1100 * p, q: 3, delay: i * 0.42 });
+      end = tone(c, out, t, { f: 560 * p, f2: 470 * p, glide: 0.25, gain: 0.07, a: 0.02, hold: 0.1, d: 0.15, delay: i * 0.42, lp: 1800 });
+    }
+    return end;
+  },
   hoot: (c, out, t, o) => {
     const p = o.pitch;
     const h = (dt: number, len: number, g: number) => {

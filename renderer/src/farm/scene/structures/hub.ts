@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { PAL, WORKSPACE_COLORS, toon } from '../toon.ts';
-import { Kit, canvasTex, damp, ellipsize, fitText, FONT, HAND, plaque, rng, roundRect, woodPanel } from './kit.ts';
+import { Kit, solidMat, canvasTex, damp, ellipsize, fitText, FONT, HAND, plaque, rng, roundRect, woodPanel } from './kit.ts';
 import { bucket, crate, flowerPot, sack, wateringCan, barrel } from './props.ts';
 import type { Env, Rig } from './rig.ts';
 import type { BuildOpts } from './farmhouse.ts';
@@ -28,10 +28,12 @@ export function buildMailbox(o: BuildOpts): THREE.Group {
   k.build(root, o.night);
   // the box itself wiggles as one piece (body + door + flag pivot)
   const bk = new Kit(7);
-  bk.box(0.42, 0.26, 0.58, 0x4f86c6, { y: 0.13 });
-  bk.add(new THREE.CylinderGeometry(0.21, 0.21, 0.58, 10, 1, false, 0, Math.PI), 0x4f86c6, { y: 0.26, rx: Math.PI / 2, rz: Math.PI / 2 });
-  bk.box(0.44, 0.3, 0.03, 0x3a6aa8, { y: 0.16, z: 0.3 });
-  bk.add(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 10, 1, false, 0, Math.PI), 0x3a6aa8, { y: 0.28, z: 0.3, rx: Math.PI / 2, rz: Math.PI / 2 });
+  bk.surf(['metal', { axis: 'z', scale: 0.35, strength: 0.7 }], () => {
+    bk.box(0.42, 0.26, 0.58, 0x4f86c6, { y: 0.13 });
+    bk.add(new THREE.CylinderGeometry(0.21, 0.21, 0.58, 10, 1, false, 0, Math.PI), 0x4f86c6, { y: 0.26, rx: Math.PI / 2, rz: Math.PI / 2 });
+    bk.box(0.44, 0.3, 0.03, 0x3a6aa8, { y: 0.16, z: 0.3 });
+    bk.add(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 10, 1, false, 0, Math.PI), 0x3a6aa8, { y: 0.28, z: 0.3, rx: Math.PI / 2, rz: Math.PI / 2 });
+  });
   bk.box(0.06, 0.06, 0.06, PAL.yellow, { y: 0.32, z: 0.33 });
   bk.box(0.3, 0.05, 0.01, PAL.white, { y: 0.24, z: 0.316 });
   // little bird perched on top
@@ -52,7 +54,7 @@ export function buildMailbox(o: BuildOpts): THREE.Group {
   // flag on the side: pivot at the arm
   const fk = new Kit(9);
   fk.box(0.03, 0.03, 0.42, PAL.metalDark, { z: -0.19 });
-  fk.box(0.025, 0.22, 0.26, PAL.red, { y: 0.1, z: -0.36 });
+  fk.surf(['metal', { scale: 0.3, strength: 0.6 }], () => fk.box(0.025, 0.22, 0.26, PAL.red, { y: 0.1, z: -0.36 }));
   fk.box(0.03, 0.07, 0.07, PAL.white, { y: 0.12, z: -0.3 });
   const flag = fk.mesh();
   flag.position.set(0.23, 0.18, 0.12);
@@ -96,16 +98,15 @@ export function buildShippingBin(o: BuildOpts): THREE.Group {
   const k = new Kit(o.seed + 51);
   const W = 1.8, D = 1.0, H = 0.8;
   k.box(W, 0.12, D, PAL.woodDark, { y: 0.06 });
-  k.box(W, H, D, PAL.plank, { y: H / 2 + 0.06 });
-  for (let i = 0; i < 4; i++) k.box(W + 0.02, 0.04, D + 0.02, PAL.woodDark, { y: 0.2 + i * 0.2 });
+  k.surf(['planks', { axis: 'h', scale: 0.8 }], () => k.box(W, H, D, PAL.plank, { y: H / 2 + 0.06 }));
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.12, H + 0.1, 0.12, PAL.woodDark, { x: x * (W / 2), y: (H + 0.1) / 2, z: z * (D / 2) });
   // produce peeking out of the open top is hidden by the lid; sack + can beside
   sack(k, { x: -1.3, z: 0.3, ry: 0.5 });
   k.build(root, o.night);
   // lid, hinged at the back edge
   const lk = new Kit(3);
-  lk.box(W + 0.1, 0.1, D + 0.1, PAL.wood, { y: 0.05, z: (D + 0.1) / 2 });
-  for (let i = 0; i < 5; i++) lk.box(0.04, 0.02, D + 0.1, PAL.woodDark, { x: -W / 2 + 0.2 + i * 0.35, y: 0.105, z: (D + 0.1) / 2 });
+  lk.surf(['planks', { axis: 'z', scale: 1.4 }], () => lk.box(W + 0.1, 0.1, D + 0.1, PAL.wood, { y: 0.05, z: (D + 0.1) / 2 }));
+  for (const x of [-0.6, 0.6]) lk.box(0.1, 0.03, D + 0.1, PAL.woodDark, { x, y: 0.11, z: (D + 0.1) / 2 });
   lk.box(0.3, 0.06, 0.1, PAL.metalDark, { y: 0.02, z: D + 0.1 });
   const lid = lk.mesh();
   lid.position.set(0, H + 0.08, -D / 2 - 0.05);
@@ -114,7 +115,7 @@ export function buildShippingBin(o: BuildOpts): THREE.Group {
   const ck = new Kit(4);
   crate(ck, {}, 0.48);
   const cg = ck.geometry('solid')!;
-  const crates = new THREE.InstancedMesh(cg, toon(0xffffff, { vertexColors: true }), SHIPPING_BIN.maxCrates);
+  const crates = new THREE.InstancedMesh(cg, solidMat(), SHIPPING_BIN.maxCrates);
   crates.castShadow = true;
   crates.count = 0;
   const r = rng(o.seed + 5);
@@ -259,10 +260,10 @@ export function buildNoticeboard(o: BuildOpts): THREE.Group {
     k.box(0.18, 2.75, 0.18, PAL.woodDark, { x: s * hw, y: 1.37 });
     k.cyl(0.18, 0.14, PAL.stone, { x: s * hw, y: 0.07 }, 6);
   }
-  k.box(N.w + 0.3, N.h + 0.3, 0.12, PAL.wood, { y: N.y, z: -0.02 });
+  k.surf(['planks', { axis: 'h' }], () => k.box(N.w + 0.3, N.h + 0.3, 0.12, PAL.wood, { y: N.y, z: -0.02 }));
   k.box(N.w + 0.4, 0.12, 0.2, PAL.woodDark, { y: N.y + N.h / 2 + 0.15, z: 0.02 });
   k.box(N.w + 0.4, 0.12, 0.2, PAL.woodDark, { y: N.y - N.h / 2 - 0.15, z: 0.02 });
-  k.at({ y: 2.65 }, () => gableRoof(k, N.w + 1.1, 0.45, 0, 0.35, 0.2, o.season, PAL.roofGreen, 0x4a7a3a));
+  k.at({ y: 2.65 }, () => gableRoof(k, N.w + 1.1, 0.45, 0, 0.35, 0.2, o.season, PAL.roofGreen, 0x4a7a3a, ['shingle', { scale: 0.7 }]));
   // a tray with chalk, a lantern hook, and a flower pot at the foot
   k.box(1.2, 0.06, 0.16, PAL.woodDark, { y: N.y - N.h / 2 - 0.25, z: 0.12 });
   k.box(0.14, 0.04, 0.04, PAL.white, { x: 0.3, y: N.y - N.h / 2 - 0.2, z: 0.12 });
@@ -305,19 +306,20 @@ export function buildWell(o: BuildOpts): THREE.Group {
     const n = 11;
     for (let i = 0; i < n; i++) {
       const a = ((i + (c % 2) * 0.5) / n) * Math.PI * 2;
-      k.box(0.62, 0.3, 0.36, [PAL.stone, 0xa9a294, 0xc4bdb0][(i + c) % 3], { x: Math.sin(a) * R, y: 0.16 + c * 0.29, z: Math.cos(a) * R, ry: a, rz: (k.r() - 0.5) * 0.08 });
+      k.surf(['rock', { scale: 0.45 }], () => k.box(0.62, 0.3, 0.36, [PAL.stone, 0xa9a294, 0xc4bdb0][(i + c) % 3], { x: Math.sin(a) * R, y: 0.16 + c * 0.29, z: Math.cos(a) * R, ry: a, rz: (k.r() - 0.5) * 0.08 }));
     }
   }
-  k.cyl(R + 0.16, 0.1, 0xc9c2b4, { y: 0.92 }, 11);
+  // open shaft: a ring of cap stones, a dark stone lining (faces turned inward), water down below
+  k.surf(['rock', { scale: 0.4 }], () => { for (let i = 0; i < 11; i++) { const a = ((i + 0.25) / 11) * Math.PI * 2; k.box(0.64, 0.12, 0.44, 0xc9c2b4, { x: Math.sin(a) * R, y: 0.93, z: Math.cos(a) * R, ry: a, rx: (k.r() - 0.5) * 0.04 }); } });
   k.cyl(R - 0.2, 0.06, 0x1f4f6f, { y: WELL.water }, 11);
-  k.cyl(R - 0.15, 0.7, 0x3a3430, { y: 0.55 }, 11);
+  k.surf(['fieldstone', { axis: 'h', scale: 0.5 }], () => k.add(new THREE.CylinderGeometry(R - 0.17, R - 0.17, 0.8, 11, 1, true), 0x5a524a, { y: 0.55, s: [-1, 1, 1] }));
   // posts, roof, axle bearings
   for (const s of [-1, 1]) {
     k.box(0.16, 2.2, 0.16, PAL.woodDark, { x: s * (R + 0.02), y: 1.1 + 0.9 });
     k.box(0.28, 0.16, 0.2, PAL.woodDark, { x: s * (R + 0.02), y: WELL.axleY });
   }
-  k.at({ y: 2.95 }, () => gableRoof(k, 2.9, 0.95, 0, 0.8, 0.3, o.season, PAL.roofRed, 0x9e3d2e));
-  for (const sx of [-1.12, 1.12]) k.prism([[-0.95, 0], [0.95, 0], [0, 0.8]], 0.1, PAL.woodDark, { y: 2.95, ry: Math.PI / 2, x: sx });
+  k.at({ y: 2.95 }, () => gableRoof(k, 2.9, 0.95, 0, 0.8, 0.3, o.season, PAL.roofRed, 0x9e3d2e, ['shingle', { scale: 0.75 }]));
+  k.surf(['planks', { variant: 1, scale: 0.7 }], () => { for (const sx of [-1.12, 1.12]) k.prism([[-0.95, 0], [0.95, 0], [0, 0.8]], 0.1, PAL.woodDark, { y: 2.95, ry: Math.PI / 2, x: sx }); });
   k.box(2.4, 0.12, 0.12, PAL.woodDark, { y: 2.92 });
   bucket(k, { x: 0.9, y: 0.97, z: 0.55, ry: 0.4 }, true);
   flowerPot(k, { x: -1.4, z: 0.7 }, o.season, 5);
@@ -400,7 +402,7 @@ export function buildSignpost(o: BuildOpts): THREE.Group {
   const k = new Kit(o.seed + 81);
   k.cyl(0.35, 0.3, PAL.stone, { y: 0.15 }, 7);
   k.box(0.2, 3.2, 0.2, PAL.woodDark, { y: 1.6 });
-  k.cone(0.2, 0.3, PAL.roofRed, { y: 3.35, ry: Math.PI / 4 }, 4);
+  k.surf(['shingle', { scale: 0.4 }], () => k.cone(0.2, 0.3, PAL.roofRed, { y: 3.35, ry: Math.PI / 4 }, 4));
   k.ball(0.07, PAL.yellow, { y: 3.55 });
   flowerPot(k, { x: 0.45, z: 0.3 }, o.season, 4);
   k.build(root, o.night);
@@ -525,17 +527,16 @@ export function buildToolshed(o: BuildOpts): THREE.Group {
   root.name = 'toolshed';
   const k = new Kit(o.seed + 91);
   const W = 3.2, D = 2.6, Hf = 2.6, Hb = 2.1;
-  k.box(W + 0.2, 0.2, D + 0.2, PAL.stone, { y: 0.1 });
-  // walls: vertical planks, front taller (mono-pitch roof sloping back)
-  k.prism([[-D / 2, 0], [D / 2, 0], [D / 2, Hf], [-D / 2, Hb]], W, 0x8fb0a0, { y: 0.2, ry: -Math.PI / 2 });
-  for (const s of [-1, 1]) for (let z = -D / 2 + 0.2; z < D / 2; z += 0.3) k.box(0.03, Hb - 0.1, 0.05, 0x7a9a8a, { x: s * (W / 2 + 0.01), y: 0.2 + (Hb - 0.1) / 2, z });
+  k.surf(['fieldstone', { axis: 'h', scale: 0.6 }], () => k.box(W + 0.2, 0.2, D + 0.2, PAL.stone, { y: 0.1 }));
+  // walls: painted vertical boards, front taller (mono-pitch roof sloping back)
+  k.surf(['planks', { variant: 2 }], () => k.prism([[-D / 2, 0], [D / 2, 0], [D / 2, Hf], [-D / 2, Hb]], W, 0x8fb0a0, { y: 0.2, ry: -Math.PI / 2 }));
   for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.14, z > 0 ? Hf : Hb, 0.14, PAL.wallWhite, { x: x * W / 2, y: 0.2 + (z > 0 ? Hf : Hb) / 2, z: z * D / 2 });
   // roof
   {
     const th = Math.atan2(Hf - Hb, D), len = Math.hypot(Hf - Hb, D) + 0.8;
     k.at({ y: 0.2 + Hf + 0.08, z: D / 2 + 0.4, rx: -th }, () => {
-      k.box(W + 0.6, 0.14, len, PAL.roofGreen, { z: -len / 2 });
-      for (let i = 1; i < 6; i++) k.box(W + 0.62, 0.05, 0.08, 0x4a7a3a, { y: 0.08, z: -i * (len / 6) });
+      // corrugated tin: ridges run down the slope
+      k.slab(W + 0.6, 0.14, len, PAL.roofGreen, ['metal', { axis: 'z', variant: 1, scale: 0.8 }], { z: -len / 2 }, ['planks', { axis: 'x', variant: 1, strength: 0.6 }]);
       if (o.season === 'winter') k.box(W + 0.4, 0.1, len - 0.2, PAL.snow, { y: 0.14, z: -len / 2 });
     });
   }
@@ -544,7 +545,7 @@ export function buildToolshed(o: BuildOpts): THREE.Group {
   k.box(1.0, 1.9, 0.05, 0x2a1d16, { x: -0.6, y: 0.2 + 0.95, z: fz });
   k.box(1.2, 0.12, 0.1, PAL.wallWhite, { x: -0.6, y: 0.2 + 1.95, z: fz + 0.02 });
   k.at({ x: -1.1, y: 0.2, z: fz + 0.04, ry: 1.9 }, () => {
-    k.box(1.0, 1.9, 0.07, PAL.wood, { x: 0.5, y: 0.95 });
+    k.surf(['planks', { variant: 1 }], () => k.box(1.0, 1.9, 0.07, PAL.wood, { x: 0.5, y: 0.95 }));
     k.box(0.9, 0.1, 0.09, PAL.woodDark, { x: 0.5, y: 0.4 });
     k.box(0.9, 0.1, 0.09, PAL.woodDark, { x: 0.5, y: 1.5 });
     k.box(0.1, 1.3, 0.09, PAL.woodDark, { x: 0.5, y: 0.95, rz: 0.6 });
@@ -563,7 +564,7 @@ export function buildToolshed(o: BuildOpts): THREE.Group {
   });
   // side workbench + things
   k.at({ x: W / 2 + 0.5, z: 0.1, ry: -Math.PI / 2 }, () => {
-    k.box(1.6, 0.08, 0.6, PAL.plank, { y: 0.85 });
+    k.surf(['planks', { axis: 'x', variant: 1 }], () => k.box(1.6, 0.08, 0.6, PAL.plank, { y: 0.85 }));
     for (const [x, z] of [[-0.7, -0.22], [0.7, -0.22], [-0.7, 0.22], [0.7, 0.22]]) k.box(0.08, 0.85, 0.08, PAL.woodDark, { x, y: 0.42, z });
     k.box(1.4, 0.05, 0.5, PAL.woodDark, { y: 0.25 });
     k.box(0.2, 0.15, 0.15, PAL.metalDark, { x: 0.55, y: 0.95 });
@@ -576,7 +577,7 @@ export function buildToolshed(o: BuildOpts): THREE.Group {
   crate(k, { x: -W / 2 - 0.5, z: 0.5, ry: 0.2 }, 0.5);
   // wheelbarrow
   k.at({ x: 1.6, z: fz + 1.0, ry: -0.6 }, () => {
-    k.box(0.7, 0.3, 0.9, PAL.metal, { y: 0.55 });
+    k.surf(['metal', { variant: 2, scale: 0.5 }], () => k.box(0.7, 0.3, 0.9, PAL.metal, { y: 0.55 }));
     k.box(0.6, 0.05, 0.8, PAL.soil, { y: 0.71 });
     k.cyl(0.2, 0.08, PAL.ink, { y: 0.2, z: 0.55, rz: Math.PI / 2 }, 8);
     k.beam(-0.25, 0.45, 0.45, -0.3, 0.6, -0.9, 0.05, PAL.woodDark);

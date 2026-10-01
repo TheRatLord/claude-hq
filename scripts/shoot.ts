@@ -14,7 +14,8 @@
  *
  * Options: --url URL (existing backend + its built dist; default: a fresh demo dev server)  --out DIR (default scratch/shots)  --size 1600x900  --scenario mixed  --seed 1  --demo 12  --wait 2500
  *          --timescale K  --video (also record a short webm per shot, wait = its length)
- * Shot keys: name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time
+ * Flipbook: frames=N every=MS [clip=x;y;w;h] tiles N frames into one contact sheet (quote the spec).
+ * Shot keys: frames every clip name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time
  * Quote specs containing ';' (cam=…) for the shell: --shot 'name=top,cam=0;120;100;0;-0.9'
  */
 import fs from 'node:fs';
@@ -67,6 +68,29 @@ async function shootGallery(page: Page, base: URL, s: Record<string, string>): P
   if (s.eval) await page.evaluate(s.eval);
 }
 
+/**
+ * Flipbook: `frames` screenshots `every` ms apart (optionally clipped), tiled left→right, top→bottom into one PNG with
+ * frame numbers — judge motion, gait cycles and transitions from a single image.
+ */
+async function flipbook(browser: import('@playwright/test').Browser, page: Page, file: string, n: number, every: number,
+  clip?: { x: number; y: number; width: number; height: number }): Promise<void> {
+  const shots: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const t0 = Date.now();
+    shots.push((await page.screenshot(clip ? { clip } : {})).toString('base64'));
+    await page.waitForTimeout(Math.max(0, every - (Date.now() - t0)));
+  }
+  const w = clip?.width ?? W, h = clip?.height ?? H;
+  const cols = Math.ceil(Math.sqrt(n * (h / w) * 1.6)) || 1;
+  const scale = Math.min(1, 2400 / (cols * w));
+  const sheet = await browser.newPage({ viewport: { width: Math.ceil(cols * w * scale), height: Math.ceil(Math.ceil(n / cols) * h * scale) } });
+  await sheet.setContent(`<body style="margin:0;display:grid;grid-template-columns:repeat(${cols},${w * scale}px);background:#222">${
+    shots.map((b, i) => `<div style="position:relative"><img style="display:block;width:${w * scale}px" src="data:image/png;base64,${b}"><span style="position:absolute;left:4px;top:2px;font:bold 14px monospace;color:#fff;text-shadow:0 0 3px #000">${i} · ${i * every}ms</span></div>`).join('')}</body>`);
+  await sheet.waitForTimeout(100);
+  await sheet.screenshot({ path: file, fullPage: true });
+  await sheet.close();
+}
+
 async function main(): Promise<void> {
   fs.mkdirSync(out, { recursive: true });
   // --url http://127.0.0.1:PORT/?t=TOKEN shoots an already-running backend (e.g. live herdr) instead of a demo
@@ -90,7 +114,9 @@ async function main(): Promise<void> {
         else await shootValley(page, dev.url, s);
         await page.waitForTimeout(Number(s.wait ?? opt('--wait', '2500')));
         const file = path.join(out, `${name}.png`);
-        await page.screenshot({ path: file });
+        const clip = s.clip ? (([x, y, width, height]) => ({ x, y, width, height }))(s.clip.split(';').map(Number)) : undefined;
+        if (s.frames) await flipbook(browser, page, file, Number(s.frames), Number(s.every ?? 120), clip);
+        else await page.screenshot({ path: file, ...(clip ? { clip } : {}) });
         const perf = await page.evaluate(() => {
           const v = (window as unknown as { __valley?: { perf(): unknown } }).__valley;
           return v ? v.perf() : null;

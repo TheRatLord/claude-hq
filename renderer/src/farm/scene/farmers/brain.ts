@@ -34,6 +34,8 @@ export interface Intent {
   vanish?: boolean;
   /** absolute height of the seat surface (log bench, hammock, dock edge) when the act sits on something built */
   seatY?: number;
+  /** seat surface height above the local ground (the plot's hay bale), when there is no absolute one */
+  seatRel?: number;
 }
 
 export interface Seat extends XZ { yaw: number; act: Act; kind: string; /** chat seats come in pairs: index of the partner seat */ pair?: number; /** seat surface height */ y?: number }
@@ -102,6 +104,9 @@ const PROP_OF: Partial<Record<Act, Prop>> = {
   saw: 'saw', carry: 'crate', read: 'letter', plan: 'notebook', sweep: 'broom', done: 'basket', fish: 'rod', bindle: 'bindle',
 };
 export const propOf = (a: Act): Prop | null => PROP_OF[a] ?? null;
+
+/** The thinking bale the plots package puts behind bench spot 0 (site-local z from the back fence, top height). */
+export const BALE = { back: 1.28, h: 0.5 } as const;
 
 const HUB_SPOT = (w: World, spot: number): XZ & { yaw: number } => ({ x: w.hub.x + (spot % 4) * 1.2 - 1.8, z: w.hub.z + 4, yaw: 0 });
 
@@ -201,7 +206,13 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
     }
     case 'plan': {
       const p = site ? benchSpot(site, f.spot) : HUB_SPOT(w, f.spot);
-      return base('bench', p, 'plan');
+      const i = base('bench', p, 'plan');
+      if (site && f.spot % 3 === 0) {
+        // the first bench spot has the plot's hay bale just behind it: climb up and sit on top
+        const b = siteToWorld(site, -site.w / 2 + 1.8, -site.d / 2 + BALE.back);
+        i.x = b.x; i.z = b.z; i.seatRel = BALE.h;
+      }
+      return i;
     }
     case 'water': {
       // walk slowly along the row with the can, back and forth

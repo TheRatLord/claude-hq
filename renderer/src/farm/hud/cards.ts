@@ -24,7 +24,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const plot = s.plots.get(f.plotId);
     plaqueText.textContent = 'Farmer';
     plaqueIco.innerHTML = ICONS.hand;
-    const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind);
+    const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
     const kids: (Node | null)[] = [];
     kids.push(h('div.hero', null, face, h('div', null,
       h('div.nm', { text: nice(f.name), 'data-testid': 'card-name' }),

@@ -4,56 +4,121 @@ import { defineAsset } from '../assets.ts';
 import { rigMaterial } from './rig.ts';
 import type { RigMaterial } from './rig.ts';
 import { butterfly, dragonfly, fish, frog, heart, pigeon, rabbit, songbird, squirrel } from './models.ts';
+import { birdAir, birdGround, body, butterflyWings, dragonWings, fishWave, frogIdle, frogJump, pigeonStrut, rabbitHop, rabbitIdle, squirrelBound, squirrelTail } from './critterAnim.ts';
+import type { Body } from './critterAnim.ts';
+import { BUTTERFLIES, DRAGONS, FISH, RABBITS } from './palette.ts';
 import type { Model } from './models.ts';
-import { PetBody } from './pets.ts';
-import type { PetPose } from './pets.ts';
+import { CAT_LOOPS, DOG_LOOPS, PetBody, galleryInput, petInput } from './petBody.ts';
+import type { PetInput, PetKind } from './petBody.ts';
 
-type Anim = (a: THREE.Vector4, b: THREE.Vector4, t: number, param: number) => void;
+type Loop = (ch: Float32Array, b: Body, t: number, param: number) => void;
+const CH = new Float32Array(12);
+const B = body();
 
-function critter(name: string, note: string, make: () => Model, tint: [number, number, number], scale: number, anim: Anim, variants?: Record<string, [number, number, number]>) {
+/** species tints: [back, breast] */
+export const SONGBIRDS: Record<string, [[number, number, number], [number, number, number]]> = {
+  sparrow: [[0.8, 0.58, 0.4], [0.97, 0.92, 0.84]],
+  bluebird: [[0.45, 0.64, 1], [1, 0.66, 0.42]],
+  goldfinch: [[1, 0.84, 0.28], [1, 0.9, 0.45]],
+  robin: [[0.62, 0.56, 0.52], [1, 0.52, 0.32]],
+  chickadee: [[0.72, 0.74, 0.72], [1, 0.95, 0.85]],
+};
+const CROW_TINT: [[number, number, number], [number, number, number]] = [[0.17, 0.17, 0.22], [0.22, 0.22, 0.28]];
+
+function critter(name: string, note: string, make: () => Model, scale: number, loops: Record<string, Loop>,
+  tints: (variant: string, param: number) => [[number, number, number], [number, number, number]]) {
+  const names = Object.keys(loops);
   defineAsset({
-    name, group: 'animal', note, variants: variants ? Object.keys(variants) : undefined, param: 'motion',
+    name, group: 'animal', note, variants: names, param: 'speed / species',
     build(o) {
       const m = make();
       const mat = rigMaterial(m.spec, { instanced: false, side: THREE.DoubleSide });
-      const c = (o.variant && variants?.[o.variant]) || tint;
-      mat.userData.tint.setRGB(c[0], c[1], c[2]);
       const mesh = new THREE.Mesh(m.geo, mat);
-      mesh.scale.setScalar(scale);
+      mesh.rotation.order = 'YXZ';
       const g = new THREE.Group();
       g.add(mesh);
-      anim(mat.userData.animA, mat.userData.animB, 0, 0.5);
+      g.userData.loop = o.variant ?? names[0];
+      g.userData.scale = scale;
+      apply(g, loops[g.userData.loop as string] ?? loops[names[0]], 0, 0.5, tints);
       return g;
     },
     animate(obj, t0, _dt, param) {
       const t = Number.isFinite(t0) ? t0 : performance.now() / 1000;
-      const mesh = obj.children[0] as THREE.Mesh | undefined;
-      const mat = mesh?.material as RigMaterial | undefined;
-      if (mat?.userData.animA) anim(mat.userData.animA, mat.userData.animB, t, param);
+      apply(obj, loops[obj.userData.loop as string] ?? loops[names[0]], t, param, tints);
     },
   });
 }
+function apply(g: THREE.Object3D, loop: Loop, t: number, param: number, tints: (v: string, p: number) => [[number, number, number], [number, number, number]]) {
+  const mesh = g.children[0] as THREE.Mesh | undefined;
+  const mat = mesh?.material as RigMaterial | undefined;
+  if (!mesh || !mat?.userData.animA) return;
+  CH.fill(0);
+  loop(CH, B, t, param);
+  const u = mat.userData;
+  u.animA.set(CH[0], CH[1], CH[2], CH[3]); u.animB.set(CH[4], CH[5], CH[6], CH[7]); u.animC.set(CH[8], CH[9], CH[10], CH[11]);
+  const [a, b] = tints(g.userData.loop as string, param);
+  u.tint.setRGB(a[0], a[1], a[2]); u.tint2.setRGB(b[0], b[1], b[2]);
+  const s = g.userData.scale as number;
+  mesh.position.y = B.y * s;
+  mesh.rotation.set(B.pitch, 0, B.roll);
+  mesh.scale.set(s * B.sx, s * B.sy, s * B.sz);
+}
+const pick = <T,>(o: Record<string, T>, p: number): T => { const v = Object.values(o); return v[Math.min(v.length - 1, Math.floor(p * v.length))]; };
+const same = (c: [number, number, number]) => (): [[number, number, number], [number, number, number]] => [c, c];
 
-const flap: Anim = (a, b, t, p) => { a.set(p > 0.5 ? Math.sin(t * 24) * 0.95 + 0.25 : -0.75, p <= 0.5 ? Math.max(0, Math.sin(t * 5)) * 0.9 : 0, p <= 0.5 ? Math.sin(t * 0.8) * 0.6 : 0, 0); b.set(p > 0.5 ? 0 : -1, p > 0.5 ? 0 : -1, 0, 0); };
+critter('songbird', 'flocks: bounding flight, glides, a landing flare; hops, pecks and head tilts on the ground (param = species)', songbird, 1.3, {
+  fly: (ch, b, t) => birdAir('flap', t * 12, t, ch, b),
+  glide: (ch, b, t) => birdAir('glide', 0, t, ch, b),
+  bound: (ch, b, t) => { const c = t % 1.1; if (c < 0.55) birdAir('flap', c * 13, t, ch, b); else birdAir('bound', 0, t, ch, b); b.y += Math.sin(c / 1.1 * Math.PI * 2) * 0.03; },
+  flare: (ch, b, t) => birdAir('flare', t * 16, t, ch, b),
+  hop: (ch, b, t) => { const c = t % 0.9; birdGround(ch, b, 0, 0, 0, 0, c < 0.22 ? c / 0.22 : 0); },
+  peck: (ch, b, t) => { const c = t % 1.3; birdGround(ch, b, c < 0.3 ? c / 0.3 : c > 0.5 && c < 0.8 ? (c - 0.5) / 0.3 : 0, Math.sin(t * 0.8) * 0.4, 0, 0, 0); },
+  tilt: (ch, b, t) => { const c = t % 3; birdGround(ch, b, 0, c < 1.5 ? 0.3 : -0.3, c < 1.5 ? 0.5 : -0.45, c > 2.6 ? 0.6 : 0, 0); },
+  crow: (ch, b, t) => { const c = t % 3; if (c < 1.3) birdAir('flap', t * 4.2, t, ch, b, 1.25); else birdAir('soar', 0, t, ch, b); },
+}, (v, p) => (v === 'crow' ? CROW_TINT : pick(SONGBIRDS, p)));
 
-critter('songbird', 'flocks over the valley; lands, hops and pecks (motion > 0.5 = flying)', songbird, [0.78, 0.55, 0.36], 1.15, flap,
-  { sparrow: [0.78, 0.55, 0.36], bluebird: [0.45, 0.66, 1], finch: [0.98, 0.8, 0.32], robin: [0.9, 0.5, 0.42], crow: [0.17, 0.17, 0.22] });
-critter('pigeon', 'carrier pigeon = network: flies the farmhouse loft ↔ fields/edges with a letter', pigeon, [1, 1, 1], 1,
-  (a, b, t, p) => { flap(a, b, t, p); b.x = 0; });
-critter('butterfly', 'meadows and thriving fields on clear days', butterfly, [1, 0.86, 0.3], 1.35,
-  (a, _b, t, p) => a.set(0.55 + Math.sin(t * (4 + p * 14)) * 0.75, 0, 0, 0),
-  { lemon: [1, 0.86, 0.3], white: [1, 1, 0.97], orange: [1, 0.62, 0.25], blue: [0.55, 0.72, 1], pink: [1, 0.66, 0.82] });
-critter('dragonfly', 'darts and hovers over the pond and river', dragonfly, [0.3, 0.85, 0.8], 1.5,
-  (a, _b, t) => a.set(Math.sin(t * 55) * 0.35 + 0.05, 0, 0, 0), { teal: [0.3, 0.85, 0.8], blue: [0.35, 0.55, 1], red: [0.95, 0.38, 0.28] });
-critter('fish', 'jumps in the pond and river with splash rings; koi circle under the pond', fish, [1, 0.58, 0.28], 1.2,
-  (a, _b, t, p) => a.set(Math.sin(t * (4 + p * 26)) * 0.5, 0, 0, 0), { koi: [1, 0.58, 0.28], trout: [0.72, 0.8, 0.78], perch: [0.62, 0.72, 0.5] });
-critter('frog', 'pond bank; croaks at night (throat pouch), plops into the water when you come close', frog, [1, 1, 1], 1.6,
-  (a, _b, t, p) => { const c = (t % 3) / 3; a.set(c < p ? Math.max(0, Math.sin((c / Math.max(0.05, p)) * Math.PI * 3)) : 0, 0, 0, 0); });
-critter('rabbit', 'meadows at dawn and dusk; hops away when approached', rabbit, [0.8, 0.62, 0.46], 1.3,
-  (a, _b, t) => a.set(0, 0.45 + Math.max(0, Math.sin(t * 9)) * 0.15, Math.max(0, Math.sin(t * 1.3)) * 0.5, Math.max(0, Math.sin(t * 1.1 + 2)) * 0.5),
-  { brown: [0.8, 0.62, 0.46], grey: [0.74, 0.72, 0.7], cream: [0.97, 0.93, 0.85] });
-critter('squirrel', 'scampers, stands up, flicks its tail, chatters', squirrel, [1, 1, 1], 1.25,
-  (a, _b, t) => a.set(Math.sin(t * 6) * 0.3, 0.2, Math.sin(t * 0.7) * 0.5, 0));
+critter('pigeon', 'carrier pigeon = network: flies loft ↔ fields with a letter in its pouch; struts with a head-bob', pigeon, 1.15, {
+  fly: (ch, b, t) => { birdAir('flap', t * 9, t, ch, b); ch[6] = 0; },
+  strut: (ch, b, t) => pigeonStrut(t * 1.6, 0.05, ch, b),
+  land: (ch, b, t) => { birdAir('flare', t * 12, t, ch, b); ch[6] = 0; },
+  coo: (ch, b, t) => { ch.fill(0); b.y = 0; b.pitch = 0; b.roll = 0; b.sx = b.sz = 1; ch[4] = -1; ch[0] = -0.3; const c = t % 2.4; const k = c < 0.9 ? Math.sin(c / 0.9 * Math.PI) : 0; b.sy = 1 + k * 0.06; b.sx = b.sz = 1 + k * 0.08; ch[2] = -k * 0.3; ch[10] = Math.sin(t * 2.2) * 0.01; ch[6] = -1; },
+}, same([1, 1, 1]));
+
+critter('butterfly', 'flutters in bursts with little glides; lands on flowers and basks, wings slowly opening and closing (param = colour)', butterfly, 1.6, {
+  fly: (ch, b, t) => { const lift = butterflyWings(t, 'fly', 0.3, ch); b.y = 0.2 + lift * 0.02 + Math.sin(t * 1.3) * 0.03; b.pitch = -0.2; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+  rest: (ch, b, t) => { butterflyWings(t, 'rest', 0.3, ch); b.y = 0; b.pitch = 0.1; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+}, (_v, p) => pick(BUTTERFLIES, p));
+
+critter('dragonfly', 'hovers, darts, hovers; perches on reeds (param = colour)', dragonfly, 1.8, {
+  hover: (ch, b, t) => { dragonWings(t, 0.4, false, ch); b.y = 0.15 + Math.sin(t * 3) * 0.01; b.pitch = 0.05; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+  dart: (ch, b, t) => { dragonWings(t, 0.4, false, ch); const c = t % 1.2; b.y = 0.15; b.pitch = c < 0.2 ? 0.45 * Math.sin(c / 0.2 * Math.PI) : 0; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+  perch: (ch, b, t) => { dragonWings(t, 0.4, true, ch); b.y = 0; b.pitch = 0; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+}, (_v, p) => pick(DRAGONS, p));
+
+critter('fish', 'koi glide under the pond with a body wave; trout and perch leap with a spin and a splash (param = species)', fish, 1.4, {
+  swim: (ch, b, t) => { fishWave(t, 0.2, ch); b.y = 0.1; b.pitch = 0; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+  dash: (ch, b, t) => { fishWave(t, 1, ch); b.y = 0.1; b.pitch = 0; b.roll = 0; b.sx = b.sy = b.sz = 1; },
+  jump: (ch, b, t) => { const k = (t % 1.6) / 1.1; fishWave(t, 1, ch); b.y = k < 1 ? 0.1 + Math.sin(k * Math.PI) * 0.5 : 0.1; b.pitch = k < 1 ? -Math.cos(k * Math.PI) * 1.1 : 0; b.roll = k < 1 ? k * Math.PI * 2 : 0; b.sx = b.sy = b.sz = 1; },
+}, (_v, p) => pick(FISH, p));
+
+critter('frog', 'pond bank: breathes, blinks, croaks with a throat sac; leaps with legs flung out and plops in', frog, 1.8, {
+  sit: (ch, b, t) => { const c = t % 4; frogIdle(t, c < 1.2 ? Math.max(0, Math.sin(c / 1.2 * Math.PI * 2)) : 0, c > 2.5 && c < 2.7 ? Math.sin((c - 2.5) / 0.2 * Math.PI) : 0, ch, b); },
+  jump: (ch, b, t) => { const k = (t % 1.4) / 0.7; if (k < 1) frogJump(k, 0.13, ch, b); else frogIdle(t, 0, 0, ch, b); },
+}, same([1, 1, 1]));
+
+critter('rabbit', 'meadows at dawn and dusk: nibbles, twitches its nose, turns its ears, grooms; freezes, then bolts', rabbit, 1.5, {
+  hop: (ch, b, t) => { const c = t % 0.9; if (c < 0.42) rabbitHop(c / 0.42, 0.14, ch, b); else rabbitIdle(t, { nibble: 0, groom: 0, alert: 0, earL: 0, earR: 0, turnL: 0, turnR: 0 }, ch, b); },
+  bolt: (ch, b, t) => { rabbitHop((t % 0.33) / 0.33, 0.3, ch, b); ch[9] = 0.5; },
+  graze: (ch, b, t) => rabbitIdle(t, { nibble: 1, groom: 0, alert: 0, earL: Math.max(0, Math.sin(t * 0.7)) * 0.4, earR: 0, turnL: Math.sin(t * 0.5) * 0.4, turnR: Math.sin(t * 0.4 + 1) * 0.5 }, ch, b),
+  groom: (ch, b, t) => rabbitIdle(t, { nibble: 0, groom: 1, alert: 0, earL: 0, earR: 0, turnL: 0, turnR: 0 }, ch, b),
+  alert: (ch, b, t) => rabbitIdle(t, { nibble: 0, groom: 0, alert: 1, earL: 0, earR: 0, turnL: Math.sin(t * 1.3) * 0.5, turnR: Math.sin(t * 1.1 + 2) * 0.5 }, ch, b),
+}, (_v, p) => { const c = pick(RABBITS, p); return [c, c]; });
+
+critter('squirrel', 'bounds with an S-curved tail, sits up to nibble a nut, chatters with tail flicks', squirrel, 1.4, {
+  bound: (ch, b, t) => squirrelBound(t * 2.6, 0.08, ch, b),
+  nibble: (ch, b, t) => { b.y = 0; b.roll = 0; b.sx = b.sy = b.sz = 1; b.pitch = -1.05; squirrelTail(t, 0, ch); ch[2] -= 0.95; ch[5] = -1.7; ch[0] = 0.55 + Math.max(0, Math.sin(t * 14)) * 0.08; ch[7] = 0; ch[6] = 0.9; },
+  chatter: (ch, b, t) => { b.y = 0; b.roll = 0; b.sx = b.sy = b.sz = 1; b.pitch = -0.2; squirrelTail(t, 1, ch); ch[0] = -0.2 + Math.sin(t * 20) * 0.04; ch[7] = -1; },
+}, same([1, 1, 1]));
 
 defineAsset({
   name: 'pet-heart', group: 'fx', note: 'hearts that float up when you pet an animal',
@@ -71,27 +136,26 @@ defineAsset({
 });
 
 /** gallery pets: body per built root (userData must stay JSON-clonable) */
-const petBodies = new WeakMap<THREE.Object3D, { body: PetBody; pose: PetPose }>();
+const petBodies = new WeakMap<THREE.Object3D, { body: PetBody; loop: string; inp: PetInput }>();
 
-function pet(kind: 'dog' | 'cat', name: string, note: string) {
-  const poses: PetPose[] = ['stand', 'walk', 'sit', 'lie', 'stretch', 'loaf', 'curl'];
+function pet(kind: PetKind, name: string, note: string, loops: readonly string[]) {
   defineAsset({
-    name, group: 'animal', note, variants: poses, param: 'speed / joy',
+    name, group: 'animal', note, variants: loops, param: 'speed / joy',
     build(o) {
       const b = new PetBody(kind);
-      const pose = (o.variant ?? 'stand') as PetPose;
-      petBodies.set(b.root, { body: b, pose });
-      for (let i = 0; i < 60; i++) b.animate(1 / 30, i / 30, { pose, speed: 0, wag: 0.5, lookYaw: 0, lookPitch: 0, bounce: 0, sniff: false });
+      const loop = o.variant ?? 'stand';
+      const inp = petInput();
+      petBodies.set(b.root, { body: b, loop, inp });
+      for (let i = 0; i < 90; i++) b.animate(1 / 30, i / 30, galleryInput(kind, loop, i / 30, 0.5, inp));
       return b.root;
     },
     animate(obj, t0, dt, param) {
       const t = Number.isFinite(t0) ? t0 : performance.now() / 1000;
       const e = petBodies.get(obj);
       if (!e) return;
-      const { body: b, pose } = e;
-      b.animate(Number.isFinite(dt) ? Math.min(0.1, Math.max(dt, 1 / 120)) : 1 / 60, t, { pose, speed: pose === 'walk' ? param * 7 : 0, wag: param, lookYaw: Math.sin(t * 0.5) * 0.4, lookPitch: 0, bounce: pose === 'stand' && param > 0.8 ? 1 : 0, sniff: false });
+      e.body.animate(Number.isFinite(dt) ? Math.min(0.1, Math.max(dt, 1 / 120)) : 1 / 60, t, galleryInput(kind, e.loop, t, param, e.inp));
     },
   });
 }
-pet('dog', 'dog', 'Biscuit: greets you, follows you, sits when you stop; pet him (hearts + bark)');
-pet('cat', 'cat', 'Mochi: naps on the porch and warm spots, stretches, strolls; pet her (purr + hearts)');
+pet('dog', 'dog', 'Biscuit: greets you at a gallop, heels, sits, plays, sleeps curled on the porch; pet him (hearts + bark)', DOG_LOOPS);
+pet('cat', 'cat', 'Mochi: naps, loafs, stretches, grooms, kneads, walks the fence; pet her (purr + slow blink)', CAT_LOOPS);

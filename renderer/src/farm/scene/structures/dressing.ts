@@ -6,8 +6,9 @@
 import * as THREE from 'three';
 import type { Season } from '../../model/types.ts';
 import { PATHS, SITES, STRUCTURES, WORLD, heightAt, inSite, pathAt, distToPolyline, RIVER, RIVER_HALF_WIDTH, POND } from '../../world/map.ts';
-import { PAL, toon } from '../toon.ts';
+import { PAL } from '../toon.ts';
 import { Kit, rng, softSpot } from './kit.ts';
+import { surfaceMaterial } from '../surface/index.ts';
 import { bench, lampPost, flowerPot, barrel, crate, hayBale, picnicTable, fenceRun, wateringCan, sack, pumpkin, cart, bucket, flowerColors } from './props.ts';
 import type { Env, Rig } from './rig.ts';
 
@@ -58,13 +59,13 @@ export function buildDressing(season: Season, seed = 1): Dressing {
       const x = P.x + Math.sin(a) * rr, z = P.z + Math.cos(a) * rr;
       if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr)) continue;
       const border = rr + 0.52 > P.r;
-      k.box(0.5 + r() * 0.06, 0.06, 0.44, border ? 0x8f887c : stoneCols[Math.floor(r() * stoneCols.length)], { x, y: gy(x, z) + 0.015 + r() * 0.02, z, ry: a + (r() - 0.5) * 0.12, rx: (r() - 0.5) * 0.05, rz: (r() - 0.5) * 0.05 });
+      k.surf(['rock', { scale: 0.5 }], () => k.box(0.5 + r() * 0.06, 0.06, 0.44, border ? 0x8f887c : stoneCols[Math.floor(r() * stoneCols.length)], { x, y: gy(x, z) + 0.015 + r() * 0.02, z, ry: a + (r() - 0.5) * 0.12, rx: (r() - 0.5) * 0.05, rz: (r() - 0.5) * 0.05 }));
     }
   }
   // spokes of darker stones toward the four exits
   for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) for (let rr = 2.1; rr < P.r - 0.3; rr += 0.52) {
     const x = P.x + Math.sin(a) * rr, z = P.z + Math.cos(a) * rr;
-    k.box(0.46, 0.09, 0.4, 0x9a8f7c, { x, y: gy(x, z) + 0.025, z, ry: a });
+    k.surf(['rock', { scale: 0.5 }], () => k.box(0.46, 0.09, 0.4, 0x9a8f7c, { x, y: gy(x, z) + 0.025, z, ry: a }));
   }
   // ---- central flowerbed with a sundial ----
   {
@@ -174,7 +175,7 @@ export function buildDressing(season: Season, seed = 1): Dressing {
     // raised beds with veg
     for (let b = 0; b < 3; b++) {
       const bz = G.z0 + 1.3 + b * 2.2, bx = (G.x0 + G.x1) / 2, y = gy(bx, bz);
-      k.box(3.6, 0.3, 1.2, PAL.woodDark, { x: bx, y: y + 0.15, z: bz });
+      k.surf(['planks', { axis: 'h', variant: 1 }], () => k.box(3.6, 0.3, 1.2, PAL.woodDark, { x: bx, y: y + 0.15, z: bz }));
       k.box(3.4, 0.05, 1.0, PAL.soil, { x: bx, y: y + 0.31, z: bz });
       for (let i = 0; i < 6; i++) {
         const x = bx - 1.4 + i * 0.56;
@@ -216,7 +217,7 @@ export function buildDressing(season: Season, seed = 1): Dressing {
     { z: 3.0, w: 0.9, h: 1.1, c: 0xf2d06a }, { z: 3.9, w: 0.4, h: 0.45, c: 0x8ed06a }, { z: 4.6, w: 0.6, h: 0.75, c: 0xf08aa8 },
   ];
   const clothGeo = new THREE.BoxGeometry(1, 1, 0.03).translate(0, -0.5, 0);
-  const laundry = new THREE.InstancedMesh(clothGeo, toon(0xffffff), CL.length);
+  const laundry = new THREE.InstancedMesh(clothGeo, surfaceMaterial({ surface: 'fabric', surfaces: ['fabric'], scale: 0.5 }), CL.length);
   laundry.castShadow = true;
   const col = new THREE.Color();
   CL.forEach((c, i) => laundry.setColorAt(i, col.setHex(c.c)));

@@ -1,8 +1,8 @@
 /**
- * Materials for the instanced farmer rig:
- *  - rigMaterial: toon + per-instance palette (slots A..D) + variant masking (hair styles, hats, props share a mesh)
- *  - rigDepthMaterial: the same masking for the shadow pass
- *  - faceMaterial: expression atlas on the face patch, cell chosen per instance
+ * Materials for the instanced mascot rig:
+ *  - rigMaterial: toon + per-instance palette (slots A..C) + variant masking (glyphs, hats, props share a mesh) +
+ *    jiggle (a height shear for follow-through and a lobe wobble for the Codex cloud / scarf tails)
+ *  - rigDepthMaterial: the same masking and shear for the shadow pass
  *  - billboardMaterial: camera-facing atlas sprites (emotes, "!" beacons) as one instanced draw
  *  - particleMaterial: round soft points (droplets, confetti, dust, sparkles)
  */
@@ -10,16 +10,21 @@ import * as THREE from 'three';
 import { toonRamp } from '../toon.ts';
 
 const RIG_VERT_HEAD = /* glsl */ `
-attribute float slot;
-attribute float vgroup;
+attribute vec3 vinfo; // slot, vgroup, wob
 attribute vec3 iA;
 attribute vec3 iB;
 attribute vec3 iC;
-attribute vec3 iD;
 attribute vec4 iSel;
+attribute vec4 iJig;
 `;
 const MASK = /* glsl */ `
+  float vgroup = vinfo.y, wob = vinfo.z;
   if (vgroup > 0.5 && abs(vgroup - iSel.x) > 0.5 && abs(vgroup - iSel.y) > 0.5 && abs(vgroup - iSel.z) > 0.5 && abs(vgroup - iSel.w) > 0.5) transformed = vec3(0.0);
+  // follow-through: the top lags behind (shear by height), lobes and tails wobble
+  transformed.x += iJig.x * position.y;
+  transformed.z += iJig.y * position.y;
+  float wph = iJig.w + position.x * 11.0 + position.y * 7.0;
+  transformed.xy += wob * iJig.z * vec2(sin(wph) * 0.6, cos(wph * 1.3));
 `;
 
 let rigMat: THREE.MeshToonMaterial | null = null;
@@ -31,13 +36,13 @@ export function rigMaterial(): THREE.MeshToonMaterial {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${MASK}`)
       .replace('#include <color_vertex>', `#include <color_vertex>
 #ifdef USE_COLOR
-  if (slot > 0.5) {
-    vec3 pc = slot < 1.5 ? iA : slot < 2.5 ? iB : slot < 3.5 ? iC : iD;
+  if (vinfo.x > 0.5) {
+    vec3 pc = vinfo.x < 1.5 ? iA : vinfo.x < 2.5 ? iB : iC;
     vColor.rgb = pc * color.rgb;
   }
 #endif`);
   };
-  m.customProgramCacheKey = () => 'farmer-rig';
+  m.customProgramCacheKey = () => 'mascot-rig';
   rigMat = m;
   return m;
 }
@@ -47,42 +52,23 @@ export function rigDepthMaterial(): THREE.MeshDepthMaterial {
   if (rigDepth) return rigDepth;
   const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   m.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'attribute float vgroup;\nattribute vec4 iSel;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n${MASK}`);
+    sh.vertexShader = 'attribute vec3 vinfo;\nattribute vec4 iSel;\nattribute vec4 iJig;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n${MASK}`);
   };
-  m.customProgramCacheKey = () => 'farmer-rig-depth';
+  m.customProgramCacheKey = () => 'mascot-rig-depth';
   rigDepth = m;
   return m;
 }
 
-/** Add the per-instance palette + selection attributes to a geometry used by an InstancedMesh of `n` instances. */
+export const INSTANCE_ATTRS = { iA: 3, iB: 3, iC: 3, iSel: 4, iJig: 4 } as const;
+export type InstanceAttr = keyof typeof INSTANCE_ATTRS;
+
+/** Add the per-instance palette / selection / jiggle attributes to a geometry used by an InstancedMesh of `n`. */
 export function addInstanceAttrs(g: THREE.BufferGeometry, n: number): void {
-  for (const k of ['iA', 'iB', 'iC', 'iD']) {
-    const a = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
+  for (const [k, size] of Object.entries(INSTANCE_ATTRS)) {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(n * size).fill(k.startsWith('i') && size === 3 ? 1 : 0), size);
     a.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute(k, a);
   }
-  const s = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4);
-  s.setUsage(THREE.DynamicDrawUsage);
-  g.setAttribute('iSel', s);
-}
-
-export const FACE_COLS = 8, FACE_ROWS = 4;
-export function faceMaterial(atlas: THREE.Texture): THREE.MeshToonMaterial {
-  const m = new THREE.MeshToonMaterial({
-    map: atlas, gradientMap: toonRamp(), alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-  });
-  m.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'attribute float iFace;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
-#ifdef USE_MAP
-  {
-    float c = mod(iFace, ${FACE_COLS}.0);
-    float r = floor(iFace / ${FACE_COLS}.0);
-    vMapUv = (vec2(clamp(vMapUv.x, 0.0, 1.0), clamp(vMapUv.y, 0.0, 1.0)) + vec2(c, ${FACE_ROWS - 1}.0 - r)) / vec2(${FACE_COLS}.0, ${FACE_ROWS}.0);
-  }
-#endif`);
-  };
-  m.customProgramCacheKey = () => 'farmer-face';
-  return m;
 }
 
 export const EMOTE_COLS = 8, EMOTE_ROWS = 4;

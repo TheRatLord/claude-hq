@@ -81,7 +81,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     const f = s?.farmers.get(id), hp = s?.helpers.get(id), e = d.net.entity(id);
     const plot = s?.plots.get(f?.plotId ?? hp?.plotId ?? '');
     const name = nice(f?.name ?? hp?.name ?? e?.name ?? id);
-    if (face.dataset.for !== id) { face.dataset.for = id; face.innerHTML = f ? farmerFace(seedHue(f.seed), f.kind) : ICONS.scarecrow; }
+    if (face.dataset.for !== id) { face.dataset.for = id; face.innerHTML = f ? farmerFace(seedHue(f.seed), f.kind, f.tier) : ICONS.scarecrow; }
     nameEl.textContent = name;
     if (f) { pillEl.className = `vh-pill st-${f.status}`; pillEl.textContent = f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status]; }
     else { pillEl.className = 'vh-pill'; pillEl.textContent = hp?.running ? 'Running' : 'Shell'; }

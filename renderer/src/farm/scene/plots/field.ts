@@ -16,7 +16,7 @@ import { PAL, WORKSPACE_COLORS, toon } from '../toon.ts';
 import type { Batches } from './batch.ts';
 import type { TextAtlas } from './atlas.ts';
 import { signPainter, tagPainter } from './atlas.ts';
-import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial } from './materials.ts';
+import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial, propMaterial } from './materials.ts';
 import type { CropUniforms } from './materials.ts';
 import { cropLayout, decorClump, SUN_STEM } from './crops.ts';
 import type { Clear, CropLayout, Slot } from './crops.ts';
@@ -25,8 +25,9 @@ import {
   cart, cartHeap, clod, crate, exitRibbon, fenceRibbon, fenceSegment, flag, gatePosts, hiveGeo, kindProps, lanternCore, LANTERN, penTile, scarecrow,
   SIGN_TEXT, signBoard, soilBed, sprinkler, textQuad, weed,
 } from './models.ts';
-import { Herd, SPECIES, animalMaterial } from './animals.ts';
-import type { Animal, SpeciesKey } from './animals.ts';
+import { Herd, penFor } from './animals.ts';
+import type { Animal, HerdInput, SpeciesKey } from './animals.ts';
+import { Bees } from './bees.ts';
 import type { Fx } from './fx.ts';
 
 export interface FieldHooks {
@@ -105,6 +106,8 @@ export class Field {
   private readonly hives: { x: number; z: number }[] = [];
   private readonly weeds: Weed[] = [];
   readonly herd: Herd | null;
+  private readonly bees: Bees | null = null;
+  private herdIn: HerdInput | null = null;
   private readonly helpers = new Map<string, HelperState>();
   private readonly offs: (() => void)[] = [];
   private colliderOffs: (() => void)[] = [];
@@ -184,7 +187,7 @@ export class Field {
       }
       if (this.sprinklerAt) this.clears.push({ ...this.sprinklerAt, r: 0.5 });
     }
-    this.props = new THREE.Mesh(merge(parts), toon(0xffffff, { vertexColors: true }));
+    this.props = new THREE.Mesh(merge(parts), propMaterial());
     this.props.castShadow = true;
     this.props.receiveShadow = true;
     this.props.name = 'props';
@@ -288,12 +291,14 @@ export class Field {
     // animals
     const sk = SPECIES_OF[this.kind];
     if (sk) {
-      const sp = SPECIES[sk];
-      const mud = this.kind === 'pigs' ? { x: -3.4, z: -0.6, r: 1.6 } : undefined;
-      const lure = kp.solids.slice(0, 3).map((s) => ({ x: s.x, z: s.z }));
-      this.herd = new Herd(sp, { hw, hd, avoid: this.clears, mud, lure }, plot.id, sp.max, !o.fresh);
+      const pen = penFor(this.kind, hw, hd, this.clears, this.segs);
+      this.herd = new Herd(sk, pen, plot.id, sk === 'chicken' ? 9 : sk === 'sheep' ? 6 : sk === 'pig' ? 5 : 4, !o.fresh);
       if (this.hooks.interact) for (const a of this.herd.animals) this.offs.push(this.hooks.interact.add(this.petTarget(a)));
     } else this.herd = null;
+    if (this.kind === 'bees') {
+      const flowers = this.layout.slots.filter((_, i) => i % 7 === 0).slice(0, 24).map((sl) => ({ x: sl.x, y: 0.5, z: sl.z }));
+      this.bees = new Bees({ hives: this.hives, flowers: flowers.length ? flowers : [{ x: 0, y: 0.5, z: 0 }] }, plot.id);
+    }
     this.barnLocal = o.barnLocal ?? { x: -1, z: 0 };
 
     // interactables: the sign, hives
@@ -340,7 +345,7 @@ export class Field {
       id: `animal:${a.id}`, kind: 'animal' as const, verb: 'Pet', label: () => a.name, reach: 2.6,
       pos: (out: THREE.Vector3) => this.herd!.headPos(a, this.siteM, out),
       enabled: () => a.appear > 0.8 && a.mode !== 'leave' && a.mode !== 'gone' && !this.closing,
-      use: () => { const e = this.env; if (e) this.herd!.pet(a, e.fx, (x, y, z, out) => out.set(x, y, z).applyMatrix4(this.siteM), (n, x, y, z) => e.sound(n, x, y, z)); },
+      use: () => this.herd!.pet(a),
     };
   }
 
@@ -580,7 +585,7 @@ export class Field {
   private batchesFor(env: FieldEnv) { return (this.B ??= this.makeBatches(env)); }
   private makeBatches(env: FieldEnv) {
     const B = env.batches;
-    const lit = toon(0xffffff, { vertexColors: true });
+    const lit = propMaterial();
     return {
       sign: B.get(`sign:${this.season}`, () => ({ geo: signBoard(this.season), mat: lit, cap: 48, shadow: true })),
       text: B.get('signtext', () => ({ geo: textQuad().clone(), mat: atlasMaterial(env.atlas.tex), cap: 160, rect: true })),
@@ -776,19 +781,7 @@ export class Field {
     }
     // bees between the hives and the flowers
     if (this.kind === 'bees' && !this.closing && this.tillP >= 1 && this.harvestP < 1) {
-      const n = Math.round((this.plot.stage === 'resting' ? 4 : 10 + 10 * this.vigorS) * (1 - this.harvestP));
-      const home = env.night > 0.6;
-      for (let i = 0; i < n; i++) {
-        const hv = this.hives[i % this.hives.length];
-        const t = env.time * (0.4 + (i % 5) * 0.07) + i * 1.9;
-        const out = home ? 0.15 : 0.5 + 0.5 * Math.sin(t * 0.5);
-        const tx = Math.sin(t * 0.8 + i) * this.hw * 0.75, tz = Math.cos(t * 0.6 + i * 0.7) * (this.hd - 2) * 0.8;
-        const x = lerp(hv.x, tx, out) + Math.sin(env.time * 9 + i) * 0.08, z = lerp(hv.z + 0.5, tz, out) + Math.cos(env.time * 11 + i) * 0.08;
-        const y = lerp(1.0, 0.7, out) + Math.sin(env.time * 7 + i * 2) * 0.12;
-        _q.setFromAxisAngle(_v.set(0, 1, 0), t * 2 + i);
-        _m.compose(_v.set(x, y, z), _q, _s.set(1.4, 1.4, 1.4)).premultiply(this.siteM);
-        env.fx.put('bee', _m);
-      }
+      this.bees?.update(env.dt, env.time, env.batches, this.siteM, { vigor: this.vigorS, night: env.night, resting: this.plot.stage === 'resting', alive: 1 - this.harvestP });
       if (env.player) {
         const w = this.world(0, 0, 0, _p);
         const d = Math.hypot(env.player.x - w.x, env.player.z - w.z);
@@ -830,25 +823,31 @@ export class Field {
 
   private updateHerd(env: FieldEnv): void {
     const herd = this.herd!;
-    let player: { x: number; z: number; speed: number } | null = null;
-    if (env.player) {
-      const l = this.toLocal(env.player.x, env.player.z);
-      if (Math.abs(l.x) < this.hw + 6 && Math.abs(l.z) < this.hd + 6) player = { x: l.x, z: l.z, speed: env.player.speed };
-    }
-    const arrive = this.tillP < 1 ? clamp01((this.tillP - 0.45) / 0.55) : 1;
-    herd.update({
-      dt: env.dt, time: env.time, lively: clamp01(this.vigorS * 0.7 + this.thriveK * 0.5), sleepy: Math.max(this.dryK, env.night > 0.75 ? 0.9 : 0),
-      player, arrive, leave: this.harvestP > 0 ? clamp01(this.harvestP * 1.3) : this.closing ? 1 : 0, growth: clamp01((this.gVis - 0.25) / 0.75),
-      barn: this.barnLocal, fx: env.fx,
-      toWorld: (x, y, z, out) => out.set(x, y, z).applyMatrix4(this.siteM),
-      sound: (n, x, y, z) => env.sound(n, x, y, z, 0.7),
+    const inp = (this.herdIn ??= {
+      dt: 0, time: 0, lively: 0, sleepy: 0, player: { x: 0, z: 0, speed: 0, near: false }, arrive: 1, leave: 0, growth: 0,
+      barn: this.barnLocal, fx: null, site: this.siteM, sound: (n, x, y, z, v) => this.env?.sound(n, x, y, z, (v ?? 1) * 0.7),
     });
-    // reopened after a harvest: bring the herd back
-    if (this.plot.stage === 'tilling' && herd.animals.every((a) => a.mode === 'gone')) {
-      herd.animals.forEach((a, i) => { a.mode = 'arrive'; a.appear = 0; a.x = (Math.random() - 0.5) * 2; a.z = this.hd + 3 + i * 0.9; a.yaw = Math.PI; });
+    const pl = inp.player;
+    pl.near = false;
+    if (env.player) {
+      const dx = env.player.x - this.site.x, dz = env.player.z - this.site.z, c = Math.cos(this.site.yaw), s = Math.sin(this.site.yaw);
+      pl.x = dx * c - dz * s; pl.z = dx * s + dz * c; pl.speed = env.player.speed;
+      pl.near = Math.abs(pl.x) < this.hw + 6 && Math.abs(pl.z) < this.hd + 6;
     }
-    herd.draw(env.batches, this.siteM, this.season, clamp01((this.gVis - 0.25) / 0.75));
-    void animalMaterial;
+    inp.dt = env.dt; inp.time = env.time; inp.fx = env.fx;
+    inp.lively = clamp01(this.vigorS * 0.7 + this.thriveK * 0.5);
+    inp.sleepy = Math.max(this.dryK, env.night > 0.75 ? 0.9 : 0);
+    inp.arrive = this.tillP < 1 ? clamp01((this.tillP - 0.45) / 0.55) : 1;
+    inp.leave = this.harvestP > 0 ? clamp01(this.harvestP * 1.3) : this.closing ? 1 : 0;
+    inp.growth = clamp01((this.gVis - 0.25) / 0.75);
+    herd.update(inp);
+    // reopened after a harvest: bring the herd back
+    let allGone = this.plot.stage === 'tilling';
+    for (let i = 0; allGone && i < herd.animals.length; i++) if (herd.animals[i].life !== 'gone') allGone = false;
+    if (allGone) {
+      herd.animals.forEach((a, i) => { a.life = 'arrive'; a.appear = 0; a.x = (Math.random() - 0.5) * 2; a.z = this.hd + 3 + i * 1.1; a.yaw = Math.PI; });
+    }
+    herd.draw(env.batches, this.siteM, this.season, inp.growth);
   }
 
   /** animals near a local point (farmers can ask) */

@@ -20,15 +20,15 @@ export function buildCampfire(o: BuildOpts): THREE.Group {
   root.name = 'campfire';
   const k = new Kit(o.seed + 101);
   // ash bed + stone ring
-  k.cyl(0.95, 0.06, 0x4a4440, { y: 0.03 }, 10);
+  k.surf('rock', () => k.cyl(0.95, 0.06, 0x4a4440, { y: 0.03 }, 10));
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
-    k.blob(0.24 + k.r() * 0.08, [PAL.stone, PAL.rockDark, 0xa9a294][i % 3], { x: Math.sin(a) * 1.05, y: 0.12, z: Math.cos(a) * 1.05, s: [1.2, 0.8, 1], ry: a });
+    k.surf('rock', () => k.blob(0.24 + k.r() * 0.08, [PAL.stone, PAL.rockDark, 0xa9a294][i % 3], { x: Math.sin(a) * 1.05, y: 0.12, z: Math.cos(a) * 1.05, s: [1.2, 0.8, 1], ry: a }));
   }
   // log teepee
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2 + 0.3;
-    k.beam(Math.sin(a) * 0.62, 0.05, Math.cos(a) * 0.62, Math.sin(a) * 0.08, 0.85, Math.cos(a) * 0.08, 0.13, i % 2 ? PAL.trunk : PAL.bark);
+    k.surf(['logs', { axis: 'y', variant: 1 }], () => k.rod(Math.sin(a) * 0.62, 0.05, Math.cos(a) * 0.62, Math.sin(a) * 0.08, 0.85, Math.cos(a) * 0.08, 0.08, i % 2 ? PAL.trunk : PAL.bark, 6));
   }
   k.cyl(0.12, 1.1, PAL.bark, { y: 0.1, z: 0.35, rz: Math.PI / 2, ry: 0.4 }, 6);
   k.cyl(0.35, 0.08, 0x2a1a12, { y: 0.07 }, 8);
@@ -138,13 +138,13 @@ export function buildDock(o: BuildOpts, dk: DeckOpts = { deckY: 0.6, ground: (z)
   const k = new Kit(o.seed + 111);
   const W = DOCK.w, y = dk.deckY, z0 = dockStart(dk), z1 = DOCK.z1;
   // planks across the width
-  for (let z = z0; z < z1; z += 0.32) k.box(W, 0.1, 0.28, (Math.round(z / 0.32) % 3 === 0) ? PAL.woodLight : PAL.plank, { y: y - 0.05, z: z + 0.14, ry: (k.r() - 0.5) * 0.02 });
+  for (let z = z0; z < z1; z += 0.32) k.surf(['logs', { axis: 'x' }], () => k.box(W, 0.1, 0.28, (Math.round(z / 0.32) % 3 === 0) ? PAL.woodLight : PAL.plank, { y: y - 0.05, z: z + 0.14, ry: (k.r() - 0.5) * 0.02 }));
   for (const s of [-1, 1]) k.box(0.14, 0.18, z1 - z0, PAL.woodDark, { x: s * (W / 2 - 0.07), y: y - 0.18, z: (z0 + z1) / 2 });
   // posts down into the water/bank, with rope wraps
   for (let z = z0 + 0.2; z <= z1; z += 1.6) for (const s of [-1, 1]) {
     const g = Math.min(dk.ground(z), dk.water) - 1.2;
     k.cyl(0.13, y + 0.35 - g, PAL.woodDark, { x: s * (W / 2 + 0.02), y: (y + 0.35 + g) / 2, z }, 6);
-    k.cyl(0.15, 0.08, PAL.cloth, { x: s * (W / 2 + 0.02), y: y + 0.1, z }, 6);
+    k.surf(['fabric', { scale: 0.3 }], () => k.cyl(0.15, 0.08, PAL.cloth, { x: s * (W / 2 + 0.02), y: y + 0.1, z }, 6));
   }
   // end: bollard, lantern post, stool, bucket, tackle crate, a rolled net
   k.cyl(0.14, 0.4, PAL.ink, { x: 0.7, y: y + 0.2, z: z1 - 0.3 }, 7);
@@ -214,7 +214,7 @@ export function buildBridge(o: BuildOpts, b: BridgeOpts = { yA: 0.2, yB: 0.2, wa
   for (let i = 0; i < N; i++) {
     const za = zAt(i), zb = zAt(i + 1), ya = bridgeDeck(b, za), yb = bridgeDeck(b, zb);
     const len = Math.hypot(zb - za, yb - ya);
-    k.box(w, 0.14, len + 0.02, i % 2 ? PAL.plank : PAL.woodLight, { y: (ya + yb) / 2 - 0.07, z: (za + zb) / 2, rx: -Math.atan2(yb - ya, zb - za) });
+    k.surf(['planks', { axis: 'x', scale: 0.95 }], () => k.box(w, 0.14, len + 0.02, i % 2 ? PAL.plank : PAL.woodLight, { y: (ya + yb) / 2 - 0.07, z: (za + zb) / 2, rx: -Math.atan2(yb - ya, zb - za) }));
     // arched stringers under the deck
     for (const s of [-1, 1]) k.beam(s * (w / 2 - 0.2), ya - 0.3, za, s * (w / 2 - 0.2), yb - 0.3, zb, 0.2, PAL.woodDark, 'solid', 0.4);
   }
@@ -244,10 +244,9 @@ export function buildBridge(o: BuildOpts, b: BridgeOpts = { yA: 0.2, yB: 0.2, wa
   }
   // stone abutments at both ends + corner lanterns
   for (const [z, y] of [[-L / 2, b.yA], [L / 2, b.yB]] as const) {
-    k.box(w + 0.8, 1.4, 1.2, PAL.stone, { y: y - 0.55, z });
-    for (let i = 0; i < 5; i++) k.box(0.5, 0.18, 0.05, PAL.rockDark, { x: -1.4 + i * 0.7, y: y - 0.4 - (i % 2) * 0.3, z: z + Math.sign(z) * 0.62 });
+    k.surf(['fieldstone', { axis: 'h', scale: 0.8 }], () => k.box(w + 0.8, 1.4, 1.2, PAL.stone, { y: y - 0.55, z }));
     for (const s of [-1, 1]) {
-      k.box(0.34, 1.35, 0.34, PAL.stone, { x: s * (w / 2 + 0.2), y: y + 0.55, z });
+      k.surf(['fieldstone', { axis: 'h', scale: 0.55 }], () => k.box(0.34, 1.35, 0.34, PAL.stone, { x: s * (w / 2 + 0.2), y: y + 0.55, z }));
       k.box(0.2, 0.3, 0.2, PAL.lampGlow, { x: s * (w / 2 + 0.2), y: y + 1.4, z }, 'glow');
       k.cone(0.22, 0.25, PAL.ink, { x: s * (w / 2 + 0.2), y: y + 1.66, z, ry: Math.PI / 4 }, 4);
       k.box(0.3, 0.05, 0.3, PAL.ink, { x: s * (w / 2 + 0.2), y: y + 1.24, z });

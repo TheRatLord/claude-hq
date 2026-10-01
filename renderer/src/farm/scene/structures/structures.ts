@@ -16,7 +16,7 @@ import { unreadCount } from '../../model/valley.ts';
 import { SITES, STRUCTURES, WORLD, heightAt } from '../../world/map.ts';
 import type { Structure, StructureId } from '../../world/map.ts';
 import { WORKSPACE_COLORS } from '../toon.ts';
-import { glowMat, setGlow, softSpot, solidMat } from './kit.ts';
+import { bakeInto, glowMat, setGlow, softSpot, solidMat } from './kit.ts';
 import { levelsFrom, newLevels, rigOf } from './rig.ts';
 import type { Env, Rig } from './rig.ts';
 import { FARMHOUSE, buildFarmhouse } from './farmhouse.ts';
@@ -168,7 +168,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh || !m.userData.bake) return;
-      const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+      const g = bakeInto(m.geometry.clone(), m.matrixWorld);
       g.computeBoundingSphere();
       c.copy(g.boundingSphere!.center);
       const key = `${m.userData.bake}|${Math.floor(c.x / CELL)}|${Math.floor(c.z / CELL)}`;

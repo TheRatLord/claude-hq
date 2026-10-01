@@ -11,8 +11,9 @@ import type { Season } from '../../model/types.ts';
 import { WORLD, heightAt, normalAt } from '../../world/map.ts';
 import { hash2 } from '../../world/noise.ts';
 import { toon } from '../toon.ts';
-import { GROUND, groundColor, rockColor, sampleGround } from './ground.ts';
-import type { GroundSample } from './ground.ts';
+import { GROUND, groundColor, groundKinds, pathAcross, rockColor, sampleGround, snowLine } from './ground.ts';
+import type { GroundKinds, GroundSample } from './ground.ts';
+import { SURF, chainShader, setSurfaceQuality, surfaceMaterial, surfaceQuality, withSurfaces } from '../surface/index.ts';
 import { BANK_PEBBLES, FORD_STONES, OUTCROPS, RIVER_ROCKS } from './features.ts';
 import type { Stone } from './features.ts';
 import { rockGeometry } from './rocks.ts';
@@ -77,7 +78,29 @@ function buildChunk(x0: number, z0: number, size: number, n: number, mat: THREE.
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
+  // far mountains: mostly smooth (analytic) normals, so the toon ramp paints a few big lit / shadow planes instead
+  // of facet-by-facet crumpled-paper noise; continuous across chunks (from heightAt, not per chunk)
+  if (s >= 4.9) {
+    const nrm = g.attributes.normal.array as Float32Array;
+    const sn = samples.map((p) => normalAt(p.x, p.z, s * 1.5));
+    for (let k = 0; k < quads * 6; k++) {
+      const q = sn[vidx[k]], i = k * 3;
+      const x = nrm[i] * 0.15 + q.x * 0.85, y = nrm[i + 1] * 0.15 + q.y * 0.85, z = nrm[i + 2] * 0.15 + q.z * 0.85;
+      const l = Math.hypot(x, y, z) || 1;
+      nrm[i] = x / l; nrm[i + 1] = y / l; nrm[i + 2] = z / l;
+    }
+  }
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3));
+  // surface weights for the shader: landA = (path, sand, rock, snow) per season, landB = (across path m, rut, pebbles)
+  g.setAttribute('landA', new THREE.BufferAttribute(new Float32Array(vcount * 4), 4));
+  const landB = new Float32Array(vcount * 3);
+  const across = new Float32Array(samples.length * 2);
+  // across is needed just outside the path too (else it interpolates to 0 across the edge triangles: false ruts)
+  samples.forEach((sm, i) => { if (sm.path > 0.02 || Math.hypot(sm.x, sm.z + 1) < 72) { const a = pathAcross(sm.x, sm.z); across[i * 2] = a.across; across[i * 2 + 1] = a.rut; } });
+  for (let k = 0; k < vcount; k++) { const gi = vidx[k]; landB[k * 3] = across[gi * 2]; landB[k * 3 + 1] = across[gi * 2 + 1]; }
+  g.setAttribute('landB', new THREE.BufferAttribute(landB, 3));
+  // path dirt colour (the vertex colour is the grass without the path: the shader paints a crisp edge between them)
+  g.setAttribute('landD', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3));
   g.computeBoundingSphere();
   g.computeBoundingBox();
   const mesh = new THREE.Mesh(g, mat);
@@ -97,13 +120,22 @@ function buildChunk(x0: number, z0: number, size: number, n: number, mat: THREE.
 }
 
 const gc = new THREE.Color(), rc = new THREE.Color(), fc = new THREE.Color(), tmpC = new THREE.Color();
+const kinds: GroundKinds = { sand: 0, pebble: 0, snow: 0 };
 function colourChunk(ch: Chunk, season: Season): void {
   const g = ch.mesh.geometry;
   const pos = g.attributes.position.array as Float32Array, nrm = g.attributes.normal.array as Float32Array;
   const col = g.attributes.color.array as Float32Array;
-  // ground colour per grid vertex
-  const grid = new Float32Array(ch.samples.length * 3);
-  ch.samples.forEach((sm, i) => { groundColor(sm, season, gc); grid[i * 3] = gc.r; grid[i * 3 + 1] = gc.g; grid[i * 3 + 2] = gc.b; });
+  const la = g.attributes.landA.array as Float32Array, lb = g.attributes.landB.array as Float32Array;
+  const ld = g.attributes.landD.array as Float32Array;
+  // ground colour + surface weights per grid vertex
+  const grid = new Float32Array(ch.samples.length * 3), dgrid = new Float32Array(ch.samples.length * 3);
+  const kind = new Float32Array(ch.samples.length * 4);
+  ch.samples.forEach((sm, i) => {
+    groundColor(sm, season, gc, 'grass'); grid[i * 3] = gc.r; grid[i * 3 + 1] = gc.g; grid[i * 3 + 2] = gc.b;
+    groundColor(sm, season, gc, 'dirt'); dgrid[i * 3] = gc.r; dgrid[i * 3 + 1] = gc.g; dgrid[i * 3 + 2] = gc.b;
+    groundKinds(sm, season, kinds);
+    kind[i * 4] = sm.path; kind[i * 4 + 1] = kinds.sand; kind[i * 4 + 2] = kinds.pebble; kind[i * 4 + 3] = kinds.snow;
+  });
   const tris = ch.vidx.length / 3;
   for (let t = 0; t < tris; t++) {
     const v0 = t * 3;
@@ -129,9 +161,17 @@ function colourChunk(ch: Chunk, season: Season): void {
       fc.setRGB(grid[gi * 3], grid[gi * 3 + 1], grid[gi * 3 + 2]);
       if (rockK > 0) fc.lerp(rc, rockK);
       col[vi * 3] = fc.r * jit; col[vi * 3 + 1] = fc.g * jit; col[vi * 3 + 2] = fc.b * jit;
+      fc.setRGB(dgrid[gi * 3], dgrid[gi * 3 + 1], dgrid[gi * 3 + 2]);
+      if (rockK > 0) fc.lerp(rc, rockK);
+      ld[vi * 3] = fc.r * jit; ld[vi * 3 + 1] = fc.g * jit; ld[vi * 3 + 2] = fc.b * jit;
+      la[vi * 4] = kind[gi * 4]; la[vi * 4 + 1] = kind[gi * 4 + 1]; la[vi * 4 + 2] = rockK; la[vi * 4 + 3] = kind[gi * 4 + 3];
+      lb[vi * 3 + 2] = kind[gi * 4 + 2];
     }
   }
   g.attributes.color.needsUpdate = true;
+  g.attributes.landA.needsUpdate = true;
+  g.attributes.landB.needsUpdate = true;
+  g.attributes.landD.needsUpdate = true;
 }
 
 /** Chunk layout: 50 m chunks over the playable square, 300 m tiles for the far mountains. */
@@ -157,7 +197,7 @@ function layout(): { x0: number; z0: number; size: number; n: number }[] {
 interface RockSet { mesh: THREE.InstancedMesh; build(season: Season): THREE.BufferGeometry }
 
 function rockSet(name: string, stones: readonly Stone[], build: (season: Season) => THREE.BufferGeometry, season: Season, place: (s: Stone, m: THREE.Matrix4) => void, cast: boolean): RockSet {
-  const mesh = new THREE.InstancedMesh(build(season), toon(0xffffff, { vertexColors: true }), stones.length);
+  const mesh = new THREE.InstancedMesh(build(season), surfaceMaterial({ vertexColors: true, surface: SURF.rock }), stones.length);
   const m = new THREE.Matrix4();
   stones.forEach((s, i) => { place(s, m); mesh.setMatrixAt(i, m); });
   mesh.instanceMatrix.needsUpdate = true;
@@ -178,30 +218,131 @@ const placeStone = (sink: number) => (s: Stone, m: THREE.Matrix4) => {
   m.compose(vp.set(s.x, s.y - s.r * (sink + steep * 1.4), s.z), q, vs.set(s.r, s.r * s.hy, s.r * (0.8 + hash2(s.x * 3, s.z) * 0.4)));
 };
 
-export const terrainSystem: SystemFactory = (ctx: SceneCtx) => {
-  let season: Season = ctx.valley.sky.season;
+/**
+ * Terrain paint: large painterly blotches (always), and — through the surface library — grass strokes and tufts,
+ * meadow flowers, packed dirt paths with pebbles and cart ruts near the hub, sandy/pebbly banks, cliff strata and
+ * cracks, snow drifts, blended by the per-vertex weights `landA`/`landB`.
+ */
+const TERRAIN_FRAG = /* glsl */ `
+{
+  float sPw = surfPw(vSurfP);
+  float sDist = length(vViewPosition);
+  vec3 c = diffuseColor.rgb;   // the grass (paths split out)
+  vec3 dc = vLandD;            // the path's dirt
+  vec3 n = normalize(vSurfN);
+  SurfIn cl = surfIn(vSurfP, n, 0, 1.0, sPw, sDist, 0.0, 0.0);
+  SurfIn g = cl;
+  g.uv = vSurfP.xz;
+  g.eye = cameraPosition.xz;
+  float wR = vLandA.z;
+  float edge = (svn(vSurfP.xz * 1.3) - 0.5) * 0.3;
+  // ragged, painted path edge: two octaves of breakup, crisp (pixel-wide AA), grass tufts creeping over the dirt
+  // and a dark rim just inside it (the path weight changes by ≈ 1 per metre across the edge)
+  float pe = vLandA.x + edge;
+  if (abs(pe - 0.45) < 0.25) pe += (svn(vSurfP.xz * 4.7 + 2.0) - 0.5) * 0.16 * slod(0.15, sPw);
+  float pAA = sPw * 1.3 + 0.006;
+  float creep = 0.0;
+  if (pe > 0.4 && pe < 0.6 && g.near > 0.0) {
+    vec3 tf = stuft(g.uv * 5.5 + 31.0, g.eye * 5.5 + 31.0, 0.5, 0.06, 0.8, sPw * 5.5);
+    creep = tf.x * 0.15 * slod(0.05, sPw) * g.near * (1.0 - sst(0.55, pe, 0.02));
+  }
+  float wP = sst(0.45, pe - creep, pAA);
+  float pRim = wP * (1.0 - sst(0.5, pe - creep, pAA)) * slod(0.05, sPw);
+  vec3 cb = mix(c, dc, sst(0.45, vLandA.x + edge, 0.1));
+  float wSa = sst(0.45, vLandA.y + edge, 0.08);
+  float wS = sst(0.4, vLandA.w + edge * 0.6, 0.1);
+  vec3 r = c;
+  if (wR < 0.99) {
+    r = surf_grass(g, c);
+    // meadow: sunny blotches and flower specks in drifts across the grass
+    float mk = sst(0.58, svn(g.uv * 0.05 + 5.0), 0.04) * (1.0 - wS) * (1.0 - wP) * (1.0 - wSa);
+    if (mk > 0.0) {
+      vec4 f = sdot(g.uv * 3.2, 0.08, 0.26, g.pw * 3.2);
+      vec3 petal = f.y < 0.55 ? mix(vec3(0.92, 0.9, 0.84), vec3(0.95, 0.75, 0.25), step(f.w, 0.35)) : vec3(0.95, 0.72, 0.22);
+      r = mix(r, petal * (0.55 + sluma(c)), f.x * slod(0.07, g.pw) * g.near * 0.9 * mk);
+    }
+    if (wP > 0.0) {
+      vec3 d = sval(surf_dirt(g, dc), -0.16 * pRim);
+      float rk = vLandB.y;
+      if (rk > 0.01) {
+        float a = abs(vLandB.x) + (svn(g.uv * 0.7) - 0.5) * 0.1;
+        float rut = 1.0 - sst(0.15, abs(a - 0.62), g.pw);
+        float ridge = 1.0 - sst(0.06, abs(a - 0.86), g.pw);
+        float mid = 1.0 - sst(0.2, a, g.pw);
+        d = sval(d, rk * slod(0.08, g.pw) * (-0.2 * rut + 0.08 * ridge + 0.04 * mid));
+      }
+      r = mix(r, d, wP);
+    }
+    if (wSa > 0.0) {
+      vec3 sa = surf_sand(g, c);
+      float pk = sst(0.45, vLandB.z + edge, 0.1);
+      if (pk > 0.0) sa = mix(sa, surf_pebbles(g, c), pk);
+      r = mix(r, sa, wSa);
+    }
+    if (wS > 0.0) r = mix(r, surf_snow(g, r), wS);
+  }
+  if (wR > 0.01) r = mix(r, surf_cliff(cl, cb), wR);
+  // far mountains (80 m+): painted planes — cool atmospheric shadow sides, a warm sunlit side, and snowfields worked
+  // out per pixel from height and slope (clean curved edges instead of per-facet patches)
+  float farK = smoothstep(80.0, 140.0, sDist) * max(wR, smoothstep(0.6, 0.75, min(c.r, min(c.g, c.b))));
+  if (farK > 0.0) {
+    float ndl = 0.5;
+#if NUM_DIR_LIGHTS > 0
+    ndl = dot(n, normalize((vec4(directionalLights[0].direction, 0.0) * viewMatrix).xyz));
+#endif
+    float lineY = uSnowLine + sin(vSurfP.x * 0.031 + 1.7) * 3.0 + sin(vSurfP.z * 0.043 - vSurfP.x * 0.02) * 2.5;
+    float above = vSurfP.y - lineY;
+    float snowK = sst(0.0, above, 0.6 + sPw) * sst(0.74 - clamp(above / 80.0, 0.0, 0.14), n.y + (svn(vSurfP.xz * 0.08) - 0.5) * 0.06, 0.02);
+    vec3 rockC = mix(r, vec3(0.34, 0.33, 0.32) * (1.0 + 0.12 * sin(vSurfP.x * 0.02 + vSurfP.z * 0.013)), smoothstep(0.5, 0.7, min(r.r, min(r.g, r.b))));
+    vec3 pr = mix(rockC, vec3(0.9, 0.93, 0.97), snowK);
+    pr = mix(pr, pr * vec3(0.56, 0.7, 1.06), 1.0 - smoothstep(0.0, 0.3, ndl));
+    pr = mix(pr, pr * vec3(1.06, 1.02, 0.93), smoothstep(0.45, 0.85, ndl) * (1.0 - snowK));
+    r = mix(r, pr, farK);
+  }
+  diffuseColor.rgb = mix(cb, r, uSurfStrength * uSurfDef.w);
+}
+`;
+
+function terrainMaterial(): THREE.MeshToonMaterial {
   const mat = toon(0xffffff, { vertexColors: true, shared: false });
-  // painterly breakup: world-space value noise gently modulates the vertex colours (no textures)
-  mat.onBeforeCompile = (sh) => {
+  // painterly breakup: world-space value noise gently modulates the vertex colours (the surface library adds the rest)
+  chainShader(mat, (sh) => {
+    const fineK = surfaceQuality() === 'low' ? '0.14' : '0.0';
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vLandW;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vLandW;\nattribute vec4 landA;\nattribute vec3 landB;\nattribute vec3 landD;\nvarying vec4 vLandA;\nvarying vec3 vLandB;\nvarying vec3 vLandD;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLandW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvLandA = landA;\nvLandB = landB;\nvLandD = landD;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 varying vec3 vLandW;
+varying vec4 vLandA;
+varying vec3 vLandB;
+varying vec3 vLandD;
 float lh(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float ln(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(lh(i), lh(i + vec2(1.0, 0.0)), u.x), mix(lh(i + vec2(0.0, 1.0)), lh(i + vec2(1.0, 1.0)), u.x), u.y); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+${surfaceQuality() === 'low' ? 'diffuseColor.rgb = mix(diffuseColor.rgb, vLandD, smoothstep(0.3, 0.55, vLandA.x));' : ''}
 {
   float dist = length(vLandW - cameraPosition);
   float fine = ln(vLandW.xz * 1.7) * 0.6 + ln(vLandW.xz * 4.3 + 11.0) * 0.4;
   float blot = ln(vLandW.xz * 0.23 + 3.0);
-  float k = (fine - 0.5) * 0.14 * (1.0 - smoothstep(20.0, 70.0, dist)) + (blot - 0.5) * 0.12;
+  float k = (fine - 0.5) * ${fineK} * (1.0 - smoothstep(20.0, 70.0, dist)) + (blot - 0.5) * 0.12;
   diffuseColor.rgb *= 1.0 + k;
 }`);
-  };
-  mat.customProgramCacheKey = () => 'land-terrain';
+  }, () => `land-terrain:${surfaceQuality() === 'low' ? 'low' : 'hi'}`);
+  return withSurfaces(mat, { surfaces: ['grass', 'dirt', 'sand', 'pebbles', 'rock', 'cliff', 'snow'], fragment: TERRAIN_FRAG, fragmentKey: 'terrain' });
+}
+
+export const terrainSystem: SystemFactory = (ctx: SceneCtx) => {
+  let season: Season = ctx.valley.sky.season;
+  setSurfaceQuality(ctx.quality);
+  const mat = terrainMaterial();
+  // snow line for the far-mountain paint (TERRAIN_FRAG), per season
+  const snowU = { value: snowLine(season) };
+  chainShader(mat, (sh) => {
+    sh.uniforms.uSnowLine = snowU;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uSnowLine;');
+  }, 'land-snowline');
   const root = new THREE.Group();
   root.name = 'terrain';
   const chunks = layout().map((l) => buildChunk(l.x0, l.z0, l.size, l.n, mat, season));
@@ -226,6 +367,7 @@ float ln(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 
       const s = ctx.valley.sky.season;
       if (s === season) return;
       season = s;
+      snowU.value = snowLine(season);
       for (const c of chunks) colourChunk(c, season);
       for (const r of rocks) { const old = r.mesh.geometry; r.mesh.geometry = r.build(season); old.dispose(); }
       decor.setSeason(season);

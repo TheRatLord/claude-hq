@@ -7,13 +7,12 @@ import * as THREE from 'three';
 import type { Season } from '../../model/types.ts';
 import type { Site } from '../../world/map.ts';
 import { signSpot } from '../../world/spots.ts';
-import { toon } from '../toon.ts';
 import type { Batches } from './batch.ts';
 import type { TextAtlas } from './atlas.ts';
 import { signPainter } from './atlas.ts';
 import { grassTuft, wildflower } from './crops.ts';
 import { bounce, rng, smooth01 } from './geo.ts';
-import { atlasMaterial } from './materials.ts';
+import { atlasMaterial, propMaterial } from './materials.ts';
 import { SIGN_TEXT, signBoard, textQuad } from './models.ts';
 
 interface Tuft { x: number; z: number; yaw: number; s: number; order: number }
@@ -48,7 +47,7 @@ export class Meadow {
         if (Math.abs(x) > hw || Math.abs(z) > hd) continue;
         // taller towards the clump centres
         const d = Math.hypot(x - s.x, z - s.z);
-        grass.push({ x, z, yaw: r() * Math.PI * 2, s: (0.9 + r() * 0.7) * (i < 90 ? 0.85 : 1.35 - Math.min(0.5, d * 0.12)), order: r() });
+        grass.push({ x, z, yaw: r() * Math.PI * 2, s: (0.85 + r() * 0.45) * (i < 90 ? 0.85 : 1.2 - Math.min(0.4, d * 0.1)), order: r() });
       }
       for (let i = 0; i < 120; i++) {
         const s = seeds[(i * 3) % seeds.length];
@@ -92,7 +91,7 @@ export class Meadow {
         if (!this.rentRect) this.rentRect = atlas.acquire('sign:rent', signPainter('Plot for rent', 'open a workspace to farm here', 0x8fbf5a));
         const k = bounce((sm.shown - 0.6) / 0.4);
         const sp = signSpot(sm.site);
-        const board = batches.get(`sign:${season}`, () => ({ geo: signBoard(season), mat: toon(0xffffff, { vertexColors: true }), cap: 48, shadow: true }));
+        const board = batches.get(`sign:${season}`, () => ({ geo: signBoard(season), mat: propMaterial(), cap: 48, shadow: true }));
         const text = batches.get('signtext', () => ({ geo: textQuad().clone(), mat: atlasMaterial(atlas.tex), cap: 160, rect: true }));
         q.setFromAxisAngle(up, sm.site.yaw + 0.12 + Math.sin(time * 0.9 + sm.site.index) * 0.01);
         const bm = m.compose(v.set(sp.x, sm.site.y - 0.05, sp.z), q, s.setScalar(k * 0.85));

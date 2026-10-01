@@ -7,7 +7,7 @@ import { seeded } from '../../../core/rng.ts';
 import type { Season } from '../../model/types.ts';
 import { PATHS, WORLD, clearance, heightAt, slopeAt } from '../../world/map.ts';
 import { fbm } from '../../world/noise.ts';
-import { toon } from '../toon.ts';
+import { SURF, surfaceMaterial } from '../surface/index.ts';
 import { merge } from '../flora/geom.ts';
 import { rockGeometry } from './rocks.ts';
 import { GROUND } from './ground.ts';
@@ -97,7 +97,7 @@ export function buildPathDecor(season: Season): PathDecor {
   const group = new THREE.Group();
   group.name = 'path-decor';
   const peb = pebbles();
-  const mat = toon(0xffffff, { vertexColors: true });
+  const mat = surfaceMaterial({ vertexColors: true, surface: SURF.rock });
   const pm = new THREE.InstancedMesh(rockGeometry({ seed: 21, season, detail: 0, flat: 0.5, warm: 0.6 }), mat, Math.max(1, peb.length));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   peb.forEach((p, i) => pm.setMatrixAt(i, m.compose(v.set(p.x, p.y, p.z), q.setFromAxisAngle(up, p.yaw), s.set(p.s * 1.3, p.s, p.s))));

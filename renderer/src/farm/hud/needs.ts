@@ -49,7 +49,7 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     if (card.dataset.sig === sig) return;
     card.dataset.sig = sig;
     const face = card.querySelector('.face');
-    if (face) face.innerHTML = farmerFace(seedHue(f.seed), f.kind);
+    if (face) face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
     card.querySelector('.name')!.textContent = nice(f.name);
     const hot = card.querySelector('.hot') as HTMLElement;
     hot.textContent = i < 9 ? `Alt+${i + 1}` : '';

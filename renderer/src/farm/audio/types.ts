@@ -18,6 +18,9 @@ export const CRITTER_SOUNDS = Object.freeze([
   'wag', // dog: happy pant "hah-hah"
   'hoot', // owl
   'fish', // small fish splash
+  'sniff', // dog: 3–4 quick snuffles
+  'shake', // dog shaking off water: a fluttery rattle with droplets
+  'caw', // crow: a rough "kaah"
 ] as const);
 export type CritterSound = (typeof CRITTER_SOUNDS)[number];
 

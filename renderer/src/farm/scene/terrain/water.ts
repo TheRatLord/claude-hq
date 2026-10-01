@@ -21,9 +21,9 @@ const TEX = 512;
 /** Nearest river point: distance, unit tangent and arc fraction. */
 const LENS = RIVER.slice(1).map((b, i) => Math.hypot(b.x - RIVER[i].x, b.z - RIVER[i].z));
 const TOTAL = LENS.reduce((a, b) => a + b, 0);
-const near = { d: 0, tx: 0, tz: 1, t: 0 };
-function riverNearest(x: number, z: number): { d: number; tx: number; tz: number; t: number } {
-  let best = Infinity, tx = 0, tz = 1, at = 0, acc = 0;
+const near = { d: 0, tx: 0, tz: 1, t: 0, side: 1 };
+function riverNearest(x: number, z: number): { d: number; tx: number; tz: number; t: number; side: number } {
+  let best = Infinity, tx = 0, tz = 1, at = 0, acc = 0, side = 1;
   const lens = LENS, total = TOTAL;
   for (let i = 0; i < RIVER.length - 1; i++) {
     const a = RIVER[i], b = RIVER[i + 1];
@@ -31,18 +31,37 @@ function riverNearest(x: number, z: number): { d: number; tx: number; tz: number
     const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (l * l)));
     const ex = a.x + dx * t - x, ez = a.z + dz * t - z;
     const d = ex * ex + ez * ez;
-    if (d < best) { best = d; tx = dx / l; tz = dz / l; at = (acc + t * l) / total; }
+    if (d < best) { best = d; tx = dx / l; tz = dz / l; at = (acc + t * l) / total; side = (x - a.x) * dz - (z - a.z) * dx >= 0 ? 1 : -1; }
     acc += l;
   }
-  near.d = Math.sqrt(best); near.tx = tx; near.tz = tz; near.t = at;
+  near.d = Math.sqrt(best); near.tx = tx; near.tz = tz; near.t = at; near.side = side;
   return near;
 }
 
-/** Bake depth / shore distance / flow into an RGBA texture over the world square. */
-function bakeWaterData(): THREE.DataTexture {
+/** Wavelength (m) of the baked along-river coordinate (stored as cos/sin so it wraps seamlessly). */
+const ALONG_L = 24;
+/** Across-river coordinate range stored in the lane texture (± m). */
+const ACROSS_R = 16;
+
+const makeTex = (data: Uint8Array): THREE.DataTexture => {
+  const tex = new THREE.DataTexture(data, TEX, TEX, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+};
+
+/**
+ * Bake over the world square: `data` = water depth / distance to the shore / river flow vector; `lanes` = the river's
+ * own coordinates (cos, sin of the along-river distance, across-river offset, river weight) for flow-aligned streaks.
+ */
+function bakeWaterData(): { data: THREE.DataTexture; lanes: THREE.DataTexture } {
   const N = TEX, cell = (2 * HALF) / N;
   const depth = new Float32Array(N * N).fill(-1);
   const fx = new Float32Array(N * N), fz = new Float32Array(N * N);
+  const ac = new Float32Array(N * N), as = new Float32Array(N * N), across = new Float32Array(N * N), rw = new Float32Array(N * N);
   for (let j = 0; j < N; j++) {
     const z = -HALF + (j + 0.5) * cell;
     for (let i = 0; i < N; i++) {
@@ -56,6 +75,9 @@ function bakeWaterData(): THREE.DataTexture {
         // river flow: gentle at the pool, fastest mid-river, a touch slower toward the banks
         const sp = (0.3 + 0.7 * Math.min(1, rn.t / 0.05)) * (1 - 0.35 * Math.min(1, rn.d / (RIVER_HALF_WIDTH + 2)));
         fx[k] = rn.tx * sp; fz[k] = rn.tz * sp;
+        const ang = ((rn.t * TOTAL) / ALONG_L) * Math.PI * 2;
+        ac[k] = Math.cos(ang); as[k] = Math.sin(ang);
+        across[k] = rn.d * rn.side; rw[k] = 1;
       }
     }
   }
@@ -99,7 +121,15 @@ function bakeWaterData(): THREE.DataTexture {
       a.set(b);
     }
   };
-  blur(fx); blur(fz);
+  blur(fx); blur(fz); blur(ac); blur(as); blur(rw);
+  const lanes = new Uint8Array(N * N * 4);
+  for (let k = 0; k < N * N; k++) {
+    const l = Math.hypot(ac[k], as[k]) || 1;
+    lanes[k * 4] = Math.round((ac[k] / l * 0.5 + 0.5) * 255);
+    lanes[k * 4 + 1] = Math.round((as[k] / l * 0.5 + 0.5) * 255);
+    lanes[k * 4 + 2] = Math.round(Math.max(0, Math.min(1, across[k] / (2 * ACROSS_R) + 0.5)) * 255);
+    lanes[k * 4 + 3] = Math.round(Math.min(1, rw[k]) * 255);
+  }
   const data = new Uint8Array(N * N * 4);
   for (let k = 0; k < N * N; k++) {
     data[k * 4] = Math.round(Math.max(0, Math.min(1, depth[k] / 3)) * 255);
@@ -107,13 +137,7 @@ function bakeWaterData(): THREE.DataTexture {
     data[k * 4 + 2] = Math.round((fx[k] * 0.5 + 0.5) * 255);
     data[k * 4 + 3] = Math.round((fz[k] * 0.5 + 0.5) * 255);
   }
-  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.generateMipmaps = false;
-  tex.needsUpdate = true;
-  return tex;
+  return { data: makeTex(data), lanes: makeTex(lanes) };
 }
 
 /** Flat water surface covering every cell that dips below the waterline (plus a margin the banks hide). */
@@ -154,6 +178,12 @@ float vnoise(vec2 p) {
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), u.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 float fbm2(vec2 p) { return vnoise(p) * 0.6 + vnoise(p * 2.13 + 7.1) * 0.3 + vnoise(p * 4.7 - 3.3) * 0.1; }
+/** value noise periodic in x with integer period P (for the wrapping along-river coordinate) */
+float vnp(vec2 p, float P) {
+  vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+  float x0 = mod(i.x, P), x1 = mod(i.x + 1.0, P);
+  return mix(mix(h21(vec2(x0, i.y)), h21(vec2(x1, i.y)), u.x), mix(h21(vec2(x0, i.y + 1.0)), h21(vec2(x1, i.y + 1.0)), u.x), u.y);
+}
 `;
 
 export interface WaterUniforms {
@@ -167,13 +197,14 @@ export interface WaterUniforms {
   uWet: { value: number };
 }
 
-function waterMaterial(data: THREE.Texture, u: WaterUniforms, fall: THREE.Vector2): THREE.ShaderMaterial {
+function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUniforms, fall: THREE.Vector2): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       ...u,
-      uData: { value: data }, uHalf: { value: HALF }, uFall: { value: fall },
-      uShallow: { value: new THREE.Color(0x63c7c2) }, uMid: { value: new THREE.Color(0x3f9fc6) }, uDeep: { value: new THREE.Color(0x245f8c) },
+      uData: { value: data }, uLanes: { value: lanes }, uHalf: { value: HALF }, uFall: { value: fall },
+      uShallow: { value: new THREE.Color(0x7fd9c8) }, uMid: { value: new THREE.Color(0x3fa3c8) }, uDeep: { value: new THREE.Color(0x22598a) },
+      uBed: { value: new THREE.Color(0xd9c38c) }, uBank: { value: new THREE.Color(0x2f5a3a) },
       uFoam: { value: new THREE.Color(0xf4fbff) }, uIce: { value: new THREE.Color(0xcfe6f2) },
     },
     fog: true,
@@ -191,38 +222,104 @@ function waterMaterial(data: THREE.Texture, u: WaterUniforms, fall: THREE.Vector
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uData; uniform float uTime, uHalf, uSun, uNight, uWinter, uWet; uniform vec2 uFall;
-      uniform vec3 uSky, uSunDir, uSunColor, uShallow, uMid, uDeep, uFoam, uIce;
+      uniform sampler2D uData, uLanes; uniform float uTime, uHalf, uSun, uNight, uWinter, uWet; uniform vec2 uFall;
+      uniform vec3 uSky, uSunDir, uSunColor, uShallow, uMid, uDeep, uBed, uBank, uFoam, uIce;
       varying vec3 vWorld;
       #include <common>
       #include <fog_pars_fragment>
       ${NOISE_GLSL}
       void main() {
         vec2 p = vWorld.xz;
-        vec4 d = texture2D(uData, (p + uHalf) / (2.0 * uHalf));
+        vec2 tuv = (p + uHalf) / (2.0 * uHalf);
+        vec4 d = texture2D(uData, tuv);
         float depth = d.r * 3.0, shore = d.g * 12.0;
         vec2 flow = d.ba * 2.0 - 1.0;
         float speed = clamp(length(flow) * 1.1, 0.0, 1.0);
         float t = uTime;
-        // two-phase flow map: ripples ride the current without stretching forever
-        float ph0 = fract(t * 0.16), ph1 = fract(t * 0.16 + 0.5), wgt = abs(ph0 * 2.0 - 1.0);
-        vec2 drift = vec2(t * 0.05, t * 0.03);
-        float ra = fbm2((p - flow * ph0 * 7.0) * 0.42 + drift);
-        float rb = fbm2((p - flow * ph1 * 7.0) * 0.42 + drift + 17.3);
-        float rip = mix(ra, rb, wgt);
-        // depth colour: turquoise shallows, blue body, dark deep centre
-        vec3 col = mix(uShallow, uMid, smoothstep(0.05, 0.6, depth));
-        col = mix(col, uDeep, smoothstep(0.7, 1.45, depth));
+        // river coordinates (along wraps every ${ALONG_L} m, seamlessly), for flow-aligned ripples and streaks
+        vec4 ln = texture2D(uLanes, tuv);
+        float rw = smoothstep(0.5, 0.9, ln.a) * speed;
+        float rk = smoothstep(0.15, 0.55, rw);
+        float along = atan(ln.g * 2.0 - 1.0, ln.r * 2.0 - 1.0) * (${ALONG_L.toFixed(1)} / 6.2832);
+        float across = (ln.b - 0.5) * ${(2 * ACROSS_R).toFixed(1)};
+        float mpp = max(length(fwidth(p)), 1e-4);                    // metres per pixel
+        float rip = 0.0;
+        if (rk < 0.999) {
+          // two-phase flow map: ripples ride the current without stretching forever
+          float ph0 = fract(t * 0.16), ph1 = fract(t * 0.16 + 0.5), wgt = abs(ph0 * 2.0 - 1.0);
+          vec2 drift = vec2(t * 0.05, t * 0.03);
+          float ra = fbm2((p - flow * ph0 * 7.0) * 0.42 + drift);
+          float rb = fbm2((p - flow * ph1 * 7.0) * 0.42 + drift + 17.3);
+          rip = mix(ra, rb, wgt);
+        }
+        if (rk > 0.001) {
+          // in the current: ripples stretched along the flow, scrolling downstream
+          float fa = (along - t * 1.5) * 0.25;                         // period 6 cells = ${ALONG_L} m
+          float rr = vnp(vec2(fa, across * 0.8), 6.0) * 0.7 + vnoise(p * 1.3 + vec2(t * 0.2, 0.0)) * 0.3;
+          rip = mix(rip, rr, rk);
+        }
+        // depth colour: pale turquoise shallows, blue body, dark deep centre
+        vec3 col = mix(uShallow, uMid, smoothstep(0.08, 0.6, depth));
+        col = mix(col, uDeep, smoothstep(0.6, 1.25, depth));
         col *= 0.9 + rip * 0.2;
+        // the bottom showing through the shallows: warm sand, dappled pebbles, wobbling with the ripples
+        float bedK = 1.0 - smoothstep(0.06, 0.8, depth);
+        if (bedK > 0.004) {
+          vec2 q = p * 1.7 + (rip - 0.5) * 0.5;
+          vec2 ci = floor(q), cf = fract(q) - 0.5 - (vec2(h21(ci + 1.3), h21(ci + 5.9)) - 0.5) * 0.4;
+          float ph = h21(ci);
+          float pr = 0.16 + 0.14 * h21(ci + 9.1);
+          float pfw = mpp * 1.7;
+          float peb = (1.0 - smoothstep(pr - pfw, pr + pfw, length(cf * vec2(1.0, 1.3)))) * step(ph, 0.55) * (1.0 - smoothstep(0.08, 0.35, pfw));
+          vec3 bed = uBed * (0.92 + vnoise(p * 0.6) * 0.16);
+          bed = mix(bed, bed * (ph < 0.25 ? vec3(0.72, 0.74, 0.78) : vec3(1.08, 1.03, 0.94)), peb);
+          col = mix(col, bed * mix(vec3(1.0), uShallow * 1.25, 0.45), bedK * 0.62);
+        }
+        // the river: long painted streaks riding the current in lanes across the stream
+        float streak = 0.0;
+        if (rw > 0.01) {
+          float ac = across + sin(along * 0.5236 + across * 1.3) * 0.12;
+          float lane = ac / 0.7, li = floor(lane), lf = fract(lane);
+          float hl = h21(vec2(li, 3.1));
+          float N = 6.0;                                               // dash cells per ${ALONG_L} m: 4 m
+          float a = (along - t * 2.0 * (0.8 + 0.4 * hl)) / (${ALONG_L.toFixed(1)} / N) + hl * 5.0;
+          float ai = mod(floor(a), N), af = fract(a);
+          float hd = h21(vec2(li + 0.37, ai));
+          float len = 0.35 + 0.45 * hd;
+          float tt = clamp(af / len, 0.0, 1.0);
+          float wdt = 0.12 * sin(tt * 3.1416) + 0.015;
+          float awf = mpp / 0.7, awa = mpp * N / ${ALONG_L.toFixed(1)};
+          float onA = smoothstep(0.0, awa * 1.5, af) * (1.0 - smoothstep(len - awa * 1.5, len, af));
+          float dash = (1.0 - smoothstep(wdt - awf, wdt + awf, abs(lf - 0.5 - (hd - 0.5) * 0.4))) * onA * step(hd, 0.62);
+          float fade = 1.0 - smoothstep(0.05, 0.3, awf);             // lanes thinner than a few px: gone
+          streak = dash * rw * fade * smoothstep(0.4, 1.4, shore) * (hd > 0.3 ? 1.0 : -1.0);
+        }
         // toon ripple contour lines
         float fw = max(fwidth(rip), 1e-4);
         float line = 1.0 - smoothstep(0.0, fw * 1.4, abs(rip - 0.56));
         float line2 = 1.0 - smoothstep(0.0, fw * 1.2, abs(rip - 0.34));
         col += (line * 0.16 + line2 * 0.07) * (0.4 + 0.6 * smoothstep(0.2, 1.0, depth));
-        // sky reflection (fresnel)
+        // reflections: a soft painted band of the far bank's trees along the shore opposite the viewer, and the
+        // sky brightening toward grazing angles (fresnel)
         vec3 V = normalize(cameraPosition - vWorld);
+        float reflK = 0.0;
         float fr = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
-        col = mix(col, uSky, 0.12 + fr * 0.55);
+        {
+          float e = 1.0 / 512.0;
+          vec2 g = vec2(texture2D(uData, tuv + vec2(e, 0.0)).g, texture2D(uData, tuv + vec2(0.0, e)).g) - d.g;
+          vec2 toShore = dot(g, g) > 1e-7 ? -normalize(g) : vec2(0.0);
+          vec2 look = normalize(-V.xz + vec2(1e-4, 0.0));
+          float farBank = smoothstep(0.1, 0.7, dot(toShore, look));
+          float band = 1.0 - smoothstep(1.4, 4.2, shore + (rip - 0.5) * 2.2 + vnoise(p * 0.45) * 1.4);
+          vec3 bank = mix(uBank, vec3(0.8, 0.84, 0.88), uWinter * 0.75);
+          vec3 skyR = mix(uSky, uSky * 1.15 + vec3(0.06), fr);
+          col = mix(col, skyR, 0.1 + fr * 0.6);
+          col = mix(col, mix(col, bank, 0.8) * (0.85 + rip * 0.3), band * farBank * (0.35 + 0.4 * fr) * (1.0 - uWet * 0.4));
+          reflK = band * farBank;
+        }
+        // current streaks on top (light ones, a few darker troughs)
+        col = mix(col, mix(col, uFoam, 0.7), max(streak, 0.0) * 0.85);
+        col *= 1.0 + min(streak, 0.0) * 0.2;
         // foam: a crisp line at the water's edge, bands lapping toward the bank, flecks in the current, the pool
         float fn = vnoise(p * 1.6 - flow * t * 1.8 + vec2(t * 0.15, 0.0));
         float edge = 1.0 - step(0.16 + fn * 0.3 + speed * 0.1, shore);
@@ -259,7 +356,7 @@ function waterMaterial(data: THREE.Texture, u: WaterUniforms, fall: THREE.Vector
         col *= mix(vec3(1.0), uSunColor, 0.3) * lit;
         col = mix(col, col * vec3(0.16, 0.24, 0.42), uNight);
         float alpha = mix(0.62, 0.94, smoothstep(0.0, 1.3, depth));
-        alpha = max(alpha, max(foam, ice));
+        alpha = max(max(alpha, reflK * 0.85), max(foam, ice));
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -336,9 +433,17 @@ function fallMaterial(u: WaterUniforms): THREE.ShaderMaterial {
         float n = vnoise(vec2(u * 7.0 + 3.0, v * 6.0 - t * 3.0));
         float bands = step(0.84, fract(v * 4.5 - t * 1.5 + sin(u * 9.0) * 0.06 + n * 0.35));
         float white = max(step(0.74, streak * 0.8 + n * 0.3), bands);
-        white = max(white, step(0.86, v + n * 0.12));              // foam where it hits the pool
         white = max(white, step(v, 0.06 + n * 0.05));               // bright lip
-        vec3 col = mix(uBody * (0.85 + streak * 0.3), uFoam, white);
+        // the sheet: darker glassy lanes between light ribbons running down it
+        float lanes = vnoise(vec2(u * 22.0, v * 1.4 - t * 1.2));
+        vec3 body = uBody * (0.8 + streak * 0.3) * (lanes < 0.35 ? 0.86 : 1.0) + (lanes > 0.72 ? 0.08 : 0.0);
+        vec3 col = mix(body, uFoam, white);
+        // where it hits the pool: billowing foam in two toon tones (sunlit puffs over blue-grey shade)
+        float base = smoothstep(0.78, 0.9, v + n * 0.12);
+        float puff = vnoise(vec2(u * 9.0 + sin(t * 0.8 + v * 6.0) * 0.3, v * 7.0 - t * 2.4)) * 0.7 + n * 0.3;
+        vec3 froth = mix(vec3(0.6, 0.76, 0.88), uFoam, smoothstep(0.47, 0.53, puff + (v - 0.9) * 0.8));
+        col = mix(col, froth, base);
+        white = max(white, base);
         float ragged = 0.08 + vnoise(vec2(v * 6.0 - t * 2.0, u)) * 0.12;
         float a = smoothstep(0.0, ragged, u) * smoothstep(1.0, 1.0 - ragged, u) * (0.82 + white * 0.18);
         col = mix(col, vec3(0.86, 0.94, 1.0), uWinter * 0.35);
@@ -397,9 +502,9 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
   };
   const root = new THREE.Group();
   root.name = 'water';
-  const data = bakeWaterData();
+  const { data, lanes } = bakeWaterData();
   const fall = buildFall();
-  const surface = new THREE.Mesh(buildSurface(), waterMaterial(data, u, new THREE.Vector2(fall.base.x, fall.base.z)));
+  const surface = new THREE.Mesh(buildSurface(), waterMaterial(data, lanes, u, new THREE.Vector2(fall.base.x, fall.base.z)));
   surface.position.y = WORLD.water;
   surface.renderOrder = 1;
   surface.receiveShadow = false;
@@ -439,7 +544,7 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
       surface.geometry.dispose(); (surface.material as THREE.Material).dispose();
       sheet.geometry.dispose(); (sheet.material as THREE.Material).dispose();
       mist.geometry.dispose(); (mist.material as THREE.Material).dispose();
-      data.dispose();
+      data.dispose(); lanes.dispose();
       shore.dispose();
     },
   };

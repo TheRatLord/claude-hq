@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { Season } from '../../model/types.ts';
 import { PAL, toon } from '../toon.ts';
-import { Kit, damp, type Xf } from './kit.ts';
+import { Kit, damp, type SurfSpec, type Xf } from './kit.ts';
 import { flowerBox, flowerPot, firewood, choppingBlock, wateringCan, bucket } from './props.ts';
 import type { Env, Rig } from './rig.ts';
 
@@ -37,7 +37,7 @@ export function windowUnit(k: Kit, t: Xf, w: number, h: number, shutters: number
     k.box(w + 0.35, 0.09, 0.26, TRIM, { y: -h / 2 - 0.12, z: 0.1 });
     if (shutters !== null) {
       for (const s of [-1, 1]) {
-        k.box(w * 0.5, h + 0.1, 0.06, shutters, { x: s * (w / 2 + w * 0.28 + 0.1), z: 0.05 });
+        k.surf(['planks', { variant: 2, scale: 0.55, strength: 0.8 }], () => k.box(w * 0.5, h + 0.1, 0.06, shutters, { x: s * (w / 2 + w * 0.28 + 0.1), z: 0.05 }));
         k.box(w * 0.36, 0.05, 0.03, 0x3a6a50, { x: s * (w / 2 + w * 0.28 + 0.1), y: h * 0.2, z: 0.09, rz: s * 0.5 });
         k.box(w * 0.36, 0.05, 0.03, 0x3a6a50, { x: s * (w / 2 + w * 0.28 + 0.1), y: -h * 0.2, z: 0.09, rz: -s * 0.5 });
       }
@@ -45,22 +45,20 @@ export function windowUnit(k: Kit, t: Xf, w: number, h: number, shutters: number
   });
 }
 
-/** Gabled roof along x: ridge at `ridge`, eaves at ±halfD (+over), width w, pitch from rise. */
-export function gableRoof(k: Kit, w: number, halfD: number, wallTop: number, rise: number, over: number, season: Season, color: number = ROOF, dark: number = ROOF_DARK): void {
+/** Gabled roof along x: ridge at `ridge`, eaves at ±halfD (+over), width w, pitch from rise. `surf` paints the slopes. */
+export function gableRoof(k: Kit, w: number, halfD: number, wallTop: number, rise: number, over: number, season: Season, color: number = ROOF, dark: number = ROOF_DARK, surf: SurfSpec = 'tile'): void {
   const th = Math.atan2(rise, halfD);
   const len = Math.hypot(halfD, rise) + over;
   for (const side of [0, Math.PI]) {
     k.at({ y: wallTop + rise, ry: side, rx: 0 }, () => {
       k.at({ rx: th }, () => {
-        k.box(w, 0.22, len + 0.1, color, { y: 0.11, z: len / 2 - 0.05 });
-        const rows = Math.floor(len / 0.42);
-        for (let i = 1; i < rows; i++) k.box(w + 0.02, 0.06, 0.1, dark, { y: 0.24, z: i * 0.42 });
-        k.box(w + 0.1, 0.14, 0.18, dark, { y: 0.08, z: len - 0.02 });
+        k.slab(w, 0.22, len + 0.1, color, surf, { y: 0.11, z: len / 2 - 0.05 });
+        k.surf(['logs', { axis: 'x', strength: 0.6 }], () => k.box(w + 0.1, 0.14, 0.18, dark, { y: 0.08, z: len - 0.02 }));
         if (season === 'winter') k.box(w - 0.1, 0.14, len - 0.4, PAL.snow, { y: 0.3, z: len / 2 - 0.1 });
       });
     });
   }
-  k.box(w + 0.1, 0.18, 0.34, dark, { y: wallTop + rise + 0.16 });
+  k.surf(['logs', { axis: 'x', strength: 0.6 }], () => k.box(w + 0.1, 0.18, 0.34, dark, { y: wallTop + rise + 0.16 }));
 }
 
 export function buildFarmhouse(o: BuildOpts): THREE.Group {
@@ -73,14 +71,13 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
   k.at({ z: F.bodyZ }, () => {
     const W = 9, D = 6.4, W2 = 9.3, D2 = 6.8;
     // stone foundation
-    k.box(W + 0.4, 0.55, D + 0.4, PAL.stone, { y: 0.27 });
-    for (let i = 0; i < 16; i++) k.box(0.5 + k.r() * 0.4, 0.2, 0.06, i % 2 ? PAL.rockDark : 0xa29a8c, { x: -4.4 + i * 0.58, y: 0.2 + (i % 2) * 0.2, z: D / 2 + 0.22 });
+    k.surf(['fieldstone', { axis: 'h', scale: 0.8 }], () => k.box(W + 0.4, 0.55, D + 0.4, PAL.stone, { y: 0.27 }));
     // ground floor: cream plaster, dark corner posts
-    k.box(W, 2.7, D, PAL.wallCream, { y: 0.5 + 1.35 });
+    k.surf(['plaster', { strength: 0.55 }], () => k.box(W, 2.7, D, PAL.wallCream, { y: 0.5 + 1.35 }));
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.28, 2.75, 0.28, TIMBER, { x: x * (W / 2), y: 1.87, z: z * (D / 2) });
     // jetty beam + upper storey (whitewash + timber frame)
     k.box(W2 + 0.1, 0.25, D2 + 0.1, TIMBER, { y: 3.3 });
-    k.box(W2, 2.3, D2, TRIM, { y: 3.42 + 1.15 });
+    k.surf(['plaster', { strength: 0.6 }], () => k.box(W2, 2.3, D2, TRIM, { y: 3.42 + 1.15 }));
     const up = 3.42, top = 5.72;
     for (const x of [-4.55, -3.6, -1.55, 1.55, 3.6, 4.55]) k.box(0.18, 2.3, 0.1, TIMBER, { x, y: up + 1.15, z: D2 / 2 + 0.03 });
     k.box(W2, 0.16, 0.1, TIMBER, { y: top - 0.05, z: D2 / 2 + 0.03 });
@@ -91,7 +88,7 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
       for (const z of [-3.3, -1.1, 1.1, 3.3]) k.box(0.1, 2.3, 0.18, TIMBER, { x: s * (W2 / 2 + 0.03), y: up + 1.15, z });
     }
     // attic volume (gable ends) + roof
-    k.prism([[-D2 / 2, 0], [D2 / 2, 0], [0, 2.9]], W2, TRIM, { y: top, ry: Math.PI / 2 });
+    k.surf(['plaster', { strength: 0.6 }], () => k.prism([[-D2 / 2, 0], [D2 / 2, 0], [0, 2.9]], W2, TRIM, { y: top, ry: Math.PI / 2 }));
     for (const s of [-1, 1]) {
       k.beam(s * (W2 / 2 + 0.02), top, -D2 / 2, s * (W2 / 2 + 0.02), top + 2.9, 0, 0.12, TIMBER, 'solid', 0.16);
       k.beam(s * (W2 / 2 + 0.02), top, D2 / 2, s * (W2 / 2 + 0.02), top + 2.9, 0, 0.12, TIMBER, 'solid', 0.16);
@@ -99,15 +96,16 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
     gableRoof(k, W2 + 0.9, D2 / 2, top, 2.9, 0.6, o.season);
     // front cross-gable over the door (wall dormer) with a round window
     k.at({ z: D2 / 2 - 0.9 }, () => {
-      k.box(2.8, 1.5, 2.2, TRIM, { y: top + 0.6 });
-      k.prism([[-1.4, 0], [1.4, 0], [0, 1.2]], 2.2, TRIM, { y: top + 1.35 });
+      k.surf(['plaster', { strength: 0.6 }], () => {
+        k.box(2.8, 1.5, 2.2, TRIM, { y: top + 0.6 });
+        k.prism([[-1.4, 0], [1.4, 0], [0, 1.2]], 2.2, TRIM, { y: top + 1.35 });
+      });
       k.at({ y: top + 1.35 + 1.2, z: -0.2 }, () => {
         const th = Math.atan2(1.2, 1.4), len = Math.hypot(1.4, 1.2) + 0.4;
         for (const s of [-1, 1]) {
           const dx = s * Math.cos(th), dy = -Math.sin(th), nx = s * Math.sin(th), ny = Math.cos(th);
           const at = (f: number, off: number): Xf => ({ x: dx * len * f + nx * off, y: dy * len * f + ny * off, rz: -s * th });
-          k.box(len, 0.2, 3.0, ROOF, at(0.5, 0.1));
-          for (let i = 1; i < 5; i++) k.box(0.1, 0.06, 3.02, ROOF_DARK, at(i / 5, 0.22));
+          k.surf(['tile', { axis: 'x' }], () => k.box(len, 0.2, 3.0, ROOF, at(0.5, 0.1)));
           k.box(0.18, 0.14, 3.1, ROOF_DARK, at(0.98, 0.08));
           if (o.season === 'winter') k.box(len - 0.3, 0.12, 2.8, PAL.snow, at(0.5, 0.26));
         }
@@ -121,11 +119,11 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
     });
     // chimney (east gable end)
     k.at({ x: 4.95 }, () => {
-      k.box(1.3, 3.4, 1.4, PAL.stone, { y: 1.7 });
-      k.box(1.35, 0.3, 1.45, PAL.rockDark, { y: 3.45 });
-      k.box(0.95, 6.2, 1.0, PAL.stone, { y: 3.4 + 3.1 });
-      for (let i = 0; i < 14; i++) k.box(0.3 + k.r() * 0.2, 0.16, 0.05, i % 3 ? PAL.rockDark : 0xc9c2b4, { x: 0.18 - k.r() * 0.36, y: 0.6 + i * 0.62, z: (i < 5 ? 0.72 : 0.51) });
-      k.box(1.15, 0.2, 1.2, PAL.rockDark, { y: 9.6 });
+      k.surf(['fieldstone', { axis: 'h', scale: 0.75 }], () => {
+        k.box(1.3, 3.4, 1.4, PAL.stone, { y: 1.7 });
+        k.box(0.95, 6.2, 1.0, PAL.stone, { y: 3.4 + 3.1 });
+      });
+      k.surf('rock', () => { k.box(1.35, 0.3, 1.45, PAL.rockDark, { y: 3.45 }); k.box(1.15, 0.2, 1.2, PAL.rockDark, { y: 9.6 }); });
       k.box(0.7, 0.3, 0.7, 0x3a3430, { y: 9.8 });
     });
     // windows: ground floor either side of the door, upper floor, sides
@@ -144,8 +142,7 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
     // front door with frame, round pane, knocker, transom
     k.at({ z: D / 2 }, () => {
       k.box(1.5, 2.45, 0.14, TIMBER, { y: 0.55 + 1.2 });
-      k.box(1.15, 2.1, 0.1, DOOR, { y: 0.55 + 1.05, z: 0.06 });
-      for (const x of [-0.3, 0, 0.3]) k.box(0.04, 2.0, 0.02, 0x2f5a88, { x, y: 1.6, z: 0.12 });
+      k.surf(['planks', { variant: 2, scale: 1.15, strength: 0.85 }], () => k.box(1.15, 2.1, 0.1, DOOR, { y: 0.55 + 1.05, z: 0.06 }));
       k.cyl(0.18, 0.05, PAL.windowGlow, { y: 2.15, z: 0.12, rx: Math.PI / 2 }, 8, 0.18, 'glow');
       k.ball(0.06, PAL.yellow, { x: 0.4, y: 1.5, z: 0.14 });
       k.box(1.1, 0.25, 0.06, PAL.windowGlow, { y: 2.83, z: 0.05 }, 'glow');
@@ -162,15 +159,14 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
   // ---- porch (farmhouse-local) ----
   const P = F.porch;
   const pw = P.x1 - P.x0, pd = P.z1 - P.z0, pzc = (P.z0 + P.z1) / 2;
-  k.box(pw, 0.14, pd, PAL.plank, { y: P.y - 0.07, z: pzc });
-  for (let i = 0; i < 12; i++) k.box(pw, 0.01, 0.02, PAL.woodDark, { y: P.y + 0.001, z: P.z0 + 0.2 + i * 0.2 });
+  k.surf(['planks', { axis: 'x', scale: 0.8 }], () => k.box(pw, 0.14, pd, PAL.plank, { y: P.y - 0.07, z: pzc }));
   k.box(pw, P.y - 0.14, 0.08, PAL.woodDark, { y: (P.y - 0.14) / 2, z: P.z1 - 0.04 });
   for (let i = 0; i < 16; i++) k.box(0.06, P.y - 0.2, 0.02, PAL.wood, { x: P.x0 + 0.3 + i * 0.62, y: (P.y - 0.14) / 2, z: P.z1 + 0.01, rz: 0.6 });
   // steps
   const S = F.steps;
   for (let i = 0; i < 3; i++) {
     const zz = S.z0 + 0.15 + i * 0.3, h = P.y - (i + 1) * (P.y / 3.3);
-    k.box(S.x1 - S.x0, 0.1, 0.34, PAL.plank, { y: h + 0.05, z: zz });
+    k.surf(['logs', { axis: 'x' }], () => k.box(S.x1 - S.x0, 0.1, 0.34, PAL.plank, { y: h + 0.05, z: zz }));
     k.box(S.x1 - S.x0 - 0.05, h, 0.3, PAL.woodDark, { y: h / 2, z: zz });
   }
   for (const s of [-1, 1]) k.box(0.1, 0.9, 0.1, TRIM, { x: s * 0.95, y: 0.45, z: S.z1 - 0.1 });
@@ -197,8 +193,7 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
     const y0 = 3.55, y1 = 3.0, z0 = P.z0 - 0.1, z1 = P.z1 + 0.35;
     const th = Math.atan2(y0 - y1, z1 - z0), len = Math.hypot(y0 - y1, z1 - z0);
     k.at({ y: y0, z: z0, rx: th }, () => {
-      k.box(pw + 0.6, 0.16, len, 0x8a5a3a, { y: 0.08, z: len / 2 });
-      for (let i = 1; i < 6; i++) k.box(pw + 0.62, 0.05, 0.08, 0x6e452c, { y: 0.18, z: i * (len / 6) });
+      k.slab(pw + 0.6, 0.16, len, 0x8a5a3a, ['shingle', { variant: 1 }], { y: 0.08, z: len / 2 });
       if (o.season === 'winter') k.box(pw + 0.3, 0.12, len - 0.2, PAL.snow, { y: 0.24, z: len / 2 });
     });
   }
@@ -241,9 +236,9 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
   // pigeon loft on the roof ridge (the life package flies carrier pigeons from here)
   k.at({ x: F.loft.x, y: 8.3, z: F.bodyZ }, () => {
     k.box(0.3, 0.7, 0.3, TIMBER, { y: 0.1 });
-    k.box(1.4, 0.95, 1.2, TRIM, { y: 0.8 });
+    k.surf(['planks', { axis: 'h', variant: 2, scale: 0.6, strength: 0.7 }], () => k.box(1.4, 0.95, 1.2, TRIM, { y: 0.8 }));
     k.box(1.5, 0.08, 1.3, TIMBER, { y: 0.32 });
-    k.prism([[-0.75, 0], [0.75, 0], [0, 0.55]], 1.3, PAL.roofBlue, { y: 1.27, ry: Math.PI / 2, s: [1.08, 1, 1.12] });
+    k.surf(['shingle', { scale: 0.6 }], () => k.prism([[-0.75, 0], [0.75, 0], [0, 0.55]], 1.3, PAL.roofBlue, { y: 1.27, ry: Math.PI / 2, s: [1.08, 1, 1.12] }));
     for (const x of [-0.38, 0, 0.38]) {
       k.cyl(0.14, 0.05, PAL.ink, { x, y: 0.88, z: 0.6, rx: Math.PI / 2 }, 8);
       k.box(0.3, 0.04, 0.16, PAL.woodLight, { x, y: 0.7, z: 0.67 });
@@ -294,7 +289,7 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
     const z = -hl / 2 + (i + 0.5) * (hl / segs);
     const u = (z / (hl / 2));
     const sag = -0.65 * (1 - u * u);
-    hk.box(0.85, 0.05, hl / segs + 0.02, i % 2 ? 0xe86a5a : 0xf6e6b8, { y: sag, z });
+    hk.surf(['fabric', { axis: 'z' }], () => hk.box(0.85, 0.05, hl / segs + 0.02, i % 2 ? 0xe86a5a : 0xf6e6b8, { y: sag, z }));
     hk.box(0.05, 0.12, hl / segs + 0.02, 0xd9453b, { x: 0.43, y: sag + 0.05, z });
     hk.box(0.05, 0.12, hl / segs + 0.02, 0xd9453b, { x: -0.43, y: sag + 0.05, z });
   }
@@ -307,8 +302,10 @@ export function buildFarmhouse(o: BuildOpts): THREE.Group {
   // bell (pivot at the arm)
   const bk = new Kit(6);
   bk.cyl(0.06, 0.16, PAL.metalDark, { y: -0.08 }, 5);
-  bk.cyl(0.26, 0.42, 0xd9a93a, { y: -0.36 }, 10, 0.12);
-  bk.cyl(0.28, 0.06, 0xb8862a, { y: -0.57 }, 10);
+  bk.surf(['metal', { strength: 0.5, scale: 0.4 }], () => {
+    bk.cyl(0.26, 0.42, 0xd9a93a, { y: -0.36 }, 10, 0.12);
+    bk.cyl(0.28, 0.06, 0xb8862a, { y: -0.57 }, 10);
+  });
   bk.ball(0.07, PAL.metalDark, { y: -0.62 });
   const bell = bk.mesh();
   bell.position.set(B.x + 0.52, 2.48, B.z);

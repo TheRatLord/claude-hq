@@ -6,7 +6,9 @@
 import * as THREE from 'three';
 import type { PlotKind, Season } from '../../model/types.ts';
 import { PAL } from '../toon.ts';
-import { ball, cached, cone, cyl, jitter, leaf, merge, octa, rng, rod } from './geo.ts';
+import { ball, cached, cone, cyl, jitter, leaf, merge, octa, paint, rng, rod, S } from './geo.ts';
+import { foliageBlob } from '../surface/index.ts';
+import type { FoliageColors } from '../surface/index.ts';
 
 const col = (a: number, b: number, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
 
@@ -24,7 +26,7 @@ export function wheatClump(season: Season): THREE.BufferGeometry {
       const tx = bx + Math.cos(a) * lean, tz = bz + Math.sin(a) * lean;
       p.push(rod([bx, 0, bz], [tx, h, tz], 0.02, 0.014, 3, col(PAL.grassDry, PAL.wheat, 0.4 + r() * 0.3)));
       const dx = Math.cos(a) * 0.05, dz = Math.sin(a) * 0.05;
-      p.push(rod([tx, h - 0.02, tz], [tx + dx, h + 0.2, tz + dz], 0.042, 0.018, 4, col(head, 0xffffff, r() * 0.15)));
+      p.push(S(rod([tx, h - 0.02, tz], [tx + dx, h + 0.2, tz + dz], 0.042, 0.018, 4, col(head, 0xffffff, r() * 0.15)), 'hay', { scale: 0.35, strength: 0.8 }));
       p.push(rod([tx + dx, h + 0.19, tz + dz], [tx + dx * 1.6, h + 0.3, tz + dz * 1.6], 0.006, 0.004, 3, col(head, 0xfff0c0, 0.4)));
     }
     for (let i = 0; i < 3; i++) p.push(leaf(0.45, 0.07, col(PAL.grassDry, PAL.grass, 0.5), { p: [0, 0.1, 0], r: [-0.7, (i / 3) * Math.PI * 2 + 0.5, 0] }, 0.3));
@@ -53,9 +55,10 @@ function ribbedBall(r: number, color: number, squash: number): THREE.BufferGeome
 export function pumpkin(): THREE.BufferGeometry {
   return cached('pumpkin', () => {
     const body = ribbedBall(0.4, PAL.pumpkin, 0.72);
+    paint(body, 'ribs');
     body.translate(0, 0.27, 0);
     const p = [body];
-    p.push(rod([0, 0.52, 0], [0.04, 0.68, 0.03], 0.05, 0.035, 5, 0x6a7a2a));
+    p.push(S(rod([0, 0.52, 0], [0.04, 0.68, 0.03], 0.05, 0.035, 5, 0x6a7a2a), 'bark', { scale: 0.35, strength: 0.7 }));
     p.push(leaf(0.3, 0.3, PAL.leafDark, { p: [0.02, 0.56, 0], r: [-0.25, 1.2, 0] }, 0.2));
     return jitter(merge(p), 0.03, 41);
   });
@@ -80,7 +83,7 @@ export function pumpkinVine(season: Season): THREE.BufferGeometry {
 export function cabbage(): THREE.BufferGeometry {
   return cached('cabbage', () => {
     const p: THREE.BufferGeometry[] = [];
-    p.push(ball(0.2, 0xe4f4cc, { p: [0, 0.2, 0], s: [1, 0.88, 1] }, 1));
+    p.push(paint(ball(0.2, 0xe4f4cc, { p: [0, 0.2, 0], s: [1, 0.88, 1] }, 1), 'head'));
     for (let i = 0; i < 5; i++) p.push(leaf(0.3, 0.32, 0xd2ecb8, { p: [0, 0.06, 0], r: [-1.05, (i / 5) * Math.PI * 2, 0] }, 0.35));
     for (let i = 0; i < 7; i++) p.push(leaf(0.38, 0.36, 0xb8dc9c, { p: [0, 0.04, 0], r: [-0.42, (i / 7) * Math.PI * 2 + 0.3, 0] }, 0.25));
     return jitter(merge(p), 0.035, 51);
@@ -106,8 +109,8 @@ export function sunflowerPlant(season: Season): THREE.BufferGeometry {
 export function sunflowerHead(): THREE.BufferGeometry {
   return cached('sunhead', () => {
     const p: THREE.BufferGeometry[] = [];
-    p.push(cyl(0.2, 0.21, 0.08, 10, PAL.sunflowerCore, { p: [0, 0, 0.03], r: [Math.PI / 2, 0, 0] }));
-    p.push(cyl(0.12, 0.12, 0.03, 8, 0x4a2a14, { p: [0, 0, 0.075], r: [Math.PI / 2, 0, 0] }));
+    p.push(paint(cyl(0.2, 0.21, 0.08, 10, PAL.sunflowerCore, { p: [0, 0, 0.03], r: [Math.PI / 2, 0, 0] }), 'seeds'));
+    p.push(paint(cyl(0.12, 0.12, 0.03, 8, 0x4a2a14, { p: [0, 0, 0.075], r: [Math.PI / 2, 0, 0] }), 'seeds'));
     p.push(cone(0.2, 0.14, 8, PAL.leafDark, { p: [0, 0, -0.06], r: [-Math.PI / 2, 0, 0] }));
     for (let ring = 0; ring < 2; ring++) {
       const n = 13;
@@ -133,30 +136,47 @@ export function fruitTree(season: Season): THREE.BufferGeometry {
   return cached(`tree:${season}`, () => {
     const r = rng('tree');
     const p: THREE.BufferGeometry[] = [];
-    p.push(rod([0, 0, 0], [0.05, 1.5, 0.02], 0.17, 0.11, 6, PAL.trunk));
+    let js = 71;
+    const bark = (g: THREE.BufferGeometry, sc = 0.7) => jitter(S(g, 'bark', { scale: sc }), 0.05, js++);
+    p.push(bark(rod([0, 0, 0], [0.05, 1.5, 0.02], 0.17, 0.11, 6, PAL.trunk), 0.8));
     const br: [number, number, number][] = [[0.7, 2.1, 0.3], [-0.65, 2.15, -0.2], [0.1, 2.2, -0.7], [-0.2, 2.1, 0.7], [0.1, 2.7, 0.1]];
-    for (const b of br) p.push(rod([0.04, 1.35, 0.02], b, 0.09, 0.04, 5, PAL.bark));
+    for (const b of br) p.push(bark(rod([0.04, 1.35, 0.02], b, 0.09, 0.04, 5, PAL.bark), 0.5));
     if (season === 'winter') {
       for (const b of br) {
-        p.push(rod(b, [b[0] * 1.5, b[1] + 0.35, b[2] * 1.5], 0.04, 0.02, 4, PAL.bark));
-        p.push(rod([b[0] * 0.8, b[1] - 0.05, b[2] * 0.8], [b[0] * 1.2 + 0.2, b[1] + 0.5, b[2] * 1.3 - 0.1], 0.03, 0.015, 3, PAL.bark));
-        p.push(box2(b, PAL.snow));
+        p.push(bark(rod(b, [b[0] * 1.5, b[1] + 0.35, b[2] * 1.5], 0.04, 0.02, 4, PAL.bark), 0.4));
+        p.push(bark(rod([b[0] * 0.8, b[1] - 0.05, b[2] * 0.8], [b[0] * 1.2 + 0.2, b[1] + 0.5, b[2] * 1.3 - 0.1], 0.03, 0.015, 3, PAL.bark), 0.4));
+        p.push(S(box2(b, PAL.snow), 'snow'));
       }
     } else {
-      const c1 = season === 'autumn' ? PAL.leafAutumn : season === 'spring' ? PAL.leafSpring : PAL.leaf;
-      const c2 = season === 'autumn' ? PAL.leafAutumn2 : PAL.leafDark;
-      TREE_BLOBS.forEach((b, i) => p.push(ball(b.r, i % 2 ? c2 : c1, { p: [b.x, b.y, b.z], r: [r(), r(), r()] }, 0)));
+      // soft, clumped crown: lumpy blobs painted cool-dark inside to warm-lit tips, normals bent round each blob
+      const L: FoliageColors = season === 'autumn' ? { dark: new THREE.Color(0xa8402a), light: new THREE.Color(0xf09a3a), accent: new THREE.Color(0xf6c84a), p: 0.14 }
+        : season === 'spring' ? { dark: new THREE.Color(0x4f9a3e), light: new THREE.Color(0xa6dc6a) }
+          : { dark: new THREE.Color(PAL.leafDark), light: new THREE.Color(0x86c455) };
+      const cc = new THREE.Vector3(0, 2.2, 0);
+      TREE_BLOBS.forEach((b, i) => {
+        const g = new THREE.IcosahedronGeometry(b.r, 1);
+        const q = g.attributes.position;
+        for (let v = 0; v < q.count; v++) {
+          const x = q.getX(v), y = q.getY(v), z = q.getZ(v);
+          const k = 1 + (Math.abs(Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + i * 13.3) * 43758.5453) % 1 - 0.5) * 0.12;
+          q.setXYZ(v, x * k, y * k * 0.9, z * k);
+        }
+        g.rotateY(r() * 6.28).translate(b.x, b.y, b.z);
+        g.deleteAttribute('uv');
+        p.push(foliageBlob(g, new THREE.Vector3(b.x, b.y, b.z), [cc, cc], L, 1.5, 3.3, 90 + i, { squash: 0.9, crown: 0.2 },
+          { scale: Math.max(0.6, b.r / 1.15), strength: 0.9, aux: b.r }));
+      });
       if (season === 'spring') {
         for (let i = 0; i < 40; i++) {
           const b = TREE_BLOBS[i % TREE_BLOBS.length];
           const d = new THREE.Vector3(r() - 0.5, r() * 0.8 - 0.1, r() - 0.5).normalize();
-          p.push(octa(0.07, i % 3 ? 0xfbd3e0 : 0xffffff, { p: [b.x + d.x * b.r * 0.95, b.y + d.y * b.r * 0.95, b.z + d.z * b.r * 0.95] }));
+          p.push(octa(0.07, i % 3 ? 0xfbd3e0 : 0xffffff, { p: [b.x + d.x * b.r * 1.04, b.y + d.y * b.r * 0.94, b.z + d.z * b.r * 1.04] }));
         }
       }
     }
     // roots
-    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.4; p.push(rod([0, 0.25, 0], [Math.cos(a) * 0.35, 0, Math.sin(a) * 0.35], 0.08, 0.04, 4, PAL.trunk)); }
-    return jitter(merge(p), 0.05, 71);
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.4; p.push(bark(rod([0, 0.25, 0], [Math.cos(a) * 0.35, 0, Math.sin(a) * 0.35], 0.08, 0.04, 4, PAL.trunk), 0.5)); }
+    return merge(p);
   });
 }
 const box2 = (b: [number, number, number], c: number) => ball(0.09, c, { p: [b[0], b[1] + 0.06, b[2]], s: [1.3, 0.5, 1.3] });
@@ -170,15 +190,15 @@ export function vineBlob(season: Season): THREE.BufferGeometry {
   return cached(`vineblob:${season}`, () => {
     const r = rng('vineblob');
     const p: THREE.BufferGeometry[] = [];
-    p.push(rod([0, 0, 0], [0.06, 0.5, 0.05], 0.07, 0.05, 5, PAL.bark), rod([0.06, 0.5, 0.05], [-0.03, 0.95, -0.05], 0.05, 0.04, 5, PAL.bark));
+    p.push(S(rod([0, 0, 0], [0.06, 0.5, 0.05], 0.07, 0.05, 5, PAL.bark), 'bark', { scale: 0.4 }), S(rod([0.06, 0.5, 0.05], [-0.03, 0.95, -0.05], 0.05, 0.04, 5, PAL.bark), 'bark', { scale: 0.4 }));
     if (season === 'winter') {
-      p.push(rod([-0.03, 0.95, -0.05], [0, 1.0, 0.6], 0.035, 0.02, 4, PAL.bark), rod([-0.03, 0.95, -0.05], [0, 1.0, -0.6], 0.035, 0.02, 4, PAL.bark));
+      p.push(S(rod([-0.03, 0.95, -0.05], [0, 1.0, 0.6], 0.035, 0.02, 4, PAL.bark), 'bark', { scale: 0.3 }), S(rod([-0.03, 0.95, -0.05], [0, 1.0, -0.6], 0.035, 0.02, 4, PAL.bark), 'bark', { scale: 0.3 }));
       return merge(p);
     }
     const c1 = season === 'autumn' ? PAL.leafAutumn2 : PAL.leaf, c2 = season === 'autumn' ? PAL.leafAutumn : PAL.leafDark;
     for (let i = 0; i < 5; i++) {
       const z = -0.5 + i * 0.25, y = 1.05 + r() * 0.4;
-      p.push(ball(0.2 + r() * 0.09, i % 2 ? c1 : c2, { p: [(r() - 0.5) * 0.2, y, z], s: [0.85, 1, 1.1], r: [r(), r(), 0] }));
+      p.push(S(ball(0.2 + r() * 0.09, i % 2 ? c1 : c2, { p: [(r() - 0.5) * 0.2, y, z], s: [0.85, 1, 1.1], r: [r(), r(), 0] }), 'leaves', { scale: 0.35, strength: 0.7 }));
     }
     for (let i = 0; i < 8; i++) {
       const z = -0.55 + r() * 1.1, side = i % 2 ? 1 : -1;
@@ -212,7 +232,7 @@ export function berryBush(season: Season): THREE.BufferGeometry {
     const c1 = season === 'autumn' ? PAL.leafAutumn2 : season === 'winter' ? col(PAL.leafDark, 0x8a8a7a, 0.4) : PAL.leafDark;
     const c2 = season === 'autumn' ? PAL.leafAutumn : PAL.leaf;
     const blobs: [number, number, number, number][] = [[0, 0.38, 0, 0.38], [0.28, 0.3, 0.1, 0.28], [-0.26, 0.3, -0.08, 0.3], [0.05, 0.3, 0.28, 0.27], [-0.05, 0.62, -0.05, 0.25]];
-    blobs.forEach(([x, y, z, rad], i) => p.push(ball(rad, i % 2 ? c2 : c1, { p: [x, y, z], r: [r(), r(), 0] }, 0)));
+    blobs.forEach(([x, y, z, rad], i) => p.push(S(ball(rad, i % 2 ? c2 : c1, { p: [x, y, z], r: [r(), r(), 0] }, 0), 'leaves', { scale: 0.35, strength: 0.7 })));
     for (let i = 0; i < 6; i++) p.push(leaf(0.18, 0.12, c2, { p: [(r() - 0.5) * 0.5, 0.3 + r() * 0.35, (r() - 0.5) * 0.5], r: [-0.5, r() * 6, 0] }));
     return jitter(merge(p), 0.05, 91);
   });
@@ -265,15 +285,25 @@ function daisyClump(key: string, petal: number, core: number, n: number): THREE.
 export const daisies = () => daisyClump('daisies', 0xfbf6ea, PAL.yellow, 7);
 export const cosmos = () => daisyClump('cosmos', 0xf08ab8, 0xf2c33a, 6);
 
-/** Meadow: a tall grass tuft and a wildflower (white head, tinted per instance). */
+/** Grass tone per season, matched to the terrain's grass (autumn only a hint of straw, not yellow). */
+export const grassTone = (season: Season): number =>
+  season === 'autumn' ? col(PAL.grass, 0xc9a24e, 0.22) : season === 'winter' ? col(0xa9b08a, 0xe9eff4, 0.45)
+    : season === 'spring' ? col(PAL.grass, 0x92d86a, 0.3) : PAL.grass;
+
+/**
+ * Meadow: a soft grass clump (a dome of narrow blades: upright in the middle, shorter and leaning out at the rim,
+ * dark / mid / sunlit tones) and a wildflower (white head, tinted per instance).
+ */
 export function grassTuft(season: Season): THREE.BufferGeometry {
   return cached(`tuft:${season}`, () => {
     const r = rng('tuft');
     const p: THREE.BufferGeometry[] = [];
-    const base = season === 'autumn' ? PAL.grassDry : season === 'winter' ? col(PAL.grassDry, 0xc8c8b8, 0.4) : PAL.grass;
-    for (let i = 0; i < 9; i++) {
-      const c = i % 3 === 0 ? PAL.grassDark : i % 3 === 1 ? base : col(base, PAL.grassDry, 0.4);
-      p.push(leaf(0.4 + r() * 0.35, 0.09, c, { r: [-1.25 + r() * 0.35, r() * Math.PI * 2, 0] }, 0.35));
+    const base = grassTone(season);
+    const dark = col(PAL.grassDark, base, 0.35), sun = col(base, season === 'winter' ? 0xf2f4f0 : 0xd8e070, 0.3);
+    for (let i = 0; i < 11; i++) {
+      const rim = i / 11;                                     // later blades sit further out, shorter, leaning more
+      const c = i % 3 === 0 ? dark : i % 3 === 1 ? base : sun;
+      p.push(leaf((0.34 - rim * 0.14) * (0.8 + r() * 0.4), 0.055 + r() * 0.02, c, { r: [-1.35 + rim * 0.55 + r() * 0.15, i * 2.4 + r() * 0.5, 0] }, 0.35));
     }
     return merge(p);
   });
@@ -292,10 +322,12 @@ export function decorClump(season: Season): THREE.BufferGeometry {
   return cached(`decor:${season}`, () => {
     const r = rng('decor');
     const p: THREE.BufferGeometry[] = [];
-    const base = season === 'autumn' ? col(PAL.grass, PAL.grassDry, 0.5) : season === 'winter' ? col(PAL.grassDry, 0xd8dcd0, 0.35) : PAL.grass;
-    for (let i = 0; i < 8; i++) {
-      const c = i % 3 === 0 ? PAL.grassDark : i % 3 === 1 ? base : col(base, PAL.meadow, 0.6);
-      p.push(leaf(0.28 + r() * 0.3, 0.1, c, { r: [-1.2 + r() * 0.4, r() * Math.PI * 2, 0] }, 0.35));
+    const base = grassTone(season);
+    const dark = col(PAL.grassDark, base, 0.35), sun = col(base, PAL.meadow, 0.6);
+    for (let i = 0; i < 9; i++) {
+      const rim = i / 9;
+      const c = i % 3 === 0 ? dark : i % 3 === 1 ? base : sun;
+      p.push(leaf((0.3 - rim * 0.12) * (0.8 + r() * 0.4), 0.06 + r() * 0.02, c, { r: [-1.35 + rim * 0.55 + r() * 0.15, i * 2.4 + r() * 0.5, 0] }, 0.35));
     }
     if (season !== 'winter') {
       const heads: [number, number][] = [[PAL.yellow, 0xf2a830], [0xfbf6ea, PAL.yellow], [0xf4b0c8, PAL.yellow]];
@@ -434,7 +466,7 @@ export function cropLayout(kind: PlotKind, hw: number, hd: number, clears: Clear
         for (let k = 0; k < 14; k++) {
           const b = TREE_BLOBS[k % TREE_BLOBS.length];
           const d = new THREE.Vector3(r() - 0.5, r() * 0.9 - 0.35, r() - 0.5).normalize();
-          child(ti, 1, b.x + d.x * b.r * 0.93, b.y + d.y * b.r * 0.93, b.z + d.z * b.r * 0.93, { th: r() * 0.75, color: [0xff5a4a, 0xff4838, 0xffa040, 0xc8e060][k % 4] });
+          child(ti, 1, b.x + d.x * b.r * 1.02, b.y + d.y * b.r * 0.92, b.z + d.z * b.r * 1.02, { th: r() * 0.75, color: [0xff5a4a, 0xff4838, 0xffa040, 0xc8e060][k % 4] });
         }
         for (let k = 0; k < 3; k++) {
           const a = r() * Math.PI * 2, d = 0.5 + r() * 0.8;

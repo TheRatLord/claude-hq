@@ -2,16 +2,25 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { facet } from '../toon.ts';
+import { ensureSurface } from '../surface/index.ts';
 
-/** Merge parts that each carry a `color` attribute into one faceted, non-indexed geometry. */
+/**
+ * Merge parts that each carry a `color` attribute (and optionally a `surface` tag) into one faceted, non-indexed
+ * geometry. Parts flagged `userData.smoothNormals` (foliage with sphere-bent normals) keep their normals; the rest
+ * get flat ones.
+ */
 export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const smooth = parts.some((p) => p.userData.smoothNormals && p.attributes.normal);
   const clean = parts.map((p) => {
+    const keep = smooth && !!p.userData.smoothNormals && !!p.attributes.normal;
     const g = p.index ? p.toNonIndexed() : p;
-    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'color') g.deleteAttribute(k);
+    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'color' && k !== 'surface' && !(keep && k === 'normal')) g.deleteAttribute(k);
     if (!g.attributes.color) throw new Error('merge: part without colour');
-    return g;
+    if (smooth && !keep) g.computeVertexNormals();
+    return ensureSurface(g);
   });
-  const g = facet(mergeGeometries(clean)!);
+  const m = mergeGeometries(clean)!;
+  const g = smooth ? m : facet(m);
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;

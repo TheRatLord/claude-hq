@@ -33,7 +33,10 @@ the lead.
   (`thriving` → `growing`); left alone for an hour it goes golden and sleepy (`resting`). Closing the workspace brings
   the harvest cart (`harvest`); the soil then rests `fallow` with a little "Fallow — resting" sign until the slot is
   reclaimed; after that the site returns to wild meadow.
-* **Agent = farmer.** Each agent pane is a farmer who works its workspace's field. Shell panes are **scarecrows**
+* **Agent = farmer.** Each agent pane is a farmer who works its workspace's field. Farmers are 3D voxel versions of
+  the agents' mascots: Claude agents are **Clawd** (Claude Code's orange 8-bit crab: block body, two eye notches, arm
+  nubs, four stubby legs); Codex agents are a voxel **Codex cloud** (scalloped blob with a `>_` prompt face). A tiny tier
+  hat and a workspace-colour neckerchief are the only farm dressing; the mascot silhouette is sacred. Shell panes are **scarecrows**
   (helpers) whose lantern is lit while a process runs; a green/red ribbon shows the last exit.
 * **Subagents = ducklings** that waddle in a line behind their farmer and go home (to the pond) when done.
 * **Needs you (blocked)** = the farmer runs to the gate, hops, waves both arms, a big bouncing golden **!** above them,
@@ -52,6 +55,11 @@ the lead.
 * **Low poly + cel shaded.** Faceted geometry (`facet()` in `scene/toon.ts`), `toon()` materials (3-band ramp),
   colours from `PAL`. Merge static geometry per object with vertex colours (`paint()` + `mergeGeometries`); instance
   anything repeated (`InstancedMesh`). Rounded, chunky, slightly exaggerated proportions; nothing razor-thin.
+* **Surfaces (texturing):** hand-painted detail comes from the shared surface library `scene/surface/` (read its
+  `index.ts` header): tag geometry parts with `tagSurface(g, SURF.planks | shingle | brick | …)` (+ `ensureSurface` on
+  untagged parts before merging) and draw with `surfaceMaterial({ vertexColors: true })` or `withSurfaces(material)`.
+  It modulates the vertex/palette colour (seasons keep working), is object-space (no swimming), anti-aliased and
+  fades with distance. Gallery: `surfaces` (variants per family / per surface, `compare` = off | on).
 * **Palette:** warm, saturated, a little dusty. Greens lean yellow; shadows lean blue-purple (the post/grade does
   this). Night is deep blue with warm lamp pools.
 * **Outlines + post:** a dark warm outline on silhouettes (post pass), soft bloom on emissives (lamps, "!" markers,
@@ -77,7 +85,7 @@ the lead.
 
 | package | owns | publishes |
 |---|---|---|
-| **land** | `scene/terrain/*`, `scene/flora/*`, `world/map.ts` tuning | terrain look, water (river, pond, waterfall), path decals, trees/bushes/grass/flowers/rocks/logs scatter |
+| **land** | `scene/terrain/*`, `scene/flora/*`, `scene/surface/*` (shared surface library), `world/map.ts` tuning | terrain look, water (river, pond, waterfall), path decals, trees/bushes/grass/flowers/rocks/logs scatter |
 | **atmosphere** | `scene/sky/*`, `scene/weather/*`, `scene/post/*` | `ctx.lighting`, services `wind`, `post` |
 | **structures** | `scene/structures/*` | landmarks + gauges, hub decoration, service `walkSurface` |
 | **plots** | `scene/plots/*` | 12 plot kinds × lifecycle, animals (pettable), scarecrow helpers, service `plots` |
@@ -101,6 +109,7 @@ npm run shoot -- --shot name=a,pose=hub,hour=10     # screenshots on the real GP
 npm run shoot -- --shot name=n,pose=square,hour=22,weather=rain
 npm run shoot -- --shot name=f,goto=d1:p2           # stand in front of a farmer / plot / structure id
 npm run shoot -- --shot 'name=top,cam=0;90;70;0;-0.95'  # free camera x;y;z;yaw;pitch (quote: ';')
+npm run shoot -- --shot 'name=w,gallery=dog,variant=run,frames=12,every=70,clip=400;100;900;700'  # flipbook: N frames tiled into one PNG
 npm run shoot -- --shot name=m,pose=hub,panel=map    # HUD panel (map mailbox roster …); hud=0 hides the HUD; term=ID opens a terminal
 npm run shoot -- --url 'http://127.0.0.1:PORT/?t=TOKEN' --shot name=live,pose=hub   # a running backend (live herdr; npm run build first)
 npm run shoot -- --shot name=g,gallery=windmill,param=0.8   # one asset in the gallery

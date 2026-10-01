@@ -9,6 +9,7 @@ import type { SceneCtx, SystemFactory } from '../context.ts';
 import type { Season } from '../../model/types.ts';
 import { toon } from '../toon.ts';
 import { groundColor } from '../terrain/ground.ts';
+import { hash2 } from '../../world/noise.ts';
 import { CellInstancer } from './cells.ts';
 import type { CellOpts, Item } from './cells.ts';
 import { flowerColor, scatter } from './scatter.ts';
@@ -19,6 +20,7 @@ import {
 } from './species.ts';
 import type { BushKind } from './species.ts';
 import { WIND, sway, syncWind } from './wind.ts';
+import { SURF, withSurfaces } from '../surface/index.ts';
 
 interface Set_ { inst: CellInstancer; build(season: Season): THREE.BufferGeometry; recolor?(season: Season): void }
 
@@ -78,13 +80,14 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   const root = new THREE.Group();
   root.name = 'flora';
 
-  const treeMat = sway(toon(0xffffff, { vertexColors: true, shared: false }), { mode: 'tree', amount: 0.07, pivot: 2.2 });
-  const bushMat = sway(toon(0xffffff, { vertexColors: true, shared: false }), { amount: 0.05 });
+  // surfaces: parts are tagged in species.ts (bark, leaves, needles, logs, rock); patterns use the rest pose, so wind never swims them
+  const treeMat = withSurfaces(sway(toon(0xffffff, { vertexColors: true, shared: false }), { mode: 'tree', amount: 0.07, pivot: 2.2 }), { surfaces: ['bark', 'leaves'] });
+  const bushMat = withSurfaces(sway(toon(0xffffff, { vertexColors: true, shared: false }), { amount: 0.05 }), { surface: SURF.leaves, surfaces: ['leaves'] });
   const grassMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.5, fade: 40 });
   const tallMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.32, fade: 56 });
   const flowerMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.4, fade: 60, maskTint: true });
   const cloverMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.1, fade: 32 });
-  const solidMat = toon(0xffffff, { vertexColors: true, shared: false });
+  const solidMat = withSurfaces(toon(0xffffff, { vertexColors: true, shared: false }), { surfaces: ['rock', 'logs', 'bark'] });
   const mats = [treeMat, bushMat, grassMat, tallMat, flowerMat, cloverMat, solidMat];
 
   const sets: Set_[] = [];
@@ -103,10 +106,18 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   for (const kind of ['bush', 'berry', 'hedge'] as BushKind[]) {
     add(`bush-${kind}`, S.bushes[kind], (s) => bushGeometry(kind, s, 2), bushMat, { cell: 20, far: 170, height: 2, keep: 20, castShadow: true, colors: true });
   }
+  // grass takes the ground's grass colour (never the path dirt: no yellow tufts at path edges), each tuft a little
+  // lighter/darker and warmer/cooler than its neighbours
   const tuftTint = (items: Item[], samples: typeof S.tuftSamples) => (s: Season) => {
-    items.forEach((it, i) => { it.tint ??= new THREE.Color(); groundColor(samples[i], s, it.tint); });
+    items.forEach((it, i) => {
+      const t = (it.tint ??= new THREE.Color());
+      groundColor(samples[i], s, t, 'grass');
+      const l = (hash2(it.x * 3.7, it.z * 3.7) - 0.5) * 0.16, w = (hash2(it.x * 2.3 + 9, it.z * 2.3) - 0.5) * 0.12;
+      t.setRGB(t.r * (1 + l + w), t.g * (1 + l), t.b * (1 + l - w * 1.5));
+    });
   };
   add('grass', S.tufts, (s) => tuftGeometry(false, s, 1), grassMat, { cell: 10, far: 40, height: 0.5, colors: true, receiveShadow: true }, tuftTint(S.tufts, S.tuftSamples));
+  add('grass-short', S.short, (s) => tuftGeometry(false, s, 3, true), grassMat, { cell: 8, far: 18, height: 0.2, colors: true, receiveShadow: true }, tuftTint(S.short, S.shortSamples));
   add('grass-tall', S.tall, (s) => tuftGeometry(true, s, 2), tallMat, { cell: 10, far: 56, height: 1, colors: true }, tuftTint(S.tall, S.tallSamples));
   for (const kind of ['daisy', 'bell', 'tall'] as FlowerKind[]) {
     const items = S.flowers[kind];

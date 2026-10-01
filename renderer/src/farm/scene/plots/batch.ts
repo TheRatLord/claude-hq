@@ -9,9 +9,10 @@ export class Batch {
   private n = 0;
   private readonly cap: number;
   private readonly rect: THREE.InstancedBufferAttribute | null;
+  private readonly aux: THREE.InstancedBufferAttribute | null;
   private colored = false;
 
-  constructor(geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, o: { shadow?: boolean; rect?: boolean; name?: string } = {}) {
+  constructor(geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, o: { shadow?: boolean; rect?: boolean; aux?: boolean; name?: string; depth?: THREE.Material } = {}) {
     this.cap = cap;
     this.mesh = new THREE.InstancedMesh(geo, mat, cap);
     this.mesh.name = o.name ?? 'batch';
@@ -21,17 +22,24 @@ export class Batch {
     this.mesh.receiveShadow = true;
     this.mesh.count = 0;
     this.rect = null;
+    this.aux = null;
     if (o.rect) {
       this.rect = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
       this.rect.setUsage(THREE.DynamicDrawUsage);
       geo.setAttribute('aRect', this.rect);
     }
+    if (o.aux) {
+      this.aux = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
+      this.aux.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('aAux', this.aux);
+    }
+    if (o.depth) this.mesh.customDepthMaterial = o.depth;
   }
 
   begin(): void { this.n = 0; }
 
   /** returns the slot index or -1 when full */
-  push(m: THREE.Matrix4, color?: THREE.Color | null, rect?: readonly number[]): number {
+  push(m: THREE.Matrix4, color?: THREE.Color | null, rect?: ArrayLike<number> | null, aux?: ArrayLike<number> | null): number {
     if (this.n >= this.cap) return -1;
     const i = this.n++;
     this.mesh.setMatrixAt(i, m);
@@ -44,6 +52,7 @@ export class Batch {
       this.mesh.setColorAt(i, color);
     } else if (this.colored) this.mesh.instanceColor!.setXYZ(i, 1, 1, 1);
     if (rect && this.rect) this.rect.setXYZW(i, rect[0], rect[1], rect[2], rect[3]);
+    if (this.aux) { if (aux) this.aux.setXYZW(i, aux[0], aux[1], aux[2], aux[3]); else this.aux.setXYZW(i, 0, 0, 0, 0); }
     return i;
   }
 
@@ -72,6 +81,7 @@ export class Batch {
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.colored) { this.mesh.instanceColor!.clearUpdateRanges(); this.mesh.instanceColor!.addUpdateRange(0, this.n * 3); this.mesh.instanceColor!.needsUpdate = true; }
     if (this.rect) { this.rect.clearUpdateRanges(); this.rect.addUpdateRange(0, this.n * 4); this.rect.needsUpdate = true; }
+    if (this.aux) { this.aux.clearUpdateRanges(); this.aux.addUpdateRange(0, this.n * 4); this.aux.needsUpdate = true; }
   }
 
   get count(): number { return this.n; }
@@ -84,11 +94,12 @@ export class Batches {
 
   constructor() { this.group.name = 'plots-batches'; }
 
-  get(key: string, make: () => { geo: THREE.BufferGeometry; mat: THREE.Material; cap: number; shadow?: boolean; rect?: boolean }): Batch {
+  get(key: string, make: () => { geo: THREE.BufferGeometry; mat: THREE.Material; cap: number; shadow?: boolean; rect?: boolean; aux?: boolean; depth?: THREE.Material; order?: number }): Batch {
     let b = this.map.get(key);
     if (!b) {
       const d = make();
-      b = new Batch(d.geo, d.mat, d.cap, { shadow: d.shadow, rect: d.rect, name: `plots:${key}` });
+      b = new Batch(d.geo, d.mat, d.cap, { shadow: d.shadow, rect: d.rect, aux: d.aux, depth: d.depth, name: `plots:${key}` });
+      if (d.order) b.mesh.renderOrder = d.order;
       this.map.set(key, b);
       this.group.add(b.mesh);
     }

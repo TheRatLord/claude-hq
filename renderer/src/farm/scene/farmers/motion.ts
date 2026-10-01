@@ -2,7 +2,7 @@
 /**
  * Locomotion: follow a route with a look-ahead carrot, turn smoothly (farmers walk in arcs, and turn on the spot
  * when the heading is way off), ease in and out, settle on the spot with hysteresis so a nudge doesn't restart a
- * walk. Gait phase advances with distance so feet don't skate. Pure (no three).
+ * walk. `moveStep` returns the distance covered so the gait can advance with it (planted feet never skate). Pure.
  */
 import type { XZ } from '../../world/map.ts';
 import type { Gait } from './brain.ts';
@@ -18,8 +18,6 @@ export interface Mover {
   goal: XZ;
   /** standing at the goal (hysteresis: leaves only when displaced by > LEAVE) */
   arrived: boolean;
-  /** gait phase (cycles = strides) */
-  phase: number;
   /** 0..1 gait weight (smoothed from speed) */
   moving: number;
   /** 0..1 jog blend */
@@ -28,13 +26,12 @@ export interface Mover {
   slow: number;
 }
 
-export const SPEED: Readonly<Record<Gait, number>> = { walk: 1.55, jog: 3.4, amble: 1.05 };
-const STRIDE: Readonly<Record<Gait, number>> = { walk: 0.62, jog: 0.95, amble: 0.5 };
+export const SPEED: Readonly<Record<Gait, number>> = { walk: 1.4, jog: 3.0, amble: 0.95 };
 const ARRIVE = 0.1;
 const LEAVE = 0.7;
 
 export const newMover = (x: number, z: number, yaw: number): Mover => ({
-  x, z, yaw, speed: 0, path: [], pi: 0, key: '', goal: { x, z }, arrived: true, phase: 0, moving: 0, jog: 0, slow: 1,
+  x, z, yaw, speed: 0, path: [], pi: 0, key: '', goal: { x, z }, arrived: true, moving: 0, jog: 0, slow: 1,
 });
 
 const wrap = (a: number) => { const r = (((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI; return r; };
@@ -110,8 +107,6 @@ export function moveStep(m: Mover, t: Target, dt: number, route: (from: XZ, to: 
   const jogT = t.gait === 'jog' ? 1 : 0;
   m.jog = damp(m.jog, jogT, 4, dt);
   m.moving = damp(m.moving, Math.min(1, m.speed / 0.6), 10, dt);
-  const stride = STRIDE[t.gait];
-  m.phase += moved / stride / 2; // one phase cycle = two steps
   return moved;
 }
 

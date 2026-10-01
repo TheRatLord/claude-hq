@@ -67,11 +67,16 @@ export function critterSound(ctx: SceneCtx, kind: Parameters<ValleyAudio['critte
 
 interface Heart { on: boolean; x: number; y: number; z: number; vx: number; vz: number; age: number; life: number; spin: number }
 interface Ring { on: boolean; x: number; y: number; z: number; age: number; life: number; size: number }
+interface Drop { on: boolean; x: number; y: number; z: number; vx: number; vy: number; vz: number; age: number; life: number; s: number; floor: number }
+const DROPS = 72;
 
 export class Fx {
   readonly hearts: RigPool;
   readonly shadows: THREE.InstancedMesh;
   readonly rings: THREE.InstancedMesh;
+  readonly drop: THREE.InstancedMesh;
+  private readonly ds: Drop[] = [];
+  private dropNext = 0;
   private readonly hs: Heart[] = [];
   private readonly rs: Ring[] = [];
   private nShadow = 0;
@@ -81,6 +86,9 @@ export class Fx {
   private readonly p = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
   private readonly c = new THREE.Color();
+
+  /** where Biscuit is and how fast he's going (written by pets, read by birds and critters: a running dog spooks them) */
+  dogX = 1e6; dogZ = 1e6; dogSpeed = 0;
 
   private readonly ctx: SceneCtx;
   constructor(ctx: SceneCtx) {
@@ -102,7 +110,14 @@ export class Fx {
     this.rings.name = 'life:rings';
     for (let i = 0; i < 24; i++) this.rs.push({ on: false, x: 0, y: 0, z: 0, age: 0, life: 1, size: 1 });
     this.hearts.mesh.name = 'life:hearts';
-    ctx.scene.add(this.hearts.mesh, this.shadows, this.rings);
+    const dm = new THREE.MeshBasicMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.85 });
+    this.drop = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.022, 0), dm, DROPS);
+    this.drop.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.drop.frustumCulled = false;
+    this.drop.count = 0;
+    this.drop.name = 'life:drops';
+    for (let i = 0; i < DROPS; i++) this.ds.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, age: 0, life: 1, s: 1, floor: 0 });
+    ctx.scene.add(this.hearts.mesh, this.shadows, this.rings, this.drop);
   }
 
   /** puff of hearts rising from a point */
@@ -119,6 +134,18 @@ export class Fx {
     let r = this.rs.find((v) => !v.on);
     if (!r) { r = this.rs[0]; for (const v of this.rs) if (v.age / v.life > r.age / r.life) r = v; }
     r.on = true; r.x = x; r.y = y; r.z = z; r.age = 0; r.life = life; r.size = size;
+  }
+
+  /** a spray of water droplets (shake-off, splash): `up` = upward speed, `out` = radial speed */
+  drops(x: number, y: number, z: number, n: number, up: number, out: number, floor = y - 0.5, rng: Rng = Math.random): void {
+    for (let k = 0; k < n; k++) {
+      const d = this.ds[this.dropNext];
+      this.dropNext = (this.dropNext + 1) % DROPS;
+      const a = rng() * TAU, r = (0.4 + rng() * 0.6) * out * 3;
+      d.on = true; d.x = x + Math.cos(a) * 0.08; d.y = y; d.z = z + Math.sin(a) * 0.08;
+      d.vx = Math.cos(a) * r; d.vz = Math.sin(a) * r; d.vy = up * (0.5 + rng() * 0.7);
+      d.age = 0; d.life = 0.5 + rng() * 0.5; d.s = 0.6 + rng() * 0.8; d.floor = floor;
+    }
   }
 
   begin(): void { this.nShadow = 0; }
@@ -164,12 +191,27 @@ export class Fx {
       n++;
     }
     this.rings.count = n;
+    let nd = 0;
+    for (const d of this.ds) {
+      if (!d.on) continue;
+      d.age += dt;
+      d.vy -= 9.8 * dt;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      if (d.age > d.life || d.y < d.floor) { d.on = false; continue; }
+      const k = 1 - d.age / d.life, sc = d.s * (0.4 + 0.6 * k);
+      const sp = Math.min(2.2, 1 + Math.hypot(d.vx, d.vy, d.vz) * 0.12);
+      this.m.compose(this.p.set(d.x, d.y, d.z), this.q.identity(), this.s.set(sc, sc * sp, sc));
+      this.drop.setMatrixAt(nd++, this.m);
+    }
+    this.drop.count = nd;
+    this.drop.instanceMatrix.needsUpdate = true;
     this.rings.instanceMatrix.needsUpdate = true;
     if (this.rings.instanceColor) this.rings.instanceColor.needsUpdate = true;
   }
 
   dispose(): void {
-    this.ctx.scene.remove(this.hearts.mesh, this.shadows, this.rings);
+    this.ctx.scene.remove(this.hearts.mesh, this.shadows, this.rings, this.drop);
+    this.drop.geometry.dispose(); (this.drop.material as THREE.Material).dispose();
     this.hearts.dispose();
     this.shadows.geometry.dispose(); (this.shadows.material as THREE.Material).dispose();
     this.rings.geometry.dispose(); (this.rings.material as THREE.Material).dispose();

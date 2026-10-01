@@ -4,6 +4,7 @@ import { seeded } from '../../../core/rng.ts';
 import type { Season } from '../../model/types.ts';
 import { POND, RIVER_HALF_WIDTH, WORLD, heightAt, pathAt, structure } from '../../world/map.ts';
 import { facet, paint, toon } from '../toon.ts';
+import { SURF, tagSurface, withSurfaces } from '../surface/index.ts';
 import { blade, gradient, merge } from '../flora/geom.ts';
 import { sway } from '../flora/wind.ts';
 import { riverAt } from './features.ts';
@@ -25,28 +26,32 @@ export function reedGeometry(season: Season, seed = 1): THREE.BufferGeometry {
     parts.push(b);
   }
   const [lo, hi] = reedCols(season);
-  return merge(parts.map((p) => gradient(p, lo, hi, 0, 1.4)));
+  return merge(parts.map((p) => tagSurface(gradient(p, lo, hi, 0, 1.4), SURF.plant)));
 }
 
 export function cattailGeometry(season: Season, seed = 2): THREE.BufferGeometry {
   const r = seeded(`cattail:${seed}`);
   const [lo, hi] = reedCols(season);
   const parts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 5; i++) { const a = r() * 6.28; parts.push(gradient(blade(0.8 + r() * 0.5, 0.1, 0.25, a), lo, hi, 0, 1.2)); }
-  const head = season === 'winter' ? col(0x8a6a4a) : col(0x6a4026);
+  for (let i = 0; i < 5; i++) { const a = r() * 6.28; parts.push(tagSurface(gradient(blade(0.8 + r() * 0.5, 0.1, 0.25, a), lo, hi, 0, 1.2), SURF.plant)); }
+  const head = season === 'winter' ? col(0x9a7a58) : col(0x7a4a2a), headLo = season === 'winter' ? col(0x6a5040) : col(0x4a2a18);
+  const spike = season === 'winter' ? col(0xa89a80) : col(0xb89a62);
   for (let i = 0; i < 3; i++) {
     const h = 1.35 + r() * 0.45, ox = (r() - 0.5) * 0.25, oz = (r() - 0.5) * 0.25;
     const stem = new THREE.CylinderGeometry(0.015, 0.02, h, 4).translate(ox, h / 2, oz);
-    parts.push(gradient(stem, lo, hi, 0, h));
-    const cap = new THREE.CylinderGeometry(0.055, 0.055, 0.26, 6).translate(ox, h - 0.18, oz).toNonIndexed();
-    parts.push(paint(cap, head));
+    parts.push(tagSurface(gradient(stem, lo, hi, 0, h), SURF.plant));
+    // plump velvet head (slightly tapered ends) with the thin flower spike above it
+    const cap = new THREE.CylinderGeometry(0.05, 0.056, 0.28, 8, 2).translate(ox, h - 0.19, oz).toNonIndexed();
+    parts.push(tagSurface(gradient(cap, headLo, head, h - 0.33, h - 0.1), SURF.plant, { variant: 1 }));
+    parts.push(tagSurface(paint(new THREE.ConeGeometry(0.014, 0.16, 4).translate(ox, h + 0.02, oz).toNonIndexed(), spike), SURF.plant));
     if (season === 'winter') parts.push(paint(new THREE.CylinderGeometry(0.07, 0.06, 0.06, 6).translate(ox, h - 0.03, oz).toNonIndexed(), col(0xf2f6fb)));
   }
   return merge(parts);
 }
 
 export function lilyPadGeometry(season: Season): THREE.BufferGeometry {
-  const pad = new THREE.CircleGeometry(0.5, 10, 0.35, Math.PI * 2 - 0.5).rotateX(-Math.PI / 2);
+  // the notch: a wedge cut from the rim to the centre (the shader's veins radiate from it, see surf_plant)
+  const pad = new THREE.CircleGeometry(0.5, 16, 0.37, Math.PI * 2 - 0.54).rotateX(-Math.PI / 2);
   // cup the pad slightly so it catches the light
   const p = pad.attributes.position;
   for (let i = 0; i < p.count; i++) { const d = Math.hypot(p.getX(i), p.getZ(i)); p.setY(i, d * d * 0.08); }
@@ -55,11 +60,14 @@ export function lilyPadGeometry(season: Season): THREE.BufferGeometry {
   const c = new Float32Array(g.attributes.position.count * 3);
   const a = season === 'autumn' ? col(0x8a9a3a) : col(0x4f9a3f), b = season === 'autumn' ? col(0xb89a45) : col(0x76b84e);
   const t = new THREE.Color();
-  for (let i = 0; i < g.attributes.position.count; i += 3) {
-    t.copy(a).lerp(b, (i / 3) % 2 ? 0.75 : 0.35);
-    for (let k = 0; k < 3; k++) { c[(i + k) * 3] = t.r; c[(i + k) * 3 + 1] = t.g; c[(i + k) * 3 + 2] = t.b; }
+  const gp = g.attributes.position;
+  for (let i = 0; i < gp.count; i++) {
+    // lighter heart, deeper green toward the rim
+    t.copy(b).lerp(a, Math.min(1, Math.hypot(gp.getX(i), gp.getZ(i)) / 0.5) * 0.7);
+    c[i * 3] = t.r; c[i * 3 + 1] = t.g; c[i * 3 + 2] = t.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  tagSurface(g, SURF.plant, { variant: 2, aux: 0.5 });
   g.computeBoundingSphere();
   return g;
 }
@@ -153,13 +161,13 @@ export function buildShore(season: Season): Shore {
   const P = cached;
   const group = new THREE.Group();
   group.name = 'shore';
-  const plantMat = sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.05, fade: 90 });
+  const plantMat = withSurfaces(sway(toon(0xffffff, { vertexColors: true, shared: false, side: THREE.DoubleSide }), { amount: 0.05, fade: 90 }), { surfaces: ['plant'] });
   const meshes: THREE.InstancedMesh[] = [
     instanced(reedGeometry(season), plantMat, P.reeds, 'reeds'),
     instanced(cattailGeometry(season), plantMat, P.cattails, 'cattails'),
   ];
   if (season !== 'winter') {
-    const padMat = toon(0xffffff, { vertexColors: true, shared: false });
+    const padMat = withSurfaces(toon(0xffffff, { vertexColors: true, shared: false }), { surfaces: ['plant'] });
     meshes.push(instanced(lilyPadGeometry(season), padMat, P.pads, 'lily-pads'));
     if (season !== 'autumn') meshes.push(instanced(lilyFlowerGeometry(), padMat, P.flowers, 'lily-flowers'));
   }

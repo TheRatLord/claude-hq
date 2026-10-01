@@ -1,123 +1,12 @@
 /**
- * Canvas atlases (no image files): farmer expressions (eyes, brows, mouth, blush) and emote icons.
- * Face cell = FACES index * 2 (+1 for the blink frame). Emote cells are named in EMOTE.
+ * Canvas atlas (no image files) of emote icons drawn as billboards over the mascots: "!", "?", hearts, Zzz, notes…
+ * Mascot faces are voxel glyphs (mascots.ts), not textures. Emote cells are named in EMOTE.
  */
 import * as THREE from 'three';
-import { FACES } from './pose.ts';
-import type { Face } from './pose.ts';
-import { EMOTE_COLS, EMOTE_ROWS, FACE_COLS, FACE_ROWS } from './mat.ts';
+import { EMOTE_COLS, EMOTE_ROWS } from './mat.ts';
 
 const CELL = 128;
 const INK = '#2b2420';
-
-export const faceCell = (f: Face, blink: boolean): number => FACES.indexOf(f) * 2 + (blink ? 1 : 0);
-
-function drawFace(g: CanvasRenderingContext2D, face: Face, blink: boolean) {
-  const S = CELL;
-  const U = (u: number) => u * S, V = (v: number) => (1 - v) * S;
-  const ex = 0.2, ey = 0.53;
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-  // blush
-  if (face !== 'stuck') {
-    g.fillStyle = face === 'worried' ? 'rgba(240,138,138,0.45)' : 'rgba(242,120,120,0.7)';
-    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(U(0.5 + s * 0.3), V(0.43), S * 0.07, S * 0.042, 0, 0, Math.PI * 2); g.fill(); }
-  }
-  g.strokeStyle = INK;
-  g.fillStyle = INK;
-  const dot = (s: number, h = 0.082, w = 0.056) => {
-    g.fillStyle = INK;
-    g.beginPath(); g.ellipse(U(0.5 + s * ex), V(ey), S * w, S * h, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#ffffff';
-    g.beginPath(); g.arc(U(0.5 + s * ex) + S * w * 0.35, V(ey) - S * h * 0.4, S * w * 0.36, 0, Math.PI * 2); g.fill();
-    g.fillStyle = INK;
-  };
-  const arc = (s: number, up: boolean, w = 0.05) => { // ^ ^ (up) or u u (down)
-    g.lineWidth = S * 0.028;
-    g.beginPath();
-    const cx = U(0.5 + s * ex), cy = V(ey) + (up ? S * 0.015 : -S * 0.01);
-    if (up) g.arc(cx, cy, S * w, Math.PI * 1.1, Math.PI * 1.9);
-    else g.arc(cx, cy, S * w, Math.PI * 0.12, Math.PI * 0.88);
-    g.stroke();
-  };
-  const line = (s: number, tilt = 0) => {
-    g.lineWidth = S * 0.026;
-    g.beginPath();
-    g.moveTo(U(0.5 + s * ex) - S * 0.045, V(ey) + tilt * s * S);
-    g.lineTo(U(0.5 + s * ex) + S * 0.045, V(ey) - tilt * s * S);
-    g.stroke();
-  };
-  const brow = (s: number, angle: number, dy = 0.12) => {
-    g.lineWidth = S * 0.02;
-    g.beginPath();
-    const cx = U(0.5 + s * ex), cy = V(ey + dy);
-    g.moveTo(cx - S * 0.045, cy + angle * s * S * 0.12);
-    g.lineTo(cx + S * 0.045, cy - angle * s * S * 0.12);
-    g.stroke();
-  };
-  const mouthY = V(0.39);
-  const smile = (w: number, d: number) => { g.lineWidth = S * 0.024; g.beginPath(); g.moveTo(U(0.5) - S * w, mouthY); g.quadraticCurveTo(U(0.5), mouthY + S * d, U(0.5) + S * w, mouthY); g.stroke(); };
-  const open = (w: number, h: number, dy = 0) => {
-    g.fillStyle = '#6b2a2a';
-    g.beginPath(); g.ellipse(U(0.5), mouthY + S * dy, S * w, S * h, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#e8737a';
-    g.beginPath(); g.ellipse(U(0.5), mouthY + S * dy + S * h * 0.45, S * w * 0.6, S * h * 0.4, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = INK; g.lineWidth = S * 0.012; g.beginPath(); g.ellipse(U(0.5), mouthY + S * dy, S * w, S * h, 0, 0, Math.PI * 2); g.stroke();
-  };
-  const grin = (w: number) => { // D-shaped open smile
-    g.fillStyle = '#6b2a2a';
-    g.beginPath(); g.moveTo(U(0.5) - S * w, mouthY - S * 0.01); g.quadraticCurveTo(U(0.5), mouthY + S * w * 1.5, U(0.5) + S * w, mouthY - S * 0.01); g.closePath(); g.fill();
-    g.fillStyle = '#e8737a';
-    g.beginPath(); g.ellipse(U(0.5), mouthY + S * w * 0.5, S * w * 0.45, S * w * 0.25, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = INK; g.lineWidth = S * 0.014;
-    g.beginPath(); g.moveTo(U(0.5) - S * w, mouthY - S * 0.01); g.quadraticCurveTo(U(0.5), mouthY + S * w * 1.5, U(0.5) + S * w, mouthY - S * 0.01); g.closePath(); g.stroke();
-  };
-  const eyes = (fn: (s: number) => void) => { fn(-1); fn(1); };
-  switch (face) {
-    case 'neutral': eyes((s) => (blink ? arc(s, false, 0.04) : dot(s))); smile(0.045, 0.03); break;
-    case 'happy': eyes((s) => arc(s, true)); grin(0.06); break;
-    case 'focused': eyes((s) => (blink ? line(s) : dot(s, 0.05))); eyes((s) => brow(s, 0.12, 0.12)); g.lineWidth = S * 0.022; g.beginPath(); g.moveTo(U(0.47), mouthY); g.lineTo(U(0.53), mouthY); g.stroke(); break;
-    case 'stuck': {
-      g.lineWidth = S * 0.026;
-      eyes((s) => { const cx = U(0.5 + s * ex), cy = V(ey); g.beginPath(); g.moveTo(cx - s * S * 0.04, cy - S * 0.035); g.lineTo(cx + s * S * 0.035, cy); g.lineTo(cx - s * S * 0.04, cy + S * 0.035); g.stroke(); });
-      g.lineWidth = S * 0.02; g.beginPath();
-      for (let i = 0; i <= 6; i++) { const x = U(0.44) + (i / 6) * S * 0.12, y = mouthY + (i % 2 ? -1 : 1) * S * 0.012; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
-      g.stroke();
-      break;
-    }
-    case 'sleepy': eyes((s) => { line(s, 0.01); }); eyes((s) => brow(s, -0.12, 0.1)); g.beginPath(); g.fillStyle = INK; g.ellipse(U(0.52), mouthY, S * 0.018, S * 0.014, 0, 0, Math.PI * 2); g.fill(); break;
-    case 'proud': eyes((s) => arc(s, true, 0.042)); smile(0.07, 0.06); eyes((s) => brow(s, 0.08, 0.13)); break;
-    case 'worried': eyes((s) => (blink ? line(s) : dot(s, 0.085, 0.058))); eyes((s) => brow(s, -0.35, 0.14)); open(0.035, 0.028, 0.01); break;
-    case 'talk': eyes((s) => (blink ? arc(s, false, 0.04) : dot(s))); open(0.045, blink ? 0.02 : 0.04); break;
-    case 'yawn': eyes((s) => line(s, -0.02)); open(0.05, 0.07, 0.02); break;
-    case 'surprised': eyes((s) => dot(s, 0.095, 0.07)); eyes((s) => brow(s, -0.1, 0.16)); open(0.028, 0.035, 0.01); break;
-    case 'asleep': eyes((s) => arc(s, false, 0.045)); g.beginPath(); g.fillStyle = INK; g.ellipse(U(0.5), mouthY, S * 0.02, S * 0.012, 0, 0, Math.PI * 2); g.fill(); break;
-    case 'whistle': eyes((s) => (s < 0 ? arc(s, true, 0.04) : dot(s))); g.strokeStyle = INK; g.lineWidth = S * 0.018; g.beginPath(); g.arc(U(0.54), mouthY, S * 0.022, 0, Math.PI * 2); g.stroke(); break;
-  }
-}
-
-let faceTex: THREE.CanvasTexture | null = null;
-export function faceAtlas(): THREE.CanvasTexture {
-  if (faceTex) return faceTex;
-  const c = document.createElement('canvas');
-  c.width = CELL * FACE_COLS; c.height = CELL * FACE_ROWS;
-  const g = c.getContext('2d')!;
-  FACES.forEach((f, i) => {
-    for (const blink of [false, true]) {
-      const cell = i * 2 + (blink ? 1 : 0);
-      g.save();
-      g.translate((cell % FACE_COLS) * CELL, Math.floor(cell / FACE_COLS) * CELL);
-      g.beginPath(); g.rect(0, 0, CELL, CELL); g.clip();
-      drawFace(g, f, blink);
-      g.restore();
-    }
-  });
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  faceTex = t;
-  return t;
-}
 
 export const EMOTE = {
   bang: 0, question: 1, heart: 2, check: 3, sweat: 4, storm: 5, zzz: 6, bulb: 7, note: 8, thought: 9, dots: 10, sparkle: 11, star: 12, scribble: 13,

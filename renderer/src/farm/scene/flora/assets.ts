@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { defineAsset } from '../assets.ts';
 import type { AssetBuildOpts } from '../assets.ts';
-import { toon } from '../toon.ts';
+import { surfaceMaterial } from '../surface/index.ts';
 import {
   TREE_KINDS, bushGeometry, cloverGeometry, flowerGeometry, logGeometry, meadowRockGeometry, mushroomGeometry, stumpGeometry,
   treeGeometry, tuftGeometry,
@@ -11,9 +11,10 @@ import type { BushKind } from './species.ts';
 import { flowerColor } from './scatter.ts';
 import { rockGeometry } from '../terrain/rocks.ts';
 import { cattailGeometry, lilyFlowerGeometry, lilyPadGeometry, reedGeometry } from '../terrain/shore.ts';
+import '../surface/assets.ts';
 
 const solid = (g: THREE.BufferGeometry, double = false) => {
-  const m = new THREE.Mesh(g, toon(0xffffff, { vertexColors: true, side: double ? THREE.DoubleSide : THREE.FrontSide }));
+  const m = new THREE.Mesh(g, surfaceMaterial({ vertexColors: true, side: double ? THREE.DoubleSide : THREE.FrontSide }));
   m.castShadow = true;
   return m;
 };

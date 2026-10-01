@@ -70,7 +70,7 @@ export function createRoster(ctx: HudCtx): Panel {
     let row: HTMLElement;
     if (r.kind === 'farmer') {
       const f = r.f;
-      const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind);
+      const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
       const job = f.needsYou
         ? h('div.job.ask', { title: f.question ?? '' }, `Needs you: ${f.question ?? 'waiting'}`)
         : h('div.job', { title: `${JOB_REAL[f.job]}${f.detail ? ` · ${f.detail}` : ''}` }, h('b', { text: JOB_LABEL[f.job] }), f.detail ? ` · ${f.detail}` : f.title ? ` · ${f.title}` : '');

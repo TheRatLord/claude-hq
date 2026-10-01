@@ -8,9 +8,25 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { toon } from '../toon.ts';
+import { PAL } from '../toon.ts';
+import { SURF, chainShader, surfaceMaterial, tagSurface, tagSurfaceBy } from '../surface/index.ts';
+import type { SurfAxis, SurfName, TagOpts } from '../surface/index.ts';
 
 export type BakeKind = 'solid' | 'glow';
+
+/**
+ * Surfaces (hand-painted detail, see scene/surface). Every solid part carries a `surface` tag and a pattern frame
+ * (`surfQ`, the part's rotation): patterns are painted in the part's own local space, so boards follow a rotated
+ * roof slab or a leaning beam, and stay put when the structure is yawed and baked into world-space cluster meshes.
+ *
+ * What a part gets: the innermost `k.surf(spec, fn)` scope, else an automatic pick from its paint colour and shape
+ * (`autoSurface`): wood → planks (boards along its longest side) or, for slender parts, `logs` grain along the
+ * part; bark/trunk → logs with bark; stone → fieldstone (rock when small); metals → metal; hay, cloth, plaster, snow.
+ * Axis `'long'` = the part's longest local dimension (a cylinder's own axis for planks: barrel staves).
+ */
+export type KitAxis = SurfAxis | 'long';
+export type KitTag = Omit<TagOpts, 'axis'> & { axis?: KitAxis };
+export type SurfSpec = SurfName | readonly [SurfName, KitTag];
 
 /** Transform shorthand: position, Euler rotation (XYZ order, radians), scale (uniform or per axis). */
 export interface Xf { x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number; s?: number | readonly [number, number, number] }
@@ -51,12 +67,22 @@ export class Kit {
   at(t: Xf, fn: () => void): this { this.push(t); try { fn(); } finally { this.pop(); } return this; }
   private top(): THREE.Matrix4 { return this.stack[this.stack.length - 1]; }
 
-  /** Add any geometry (consumed). */
-  add(geo: THREE.BufferGeometry, color: number, t?: Xf, kind: BakeKind = 'solid', jitter = this.jitter): this {
+  /** Add any geometry (consumed). `pre` places the geometry inside the part (its pattern frame follows). */
+  add(geo: THREE.BufferGeometry, color: number, t?: Xf, kind: BakeKind = 'solid', jitter = this.jitter, pre?: THREE.Matrix4): this {
+    const cyl = geo.type === 'CylinderGeometry' || geo.type === 'ConeGeometry';
     let g = geo.index ? geo.toNonIndexed() : geo;
     if (g !== geo) geo.dispose();
-    for (const k of Object.keys(g.attributes)) if (k !== 'position') g.deleteAttribute(k);
-    g.applyMatrix4(xfMatrix(t, _m).premultiply(this.top()));
+    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'surface') g.deleteAttribute(k);
+    const m = xfMatrix(t, _m).premultiply(this.top());
+    if (pre) m.multiply(pre);
+    if (kind === 'solid') {
+      if (!g.attributes.surface) this.tag(g, color, cyl);
+      m.decompose(_p, _q, _s);
+      const n = g.attributes.position.count, fq = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) { fq[i * 4] = _q.x; fq[i * 4 + 1] = _q.y; fq[i * 4 + 2] = _q.z; fq[i * 4 + 3] = _q.w; }
+      g.setAttribute('surfQ', new THREE.BufferAttribute(fq, 4));
+    } else g.deleteAttribute('surface');
+    g.applyMatrix4(m);
     _c.setHex(color);
     if (jitter) { const d = (this.r() - 0.5) * 2 * jitter; _c.offsetHSL(0, 0, d); }
     const n = g.attributes.position.count;
@@ -67,7 +93,34 @@ export class Kit {
     return this;
   }
 
+  private surfStack: (SurfSpec | null)[] = [];
+  /** paint every part added inside fn with this surface (null = back to the automatic pick) */
+  surf(spec: SurfSpec | null, fn: () => void): this { this.surfStack.push(spec); try { fn(); } finally { this.surfStack.pop(); } return this; }
+
+  /** tag a part (its own local space) from the current scope or its colour */
+  private tag(g: THREE.BufferGeometry, color: number, cyl: boolean): void {
+    const scoped = this.surfStack.length ? this.surfStack[this.surfStack.length - 1] : null;
+    g.computeBoundingBox();
+    const bb = g.boundingBox!, size = bb.getSize(_d);
+    const spec = scoped ?? autoSurface(color, size, cyl);
+    const [name, tg] = typeof spec === 'string' ? [spec, {} as KitTag] : spec;
+    let axis = tg.axis;
+    if (axis === 'long') axis = cyl ? 'y' : longest(size);
+    tagSurface(g, SURF[name], { ...tg, axis });
+  }
+
   box(w: number, h: number, d: number, color: number, t?: Xf, kind?: BakeKind): this { return this.add(new THREE.BoxGeometry(w, h, d), color, t, kind); }
+  /**
+   * A roof slab (box w × th × len, local y = up out of the roof, z = down the slope): `top` on the upper face and the
+   * edges (rows level across the slope), `under` (default: ceiling boards) on the underside.
+   */
+  slab(w: number, th: number, len: number, color: number, top: SurfSpec, t?: Xf, under: SurfSpec = ['planks', { axis: 'z', variant: 1, strength: 0.7 }]): this {
+    const g = new THREE.BoxGeometry(w, th, len).toNonIndexed();
+    const spec = (s: SurfSpec): [SurfName, TagOpts] => { const [n, tg] = typeof s === 'string' ? [s, {} as KitTag] : s; return [n, { ...tg, axis: tg.axis === 'long' ? 'z' : tg.axis ?? 'z' }]; };
+    const a = spec(top), b = spec(under);
+    tagSurfaceBy(g, (n) => (n.y < -0.5 ? b : a));
+    return this.add(g, color, t);
+  }
   /** cylinder (seg sides) centred on its axis midpoint; rTop defaults to r */
   cyl(r: number, h: number, color: number, t?: Xf, seg = 8, rTop = r, kind?: BakeKind): this {
     return this.add(new THREE.CylinderGeometry(rTop, r, h, seg, 1), color, t, kind);
@@ -90,8 +143,7 @@ export class Kit {
     const g = new THREE.BoxGeometry(th, len, th2);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), _d.normalize());
     const m = new THREE.Matrix4().compose(_a.add(_b).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1));
-    g.applyMatrix4(m);
-    return this.add(g, color, undefined, kind);
+    return this.add(g, color, undefined, kind, this.jitter, m);
   }
   /** round beam (rope, pipe) from a to b */
   rod(ax: number, ay: number, az: number, bx: number, by: number, bz: number, r: number, color: number, seg = 5, kind?: BakeKind): this {
@@ -99,8 +151,7 @@ export class Kit {
     const len = _d.subVectors(_b, _a).length();
     const g = new THREE.CylinderGeometry(r, r, len, seg, 1);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), _d.normalize());
-    g.applyMatrix4(new THREE.Matrix4().compose(_a.add(_b).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1)));
-    return this.add(g, color, undefined, kind);
+    return this.add(g, color, undefined, kind, this.jitter, new THREE.Matrix4().compose(_a.add(_b).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1)));
   }
 
   empty(kind: BakeKind = 'solid'): boolean { return this.parts[kind].length === 0; }
@@ -136,7 +187,69 @@ export class Kit {
   }
 }
 
-export const solidMat = (): THREE.MeshToonMaterial => toon(0xffffff, { vertexColors: true });
+/**
+ * The shared solid material: toon + surfaces, with the patterns read in each part's own frame (`surfQ`).
+ */
+let solid: THREE.MeshToonMaterial | null = null;
+const USED: SurfName[] = ['planks', 'logs', 'bark', 'shingle', 'tile', 'brick', 'fieldstone', 'plaster', 'metal', 'fabric', 'hay', 'rock', 'snow', 'thatch'];
+export function solidMat(): THREE.MeshToonMaterial {
+  if (solid) return solid;
+  const m = surfaceMaterial({ vertexColors: true, shared: false, surfaces: USED });
+  const d = m as THREE.Material & { defaultAttributeValues?: Record<string, number[]> };
+  d.defaultAttributeValues = { ...(d.defaultAttributeValues ?? {}), surfQ: [0, 0, 0, 1] };
+  chainShader(m, (sh) => {
+    if (!sh.vertexShader.includes('vSurfP')) return;   // surfaces compiled out (quality low)
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute vec4 surfQ;
+vec3 kitQRot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }`)
+      .replace('#include <project_vertex>', `{ vec4 iq = vec4(-surfQ.xyz, surfQ.w); vSurfP = kitQRot(iq, vSurfP); vSurfN = kitQRot(iq, vSurfN); }
+#include <project_vertex>`);
+  }, 'kit-frame');
+  solid = m;
+  return m;
+}
+
+/** Bake helper: move a Kit geometry by `m` and carry its pattern frames along (call instead of applyMatrix4). */
+export function bakeInto(g: THREE.BufferGeometry, m: THREE.Matrix4): THREE.BufferGeometry {
+  const fq = g.attributes.surfQ as THREE.BufferAttribute | undefined;
+  if (fq) {
+    m.decompose(_p, _q, _s);
+    const q = new THREE.Quaternion();
+    for (let i = 0; i < fq.count; i++) {
+      q.set(fq.getX(i), fq.getY(i), fq.getZ(i), fq.getW(i)).premultiply(_q);
+      fq.setXYZW(i, q.x, q.y, q.z, q.w);
+    }
+  }
+  return g.applyMatrix4(m);
+}
+
+const longest = (s: THREE.Vector3): 'x' | 'y' | 'z' => (s.x > s.y * 1.05 && s.x >= s.z ? 'x' : s.z > s.y * 1.05 && s.z > s.x ? 'z' : 'y');
+
+const WOOD = new Set<number>([PAL.wood, PAL.woodDark, PAL.woodLight, PAL.plank, 0x8a5a3a, 0x6e452c, 0x5a3a24, 0x5a3a2c, 0xc99a64, 0xc9a26a, 0xa8844f]);
+const BARK = new Set<number>([PAL.trunk, PAL.bark]);
+const STONE = new Set<number>([PAL.stone, PAL.rockDark, PAL.rock, 0xa29a8c, 0xa9a294, 0xc4bdb0, 0xc9c2b4, 0xcfc7b6, 0xd9d2c4, 0xb8b0a0, 0x8f887c, 0x9a8f7c, 0xc9bfae, 0xb9ae9b, 0xd6cdbd, 0xa89f8e, 0xc2b49c]);
+const METAL = new Set<number>([PAL.metal, PAL.metalDark, PAL.ink, 0x3a3430]);
+const HAY = new Set<number>([PAL.hay, 0xd4b458, 0xc9a54a, 0xc9b98a]);
+const WHITE = new Set<number>([PAL.wallWhite, PAL.white]);
+
+/** The automatic surface for a part from its paint colour and local size (see the Kit header). */
+export function autoSurface(color: number, size: THREE.Vector3, cyl: boolean): SurfSpec {
+  const d = [size.x, size.y, size.z].sort((a, b) => b - a);
+  const slender = d[0] > 2.6 * d[1];
+  const big = d[0];
+  if (WOOD.has(color)) return slender ? ['logs', { axis: 'long' }] : ['planks', { axis: 'long' }];
+  if (BARK.has(color)) return ['logs', { axis: 'long', variant: 1 }];
+  if (STONE.has(color)) return big >= 0.8 ? ['fieldstone', { axis: 'h' }] : 'rock';
+  if (METAL.has(color)) return ['metal', { axis: cyl ? 'y' : 'long', strength: big < 0.5 ? 0.5 : 0.8 }];
+  if (HAY.has(color)) return 'hay';
+  if (color === PAL.cloth || color === 0xf3e6cc) return 'fabric';
+  if (color === PAL.wallCream) return ['plaster', { strength: 0.6 }];
+  if (color === PAL.rust || color === 0xb86a44) return ['plaster', { strength: 0.7 }];
+  if (color === PAL.snow) return 'snow';
+  if (WHITE.has(color)) return slender ? ['logs', { axis: 'long', strength: 0.35 }] : ['planks', { axis: 'long', variant: 2, strength: 0.7 }];
+  return 'plain';
+}
 
 /**
  * Glow material: by day the panes read as cool glass with a hint of their colour, at night they burn warm (> 1 so the

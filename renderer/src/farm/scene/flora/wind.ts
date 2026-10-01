@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import type { SceneCtx, WindService } from '../context.ts';
+import { chainShader } from '../surface/index.ts';
 
 export const WIND = {
   uWTime: { value: 0 },
@@ -38,11 +39,11 @@ export interface SwayOpts {
   maskTint?: boolean;
 }
 
-/** Patch a material (in place) so its vertices sway. Returns the material. */
+/** Patch a material (in place, chained after any existing hook) so its vertices sway. Returns the material. */
 export function sway<M extends THREE.Material>(m: M, o: SwayOpts = {}): M {
   const amount = (o.amount ?? 0.12).toFixed(4), pivot = (o.pivot ?? 0).toFixed(3), fade = (o.fade ?? 0).toFixed(1);
   const tree = o.mode === 'tree';
-  m.onBeforeCompile = (sh) => {
+  return chainShader(m, (sh) => {
     Object.assign(sh.uniforms, WIND);
     if (o.maskTint) sh.vertexShader = sh.vertexShader.replace('#include <color_vertex>', `#include <color_vertex>
 #if defined( USE_INSTANCING_COLOR ) && defined( USE_COLOR )
@@ -72,7 +73,5 @@ vec4 mvPosition = vec4( transformed, 1.0 );
 }
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;`);
-  };
-  m.customProgramCacheKey = () => `sway|${amount}|${pivot}|${fade}|${tree}|${o.maskTint ? 1 : 0}`;
-  return m;
+  }, `sway|${amount}|${pivot}|${fade}|${tree}|${o.maskTint ? 1 : 0}`);
 }

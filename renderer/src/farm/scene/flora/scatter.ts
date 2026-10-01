@@ -26,6 +26,9 @@ export interface Scatter {
   tuftSamples: GroundSample[];
   tall: Item[];
   tallSamples: GroundSample[];
+  /** small dense clumps around the open-ground tufts (drawn near the camera only); samples = their parent tuft's */
+  short: Item[];
+  shortSamples: GroundSample[];
   flowers: Record<FlowerKind, Item[]>;
   /** per flower item: palette slot (recoloured per season) */
   flowerSlot: Map<Item, number>;
@@ -69,7 +72,7 @@ export function scatter(): Scatter {
   const out: Scatter = {
     trees: { round: [], lolly: [], bushy: [], oak: [], birch: [], pine: [], fir: [], willow: [], hero: [] },
     bushes: { bush: [], berry: [], hedge: [] },
-    tufts: [], tuftSamples: [], tall: [], tallSamples: [],
+    tufts: [], tuftSamples: [], tall: [], tallSamples: [], short: [], shortSamples: [],
     flowers: { daisy: [], bell: [], tall: [] }, flowerSlot: new Map(),
     clover: [], rocks: [], logs: [], stumps: [], mushrooms: [], heroes: heroSpots(),
   };
@@ -167,7 +170,7 @@ export function scatter(): Scatter {
   }
 
   // ground cover: short grass everywhere open, tall grass in meadows, clover, wildflower patches
-  const rt = seeded('flora:tufts');
+  const rt = seeded('flora:tufts'), rsh = seeded('flora:short');
   const step = 1.05;
   for (let z = -120; z < 120; z += step) for (let x = -124; x < 124; x += step) {
     const px = x + (rt() - 0.5) * step * 0.95, pz = z + (rt() - 0.5) * step * 0.95;
@@ -186,7 +189,20 @@ export function scatter(): Scatter {
     const sm = sampleGround(px, pz, h);
     const tall = c > 2.2 && meadow > 0.05 && roll2 < 0.45 + meadow * 0.5;
     const it: Item = { x: px, y: h - 0.03, z: pz, s: (0.8 + rt() * 0.5 + (c > 3 ? 0.15 : 0)) * (c < 1.2 ? 0.75 : 1), yaw: rt() * 6.28, sy: (0.8 + rt() * 0.5) * (c < 1.2 ? 0.7 : 1) };
+    // keep off the painted path dirt (its edge sits at path ≈ 0.45); tufts right at the edge creep over it
+    if (sm.path > 0.4) continue;
     if (tall) { out.tall.push(it); out.tallSamples.push(sm); } else { out.tufts.push(it); out.tuftSamples.push(sm); }
+    // a little crowd of small soft clumps around it: dense, varied ground cover near the camera
+    if (sm.path < 0.2) {
+      const k = 2 + Math.floor(rsh() * 3);
+      for (let i = 0; i < k; i++) {
+        const a = rsh() * 6.28, d = 0.25 + rsh() * 0.45;
+        const sx = px + Math.cos(a) * d, sz = pz + Math.sin(a) * d;
+        if (c < 1 && clearance(sx, sz) < 0.3) continue;
+        out.short.push({ x: sx, y: heightAt(sx, sz) - 0.02, z: sz, s: 0.75 + rsh() * 0.6, yaw: rsh() * 6.28, sy: 0.7 + rsh() * 0.6 });
+        out.shortSamples.push(sm);
+      }
+    }
     // clover close to the edges of paths and in lawns
     if (c > 0.3 && c < 2.5 && rt() < 0.07) out.clover.push({ x: px + 0.3, y: h - 0.02, z: pz - 0.2, s: 0.8 + rt() * 0.6, yaw: rt() * 6.28, seasons: 15 });
   }

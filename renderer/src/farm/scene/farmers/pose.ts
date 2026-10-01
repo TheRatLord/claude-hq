@@ -1,38 +1,42 @@
 // @pure
 /**
- * Poses for the chibi rig as flat channel vectors, the looping animation for every activity, the walk/jog gait and
- * a cross-fade blender so a farmer never pops between poses. Pure numbers only (no three), so it is node-testable.
+ * Poses for the voxel mascots as flat channel vectors, the looping animation of every activity, the two gaits
+ * (Clawd's four-legged scuttle, Codex's hop-waddle), per-channel springs that carry every transition with a little
+ * overshoot, and the face → eye-glyph mapping. Pure numbers only (no three), so it is node-testable.
  *
- * Rig conventions (model faces +z, its left is +x):
- *   arms: x = swing forward/up (rad), z = raise outward (rad); legs: x = swing forward (rad)
- *   head: p = look down (+), y = turn left (+), r = tilt
- *   lean = torso bends forward (+), drop = hips lowered (m, negative raises: sitting on a bale)
+ * Conventions (model faces +z, its left is +x, y up; see mascots.ts for the body plans):
+ *   bob     body lift (m)                    drop  0..1 body lowered toward its feet (1 = sitting on the ground / seat)
+ *   lean    pitch forward (+, rad)           roll  tilt; + raises the model's left side     twist  yaw (+ turns left)
+ *   sq      squash (−) / stretch (+), volume-preserving about the body bottom
+ *   lie     0..1 flop over onto the side     tuck  0..1 legs folded forward (sitting)
+ *   l0..l3  extra leg swing (+ forward, rad): Clawd FL FR BL BR; Codex L R
+ *   aLy aLz aLx aLe (and aR…)  nub swing forward, raise up, twist, extend (0 = normal length)
+ *   eyeX eyeY  eye shift in body voxels (looking around)      eyeS  eye scale (+ wide)
+ *   pP pY   held prop pitch (+ tips down) / yaw, relative to the body     prop  the prop's action parameter (0..1)
+ *   jig     lobe / scarf jiggle energy
  */
 
 export const CH = {
-  bob: 0, lean: 1, roll: 2, twist: 3, drop: 4,
-  headP: 5, headY: 6, headR: 7,
-  aLx: 8, aLz: 9, aRx: 10, aRz: 11,
-  lL: 12, lR: 13,
-  sq: 14, prop: 15, lie: 16,
+  bob: 0, drop: 1, lean: 2, roll: 3, twist: 4, sq: 5, lie: 6, tuck: 7,
+  l0: 8, l1: 9, l2: 10, l3: 11,
+  aLy: 12, aLz: 13, aLx: 14, aLe: 15, aRy: 16, aRz: 17, aRx: 18, aRe: 19,
+  eyeX: 20, eyeY: 21, eyeS: 22,
+  pP: 23, pY: 24, prop: 25, jig: 26,
 } as const;
-export const NCH = 17;
+export const NCH = 27;
 export type Pose = Float32Array;
 export const newPose = (): Pose => new Float32Array(NCH);
 
+export type Body = 'clawd' | 'codex';
+
 export const PROPS = [
-  'hoe', 'trowel', 'can', 'crate', 'basket', 'rod', 'notebook', 'magnifier', 'hammer', 'saw', 'letter', 'bindle', 'broom', 'brush', 'book', 'post',
+  'hoe', 'trowel', 'can', 'crate', 'basket', 'rod', 'notebook', 'magnifier', 'hammer', 'saw', 'letter', 'bindle', 'broom', 'brush', 'book',
 ] as const;
 export type Prop = (typeof PROPS)[number];
-
-/** How a prop is held: in the right hand, the left hand, or in front with both arms. */
-export const PROP_HOLD: Readonly<Record<Prop, 'R' | 'L' | 'front'>> = {
-  hoe: 'R', trowel: 'R', can: 'R', crate: 'front', basket: 'L', rod: 'R', notebook: 'L', magnifier: 'R', hammer: 'R', saw: 'R',
-  letter: 'front', bindle: 'R', broom: 'R', brush: 'R', book: 'front', post: 'L',
-};
+export type Hold = 'L' | 'R' | 'both' | 'over';
 
 export const FACES = [
-  'neutral', 'happy', 'focused', 'stuck', 'sleepy', 'proud', 'worried', 'talk', 'yawn', 'surprised', 'asleep', 'whistle',
+  'neutral', 'happy', 'focused', 'stuck', 'sleepy', 'proud', 'worried', 'talk', 'yawn', 'surprised', 'asleep', 'whistle', 'oops', 'sparkle',
 ] as const;
 export type Face = (typeof FACES)[number];
 
@@ -45,409 +49,677 @@ export type Act = (typeof ACTS)[number];
 
 export interface ActInfo {
   prop: Prop | null;
+  /** which nub(s) hold the prop */
+  hold?: Hold;
   /** default expression (mood may override) */
   face?: Face;
-  /** upper body keeps its pose while walking (carrying something with arms) */
+  /** upper body keeps its pose while walking (carrying something) */
   carryWalk?: boolean;
-  /** seated/kneeling: the farmer should not be walking in this act */
+  /** heavy load: shorter, squashier steps */
+  heavy?: boolean;
+  /** seated / crouched: the farmer should not be walking in this act */
   grounded?: boolean;
+  /** one-shot reaction: the loop runs on time since the act began */
+  oneShot?: boolean;
 }
 
 export const ACT_INFO: Readonly<Record<Act, ActInfo>> = {
-  stand: { prop: null }, plant: { prop: 'trowel', face: 'focused', grounded: true }, hoe: { prop: 'hoe', face: 'focused' },
-  feed: { prop: 'basket', face: 'happy' }, brush: { prop: 'brush', face: 'happy' }, inspect: { prop: 'magnifier', face: 'focused', grounded: true },
-  almanac: { prop: 'book', face: 'focused', carryWalk: true }, water: { prop: 'can', face: 'focused', carryWalk: true },
-  hammer: { prop: 'hammer', face: 'focused' }, saw: { prop: 'saw', face: 'focused' }, carry: { prop: 'crate', carryWalk: true },
-  bend: { prop: null }, read: { prop: 'letter', face: 'focused', carryWalk: true }, plan: { prop: 'notebook', face: 'focused', grounded: true },
-  talk: { prop: null, face: 'talk' }, delegate: { prop: null, face: 'whistle' }, stretch: { prop: null, face: 'yawn' },
-  sweep: { prop: 'broom', face: 'sleepy' }, ask: { prop: null, face: 'worried' }, done: { prop: 'basket', face: 'proud', carryWalk: true },
-  campfire: { prop: null, face: 'happy', grounded: true }, fish: { prop: 'rod', face: 'happy', grounded: true },
-  lean: { prop: null, face: 'happy' }, board: { prop: null, face: 'neutral' }, nap: { prop: null, face: 'asleep', grounded: true },
-  lie: { prop: null, face: 'asleep', grounded: true }, chat: { prop: null, face: 'talk' }, pet: { prop: null, face: 'happy', grounded: true },
-  wave: { prop: null, face: 'happy' }, cheer: { prop: null, face: 'happy' }, scratch: { prop: null, face: 'stuck' },
-  oops: { prop: null, face: 'surprised' }, bindle: { prop: 'bindle', carryWalk: true }, sitground: { prop: null, face: 'happy', grounded: true },
+  stand: { prop: null },
+  plant: { prop: 'trowel', hold: 'R', face: 'focused', grounded: true },
+  hoe: { prop: 'hoe', hold: 'R', face: 'focused' },
+  feed: { prop: 'basket', hold: 'L', face: 'happy' },
+  brush: { prop: 'brush', hold: 'R', face: 'happy' },
+  inspect: { prop: 'magnifier', hold: 'R', face: 'focused', grounded: true },
+  almanac: { prop: 'book', hold: 'both', face: 'focused', carryWalk: true },
+  water: { prop: 'can', hold: 'R', face: 'focused', carryWalk: true },
+  hammer: { prop: 'hammer', hold: 'R', face: 'focused' },
+  saw: { prop: 'saw', hold: 'R', face: 'focused' },
+  carry: { prop: 'crate', hold: 'over', carryWalk: true, heavy: true },
+  bend: { prop: null },
+  read: { prop: 'letter', hold: 'R', face: 'focused', carryWalk: true },
+  plan: { prop: 'notebook', hold: 'L', face: 'focused', grounded: true },
+  talk: { prop: null, face: 'talk' },
+  delegate: { prop: null, face: 'whistle' },
+  stretch: { prop: null, face: 'yawn' },
+  sweep: { prop: 'broom', hold: 'R', face: 'sleepy' },
+  ask: { prop: null, face: 'surprised' },
+  done: { prop: 'basket', hold: 'both', face: 'proud', carryWalk: true },
+  campfire: { prop: null, face: 'happy', grounded: true },
+  fish: { prop: 'rod', hold: 'R', face: 'happy', grounded: true },
+  lean: { prop: null, face: 'happy' },
+  board: { prop: null, face: 'neutral' },
+  nap: { prop: null, face: 'asleep', grounded: true },
+  lie: { prop: null, face: 'asleep', grounded: true },
+  chat: { prop: null, face: 'talk' },
+  pet: { prop: null, face: 'happy', grounded: true },
+  wave: { prop: null, face: 'happy' },
+  cheer: { prop: null, face: 'sparkle', oneShot: true },
+  scratch: { prop: null, face: 'stuck' },
+  oops: { prop: null, face: 'oops', oneShot: true },
+  bindle: { prop: 'bindle', hold: 'R', carryWalk: true },
+  sitground: { prop: null, face: 'happy', grounded: true },
   sit: { prop: null, face: 'happy', grounded: true },
 };
 
-const S = Math.sin, C = Math.cos, TAU = Math.PI * 2;
-const tri = (x: number) => 1 - 2 * Math.abs((x % 1 + 1) % 1 - 0.5) * 2; // triangle -1..1
-const pulse = (x: number, w = 0.2) => { const f = (x % 1 + 1) % 1; return f < w ? S((f / w) * Math.PI) : 0; };
+/** Default hold for a prop when the act does not say. */
+export const holdOf = (act: Act): Hold => ACT_INFO[act].hold ?? 'R';
+
+/**
+ * Body-bottom height above the root for seated acts (m). Seats publish the height of their surface; the system puts
+ * the root there minus this, so the body lands on the log / bale / dock.
+ */
+export const SEAT_H: Readonly<Partial<Record<Act, number>>> = { plan: 0, campfire: 0, fish: 0, nap: 0, sitground: 0, lie: 0, sit: 0 };
+
+const S = Math.sin, C = Math.cos, TAU = Math.PI * 2, PI = Math.PI;
+const fract = (x: number) => x - Math.floor(x);
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
-/** Smooth 0..1 window: 1 while frac(x) is in [0, on), ramping over `edge` at both ends. */
-const win = (x: number, on: number, edge = 0.06) => { const f = (x % 1 + 1) % 1; return sstep(0, edge, f) * (1 - sstep(on - edge, on, f)); };
+/** Smooth 0..1 window: 1 while frac(x) is in [0, on), easing over `edge` at both ends. */
+const win = (x: number, on: number, edge = 0.06) => { const f = fract(x); return sstep(0, edge, f) * (1 - sstep(on - edge, on, f)); };
 const mix = (a: number, b: number, w: number) => a + (b - a) * w;
+/** a smooth bump over [a, b] of the cycle (0 outside) */
+const bump = (f: number, a: number, b: number) => (f <= a || f >= b ? 0 : S(((f - a) / (b - a)) * PI));
+/** smooth periodic noise, −1..1 */
+const wander = (x: number) => (S(x) * 0.6 + S(x * 2.31 + 1.7) * 0.3 + S(x * 4.87 + 4.1) * 0.1);
 
-/** Hip height above the feet for seated acts (the system lifts the root so the hips land on a real seat). */
-export const SEAT_H: Readonly<Partial<Record<Act, number>>> = { plan: 0.42, campfire: 0.32, fish: 0.25, nap: 0.08, sitground: 0.06, lie: 0.2, sit: 0.4 };
+function arms(o: Pose, ly: number, lz: number, ry: number, rz: number): void {
+  o[CH.aLy] = ly; o[CH.aLz] = lz; o[CH.aRy] = ry; o[CH.aRz] = rz;
+}
+function legs(o: Pose, a: number, b = a, c = a, d = b): void { o[CH.l0] = a; o[CH.l1] = b; o[CH.l2] = c; o[CH.l3] = d; }
+/** sitting: body down on the seat, legs folded forward */
+function seated(o: Pose): void { o[CH.drop] = 1; o[CH.tuck] = 1; }
 
-/** Relaxed standing base: arms slightly out. */
-export function basePose(o: Pose): Pose {
+/** Relaxed standing base: nubs a touch down, breathing. */
+export function basePose(o: Pose, T: number): Pose {
   o.fill(0);
-  o[CH.aLz] = 0.14; o[CH.aRz] = 0.14;
+  o[CH.aLz] = -0.12; o[CH.aRz] = -0.12;
+  const br = S(T * 1.7);
+  o[CH.sq] = br * 0.018;
+  o[CH.bob] = 0;
+  o[CH.aLz] += br * 0.03; o[CH.aRz] += br * 0.03;
   return o;
-}
-
-/** Seated legs (on a bale / log / the ground). `seat` = seat height above the ground, m. */
-function sit(o: Pose, seat: number) {
-  o[CH.drop] = 0.3 - seat;
-  o[CH.lL] = 1.45; o[CH.lR] = 1.45;
-}
-function kneel(o: Pose) {
-  o[CH.drop] = 0.2;
-  o[CH.lL] = -1.25; o[CH.lR] = -1.1;
-}
-function crouch(o: Pose) {
-  o[CH.drop] = 0.13;
-  o[CH.lL] = 0.75; o[CH.lR] = -0.5;
 }
 
 /**
  * Write the target pose of `act` at time `t` (seconds). `k` is a per-farmer personality phase (0..1) so a crowd is
- * never in sync; `tempo` scales loop speed.
+ * never in sync; `tempo` scales loop speed; `local` is the time since this act began (one-shot reactions).
  */
-export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose): Pose {
-  basePose(o);
+export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, local = t, body: Body = 'clawd'): Pose {
   const T = t * tempo + k * 10;
-  const breathe = S(T * 1.6) * 0.012;
-  o[CH.bob] = breathe;
-  o[CH.sq] = S(T * 1.6) * 0.015;
+  basePose(o, T);
   switch (act) {
     case 'stand': {
-      // look around now and then, shift weight
-      const look = S(T * 0.23) * 0.6 * clamp01(S(T * 0.11) * 2);
-      o[CH.headY] = look; o[CH.headP] = -0.05 + S(T * 0.37) * 0.06;
-      o[CH.roll] = S(T * 0.5) * 0.03; o[CH.lL] = S(T * 0.5) * 0.05;
-      o[CH.aLx] = S(T * 0.8) * 0.05; o[CH.aRx] = -S(T * 0.8) * 0.05;
+      // look around (eyes lead, the body follows), shift weight, and every so often a little shake
+      const look = wander(T * 0.35);
+      o[CH.eyeX] = look * 0.9; o[CH.eyeY] = wander(T * 0.21 + 3) * 0.35;
+      o[CH.twist] = wander(T * 0.35 - 0.6) * 0.18;
+      o[CH.roll] = S(T * 0.45) * 0.035;
+      const shake = win(T / 9 + k, 0.05, 0.012);
+      o[CH.roll] += S(T * 38) * 0.07 * shake; o[CH.sq] += shake * 0.03;
+      const tap = win(T / 6.5 + k * 3, 0.08, 0.02);
+      o[CH.l0] = tap * 0.35 * Math.max(0, S(T * 22));
+      o[CH.aLy] = S(T * 0.8) * 0.08; o[CH.aRy] = -S(T * 0.8 + 0.5) * 0.08;
       break;
     }
     case 'plant': {
-      kneel(o);
-      o[CH.lean] = 0.45;
-      const dig = win(T * 1.1 / 6, 0.7, 0.08); // stab the trowel into the soil, then pat the soil with both hands
-      const ph = T * 2.2;
-      const pat = Math.abs(S(T * 7)) * 0.25;
-      o[CH.aRx] = mix(0.95 - pat, 0.7 + pulse(ph, 0.35) * 0.55, dig); o[CH.aRz] = mix(0.2, 0.1, dig); o[CH.prop] = pulse(ph, 0.35) * dig;
-      o[CH.aLx] = mix(0.95 - Math.abs(S(T * 7 + 1.5)) * 0.25, 0.7, dig); o[CH.aLz] = mix(0.2, 0.3, dig);
-      o[CH.headP] = 0.45; o[CH.headY] = S(T * 0.3) * 0.15;
-      o[CH.bob] += Math.abs(S(ph * Math.PI)) * 0.01;
+      // crouched over the row: stab the trowel in, wiggle it, pat the soil down with the other nub; the body bobs with it
+      const ph = fract(T * 0.95);
+      const stab = bump(ph, 0.12, 0.42), wig = ph > 0.42 && ph < 0.62 ? S((ph - 0.42) * TAU * 5) : 0;
+      const pat = bump(ph, 0.66, 0.78) + bump(ph, 0.8, 0.92);
+      o[CH.drop] = 0.55 + stab * 0.12; o[CH.lean] = 0.32 + stab * 0.1;
+      o[CH.sq] -= stab * 0.06 - pat * 0.02;
+      o[CH.aRy] = 1.0; o[CH.aRz] = -0.35 - stab * 0.35; o[CH.aRe] = 0.15 + stab * 0.15;
+      o[CH.pP] = 1.2 + stab * 0.35 + wig * 0.12; o[CH.pY] = wig * 0.15;
+      o[CH.aLy] = 0.9; o[CH.aLz] = -0.2 - pat * 0.45;
+      o[CH.eyeY] = -0.5; o[CH.eyeX] = -0.3 + S(T * 0.4) * 0.25;
+      o[CH.prop] = stab;
+      o[CH.roll] = wig * 0.03;
+      legs(o, 0.15, 0.15, -0.1, -0.1);
       break;
     }
     case 'hoe': {
-      const ph = (T * 0.9) % 1;
-      const up = ph < 0.55 ? ph / 0.55 : 1 - (ph - 0.55) / 0.45 * 1;
-      const e = up < 0 ? 0 : up;
-      o[CH.lean] = 0.15 + (1 - e) * 0.25;
-      o[CH.aRx] = 0.5 + e * 1.6; o[CH.aLx] = 0.45 + e * 1.5; o[CH.aRz] = 0.05; o[CH.aLz] = 0.05;
-      o[CH.prop] = e;
-      o[CH.headP] = 0.25; o[CH.sq] += (1 - e) * -0.03;
-      o[CH.lL] = 0.2; o[CH.lR] = -0.15;
+      // lift (slow), chop (fast), tug back
+      const ph = fract(T * 0.85);
+      const up = ph < 0.6 ? sstep(0, 0.6, ph) : 1 - sstep(0.6, 0.72, ph);
+      const hit = bump(ph, 0.7, 0.86);
+      o[CH.lean] = 0.1 - up * 0.2 + hit * 0.25; o[CH.sq] += up * 0.06 - hit * 0.08;
+      o[CH.aRy] = 1.1; o[CH.aRz] = -0.2 + up * 0.9; o[CH.aLy] = 1.2; o[CH.aLz] = -0.2 + up * 0.8;
+      o[CH.pP] = 0.7 - up * 1.3; o[CH.prop] = hit;
+      o[CH.eyeY] = -0.4;
       break;
     }
     case 'feed': {
-      const ph = (T * 0.8) % 1;
-      o[CH.aLx] = 0.9; o[CH.aLz] = 0.05;
-      const toss = pulse(ph, 0.3);
-      o[CH.aRx] = 0.4 + toss * 1.1; o[CH.aRz] = 0.3 + toss * 0.4; o[CH.twist] = -0.2 + toss * 0.3;
-      o[CH.headP] = 0.2; o[CH.headY] = -0.2 + toss * 0.3;
-      o[CH.bob] += toss * 0.02;
+      // basket on the left nub, scatter grain with the right in wide tosses
+      const ph = fract(T * 0.75);
+      const toss = bump(ph, 0.1, 0.45);
+      o[CH.aLy] = 0.7; o[CH.aLz] = -0.35;
+      o[CH.aRy] = 0.3 + toss * 1.1; o[CH.aRz] = -0.1 + toss * 0.7; o[CH.aRe] = toss * 0.2;
+      o[CH.twist] = -0.2 + toss * 0.4; o[CH.bob] = toss * 0.03; o[CH.sq] += toss * 0.03;
+      o[CH.eyeX] = -0.5 + toss * 1.2;
       break;
     }
     case 'brush': {
-      o[CH.lean] = 0.3;
-      o[CH.aRx] = 1.1 + S(T * 4) * 0.25; o[CH.aRz] = 0.25 + S(T * 4 + 1) * 0.3;
-      o[CH.aLx] = 0.8; o[CH.aLz] = 0.4;
-      o[CH.headP] = 0.25; o[CH.headR] = S(T * 0.7) * 0.12;
-      o[CH.lL] = 0.15; o[CH.lR] = -0.1;
+      const s = S(T * 3.6);
+      o[CH.lean] = 0.2 + s * 0.04; o[CH.roll] = s * 0.05; o[CH.twist] = s * 0.08;
+      o[CH.aRy] = 1.15 + s * 0.3; o[CH.aRz] = 0.1 + C(T * 3.6) * 0.15; o[CH.pY] = s * 0.3;
+      o[CH.aLy] = 0.7; o[CH.aLz] = 0.05;
+      o[CH.eyeX] = s * 0.4;
       break;
     }
     case 'inspect': {
-      crouch(o);
-      o[CH.lean] = 0.4;
-      const peer = S(T * 0.4);
-      o[CH.aRx] = 1.25 + peer * 0.15; o[CH.aRz] = -0.2 + peer * 0.1;
-      o[CH.aLx] = 0.5; o[CH.aLz] = 0.25;
-      o[CH.headP] = 0.35 + S(T * 0.6) * 0.1; o[CH.headY] = peer * 0.3; o[CH.headR] = S(T * 0.9) * 0.15;
+      // lean in with the magnifier held up to one eye, sweep slowly across the crop; now and then a "hmm" tilt
+      const sweep = S(T * 0.55), hmm = win(T / 7 + k, 0.2, 0.05);
+      o[CH.drop] = 0.3; o[CH.lean] = 0.42 + sweep * 0.04;
+      o[CH.aRy] = 1.35 + sweep * 0.2; o[CH.aRz] = 0.28 - hmm * 0.1; o[CH.aRe] = 0.1;
+      o[CH.pY] = -sweep * 0.25;
+      o[CH.aLy] = 0.2; o[CH.aLz] = -0.35 + hmm * 0.5;
+      o[CH.twist] = sweep * 0.16; o[CH.roll] = hmm * 0.18;
+      o[CH.eyeX] = sweep * 0.6; o[CH.eyeY] = -0.25;
       break;
     }
     case 'almanac': {
-      o[CH.aLx] = 1.15; o[CH.aRx] = 1.15; o[CH.aLz] = -0.25; o[CH.aRz] = -0.25;
-      const flip = pulse(T * 0.25, 0.12);
-      o[CH.aRz] += flip * 0.6; o[CH.aRx] += flip * 0.25;
-      o[CH.headP] = 0.4 + S(T * 1.3) * 0.05; o[CH.headY] = S(T * 0.8) * 0.12;
-      o[CH.prop] = flip;
+      const flip = win(T * 0.2, 0.12, 0.04);
+      arms(o, 1.2, -0.05, 1.2 - flip * 0.3, -0.05 + flip * 0.5);
+      o[CH.lean] = 0.1; o[CH.prop] = flip;
+      o[CH.eyeY] = -0.4; o[CH.eyeX] = S(T * 1.8) * 0.5; // reading line by line
+      o[CH.roll] = S(T * 0.6) * 0.03;
       break;
     }
     case 'water': {
-      o[CH.aRx] = 1.0; o[CH.aRz] = 0.15;
-      o[CH.aLx] = 0.3; o[CH.aLz] = 0.35;
-      o[CH.prop] = 0.7 + S(T * 1.1) * 0.25;
-      o[CH.lean] = 0.1; o[CH.headP] = 0.35; o[CH.twist] = S(T * 0.5) * 0.25;
-      o[CH.roll] = S(T * 0.5) * 0.04;
+      // can out on the right nub, tipped to pour; body leans with the weight and sways along the row
+      const pour = 0.55 + S(T * 1.2) * 0.2;
+      o[CH.aRy] = 0.95; o[CH.aRz] = -0.15 + S(T * 1.2) * 0.05; o[CH.aRe] = 0.1;
+      o[CH.pP] = pour; o[CH.prop] = pour;
+      o[CH.aLy] = 0.25; o[CH.aLz] = 0.15;
+      o[CH.lean] = 0.14; o[CH.roll] = -0.07 + S(T * 0.6) * 0.03; o[CH.twist] = S(T * 0.6) * 0.18;
+      o[CH.eyeY] = -0.45; o[CH.eyeX] = -0.4;
       break;
     }
     case 'hammer': {
-      const ph = (T * 1.6) % 1;
-      // wind up slowly, strike fast
-      const e = ph < 0.7 ? ph / 0.7 : 1 - (ph - 0.7) / 0.3;
-      o[CH.lean] = 0.25;
-      o[CH.aRx] = 0.7 + e * 1.6; o[CH.aRz] = 0.1;
-      o[CH.aLx] = 0.9; o[CH.aLz] = -0.1;
-      o[CH.headP] = 0.35;
-      o[CH.sq] += ph > 0.95 || ph < 0.05 ? -0.04 : 0;
-      o[CH.prop] = e;
-      o[CH.lL] = 0.25; o[CH.lR] = -0.2;
+      // the whole body rocks: rear back and stretch, slam down and squash, a little recoil
+      const ph = fract(T * 1.25);
+      const up = sstep(0.05, 0.62, ph) * (1 - sstep(0.66, 0.74, ph));
+      const hit = bump(ph, 0.72, 0.86), recoil = bump(ph, 0.8, 1);
+      o[CH.lean] = -0.22 * up + 0.3 * hit + 0.1 * (1 - up); o[CH.sq] += up * 0.07 - hit * 0.12;
+      o[CH.bob] = up * 0.03;
+      o[CH.aRy] = 0.9 + up * 0.2; o[CH.aRz] = -0.35 + up * 1.35 - hit * 0.1;
+      o[CH.pP] = 0.35 - up * 1.8 + recoil * 0.2; o[CH.prop] = hit;
+      o[CH.aLy] = 1.05; o[CH.aLz] = -0.4; // steadying the post
+      o[CH.eyeY] = -0.3 + up * 0.2;
+      legs(o, -0.12 * up + hit * 0.1, -0.12 * up + hit * 0.1, 0.1 * up, 0.1 * up);
       break;
     }
     case 'saw': {
-      const s = S(T * 5);
-      o[CH.lean] = 0.35;
-      o[CH.aRx] = 0.9 + s * 0.35; o[CH.aRz] = 0.05;
-      o[CH.aLx] = 0.8; o[CH.aLz] = 0.35;
-      o[CH.twist] = s * 0.12; o[CH.headP] = 0.4;
-      o[CH.lL] = 0.3; o[CH.lR] = -0.2;
+      const s = S(T * 4.6);
+      o[CH.lean] = 0.25 + s * 0.06; o[CH.twist] = s * 0.12; o[CH.roll] = s * 0.03;
+      o[CH.aRy] = 1.0 + s * 0.35; o[CH.aRz] = -0.3; o[CH.aRe] = 0.1 + s * 0.1;
+      o[CH.pP] = 0.45; o[CH.aLy] = 0.8; o[CH.aLz] = -0.45;
+      o[CH.eyeY] = -0.4; o[CH.sq] += Math.abs(s) * -0.02;
       break;
     }
     case 'carry': {
-      o[CH.aLx] = 1.2; o[CH.aRx] = 1.2; o[CH.aLz] = 0.05; o[CH.aRz] = 0.05;
-      o[CH.lean] = -0.08; o[CH.headP] = -0.05;
+      // crate overhead on both nubs, knees (well, body) bent under the weight
+      arms(o, 0.25, 1.3, 0.25, 1.3);
+      o[CH.aLe] = 0.25; o[CH.aRe] = 0.25;
+      o[CH.sq] = -0.06 + S(T * 2.2) * 0.012; o[CH.lean] = -0.04; o[CH.drop] = 0.12;
+      o[CH.eyeY] = 0.35; o[CH.pP] = S(T * 2.2) * 0.05;
       break;
     }
     case 'bend': {
-      o[CH.lean] = 0.75; o[CH.drop] = 0.08;
-      o[CH.aLx] = 1.0; o[CH.aRx] = 1.0; o[CH.aLz] = 0.1; o[CH.aRz] = 0.1;
-      o[CH.headP] = 0.3; o[CH.lL] = 0.3; o[CH.lR] = 0.3;
+      // reach down for something (the crate at the plot, a letter from the box)
+      const r = win(T * 0.5, 0.7, 0.15);
+      o[CH.drop] = 0.35 + r * 0.2; o[CH.lean] = 0.45 + r * 0.1;
+      arms(o, 1.1, -0.55, 1.1, -0.55);
+      o[CH.aLe] = 0.15; o[CH.aRe] = 0.15; o[CH.eyeY] = -0.6;
       break;
     }
     case 'read': {
-      o[CH.aLx] = 1.2; o[CH.aRx] = 1.2; o[CH.aLz] = -0.3; o[CH.aRz] = -0.3;
-      o[CH.headP] = 0.45; o[CH.headR] = S(T * 0.5) * 0.1; o[CH.headY] = S(T * 1.7) * 0.08;
+      // letter held up in front, eyes run along the lines; a little excited bounce
+      o[CH.aRy] = 1.35; o[CH.aRz] = 0.55; o[CH.aRe] = 0.2; o[CH.pP] = -0.25;
+      o[CH.aLy] = 0.9; o[CH.aLz] = 0.2;
+      const line = fract(T * 0.55);
+      o[CH.eyeX] = line < 0.85 ? -0.7 + line * 1.6 : 0.66 - (line - 0.85) * 9;
+      o[CH.eyeY] = 0.25 - Math.floor(fract(T * 0.55 / 4) * 4) * 0.12;
+      o[CH.bob] = Math.abs(S(T * 3.2)) * 0.012;
+      o[CH.lean] = -0.05;
       break;
     }
     case 'plan': {
-      sit(o, SEAT_H.plan!);
-      o[CH.lean] = 0.2;
-      const think = win(T * 0.12 - 0.7, 0.3, 0.07); // look up, tap chin with the pencil
-      o[CH.aLx] = 1.0; o[CH.aLz] = -0.2;
-      o[CH.aRx] = mix(1.05 + S(T * 9) * 0.05, 2.2, think); o[CH.aRz] = mix(-0.35 + S(T * 7) * 0.08, -0.45 + S(T * 6) * 0.04, think);
-      o[CH.headP] = mix(0.45, -0.35, think); o[CH.headY] = mix(S(T * 0.7) * 0.1, 0.3, think); o[CH.headR] = 0.15 * think;
-      o[CH.lL] += S(T * 1.3) * 0.12; o[CH.lR] += S(T * 1.3 + 2) * 0.12;
+      // sitting on the hay bale: notebook on the left nub, scribbling with the right; every few seconds look up and think
+      seated(o);
+      const think = win(T * 0.11 - 0.7, 0.32, 0.07);
+      o[CH.lean] = mix(0.18, -0.1, think); o[CH.roll] = mix(0.05, -0.12, think);
+      o[CH.aLy] = 1.25; o[CH.aLz] = -0.1; o[CH.pP] = 0.7;
+      o[CH.aRy] = mix(1.15 + S(T * 9) * 0.07, 0.9, think); o[CH.aRz] = mix(-0.15 + C(T * 11) * 0.06, 0.55 + S(T * 5) * 0.08, think);
+      o[CH.eyeY] = mix(-0.55, 0.6, think); o[CH.eyeX] = mix(S(T * 2.1) * 0.3, 0.5, think);
+      o[CH.prop] = 1 - think;
+      legs(o, S(T * 1.4) * 0.25, S(T * 1.4 + 2) * 0.25, 0, 0);
       break;
     }
     case 'talk':
     case 'chat': {
-      const calm = act === 'chat' ? 0.6 : 1;
-      const g1 = S(T * 2.1), g2 = S(T * 1.7 + 1);
-      o[CH.aRx] = (0.6 + g1 * 0.4) * calm; o[CH.aRz] = (0.3 + g2 * 0.3) * calm;
-      o[CH.aLx] = (0.4 + S(T * 1.3 + 2) * 0.35) * calm; o[CH.aLz] = 0.3 + S(T * 2.3) * 0.2 * calm;
-      o[CH.headP] = -0.05 + S(T * 3.1) * 0.08; o[CH.headR] = S(T * 1.1) * 0.12; o[CH.headY] = S(T * 0.9) * 0.15;
-      o[CH.bob] += Math.abs(S(T * 3.1)) * 0.012;
-      o[CH.twist] = S(T * 0.8) * 0.1;
-      if (act === 'chat') { const l = win(T * 0.2 - 0.85, 0.15, 0.04); o[CH.lean] = -0.15 * l; o[CH.headP] = mix(o[CH.headP], -0.3, l); o[CH.bob] += Math.abs(S(T * 18)) * 0.02 * l; } // laugh
+      // bouncy gesturing; the chatter bobs on its words, a laugh now and then
+      const calm = act === 'chat' ? 0.65 : 1;
+      const g1 = S(T * 2.3), g2 = S(T * 1.7 + 1);
+      o[CH.bob] = Math.abs(S(T * 3.4)) * 0.03 * calm; o[CH.sq] += Math.abs(S(T * 3.4)) * 0.03 * calm;
+      o[CH.aRy] = (0.5 + g1 * 0.4) * calm; o[CH.aRz] = (0.15 + g2 * 0.45) * calm;
+      o[CH.aLy] = (0.4 + S(T * 1.3 + 2) * 0.35) * calm; o[CH.aLz] = (0.05 + S(T * 2.1) * 0.35) * calm;
+      o[CH.twist] = S(T * 0.8) * 0.12; o[CH.roll] = S(T * 1.1) * 0.05;
+      o[CH.eyeX] = S(T * 0.5) * 0.3;
+      if (act === 'chat') {
+        const laugh = win(T * 0.18 - 0.85, 0.14, 0.03);
+        o[CH.lean] = -0.18 * laugh; o[CH.bob] += Math.abs(S(T * 16)) * 0.035 * laugh; o[CH.sq] += Math.abs(S(T * 16)) * 0.04 * laugh;
+      }
       break;
     }
     case 'delegate': {
-      const wh = win(T * 0.3 - 0.65, 0.35, 0.08); // fingers to the mouth, else point sweeping across the field
-      o[CH.aLx] = mix(0.1, 2.4, wh); o[CH.aLz] = mix(0.45, -0.6, wh); o[CH.headP] = -0.1 * wh;
-      o[CH.aRx] = mix(1.5 + S(T * 2.5) * 0.08, 0.2, wh); o[CH.aRz] = mix(0.25 + S(T * 0.4) * 0.35, 0.2, wh);
-      o[CH.headY] = mix(-0.2 + S(T * 0.4) * 0.35, 0, wh);
-      o[CH.twist] = S(T * 0.4) * -0.2;
+      // point across the field with an extended nub, then a two-note whistle for the ducklings (stretch up)
+      const wh = win(T * 0.28 - 0.65, 0.3, 0.07);
+      const sweep = S(T * 0.45);
+      o[CH.aRy] = mix(1.45, 0.4, wh); o[CH.aRz] = mix(0.15 + sweep * 0.05, 0.4, wh); o[CH.aRe] = mix(0.55, 0, wh);
+      o[CH.aLy] = mix(0.1, 1.2, wh); o[CH.aLz] = mix(-0.25, 0.75, wh);
+      o[CH.twist] = mix(sweep * 0.35, 0, wh);
+      o[CH.eyeX] = mix(-0.6 + sweep * 0.3, 0, wh); o[CH.eyeY] = wh * 0.3;
+      o[CH.sq] += wh * (0.07 + S(T * 14) * 0.015); o[CH.bob] = wh * 0.03;
       break;
     }
     case 'stretch': {
-      const ph = (T * 0.18) % 1;
-      const up = clamp01(S(ph * Math.PI) * 1.6);
-      o[CH.aLz] = 0.14 + up * 2.6; o[CH.aRz] = 0.14 + up * 2.6; o[CH.aLx] = up * 0.4; o[CH.aRx] = up * 0.4;
-      o[CH.lean] = -0.2 * up; o[CH.headP] = -0.4 * up; o[CH.sq] += up * 0.06;
-      o[CH.roll] = S(T * 0.9) * 0.1 * up;
+      // big yawn stretch: squash tall with the nubs up, hold (tremble), then melt, then shake it off
+      const ph = fract(T * 0.16);
+      const up = sstep(0.02, 0.28, ph) * (1 - sstep(0.52, 0.62, ph));
+      const melt = sstep(0.55, 0.68, ph) * (1 - sstep(0.8, 0.95, ph));
+      const trem = up * sstep(0.3, 0.4, ph) * S(T * 40) * 0.012;
+      o[CH.sq] = up * 0.2 - melt * 0.14 + trem; o[CH.bob] = up * 0.05;
+      o[CH.lean] = -0.15 * up + 0.25 * melt; o[CH.drop] = melt * 0.55;
+      arms(o, 0.2 * up, -0.12 + up * 1.35 - melt * 0.6, 0.2 * up, -0.12 + up * 1.35 - melt * 0.6);
+      o[CH.aLe] = up * 0.35; o[CH.aRe] = up * 0.35;
+      o[CH.eyeY] = up * 0.4 - melt * 0.3;
+      o[CH.roll] = S(T * 0.9) * 0.05 * up + S(T * 26) * 0.05 * bump(ph, 0.9, 1);
       break;
     }
     case 'sweep': {
-      const s = S(T * 3.2);
-      o[CH.lean] = 0.2;
-      o[CH.aRx] = 0.7 + s * 0.2; o[CH.aRz] = -0.1 + s * 0.35; o[CH.aLx] = 0.8; o[CH.aLz] = -0.15 + s * 0.3;
-      o[CH.twist] = s * 0.25; o[CH.headP] = 0.3;
-      o[CH.prop] = s;
+      const s = S(T * 2.8);
+      o[CH.lean] = 0.18; o[CH.twist] = s * 0.22; o[CH.roll] = s * 0.03;
+      o[CH.aRy] = 0.9; o[CH.aRz] = -0.35; o[CH.pY] = s * 0.55; o[CH.pP] = 0.3; o[CH.prop] = s;
+      o[CH.aLy] = 0.8; o[CH.aLz] = -0.3;
+      o[CH.eyeY] = -0.5;
       break;
     }
     case 'ask': {
-      // hop, wave both arms overhead
-      const ph = (T * 1.4) % 1;
-      const hop = Math.max(0, S(ph * TAU)) ;
-      o[CH.bob] = hop * 0.22;
-      o[CH.sq] = hop > 0.05 ? 0.08 * hop : -0.07;
-      const w = S(T * 9);
-      o[CH.aLz] = 2.05 + w * 0.5; o[CH.aRz] = 2.05 - w * 0.5; o[CH.aLx] = 0.25; o[CH.aRx] = 0.25;
-      o[CH.headP] = -0.15; o[CH.headR] = w * 0.08;
-      o[CH.lL] = hop * 0.3; o[CH.lR] = hop * 0.3;
+      // needs you: crouch (anticipation), spring up with both nubs waving, land with a squash, again
+      const ph = fract(T * 1.15);
+      const crouch = bump(ph, 0, 0.26), air = ph > 0.26 && ph < 0.78 ? (ph - 0.26) / 0.52 : -1;
+      const land = bump(ph, 0.76, 0.96);
+      o[CH.drop] = crouch * 0.4; o[CH.sq] = -crouch * 0.12 - land * 0.16;
+      if (air >= 0) { o[CH.bob] = 4 * air * (1 - air) * 0.3; o[CH.sq] += (1 - air) * 0.16 * (air < 0.5 ? 1 : 0.5) - air * 0.04; }
+      const w = S(T * 11);
+      const up = 1.05 + (air >= 0 ? 0.3 : -0.25 * crouch);
+      arms(o, 0.15 + w * 0.5, up + S(T * 11 + 1.6) * 0.25, 0.15 - w * 0.5, up - S(T * 11 + 1.6) * 0.25);
+      o[CH.aLe] = 0.55; o[CH.aRe] = 0.55;
+      o[CH.eyeS] = 0.3; o[CH.eyeY] = 0.3;
+      o[CH.lean] = -0.1 - crouch * 0.1 + land * 0.1;
+      o[CH.jig] = land;
+      legs(o, air >= 0 ? S(air * PI) * 0.4 : 0);
       break;
     }
     case 'done': {
-      o[CH.aLx] = 0.35; o[CH.aLz] = 0.45; // basket on the hip
-      o[CH.aRz] = 0.25; o[CH.aRx] = 0.05 + S(T * 0.9) * 0.05;
-      o[CH.roll] = S(T * 1.1) * 0.06; o[CH.headR] = S(T * 1.1 + 0.4) * 0.12; o[CH.headP] = -0.12;
-      o[CH.lean] = -0.06;
+      // proud little bounces holding the full basket in front
+      const b = Math.abs(S(T * 2.6));
+      o[CH.bob] = b * 0.05; o[CH.sq] = (b - 0.5) * 0.06;
+      arms(o, 1.05, -0.15, 1.05, -0.15);
+      o[CH.lean] = -0.1; o[CH.roll] = S(T * 1.3) * 0.07;
+      o[CH.eyeY] = 0.2; o[CH.jig] = 1 - b;
       break;
     }
     case 'campfire': {
-      sit(o, SEAT_H.campfire!);
-      o[CH.lean] = 0.1;
-      const warm = win(T * 0.1, 0.5, 0.08);
-      o[CH.aLx] = mix(0.6, 1.3, warm); o[CH.aRx] = mix(0.6, 1.3, warm); o[CH.aLz] = mix(0.1, -0.15, warm); o[CH.aRz] = mix(0.1, -0.15, warm);
-      o[CH.roll] = S(T * 0.7) * 0.07; o[CH.headR] = S(T * 0.7) * 0.1; o[CH.headP] = 0.05;
+      // sitting, nubs held out to the warmth, rubbing now and then, swaying
+      seated(o);
+      const rub = win(T * 0.13, 0.35, 0.06);
+      arms(o, 1.15 + rub * S(T * 9) * 0.15, 0.05, 1.15 - rub * S(T * 9) * 0.15, 0.05);
+      o[CH.aLe] = 0.1; o[CH.aRe] = 0.1;
+      o[CH.lean] = 0.08; o[CH.roll] = S(T * 0.7) * 0.07; o[CH.eyeX] = S(T * 0.2) * 0.3;
+      legs(o, S(T * 0.9) * 0.15, S(T * 0.9 + 1.5) * 0.15, 0, 0);
       break;
     }
     case 'fish': {
-      sit(o, SEAT_H.fish!);
-      const tug = pulse(T * 0.15, 0.08);
-      o[CH.aRx] = 1.1 + tug * 0.6; o[CH.aLx] = 1.0 + tug * 0.5; o[CH.aRz] = -0.1; o[CH.aLz] = -0.25;
-      o[CH.prop] = tug; o[CH.headP] = 0.1 - tug * 0.2; o[CH.lean] = 0.05 - tug * 0.1;
-      o[CH.lL] += S(T * 1.1) * 0.25; o[CH.lR] += S(T * 1.1 + 1.8) * 0.25; // swinging feet over the water
+      // sitting on the dock edge, rod up, legs dangling and kicking over the water; a nibble makes it jolt
+      seated(o);
+      const tug = win(T * 0.12, 0.08, 0.02);
+      o[CH.aRy] = 1.1; o[CH.aRz] = 0.2 + tug * 0.35; o[CH.pP] = -0.55 - tug * 0.4; o[CH.prop] = tug;
+      o[CH.aLy] = 1.0; o[CH.aLz] = 0.05;
+      o[CH.lean] = 0.05 - tug * 0.15; o[CH.eyeS] = tug * 0.3; o[CH.eyeY] = 0.1 - tug * 0.2;
+      o[CH.roll] = S(T * 0.5) * 0.04;
+      legs(o, -1.0 + S(T * 1.3) * 0.35, -1.0 + S(T * 1.3 + 2) * 0.35, -1.0, -1.0);
       break;
     }
     case 'lean': {
-      o[CH.lean] = 0.25; o[CH.roll] = 0.08;
-      o[CH.aLx] = 1.35; o[CH.aRx] = 1.35; o[CH.aLz] = -0.35; o[CH.aRz] = -0.35; // arms folded on the rim
-      o[CH.headP] = 0.15; o[CH.headY] = S(T * 0.2) * 0.4;
-      o[CH.lL] = 0.1; o[CH.lR] = -0.25;
+      o[CH.lean] = 0.22; o[CH.roll] = 0.07;
+      arms(o, 1.3, -0.25, 1.3, -0.25);
+      o[CH.eyeX] = wander(T * 0.3) * 0.8; o[CH.eyeY] = -0.2;
+      legs(o, 0.1, -0.05, 0, 0.1);
       break;
     }
     case 'board': {
-      o[CH.headP] = -0.2; o[CH.headY] = S(T * 0.3) * 0.3; o[CH.headR] = S(T * 0.5) * 0.08;
-      o[CH.aRx] = 2.1; o[CH.aRz] = -0.5; // hand on chin
-      o[CH.aLx] = 0.7; o[CH.aLz] = -0.3;
+      o[CH.eyeY] = 0.6; o[CH.eyeX] = wander(T * 0.4) * 0.7;
+      o[CH.aRy] = 1.0; o[CH.aRz] = 0.35 + Math.max(0, S(T * 6)) * 0.08 * win(T * 0.3, 0.3); // tapping, thinking
+      o[CH.aLy] = 0.3; o[CH.aLz] = -0.3;
+      o[CH.lean] = -0.1; o[CH.twist] = wander(T * 0.25) * 0.15;
       break;
     }
-    case 'nap': {
-      sit(o, SEAT_H.nap!);
-      o[CH.lean] = -0.1 + S(T * 0.9) * 0.02; o[CH.headP] = 0.45; o[CH.headR] = 0.25;
-      o[CH.aLx] = 0.4; o[CH.aRx] = 0.4; o[CH.aLz] = 0.05; o[CH.aRz] = 0.05;
-      o[CH.sq] = S(T * 0.9) * 0.025;
-      break;
-    }
+    case 'nap':
     case 'lie': {
-      o[CH.lie] = 1;
-      o[CH.aLz] = 2.4; o[CH.aRz] = 2.4; // hands behind the head
-      o[CH.aLx] = 0.2; o[CH.aRx] = 0.2; o[CH.lL] = 0.1; o[CH.lR] = 0.35;
-      o[CH.headY] = S(T * 0.15) * 0.2; o[CH.sq] = S(T * 0.9) * 0.02;
+      // flopped over asleep: slow breathing, nubs slack, a leg twitch in a dream
+      o[CH.lie] = 1; o[CH.drop] = 1; o[CH.tuck] = 0.2;
+      const br = S(T * 1.1);
+      o[CH.sq] = br * 0.035; o[CH.bob] = 0;
+      arms(o, act === 'lie' ? 0.2 : 0.8, act === 'lie' ? 0.9 : -0.3, 0.3, -0.5 + br * 0.04);
+      const twitch = win(T / 11 + k, 0.04, 0.01);
+      legs(o, twitch * S(T * 30) * 0.3, 0, 0, 0);
+      o[CH.eyeY] = -0.2;
       break;
     }
     case 'pet': {
-      crouch(o);
-      o[CH.lean] = 0.35;
-      o[CH.aRx] = 1.05; o[CH.aRz] = 0.1 + S(T * 3) * 0.25;
-      o[CH.aLx] = 0.4; o[CH.aLz] = 0.3; o[CH.headP] = 0.3; o[CH.headR] = S(T * 0.8) * 0.15;
+      // crouch by the animal, nub pats, happy wiggle
+      o[CH.drop] = 0.4; o[CH.lean] = 0.3;
+      o[CH.aRy] = 1.2; o[CH.aRz] = -0.3 + Math.max(0, S(T * 5)) * 0.25; o[CH.aRe] = 0.2;
+      o[CH.aLy] = 0.3; o[CH.aLz] = -0.2;
+      o[CH.roll] = S(T * 2.5) * 0.06; o[CH.eyeY] = -0.4;
       break;
     }
     case 'wave': {
-      o[CH.aRz] = 2.1 + S(T * 10) * 0.45; o[CH.aRx] = 0.3;
-      o[CH.headR] = 0.15; o[CH.headP] = -0.1; o[CH.roll] = -0.05;
-      o[CH.bob] += Math.abs(S(T * 5)) * 0.015;
+      o[CH.aRz] = 1.1 + S(T * 10) * 0.35; o[CH.aRy] = 0.3 + S(T * 10 + 1.2) * 0.3; o[CH.aRe] = 0.5;
+      o[CH.roll] = -0.07; o[CH.bob] = Math.abs(S(T * 5)) * 0.02; o[CH.eyeY] = 0.15;
       break;
     }
     case 'cheer': {
-      const ph = (T * 1.8) % 1;
-      const hop = Math.max(0, S(ph * TAU));
-      o[CH.bob] = hop * 0.3; o[CH.sq] = hop * 0.08;
-      o[CH.aRz] = 2.35; o[CH.aRx] = 0.3 + hop * 0.3; o[CH.aLz] = 0.4 + hop * 1.7; o[CH.aLx] = 0.5;
-      o[CH.headP] = -0.3; o[CH.lL] = hop * 0.4; o[CH.lR] = -hop * 0.2;
+      // celebration hops: anticipation squash, pop up with both nubs high, land and wobble
+      const ph = fract(local * 1.6);
+      const crouch = bump(ph, 0, 0.22), air = ph > 0.22 && ph < 0.75 ? (ph - 0.22) / 0.53 : -1, land = bump(ph, 0.73, 0.95);
+      o[CH.drop] = crouch * 0.3; o[CH.sq] = -crouch * 0.1 - land * 0.14;
+      if (air >= 0) { o[CH.bob] = 4 * air * (1 - air) * 0.32; o[CH.sq] += (1 - air) * 0.14; }
+      arms(o, 0.3, 1.35, 0.3, 1.35); o[CH.aLe] = 0.55; o[CH.aRe] = 0.55;
+      o[CH.roll] = air >= 0 ? S(air * PI * 2) * 0.12 : 0; o[CH.jig] = land;
+      o[CH.eyeY] = 0.3;
       break;
     }
     case 'scratch': {
-      o[CH.aRx] = 2.0; o[CH.aRz] = 0.9 + S(T * 14) * 0.12; // hand on the head, scratching
-      o[CH.aLz] = 0.3; o[CH.aLx] = 0.3;
-      o[CH.headR] = 0.25; o[CH.headP] = 0.1; o[CH.roll] = 0.05;
+      // struggling: nub up on top of the body scratching, tilted, eyes squeezed
+      o[CH.aRz] = 1.5; o[CH.aRy] = 0.4 + S(T * 16) * 0.12; o[CH.aRe] = 0.1;
+      o[CH.aLz] = -0.3; o[CH.aLy] = 0.2;
+      o[CH.roll] = 0.14 + S(T * 1.3) * 0.03; o[CH.eyeX] = 0.3;
+      o[CH.sq] -= 0.03;
       break;
     }
     case 'oops': {
-      o[CH.lean] = -0.25; o[CH.bob] = 0.05;
-      o[CH.aLz] = 1.2; o[CH.aRz] = 1.2; o[CH.aLx] = 0.6; o[CH.aRx] = 0.6;
-      o[CH.headP] = -0.2; o[CH.sq] = 0.08;
+      // startle: hop back with the nubs flung up, then shake it off (dust everywhere)
+      const st = 1 - sstep(0.05, 0.5, local), sh = sstep(0.4, 0.55, local) * (1 - sstep(1.1, 1.35, local));
+      o[CH.lean] = -0.3 * st; o[CH.bob] = st * 0.08 * bump(local, 0, 0.35); o[CH.sq] = st * 0.12 - sh * 0.02;
+      arms(o, 0.3 * st, -0.1 + 1.2 * st, 0.3 * st, -0.1 + 1.2 * st);
+      o[CH.roll] = S(local * 42) * 0.14 * sh; o[CH.twist] = S(local * 42 + 1) * 0.1 * sh;
+      o[CH.eyeS] = 0.25 * st; o[CH.jig] = sh;
       break;
     }
     case 'bindle': {
-      o[CH.aRx] = 2.3; o[CH.aRz] = -0.35; // bindle stick over the shoulder
-      o[CH.headP] = -0.05;
-      break;
-    }
-    case 'sit': {
-      // on a bench / rocker: hands on the knees, swinging feet, looking around
-      sit(o, SEAT_H.sit!);
-      o[CH.lean] = -0.05 + S(T * 0.6) * 0.04;
-      o[CH.aLx] = 0.75; o[CH.aRx] = 0.75; o[CH.aLz] = -0.05; o[CH.aRz] = -0.05;
-      o[CH.lL] += S(T * 1.6) * 0.3; o[CH.lR] += S(T * 1.6 + 2.2) * 0.3;
-      o[CH.headY] = S(T * 0.21) * 0.5; o[CH.headP] = -0.05 + S(T * 0.33) * 0.08; o[CH.headR] = S(T * 0.5) * 0.08;
+      // bindle stick over the top, bundle bouncing behind
+      o[CH.aRz] = 0.85; o[CH.aRy] = -0.25; o[CH.pP] = -1.05; o[CH.prop] = S(T * 3) * 0.5 + 0.5;
+      o[CH.aLy] = S(T * 1.2) * 0.1; o[CH.eyeX] = wander(T * 0.3) * 0.5;
       break;
     }
     case 'sitground': {
-      sit(o, SEAT_H.sitground!);
-      o[CH.lean] = -0.25; o[CH.aLx] = -0.6; o[CH.aRx] = -0.6; o[CH.aLz] = 0.3; o[CH.aRz] = 0.3; // leaning back on hands
-      o[CH.headP] = -0.2; o[CH.headY] = S(T * 0.25) * 0.4;
-      o[CH.lL] = 1.35 + S(T * 1.2) * 0.1; o[CH.lR] = 1.35 - S(T * 1.2) * 0.1;
+      // sitting on the grass, leaning back on the nubs, legs kicking, looking around
+      seated(o);
+      o[CH.lean] = -0.18; arms(o, -0.55, -0.55, -0.55, -0.55);
+      o[CH.eyeX] = wander(T * 0.3) * 0.9; o[CH.eyeY] = 0.2 + S(T * 0.23) * 0.2;
+      legs(o, 0.2 + S(T * 1.1) * 0.25, 0.2 + S(T * 1.1 + 2.4) * 0.25, 0, 0);
+      o[CH.roll] = S(T * 0.4) * 0.05;
       break;
     }
+    case 'sit': {
+      seated(o);
+      o[CH.lean] = -0.04 + S(T * 0.6) * 0.03;
+      arms(o, 0.3, -0.35, 0.3, -0.35);
+      legs(o, -0.6 + S(T * 1.6) * 0.35, -0.6 + S(T * 1.6 + 2.2) * 0.35, -0.6, -0.6);
+      o[CH.eyeX] = wander(T * 0.3) * 0.8; o[CH.eyeY] = S(T * 0.33) * 0.2;
+      break;
+    }
+  }
+  if (body === 'codex') {
+    // the blob sits lower on its tiny feet, so seated legs read as feet sticking out; lobes wobble with any squash
+    o[CH.jig] += Math.abs(o[CH.sq]) * 1.5;
   }
   return o;
 }
 
-/**
- * Walk / jog gait overlay: legs, arm swing, bob, lean. `phase` advances with distance travelled (so feet don't
- * skate), `w` is the gait weight (0 standing … 1 moving), `jog` 0..1, `carry` keeps the arms (holding something).
- */
-export function gait(o: Pose, phase: number, w: number, jog: number, bounce: number, carry: boolean): void {
-  if (w <= 0) return;
-  const s = S(phase * TAU);
-  const leg = (0.55 + jog * 0.35) * w;
-  const keep = 1 - w;
-  o[CH.lL] = o[CH.lL] * keep + s * leg;
-  o[CH.lR] = o[CH.lR] * keep - s * leg;
-  o[CH.drop] *= keep;
-  o[CH.lie] *= keep;
-  o[CH.bob] += Math.abs(C(phase * TAU)) * (0.045 + jog * 0.05) * bounce * w;
-  o[CH.sq] += (Math.abs(C(phase * TAU)) - 0.5) * 0.04 * bounce * w;
-  o[CH.lean] = o[CH.lean] * keep + (0.06 + jog * 0.14) * w;
-  o[CH.roll] += s * 0.05 * w;
-  if (!carry) {
-    const arm = (0.5 + jog * 0.45) * w;
-    o[CH.aLx] = o[CH.aLx] * keep - s * arm + jog * 0.3 * w;
-    o[CH.aRx] = o[CH.aRx] * keep + s * arm + jog * 0.3 * w;
-    o[CH.aLz] = o[CH.aLz] * keep + 0.18 * w;
-    o[CH.aRz] = o[CH.aRz] * keep + 0.18 * w;
-  }
-  o[CH.headP] = o[CH.headP] * keep + (-0.04 + tri(phase) * 0.02) * w;
+// ---------------------------------------------------------------------------------------------------------------------
+// Gaits
+
+export type GaitKind = 'walk' | 'jog' | 'amble';
+
+/** Distance covered per gait cycle (m). Clawd: one cycle = two diagonal footfalls; Codex: two hops. */
+export function cycleLength(body: Body, jog: number, heavy: boolean): number {
+  const c = body === 'clawd' ? 0.42 + jog * 0.24 : 0.6 + jog * 0.34;
+  return heavy ? c * 0.72 : c;
 }
 
-/**
- * Cross-fading pose blender. When the act changes, the current output is frozen as `from` and the new act fades in
- * over `dur` seconds with smoothstep, so every transition is continuous no matter when it happens (even mid-fade).
- */
-export interface Blend {
-  act: Act;
-  from: Pose;
+export interface GaitState {
+  /** gait cycles travelled (advance by distance / cycleLength) */
+  cyc: number;
+  /** 0 standing … 1 moving */
   w: number;
-  dur: number;
+  /** 0..1 jog blend */
+  jog: number;
+  /** yaw rate (rad/s), for leaning into turns */
+  turn: number;
+  /** ground speed (m/s) */
+  speed: number;
+  heavy: boolean;
+  /** personality: bounce height multiplier */
+  bounce: number;
 }
-export const newBlend = (act: Act): Blend => ({ act, from: newPose(), w: 1, dur: 0.5 });
 
-export function setAct(b: Blend, act: Act, current: Pose, dur = 0.55): void {
-  if (b.act === act) return;
-  b.from.set(current);
-  b.act = act;
-  b.w = 0;
-  b.dur = dur;
-}
+/** Clawd stance fraction (share of a leg's cycle spent planted) and Codex contact fraction per hop. */
+const STANCE = { clawd: 0.6, codex: 0.42 } as const;
 
-/** out = mix(from, target, ease(w)); advances w. */
-export function blendStep(b: Blend, target: Pose, dt: number, out: Pose): Pose {
-  b.w = Math.min(1, b.w + dt / Math.max(0.01, b.dur));
-  const e = b.w * b.w * (3 - 2 * b.w);
-  for (let i = 0; i < NCH; i++) out[i] = b.from[i] + (target[i] - b.from[i]) * e;
+/**
+ * Foot placement relative to the leg's hip for leg `i` (Clawd FL FR BL BR, Codex L R): forward offset `z` (m) and
+ * lift `y` (m). A planted foot moves backward at exactly the body's speed, so it stays put on the ground.
+ */
+export function footAt(body: Body, i: number, g: GaitState, out: { z: number; y: number }): { z: number; y: number } {
+  const L = cycleLength(body, g.jog, g.heavy);
+  if (g.w <= 0.001) { out.z = 0; out.y = 0; return out; }
+  if (body === 'clawd') {
+    const s = STANCE.clawd - g.jog * 0.1;
+    const off = i === 0 || i === 3 ? 0 : 0.5; // diagonal pairs: FL+BR, FR+BL
+    const p = fract(g.cyc + off);
+    const R = s * L; // stance travel = body travel while planted
+    const lift = (0.045 + g.jog * 0.035) * (g.heavy ? 0.6 : 1);
+    if (p < s) { out.z = R * (0.5 - p / s); out.y = 0; }
+    else { const q = (p - s) / (1 - s); out.z = R * (-0.5 + q * q * (3 - 2 * q)); out.y = lift * S(q * PI); }
+  } else {
+    // both feet share the hop; the lead foot alternates each hop (waddle)
+    const hop = fract(g.cyc * 2), n = Math.floor(g.cyc * 2);
+    const s = STANCE.codex - g.jog * 0.08;
+    const R = s * (L / 2);
+    const lead = (m: number) => (((m & 1) === 0) === (i === 0) ? 0.12 : -0.12);
+    if (hop < s) { out.z = R * (0.5 - hop / s + lead(n)); out.y = 0; }
+    else {
+      const q = (hop - s) / (1 - s), e = q * q * (3 - 2 * q);
+      out.z = R * (-0.5 + lead(n) + e * (1 + lead(n + 1) - lead(n)));
+      out.y = hopHeight(g) * S(q * PI) * 0.6;
+    }
+  }
+  out.z *= g.w; out.y *= g.w;
   return out;
 }
+
+const hopHeight = (g: GaitState) => (0.07 + g.jog * 0.07) * g.bounce * (g.heavy ? 0.5 : 1);
+
+/**
+ * Walk / jog / hop overlay on the body: bob and squash in time with the footfalls, counter-swinging nubs, leaning
+ * forward with speed and into turns. `carry` keeps the nubs (holding something).
+ */
+export function gait(o: Pose, body: Body, g: GaitState, carry: boolean): void {
+  const w = g.w;
+  if (w <= 0.001) return;
+  const keep = 1 - w;
+  const b = g.bounce * (g.heavy ? 0.7 : 1);
+  o[CH.drop] *= keep; o[CH.lie] *= keep; o[CH.tuck] *= keep;
+  for (const c of [CH.l0, CH.l1, CH.l2, CH.l3]) o[c] *= keep;
+  const turnLean = Math.max(-0.3, Math.min(0.3, -g.turn * g.speed * 0.05));
+  if (body === 'clawd') {
+    const step = fract(g.cyc * 2); // two footfalls per cycle
+    const low = S(step * PI) ** 2; // 0 at footfall, 1 mid-stance
+    o[CH.bob] += (low * (0.028 + g.jog * 0.05) - (g.heavy ? 0.02 : 0)) * b * w;
+    o[CH.sq] += (C((step - 0.12) * TAU) * -0.045 - (g.heavy ? 0.035 : 0)) * b * w * (1 + g.jog * 0.6);
+    o[CH.roll] += (S(g.cyc * TAU) * 0.045 + turnLean) * w;
+    o[CH.twist] += S(g.cyc * TAU) * 0.05 * w;
+    o[CH.lean] = o[CH.lean] * keep + (0.06 + g.jog * 0.16 - (g.heavy ? 0.1 : 0)) * w;
+    o[CH.eyeY] = o[CH.eyeY] * keep + (g.jog * 0.2) * w;
+  } else {
+    const hop = fract(g.cyc * 2), s = STANCE.codex - g.jog * 0.08;
+    const n = Math.floor(g.cyc * 2);
+    if (hop < s) {
+      const c = hop / s;
+      o[CH.sq] += -S(c * PI) * (0.1 + g.jog * 0.05) * b * w;
+      o[CH.jig] += S(c * PI) * 0.8 * w;
+    } else {
+      const a = (hop - s) / (1 - s);
+      o[CH.bob] += hopHeight(g) * S(a * PI) * w;
+      o[CH.sq] += (S(a * PI) * (1 - a) * 0.16 - a * a * 0.03) * b * w;
+    }
+    const side = (n & 1) === 0 ? 1 : -1;
+    o[CH.roll] += (side * S(hop * PI) * 0.1 + turnLean) * w;
+    o[CH.twist] += side * S(hop * PI) * 0.07 * w;
+    o[CH.lean] = o[CH.lean] * keep + (0.05 + g.jog * 0.12) * w;
+  }
+  const sw = body === 'clawd' ? S(g.cyc * TAU) : S(g.cyc * TAU * 2) * 0.6;
+  const arm = (0.35 + g.jog * 0.3) * w * (carry ? 0.15 : 1);
+  o[CH.aLy] += sw * arm;
+  o[CH.aRy] -= sw * arm;
+  if (!carry) {
+    const up = body === 'codex' ? Math.max(0, -Math.cos(fract(g.cyc * 2) * TAU)) * 0.35 * w : 0; // flap on take-off
+    o[CH.aLz] = o[CH.aLz] * keep + (-0.05 + g.jog * 0.25 + up) * w;
+    o[CH.aRz] = o[CH.aRz] * keep + (-0.05 + g.jog * 0.25 + up) * w;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Springs: every channel follows its target through a damped spring, so act changes blend with a little overshoot
+// and nothing ever pops. (frequency Hz, damping ratio)
+
+const SPRING: readonly (readonly [number, number])[] = (() => {
+  const s: [number, number][] = Array.from({ length: NCH }, () => [7, 0.55]);
+  const set = (chs: number[], f: number, z: number) => { for (const c of chs) s[c] = [f, z]; };
+  set([CH.bob], 6, 0.42);
+  set([CH.drop, CH.tuck], 4.5, 0.62);
+  set([CH.lean, CH.roll], 5, 0.45);
+  set([CH.twist], 4, 0.55);
+  set([CH.sq], 7.5, 0.32);
+  set([CH.lie], 1.6, 0.85);
+  set([CH.l0, CH.l1, CH.l2, CH.l3], 9, 0.6);
+  set([CH.aLy, CH.aLz, CH.aRy, CH.aRz], 7.5, 0.45);
+  set([CH.aLx, CH.aRx], 7, 0.6);
+  set([CH.aLe, CH.aRe], 8, 0.38);
+  set([CH.eyeX, CH.eyeY], 11, 0.75);
+  set([CH.eyeS], 12, 0.35);
+  set([CH.pP, CH.pY], 6, 0.38);
+  set([CH.prop], 20, 1);
+  set([CH.jig], 3.2, 0.12);
+  return s;
+})();
+
+export interface Springs { x: Pose; v: Pose; init: boolean }
+export const newSprings = (): Springs => ({ x: newPose(), v: newPose(), init: false });
+
+/** Advance every channel toward `target`; writes the result into `out` (may be `s.x`). */
+export function springStep(s: Springs, target: Pose, dt: number, out: Pose): Pose {
+  if (!s.init) { s.x.set(target); s.v.fill(0); s.init = true; }
+  const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+  const h = dt / n;
+  for (let i = 0; i < NCH; i++) {
+    const [f, z] = SPRING[i];
+    const w0 = TAU * f;
+    let x = s.x[i], v = s.v[i];
+    const tx = target[i];
+    // implicit Euler: unconditionally stable even for the stiff channels (w0·h > 1), so a slow frame never explodes
+    const k = w0 * w0 * h, den = 1 + 2 * z * w0 * h + k * h;
+    for (let j = 0; j < n; j++) {
+      v = (v - k * (x - tx)) / den;
+      x += v * h;
+    }
+    s.x[i] = x; s.v[i] = v;
+    out[i] = x;
+  }
+  return out;
+}
+/** Jump straight to a pose (spawn, gallery). */
+export function springSnap(s: Springs, p: Pose): void { s.x.set(p); s.v.fill(0); s.init = true; }
 
 /** Largest per-channel jump between two poses (tests: transitions must stay continuous). */
 export function poseDelta(a: Pose, b: Pose): number {
   let m = 0;
   for (let i = 0; i < NCH; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
   return m;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Faces: which glyph each face slot shows. Clawd: [left eye, right eye]; Codex: [`>` eye, `_` cursor mouth].
+
+export interface GlyphState { g: string; sx: number; sy: number; dy: number; dx: number; roll: number; on: boolean }
+export const newGlyphs = (): [GlyphState, GlyphState] => [
+  { g: 'bar', sx: 1, sy: 1, dy: 0, dx: 0, roll: 0, on: true }, { g: 'bar', sx: 1, sy: 1, dy: 0, dx: 0, roll: 0, on: true },
+];
+
+const setG = (s: GlyphState, g: string, sx = 1, sy = 1, dy = 0, roll = 0, dx = 0) => { s.g = g; s.sx = sx; s.sy = sy; s.dy = dy; s.roll = roll; s.dx = dx; s.on = true; };
+
+/**
+ * Resolve a face into glyphs. `blink` 0..1 closes the eyes (1 = shut); `t` drives the terminal cursor (Codex blinks
+ * its `_` like a real prompt, and types while talking). dy / dx are in glyph cells.
+ */
+export function faceGlyphs(body: Body, face: Face, blink: number, t: number, out: [GlyphState, GlyphState]): [GlyphState, GlyphState] {
+  const [a, b] = out;
+  const shut = 1 - 0.9 * blink;
+  if (body === 'clawd') {
+    for (const [s, side] of [[a, -1], [b, 1]] as const) {
+      switch (face) {
+        case 'happy': case 'proud': setG(s, 'caret', 1, 1, 0.5); break;
+        case 'focused': setG(s, 'bar', 1, 0.55 * shut); break;
+        case 'stuck': setG(s, side < 0 ? 'chevR' : 'chevL'); break;
+        case 'sleepy': setG(s, 'bar', 1, 0.42 * shut, -1.1); break;
+        case 'worried': setG(s, 'bar', 1, 1.08 * shut, 0, side * 0.22); break;
+        case 'yawn': setG(s, 'dash', 1.1, 1.4, -0.3, side * -0.15); break;
+        case 'surprised': setG(s, 'bar', 1.3, 1.3 * shut, 0.2); break;
+        case 'asleep': setG(s, 'dash', 1, 1, -1.2); break;
+        case 'whistle': if (side < 0) setG(s, 'caret', 1, 1, 0.5); else setG(s, 'bar', 1, shut); break;
+        case 'oops': setG(s, 'x'); break;
+        case 'sparkle': setG(s, 'plus', 1.2, 1.2, 0.3); break;
+        default: setG(s, 'bar', 1, shut); break;
+      }
+    }
+    return out;
+  }
+  // Codex: the prompt eye
+  switch (face) {
+    case 'happy': case 'proud': case 'whistle': setG(a, 'hat', 1, 1, 0.3); break;
+    case 'focused': setG(a, 'prompt', 1, 0.6 * shut); break;
+    case 'stuck': setG(a, 'prompt', 0.9, 0.8 * shut, 0, 0.35); break;
+    case 'sleepy': setG(a, 'prompt', 1, 0.4 * shut, -1); break;
+    case 'worried': setG(a, 'prompt', 1, 1.1 * shut, 0, -0.2); break;
+    case 'yawn': case 'asleep': setG(a, 'dash', 1, 1, -1); break;
+    case 'surprised': setG(a, 'ring', 1.1, 1.1); break;
+    case 'oops': setG(a, 'x'); break;
+    case 'sparkle': setG(a, 'plus', 1.2, 1.2); break;
+    default: setG(a, 'prompt', 1, shut); break;
+  }
+  // …and the cursor mouth: blinks on/off every 0.53 s like a terminal; types (block cursor hopping right) while talking
+  const cursorOn = fract(t / 1.06) < 0.5;
+  switch (face) {
+    case 'talk': { const step = Math.floor(fract(t * 1.4) * 5); setG(b, 'cursor', 1, fract(t * 7) < 0.5 ? 2.2 : 1.6, 0.6, 0, step * 0.8 - 1.2); break; }
+    case 'surprised': case 'yawn': setG(b, 'ring', face === 'yawn' ? 1.2 : 0.8, face === 'yawn' ? 1.3 : 0.8, 0.8); break;
+    case 'asleep': setG(b, 'cursor', 1, 1); b.on = fract(t / 3) < 0.5; break;
+    case 'oops': setG(b, 'cursor', 1, 1, 0, 0.3); break;
+    case 'happy': case 'proud': case 'sparkle': setG(b, 'cursor', 1, 1); break;
+    default: setG(b, 'cursor', 1, 1); b.on = cursorOn; break;
+  }
+  return out;
 }

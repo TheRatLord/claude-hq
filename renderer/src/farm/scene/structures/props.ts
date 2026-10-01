@@ -16,8 +16,10 @@ export const flowerColors = (s: Season): number[] => FLOWERS[s];
 
 export function barrel(k: Kit, t: Xf, color: number = PAL.wood): void {
   k.at(t, () => {
-    k.cyl(0.36, 0.5, color, { y: 0.25 }, 9, 0.42);
-    k.cyl(0.42, 0.5, color, { y: 0.75 }, 9, 0.36);
+    k.surf(['planks', { scale: 0.9 }], () => {   // staves
+      k.cyl(0.36, 0.5, color, { y: 0.25 }, 9, 0.42);
+      k.cyl(0.42, 0.5, color, { y: 0.75 }, 9, 0.36);
+    });
     for (const y of [0.12, 0.5, 0.88]) k.cyl(y === 0.5 ? 0.44 : 0.39, 0.06, PAL.metalDark, { y }, 9);
     k.cyl(0.34, 0.03, PAL.woodDark, { y: 1.0 }, 9);
   });
@@ -25,7 +27,7 @@ export function barrel(k: Kit, t: Xf, color: number = PAL.wood): void {
 
 export function crate(k: Kit, t: Xf, s = 0.6, color: number = PAL.woodLight): void {
   k.at(t, () => {
-    k.box(s, s, s, color, { y: s / 2 });
+    k.surf(['planks', { axis: 'h', scale: Math.max(0.6, s * 1.1) }], () => k.box(s, s, s, color, { y: s / 2 }));
     const e = s * 0.12;
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(e, s + 0.01, e, PAL.wood, { x: x * (s / 2 - e / 2 + 0.005), y: s / 2, z: z * (s / 2 - e / 2 + 0.005) });
     k.box(s + 0.02, e * 0.8, s + 0.02, PAL.wood, { y: s * 0.5 });
@@ -64,8 +66,10 @@ export function logBench(k: Kit, t: Xf, w = 2.2): void {
   k.at(t, () => {
     k.cyl(0.26, w, PAL.trunk, { y: 0.3, rz: Math.PI / 2 }, 7);
     k.box(w - 0.1, 0.06, 0.34, PAL.woodLight, { y: 0.52 });
-    k.cyl(0.2, 0.05, PAL.woodLight, { x: w / 2, y: 0.3, rz: Math.PI / 2 }, 7);
-    k.cyl(0.2, 0.05, PAL.woodLight, { x: -w / 2, y: 0.3, rz: Math.PI / 2 }, 7);
+    k.surf(['logs', { axis: 'y' }], () => {
+      k.cyl(0.2, 0.05, PAL.woodLight, { x: w / 2, y: 0.3, rz: Math.PI / 2 }, 7);
+      k.cyl(0.2, 0.05, PAL.woodLight, { x: -w / 2, y: 0.3, rz: Math.PI / 2 }, 7);
+    });
     for (const x of [-w / 2 + 0.3, w / 2 - 0.3]) k.box(0.14, 0.2, 0.5, PAL.bark, { x, y: 0.1 });
   });
 }
@@ -156,17 +160,19 @@ export function picnicTable(k: Kit, t: Xf): void {
 /** Farm cart, facing +z. */
 export function cart(k: Kit, t: Xf, load: 'hay' | 'pumpkins' | 'crates' = 'hay'): void {
   k.at(t, () => {
-    k.box(1.4, 0.12, 2.2, PAL.plank, { y: 0.75 });
+    k.surf(['planks', { axis: 'z', variant: 1 }], () => k.box(1.4, 0.12, 2.2, PAL.plank, { y: 0.75 }));
     for (const s of [-1, 1]) {
-      k.box(0.08, 0.4, 2.2, PAL.wood, { x: s * 0.68, y: 0.98 });
+      k.surf(['planks', { axis: 'z', variant: 1 }], () => k.box(0.08, 0.4, 2.2, PAL.wood, { x: s * 0.68, y: 0.98 }));
       k.box(0.12, 0.08, 0.12, PAL.woodDark, { x: s * 0.68, y: 1.2, z: 1.05 });
       k.at({ x: s * 0.8, y: 0.55, z: -0.3 }, () => {
-        k.cyl(0.55, 0.1, PAL.woodDark, { rz: Math.PI / 2 }, 10);
-        k.cyl(0.47, 0.12, PAL.wood, { rz: Math.PI / 2 }, 10);
+        k.surf(['planks', { axis: 'x', scale: 0.8 }], () => {
+          k.cyl(0.55, 0.1, PAL.woodDark, { rz: Math.PI / 2 }, 10);
+          k.cyl(0.47, 0.12, PAL.wood, { rz: Math.PI / 2 }, 10);
+        });
         k.cyl(0.12, 0.2, PAL.metalDark, { rz: Math.PI / 2 }, 6);
       });
     }
-    k.box(1.4, 0.4, 0.08, PAL.wood, { y: 0.98, z: -1.08 });
+    k.surf(['planks', { axis: 'x', variant: 1 }], () => k.box(1.4, 0.4, 0.08, PAL.wood, { y: 0.98, z: -1.08 }));
     k.beam(-0.4, 0.75, 1.1, -0.35, 0.1, 2.3, 0.08, PAL.woodDark);
     k.beam(0.4, 0.75, 1.1, 0.35, 0.1, 2.3, 0.08, PAL.woodDark);
     k.box(0.15, 0.4, 0.15, PAL.woodDark, { y: 0.35, z: 0.9 });
@@ -215,7 +221,7 @@ export function firewood(k: Kit, t: Xf, w = 1.6, rows = 4): void {
 export function choppingBlock(k: Kit, t: Xf): void {
   k.at(t, () => {
     k.cyl(0.3, 0.5, PAL.trunk, { y: 0.25 }, 8);
-    k.cyl(0.26, 0.02, PAL.woodLight, { y: 0.51 }, 8);
+    k.surf(['logs', { axis: 'y' }], () => k.cyl(0.26, 0.02, PAL.woodLight, { y: 0.51 }, 8));
     k.beam(0.05, 0.52, 0, 0.35, 1.05, 0.1, 0.05, PAL.woodLight);
     k.box(0.05, 0.2, 0.2, PAL.metal, { x: 0.05, y: 0.58, z: 0, rz: -0.5 });
   });

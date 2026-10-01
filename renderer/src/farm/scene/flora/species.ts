@@ -1,7 +1,8 @@
 /**
  * Plant models: every tree, bush, tuft, flower, log and mushroom the valley scatters. Each builder returns one merged,
  * faceted, vertex-coloured geometry (origin at the base, +y up) for a season, so the flora system can instance it
- * and the gallery can show it. Deterministic per seed.
+ * and the gallery can show it. Parts carry surface tags (bark, leaves, needles, logs): the flora materials paint
+ * bark ridges, clumped foliage with lit tips and end-grain rings. Deterministic per seed.
  */
 import * as THREE from 'three';
 import { mulberry32 } from '../../../../../shared/identity.ts';
@@ -10,6 +11,8 @@ import { hash2 } from '../../world/noise.ts';
 import { paint } from '../toon.ts';
 import { blade, gradient, merge } from './geom.ts';
 import { rockGeometry } from '../terrain/rocks.ts';
+import { SURF, foliageBlob, tagSurface } from '../surface/index.ts';
+import type { FoliageCore as Core } from '../surface/index.ts';
 
 const C = (h: number) => new THREE.Color(h);
 type Rng = () => number;
@@ -60,21 +63,24 @@ function paintFaces(g0: THREE.BufferGeometry, pick: (y: number, ny: number, r: R
 }
 
 const tc = new THREE.Color();
-/** Leafy colouring: darker underneath, lighter crowns, a few flecks of `accent`. */
-function leafy(dark: THREE.Color, light: THREE.Color, y0: number, y1: number, accent?: THREE.Color, accentP = 0.15, snow = false) {
-  return (y: number, ny: number, r: Rng): THREE.Color => {
-    const k = Math.min(1, Math.max(0, (y - y0) / (y1 - y0)));
-    tc.copy(dark).lerp(light, k * 0.75 + Math.max(0, ny) * 0.3);
-    if (accent && r() < accentP) tc.lerp(accent, 0.75);
-    tc.multiplyScalar(0.94 + r() * 0.12);
-    if (snow && ny > 0.55) tc.set(0xf2f6fb).multiplyScalar(0.94 + ny * 0.06);
-    return tc;
-  };
+
+/** Weighted centre of a crown's blobs (by volume). */
+function crownCentre(blobs: readonly (readonly [number, number, number, number])[]): THREE.Vector3 {
+  const c = new THREE.Vector3();
+  let w = 0;
+  for (const [x, y, z, rad] of blobs) { const k = rad ** 3; c.x += x * k; c.y += y * k; c.z += z * k; w += k; }
+  return c.divideScalar(w || 1);
 }
+const pointCore = (c: THREE.Vector3): Core => [c, c];
+const leafBlob = foliageBlob;
+/** leaf clumps grow with the blob (a handful across every blob, big or small) */
+const clumpScale = (rad: number) => Math.min(1.8, Math.max(0.6, rad / 1.15));
 
 function bark(g: THREE.BufferGeometry, h: number, dark = C(0x6e4a2e), light = C(0x9a6c44)): THREE.BufferGeometry {
-  return gradient(g.index ? g.toNonIndexed() : g, dark, light, 0, h);
+  return tagSurface(gradient(g.index ? g.toNonIndexed() : g, dark, light, 0, h), SURF.bark);
 }
+/** Foliage part: clumped leaf shading (needles for conifers). */
+const foliage = (g: THREE.BufferGeometry, needles = false) => tagSurface(g, SURF.leaves, needles ? { variant: 1, scale: 0.8 } : {});
 
 function trunk(h: number, r0: number, r1: number, seed: number, lean = 0): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(r1, r0, h, 6, 3);
@@ -112,11 +118,11 @@ function branches(top: THREE.Vector3, r: Rng, n: number, len: number, rad: numbe
 }
 
 const bare = (parts: THREE.BufferGeometry[], h: number, snow: boolean, seed: number) =>
-  parts.map((g) => paintFaces(g, (y, ny, r) => {
+  parts.map((g) => tagSurface(paintFaces(g, (y, ny, r) => {
     tc.set(0x6a4a30).lerp(C(0x8f6a48), Math.min(1, y / h) * 0.6).multiplyScalar(0.92 + r() * 0.1);
     if (snow && ny > 0.5) tc.set(0xeef3f8);
     return tc;
-  }, seed));
+  }, seed), SURF.bark, { scale: 0.7 }));
 
 // ------------------------------------------------------------------------------------------------ palettes
 
@@ -157,10 +163,11 @@ export function treeGeometry(kind: TreeKind, season: Season, seed = 1): THREE.Bu
   const parts: THREE.BufferGeometry[] = [];
   const canopy = (blobs: [number, number, number, number][], slot: number, y0: number, y1: number, squash = 0.82, override?: LeafSet) => {
     const L = override ?? leaves(season, slot)!;
+    const core = pointCore(crownCentre(blobs));
     for (const [x, y, z, rad] of blobs) {
       const b = blob(rad, seed * 31 + parts.length, { squash });
       b.translate(x, y, z);
-      parts.push(paintFaces(b, leafy(L.dark, L.light, y0, y1, L.accent, L.p ?? 0.12), seed * 13 + parts.length));
+      parts.push(leafBlob(b, new THREE.Vector3(x, y, z), core, L, y0, y1, seed * 13 + parts.length, { squash, blossom: season === 'spring' }, { scale: clumpScale(rad), aux: rad }));
     }
   };
   switch (kind) {
@@ -205,14 +212,15 @@ export function treeGeometry(kind: TreeKind, season: Season, seed = 1): THREE.Bu
     case 'birch': {
       const h = 4.6;
       const t = trunk(h, 0.16, 0.08, seed);
-      parts.push(paintFaces(t, (y, _ny, rr) => (rr() < 0.18 || Math.sin(y * 9) > 0.86 ? tc.set(0x3a3430) : tc.set(0xeee8dc).multiplyScalar(0.92 + rr() * 0.1)), seed));
+      parts.push(tagSurface(paintFaces(t, (y, _ny, rr) => (rr() < 0.18 || Math.sin(y * 9) > 0.86 ? tc.set(0x3a3430) : tc.set(0xeee8dc).multiplyScalar(0.92 + rr() * 0.1)), seed), SURF.bark, { variant: 1 }));
       if (winter) { parts.push(...bare(branches(new THREE.Vector3(0, h - 0.3, 0), r, 4, 1.0, 0.06), h + 2, true, seed)); break; }
       const L = season === 'autumn' ? { dark: C(0xc8962a), light: C(0xf8dc58), accent: C(0xf0b040), p: 0.15 } : season === 'spring' ? leaves(season, 0)! : leaves(season, 2)!;
       const blobs: [number, number, number, number][] = [[0, h - 0.4, 0, 1.05], [0.6, h + 0.3, 0.2, 0.8], [-0.5, h + 0.5, -0.3, 0.75], [0.1, h + 1.2, 0, 0.7], [0.5, h - 1.3, -0.4, 0.7], [-0.6, h - 1.0, 0.4, 0.65]];
+      const core: Core = [new THREE.Vector3(0, h - 1.2, 0), new THREE.Vector3(0, h + 0.6, 0)];
       for (const [x, y, z, rad] of blobs) {
         const b = blob(rad, seed * 17 + parts.length, { squash: 1.1 });
         b.translate(x, y, z);
-        parts.push(paintFaces(b, leafy(L.dark, L.light, h - 2, h + 1.5, L.accent, L.p ?? 0.1), seed + parts.length));
+        parts.push(leafBlob(b, new THREE.Vector3(x, y, z), core, L, h - 2, h + 1.5, seed + parts.length, { squash: 1.1, blossom: season === 'spring' }, { scale: clumpScale(rad), aux: rad }));
       }
       break;
     }
@@ -239,13 +247,13 @@ export function treeGeometry(kind: TreeKind, season: Season, seed = 1): THREE.Bu
         }
         cone.translate(0, y, 0);
         cone.deleteAttribute('uv');
-        parts.push(paintFaces(cone, (yy, ny, rr) => {
+        parts.push(foliage(paintFaces(cone, (yy, ny, rr) => {
           tc.copy(dark).lerp(light, Math.min(1, Math.max(0, (yy - y) / th)) * 0.8 + t * 0.25);
           if (ny < -0.3) tc.multiplyScalar(0.7);
           tc.multiplyScalar(0.93 + rr() * 0.12);
           if (winter && ny > 0.35 && rr() < 0.85) tc.set(0xf2f6fb).multiplyScalar(0.9 + ny * 0.1);
           return tc;
-        }, seed + i));
+        }, seed + i), true));
       }
       break;
     }
@@ -259,22 +267,49 @@ export function treeGeometry(kind: TreeKind, season: Season, seed = 1): THREE.Bu
       }
       const L = season === 'autumn' ? { dark: C(0x9a9a3a), light: C(0xe0d060), accent: C(0xd8a040), p: 0.2 }
         : season === 'spring' ? { dark: C(0x6aaa4a), light: C(0xb8e070), accent: C(0xd8f09a), p: 0.1 } : { dark: C(0x4f8f45), light: C(0x94c65a), accent: C(0xb0d870), p: 0.1 };
-      const dome = blob(2.0, seed, { squash: 0.6, lump: 0.15 });
-      dome.translate(0.3, h + 1.6, 0);
-      parts.push(paintFaces(dome, leafy(L.dark, L.light, h, h + 2.8, L.accent, L.p), seed));
-      // hanging curtains of leaves
-      const n = 44;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 * 3.1 + r() * 0.3;
-        const rad = 1.1 + r() * 1.0;
-        const len = 1.1 + r() * 1.3 + (rad - 1.1) * 0.7;
-        const strand = new THREE.ConeGeometry(0.13, len, 3, 1);
-        strand.scale(1, 1, 0.4);
-        strand.rotateX(Math.PI);
-        strand.rotateY(a);
-        strand.translate(0.3 + Math.cos(a) * rad, h + 1.6 - len / 2 + 0.3, Math.sin(a) * rad);
-        strand.deleteAttribute('uv');
-        parts.push(paintFaces(strand, leafy(L.dark, L.light, h + 1.6 - len, h + 1.8, L.accent, L.p), seed + i));
+      // crown: 2–3 overlapping lumpy blobs, leaning with the trunk (+x), the big one smoother (detail 2)
+      const crown: [number, number, number, number][] = [[0.4, h + 1.6, 0, 1.45], [1.15, h + 1.15, 0.35, 1.05], [-0.25, h + 2.25, -0.35, 0.95]];
+      const SQ = 0.72;
+      const core = pointCore(crownCentre(crown));
+      crown.forEach(([x, y, z, rad], i) => {
+        const b = blob(rad, seed * 7 + i, { squash: SQ, lump: 0.14, detail: i === 0 ? 2 : 1 });
+        b.translate(x, y, z);
+        parts.push(leafBlob(b, new THREE.Vector3(x, y, z), core, L, h, h + 2.9, seed + i, { squash: SQ, crown: 0.15, blossom: season === 'spring' }, { scale: clumpScale(rad), aux: rad }));
+      });
+      // hanging sprays: anchored just under the crown's outline (not a ring), tops tucked up inside the blobs so
+      // there's no rim; long on the lean side, short on the other, two gaps where the trunk shows through
+      const inside = (x: number, y: number, z: number, skip: number) => crown.some(([cx, cy, cz, cr], k) =>
+        k !== skip && Math.hypot(x - cx, (y - cy) / SQ, z - cz) < cr * 0.92);
+      const gap = (a: number) => Math.abs(Math.atan2(Math.sin(a - 2.3), Math.cos(a - 2.3))) < 0.32 || Math.abs(Math.atan2(Math.sin(a - 4.2), Math.cos(a - 4.2))) < 0.26;
+      const total = crown.reduce((k, c) => k + c[3], 0);
+      let placed = 0;
+      for (let tries = 0; placed < 30 && tries < 400; tries++) {
+        let pick = r() * total, bi = 0;
+        while (pick > crown[bi][3] && bi < crown.length - 1) pick -= crown[bi++][3];
+        const [cx, cy, cz, cr] = crown[bi];
+        const a = r() * Math.PI * 2, phi = -0.1 - r() * 0.4;
+        const ax = cx + Math.cos(a) * Math.cos(phi) * cr * 0.9, az = cz + Math.sin(a) * Math.cos(phi) * cr * 0.9;
+        const ay = cy + Math.sin(phi) * cr * SQ * 0.9;
+        if (inside(ax, ay, az, bi)) continue;
+        const ta = Math.atan2(az - 0.3, ax - 0.3);   // around the trunk top
+        if (gap(ta)) continue;
+        const lean = Math.cos(ta);                   // +1 on the lean side
+        const len = Math.min(ay - 0.35, (1.0 + r() * 1.3) * (1 + 0.4 * lean) + (r() < 0.2 ? 0.6 : 0));
+        const wid = 0.44 * (0.8 + r() * 0.4), tuck = 0.45;
+        const g = new THREE.CylinderGeometry(0.5, 0.26, 1, 5, 3, false);
+        g.translate(0, -0.5, 0);
+        const pp = g.attributes.position;
+        for (let v = 0; v < pp.count; v++) {
+          const t = -pp.getY(v);   // 0 at the (tucked) top … 1 at the tip
+          const hem = t > 0.99 ? (hash2(Math.round(pp.getX(v) * 97) + placed * 13 + seed, Math.round(pp.getZ(v) * 97)) - 0.3) * 0.5 : 0;
+          pp.setXYZ(v, pp.getX(v) * wid, tuck - (t * (len + tuck) + hem), pp.getZ(v) * 0.26 + Math.sin(t * Math.PI) * 0.14 + t * 0.1);
+        }
+        g.rotateY(Math.PI / 2 - a);
+        g.translate(ax, ay, az);
+        g.deleteAttribute('uv');
+        const mid = new THREE.Vector3(cx, ay - len * 0.45, cz);
+        parts.push(leafBlob(g, mid, core, L, ay - len, ay + 0.4, seed + parts.length, { crown: 0.25, blossom: season === 'spring' }, { variant: 2 }));
+        placed++;
       }
       break;
     }
@@ -296,10 +331,12 @@ export function bushGeometry(kind: BushKind, season: Season, seed = 1): THREE.Bu
   const blobs: [number, number, number, number][] = kind === 'hedge'
     ? [[-1.2, 0.55, 0, 0.7], [-0.4, 0.6, 0.05, 0.75], [0.4, 0.58, -0.05, 0.75], [1.2, 0.55, 0, 0.7]]
     : [[0, 0.45, 0, 0.62], [0.45, 0.35, 0.2, 0.45], [-0.4, 0.35, -0.15, 0.48], [0.1, 0.72, -0.1, 0.42]];
+  const core: Core = kind === 'hedge' ? [new THREE.Vector3(-1.2, 0.35, 0), new THREE.Vector3(1.2, 0.35, 0)] : pointCore(new THREE.Vector3(0, 0.3, 0));
+  const set: LeafSet = { dark, light, accent: winter ? undefined : L.accent, p: 0.14 };
   for (const [x, y, z, rad] of blobs) {
-    const b = blob(rad, seed * 5 + parts.length, { squash: 0.8, lump: 0.25 });
+    const b = blob(rad, seed * 5 + parts.length, { squash: 0.8, lump: 0.16 });
     b.translate(x, y, z);
-    parts.push(paintFaces(b, leafy(dark, light, 0, 1.1, winter ? C(0xf2f6fb) : L.accent, winter ? 0.3 : 0.14, winter), seed + parts.length));
+    parts.push(leafBlob(b, new THREE.Vector3(x, y, z), core, set, 0, 1.1, seed + parts.length, { squash: 0.8, crown: 0.25, snow: winter, blossom: season === 'spring' }, { scale: clumpScale(rad), aux: rad }));
   }
   if (kind === 'berry' && !winter) {
     const berry = season === 'spring' ? C(0xfbf2f6) : season === 'summer' ? C(0xd8343a) : C(0x5a3a9a);
@@ -318,14 +355,14 @@ export function logGeometry(season: Season, seed = 1): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const len = 2.6, rad = 0.26;
   const body = new THREE.CylinderGeometry(rad, rad * 1.1, len, 7, 1, true).rotateZ(Math.PI / 2).translate(0, rad * 0.8, 0);
-  parts.push(paintFaces(body, (_y, ny, rr) => {
+  parts.push(tagSurface(paintFaces(body, (_y, ny, rr) => {
     tc.set(0x6e4a2e).multiplyScalar(0.88 + rr() * 0.2);
     if (ny > 0.4 && rr() < 0.55) tc.set(season === 'winter' ? 0xf2f6fb : season === 'autumn' ? 0x8a8a40 : 0x5f8f3f);
     return tc;
-  }, seed));
+  }, seed), SURF.logs, { axis: 'x', variant: 1, scale: 0.8 }));
   for (const s of [-1, 1]) {
     const cap = new THREE.CircleGeometry(s < 0 ? rad * 1.1 : rad, 7).rotateY((s * Math.PI) / 2).translate((s * len) / 2, rad * 0.8, 0);
-    parts.push(paintFaces(cap, (_y, _n, rr) => tc.set(0xd9ae78).multiplyScalar(0.92 + rr() * 0.12), seed + 1));
+    parts.push(tagSurface(paintFaces(cap, (_y, _n, rr) => tc.set(0xd9ae78).multiplyScalar(0.92 + rr() * 0.12), seed + 1), SURF.logs, { axis: 'x', scale: 0.7 }));
   }
   const stub = limb(new THREE.Vector3(0.3, rad * 1.4, 0.05), new THREE.Vector3(0.6, rad * 2.6, 0.35), 0.07, 0.04, 4);
   parts.push(bark(stub, 1));
@@ -342,10 +379,10 @@ export function stumpGeometry(season: Season, seed = 1): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const h = 0.55;
   const body = new THREE.CylinderGeometry(0.34, 0.42, h, 8).translate(0, h / 2, 0);
-  parts.push(paintFaces(body, (y, ny, rr) => {
+  parts.push(tagSurface(paintFaces(body, (y, ny, rr) => {
     if (ny > 0.9) return tc.set(season === 'winter' ? 0xf2f6fb : 0xd9ae78).multiplyScalar(0.94 + rr() * 0.08);
     return tc.set(0x5e3f28).lerp(C(0x7a5236), y / h).multiplyScalar(0.9 + rr() * 0.15);
-  }, seed));
+  }, seed), SURF.logs, { axis: 'y', variant: 1, scale: 0.7 }));
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * 6.28 + r();
     parts.push(bark(limb(new THREE.Vector3(0, 0.25, 0), new THREE.Vector3(Math.cos(a) * 0.62, -0.05, Math.sin(a) * 0.62), 0.13, 0.05, 4), 0.4));
@@ -373,18 +410,36 @@ export function mushroomGeometry(season: Season, seed = 1): THREE.BufferGeometry
 
 // ------------------------------------------------------------------------------------------------ ground cover
 
-/** Grass tuft; vertex colours are a light/dark gradient around 1 so the instance colour (ground tint) shows. */
-export function tuftGeometry(tall: boolean, season: Season, seed = 1): THREE.BufferGeometry {
-  const r = mulberry32(seed + (tall ? 50 : 0));
+/**
+ * Grass tuft: a soft dome of blades (taller and upright in the middle, shorter and leaning out at the rim) so a clump
+ * reads as one rounded shape instead of a spiky star. Vertex colours are a gentle base→tip gradient around 1 with a
+ * little per-blade warm/cool jitter, so the instance colour (ground tint) shows. `short` = the small, dense clumps
+ * scattered around the tufts near the camera.
+ */
+export function tuftGeometry(tall: boolean, season: Season, seed = 1, short = false): THREE.BufferGeometry {
+  const r = mulberry32(seed + (tall ? 50 : 0) + (short ? 90 : 0));
   const parts: THREE.BufferGeometry[] = [];
-  const n = tall ? 12 : 11;
+  const n = tall ? 12 : short ? 7 : 12;
+  const R = tall ? 0.28 : short ? 0.11 : 0.24;
+  const H = tall ? 0.5 : short ? 0.12 : 0.21;
+  const W = tall ? 0.085 : short ? 0.05 : 0.07;
+  const winter = season === 'winter';
+  const base = new THREE.Color(), tip = new THREE.Color();
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 * 2.618 + r() * 0.8;
-    const h = (tall ? 0.5 : 0.24) * (0.65 + r() * 0.7);
-    const d = Math.sqrt(r()) * (tall ? 0.3 : 0.34);
-    const b = blade(h, tall ? 0.085 : 0.075, h * (0.2 + r() * 0.35), a + (r() - 0.5), 0.1);
+    const dn = Math.sqrt(r()), d = dn * R;
+    const h = H * (1 - 0.4 * dn) * (0.75 + r() * 0.5);
+    // lean outward (blade() leans towards +x, turned by yaw: yaw = −a points it along (cos a, sin a))
+    const b = blade(h, W * (0.8 + r() * 0.4), h * (0.15 + 0.55 * dn + r() * 0.15), -a + (r() - 0.5) * 0.6, 0.12);
     b.translate(Math.cos(a) * d, 0, Math.sin(a) * d);
-    parts.push(gradient(b, new THREE.Color(0.62, 0.68, 0.58), season === 'winter' ? new THREE.Color(1.3, 1.32, 1.36) : new THREE.Color(1.16, 1.24, 1.02), 0, h));
+    const j = r();
+    // warm (sunny) or cool (lush) blades, darker at the base where the clump shades itself
+    base.setRGB(0.76, 0.82, 0.74);
+    if (winter) tip.setRGB(1.26, 1.28, 1.32);
+    else if (j < 0.33) tip.setRGB(1.2, 1.2, 0.9);
+    else if (j < 0.66) tip.setRGB(1.08, 1.18, 1.04);
+    else tip.setRGB(1.14, 1.2, 0.98);
+    parts.push(gradient(b, base, tip, 0, h));
   }
   if (tall && season === 'summer') {
     // a couple of seed heads
@@ -392,7 +447,7 @@ export function tuftGeometry(tall: boolean, season: Season, seed = 1): THREE.Buf
       const a = r() * 6.28, h = 0.7 + r() * 0.2;
       const s = new THREE.ConeGeometry(0.03, 0.14, 4).translate(Math.cos(a) * 0.12, h, Math.sin(a) * 0.12);
       parts.push(paint(s, C(0xf8e8b0)));
-      parts.push(gradient(blade(h - 0.05, 0.025, 0, a, 0).translate(Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12), new THREE.Color(0.62, 0.68, 0.58), new THREE.Color(1.1, 1.15, 0.95), 0, h));
+      parts.push(gradient(blade(h - 0.05, 0.025, 0, a, 0).translate(Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12), new THREE.Color(0.76, 0.82, 0.74), new THREE.Color(1.1, 1.15, 0.95), 0, h));
     }
   }
   return merge(parts);
