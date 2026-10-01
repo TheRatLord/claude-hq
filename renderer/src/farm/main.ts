@@ -22,7 +22,7 @@ import { createHud } from './hud/hud.ts';
 import type { HudNet } from './hud/port.ts';
 import { installDevApi, POSES } from './dev/api.ts';
 import { installOverlay } from './dev/overlay.ts';
-import type { AudioService, FarmerLocator } from './scene/context.ts';
+import type { AudioService, FarmerLocator, VillagersService } from './scene/context.ts';
 import { SITES } from './world/map.ts';
 
 const params = new URLSearchParams(location.search);
@@ -97,6 +97,7 @@ hud.bind({
   markAllRead: () => valley.markAllRead(),
   player: () => ({ x: engine.ctx.player.pos.x, z: engine.ctx.player.pos.z, yaw: engine.ctx.player.yaw }),
   locate: (id) => { const p = (engine.ctx.services.get('farmers') as FarmerLocator | undefined)?.position(id); return p ? { x: p.x, z: p.z } : null; },
+  villagers: () => (engine.ctx.services.get('villagers') as VillagersService | undefined)?.list() ?? [],
   sfx: (name) => (engine.ctx.services.get('audio') as AudioService | undefined)?.play(name),
 });
 engine.onFrame((f) => hud.update(f));

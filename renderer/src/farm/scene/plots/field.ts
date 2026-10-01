@@ -874,6 +874,11 @@ export class Field {
 
   /** animals near a local point (farmers can ask) */
   animals(): readonly Animal[] { return this.herd?.animals ?? []; }
+  /** a farmer pets animal `id` (same reaction as the player's pet) */
+  petAnimal(id: string): void {
+    const a = this.herd?.animals.find((x) => x.id === id);
+    if (a && a.appear > 0.8 && a.mode !== 'leave' && a.mode !== 'gone' && !this.closing) this.herd!.pet(a);
+  }
 
   private addColliders(): void {
     const c = this.hooks.colliders;

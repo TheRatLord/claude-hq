@@ -9,9 +9,9 @@
 import * as THREE from 'three';
 import {
   CLAWD, CODEX, DUCK, GLYPH_NAMES, HAT_NAMES, HAT_VOXEL, Vox, clawdBody, clawdLeg, codexBody, codexFoot, duckBody, duckEgg, duckFoot, duckHead,
-  duckWing, glyph, hat, joinMeshes,
+  duckWing, glyph, hat, joinMeshes, ROLE_HAT_NAMES, roleHat, WEAR_NAMES, wear,
 } from './mascots.ts';
-import type { GlyphName, HatName, VoxMesh } from './mascots.ts';
+import type { GlyphName, HatName, RoleHatName, VoxMesh, WearName } from './mascots.ts';
 import { PROPS } from './pose.ts';
 import type { Prop } from './pose.ts';
 
@@ -53,6 +53,12 @@ export const HAT_GROUP = (h: HatName) => 1 + HAT_NAMES.indexOf(h);
 export const hatGeometry = () => once('hats', () => toGeometry(joinMeshes(HAT_NAMES.map((n) => hat(n, HAT_GROUP(n)).mesh(HAT_VOXEL)))));
 /** One hat (vgroup 0): the crowd draws each hat as its own instanced mesh, so no farmer sends the three it isn't wearing. */
 export const hatGeometryOf = (h: HatName) => once(`hat:${h}`, () => toGeometry(hat(h, 0).mesh(HAT_VOXEL)));
+
+/** Villager role hats in one geometry (vgroup = ROLE_HAT_GROUP) and wear in another (vgroup = WEAR_GROUP). */
+export const ROLE_HAT_GROUP = (h: RoleHatName) => 1 + ROLE_HAT_NAMES.indexOf(h);
+export const roleHatGeometry = () => once('roleHats', () => toGeometry(joinMeshes(ROLE_HAT_NAMES.map((n) => roleHat(n, ROLE_HAT_GROUP(n)).mesh(HAT_VOXEL)))));
+export const WEAR_GROUP = (w: WearName) => 1 + WEAR_NAMES.indexOf(w);
+export const wearGeometry = () => once('wear', () => toGeometry(joinMeshes(WEAR_NAMES.map((n) => wear(n, WEAR_GROUP(n)).mesh(CLAWD.u)))));
 
 // props -------------------------------------------------------------------------------------------------------------
 // Authored in metres in grip space: origin = the nub tip, +z = forward, +y = up. Voxel-style boxes only.
@@ -147,6 +153,17 @@ function propVox(p: Prop, g: number): Vox {
       B(0.075, 0.1, 0.04, 0.15, 0.2, 0.02, 0x4f7f4a);
       B(-0.072, 0.1, 0.055, 0.13, 0.18, 0.012, 0xf6f1e6);
       B(0.072, 0.1, 0.055, 0.13, 0.18, 0.012, 0xf6f1e6);
+      break;
+    case 'lantern':
+      // a hand lantern hanging from its bail (the light itself is a LightEmitter at the hand)
+      B(0, 0.015, 0.03, 0.09, 0.02, 0.02, METAL_D);
+      for (const x of [-0.05, 0.05]) B(x, -0.03, 0.03, 0.016, 0.09, 0.016, METAL_D);
+      B(0, -0.08, 0.03, 0.15, 0.03, 0.15, METAL_D);
+      B(0, -0.06, 0.03, 0.07, 0.03, 0.07, METAL);
+      B(0, -0.165, 0.03, 0.12, 0.14, 0.12, 0xfff0b8);
+      B(0, -0.165, 0.03, 0.06, 0.08, 0.06, 0xffffff);
+      for (const [x, z] of [[-0.065, -0.035], [0.065, -0.035], [-0.065, 0.095], [0.065, 0.095]] as const) B(x, -0.165, z, 0.018, 0.15, 0.018, METAL_D);
+      B(0, -0.25, 0.03, 0.15, 0.03, 0.15, METAL_D);
       break;
   }
   return v;

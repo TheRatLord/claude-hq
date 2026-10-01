@@ -122,7 +122,7 @@ test('the Clawd voxel body projects to exactly the banner sprite', () => {
     if (want) hits++;
   }
   assert.ok(hits >= 90);
-  // one-pixel arm nubs stick out either side on the lower body rows, legs hang below
+  // arm nubs stick out either side on the lower body rows, legs hang below
   for (const row of g) if (row.includes('a')) { assert.equal(row.indexOf('a'), 0); assert.ok(row.search(/[#e]/) > 0); }
   assert.ok(g.slice(r1 + 1).every((row) => /^[.l]+$/.test(row)));
   // four legs with a gap in the middle, eyes symmetric, arm nubs on the lower body row
@@ -131,7 +131,13 @@ test('the Clawd voxel body projects to exactly the banner sprite', () => {
   assert.ok(plan.shoulder.y < plan.h / 2);
   const lx = plan.hips.map((h) => h.x).sort((p, q) => p - q);
   assert.ok(lx[2] - lx[1] > lx[1] - lx[0], 'middle gap wider than the pair gap');
-  assert.ok(plan.w > 0.9 && plan.w < 1.0, `Clawd about a metre wide (${plan.w})`);
+  assert.ok(plan.w > 1.15 && plan.w < 1.3, `Clawd a sturdy 1.2 m wide (${plan.w})`);
+  assert.ok(plan.h + plan.legLen > 0.95 && plan.h + plan.legLen < 1.15, `Clawd about a metre tall (${plan.h + plan.legLen})`);
+  // chunky toy proportions: legs at least two voxels wide and deep, three-voxel-tall arm nubs
+  assert.ok(g.every((row) => !/(^|[^l])l([^l]|$)/.test(row)), 'no one-voxel stick legs');
+  assert.ok(CLAWD.legDepth >= 2 && plan.armW >= 3 * plan.u - 1e-9);
+  const legHalf = plan.hips.map((h) => Math.abs(h.x)).sort((p, q) => p - q);
+  assert.ok(legHalf[3] + plan.u < plan.w / 2 + 1e-9, 'legs stand under the body');
 });
 
 test('the Codex plan anchors the >_ face on the front and stands on its feet', () => {
@@ -142,7 +148,7 @@ test('the Codex plan anchors the >_ face on the front and stands on its feet', (
   assert.ok(eye.x < cursor.x, 'the > sits left of the _ cursor');
   assert.ok(eye.y > cursor.y, 'the cursor sits lower');
   assert.ok(eye.z > 0 && cursor.z > 0);
-  assert.ok(p.legLen > 0 && p.h + p.legLen < 1.0 && p.h + p.legLen > 0.6, `height ${p.h + p.legLen}`);
+  assert.ok(p.legLen > 0 && p.h + p.legLen < 1.15 && p.h + p.legLen > 0.9, `height ${p.h + p.legLen}`);
   assert.ok(Math.abs(p.hips[0].x + p.hips[1].x) < 1e-9);
   assert.ok(CODEX.front.every((r) => r.length === CODEX.front[0].length), 'grid rows are the same width');
   for (const [n, rows] of Object.entries(GLYPHS)) assert.ok((rows as readonly string[]).every((r) => r.length === (rows as readonly string[])[0].length), `glyph ${n}`);

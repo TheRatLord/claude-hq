@@ -9,7 +9,7 @@
  *   to feet placed by the gait (planted feet stay put), stretching a little so contacts never break.
  */
 import * as THREE from 'three';
-import { clawdBodyGeometry, clawdLegGeometry, codexBodyGeometry, codexFootGeometry, GLYPH_GROUP, glyphGeometry, hatGeometryOf, nubGeometry, PROP_GROUP, propGeometry } from './geo.ts';
+import { clawdBodyGeometry, clawdLegGeometry, codexBodyGeometry, codexFootGeometry, GLYPH_GROUP, glyphGeometry, hatGeometryOf, nubGeometry, PROP_GROUP, propGeometry, ROLE_HAT_GROUP, roleHatGeometry, WEAR_GROUP, wearGeometry } from './geo.ts';
 import { addInstanceAttrs, rigDepthMaterial, rigMaterial } from './mat.ts';
 import { HAT_NAMES, clawdPlan, codexPlan } from './mascots.ts';
 import type { GlyphName, HatName, Plan } from './mascots.ts';
@@ -19,7 +19,7 @@ import type { Look } from './look.ts';
 
 export const PLANS: Readonly<Record<Body, Plan>> = { clawd: clawdPlan(), codex: codexPlan() };
 
-type PartName = 'clawd' | 'leg' | 'codex' | 'foot' | 'nub' | 'glyph' | `hat_${HatName}` | 'prop';
+type PartName = 'clawd' | 'leg' | 'codex' | 'foot' | 'nub' | 'glyph' | `hat_${HatName}` | 'prop' | 'rolehat' | 'wear';
 
 interface Part {
   mesh: THREE.InstancedMesh;
@@ -62,7 +62,9 @@ export interface DrawOut {
 }
 
 /** Hanging props keep level with gravity instead of following the body's lean. */
-const HANGS: ReadonlySet<Prop> = new Set(['can', 'basket']);
+/** Villagers' role hats read from across the square: a size up on the tier hats. */
+const ROLE_HAT_SCALE = 1.4;
+const HANGS: ReadonlySet<Prop> = new Set(['can', 'basket', 'lantern']);
 
 const _root = new THREE.Matrix4(), _L = new THREE.Matrix4(), _Br = new THREE.Matrix4(), _Bs = new THREE.Matrix4(), _W = new THREE.Matrix4();
 const _m = new THREE.Matrix4(), _t = new THREE.Matrix4(), _arm = new THREE.Matrix4();
@@ -78,12 +80,12 @@ const R = (x: number, y: number, z: number, order: THREE.EulerOrder = 'XYZ') => 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const sstep = (a: number, b: number, v: number) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
-interface Rgb { body: number[]; dark: number[]; glyph: number[]; scarf: number[]; hat: number[]; band: number[] }
+interface Rgb { body: number[]; dark: number[]; glyph: number[]; scarf: number[]; hat: number[]; band: number[]; wear: number[]; trim: number[] }
 const rgbCache = new WeakMap<Look, Rgb>();
 const rgb = (hex: number) => { _c.setHex(hex); return [_c.r, _c.g, _c.b]; };
 function colorsOf(l: Look): Rgb {
   let c = rgbCache.get(l);
-  if (!c) { c = { body: rgb(l.color), dark: rgb(l.dark), glyph: rgb(l.glyph), scarf: rgb(l.scarf), hat: rgb(l.hatColor), band: rgb(l.hatBand) }; rgbCache.set(l, c); }
+  if (!c) { c = { body: rgb(l.color), dark: rgb(l.dark), glyph: rgb(l.glyph), scarf: rgb(l.scarf), hat: rgb(l.hatColor), band: rgb(l.hatBand), wear: rgb(l.wearColor ?? 0xffffff), trim: rgb(l.wearTrim ?? l.dark) }; rgbCache.set(l, c); }
   return c;
 }
 const WHITE = [1, 1, 1];
@@ -104,6 +106,8 @@ export class Crowd {
     const spec: [PartName, () => THREE.BufferGeometry, number, boolean][] = [
       ['clawd', clawdBodyGeometry, 1, true], ['leg', clawdLegGeometry, 4, true], ['codex', codexBodyGeometry, 1, true], ['foot', codexFootGeometry, 2, true],
       ['nub', nubGeometry, 2, true], ['glyph', glyphGeometry, 2, false], ['prop', propGeometry, 1, true],
+      // villagers' dressing (scene/villagers); empty — and so not drawn — in the farmers' crowd
+      ['rolehat', roleHatGeometry, 1, true], ['wear', wearGeometry, 1, true],
       ...HAT_NAMES.map((h) => [`hat_${h}`, () => hatGeometryOf(h), 1, true] as [PartName, () => THREE.BufferGeometry, number, boolean]),
     ];
     for (const [name, geo, per, shadow] of spec) {
@@ -257,7 +261,10 @@ export class Crowd {
     _m.copy(_Bs).multiply(T(P.hat.x, P.hat.y, P.hat.z)).multiply(_t.makeScale(1 / sxz, 1 / sy, 1 / sxz))
       .multiply(R(d.hatLag.x, 0, d.hatLag.z + (clawd ? 0.08 : 0.12))).multiply(T(0, d.hatLag.y, 0)).multiply(_t.makeScale(P.hat.s, P.hat.s, P.hat.s));
     _W.multiplyMatrices(_root, _m);
-    this.put(`hat_${d.look.hat}`, _W, col.hat, col.band, col.hat, 0);
+    if (d.look.roleHat) { _W.multiply(_t.makeScale(ROLE_HAT_SCALE, ROLE_HAT_SCALE, ROLE_HAT_SCALE)); this.put('rolehat', _W, col.hat, col.band, col.hat, ROLE_HAT_GROUP(d.look.roleHat)); }
+    else this.put(`hat_${d.look.hat}`, _W, col.hat, col.band, col.hat, 0);
+    // villager wear rides the body (squash, shear and all)
+    if (d.look.wear && clawd) { _W.multiplyMatrices(_root, _Bs); this.put('wear', _W, col.body, col.trim, col.wear, WEAR_GROUP(d.look.wear), d); }
     out.head.set(0, P.h, 0).applyMatrix4(_Bs).applyMatrix4(_root);
     out.eyes.set(0, P.eyeY, P.d / 2).applyMatrix4(_Bs).applyMatrix4(_root);
 

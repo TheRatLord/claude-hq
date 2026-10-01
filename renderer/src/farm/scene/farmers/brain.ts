@@ -11,6 +11,8 @@ import type { Site, XZ } from '../../world/map.ts';
 import { askSpot, benchSpot, doneSpot, workSpot } from '../../world/spots.ts';
 import { siteToWorld } from '../../world/map.ts';
 import type { Act, Prop } from './pose.ts';
+import { planTrip, seatBeat, tripStep, wantsTrip } from './idle.ts';
+import type { Critter, Friend, Trip } from './idle.ts';
 
 export type Gait = 'walk' | 'jog' | 'amble';
 
@@ -38,7 +40,15 @@ export interface Intent {
   seatRel?: number;
 }
 
-export interface Seat extends XZ { yaw: number; act: Act; kind: string; /** chat seats come in pairs: index of the partner seat */ pair?: number; /** seat surface height */ y?: number }
+export interface Seat extends XZ {
+  yaw: number; act: Act; kind: string;
+  /** chat / checkers / blanket seats come in pairs: index of the partner seat */
+  pair?: number;
+  /** seat surface height */
+  y?: number;
+  /** activity loop played here (idle.ts LOOPS; default: the act's own loop) */
+  loop?: string;
+}
 
 export interface Errand { kind: 'haul' | 'fetch'; leg: 0 | 1 | 2 | 3; t: number; dest: 'bin' | 'mailbox' | 'well'; once: boolean }
 
@@ -53,9 +63,15 @@ export interface Mind {
   k: number;
   leaving: number | null;
   arriving: boolean;
+  /** idle: the seat loop's current beat (−1 = not started), until when, and its act */
+  beat: number;
+  beatUntil: number;
+  beatAct: Act | null;
+  /** idle: a short outing between seats (stroll, mailbox, own field, petting, visiting a friend) */
+  trip: Trip | null;
 }
 
-export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false });
+export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false, beat: -1, beatUntil: 0, beatAct: null, trip: null });
 
 export interface World {
   site: Site | null;
@@ -71,6 +87,22 @@ export interface World {
   stands?: Partial<Record<'bin' | 'mailbox' | 'well', XZ & { yaw: number }>>;
   /** claim a leisure seat for an idle farmer (the system tracks occupancy); returns a seat index */
   claim(id: string, kind: 'leisure' | 'nap', t: number): number;
+  // ---- idle life (all optional: without them a farmer just sits) ----
+  /** 0 day … 1 night */
+  night?: number;
+  /** someone else is settled within a few metres of seat i (to chat / play with) */
+  company?(i: number): boolean;
+  /** give up the current leisure seat (off on an outing) */
+  release?(id: string): void;
+  /** pettable critters: the village dog and cat, the farmer's own field animals */
+  critters?(): readonly Critter[];
+  /** other idle farmers settled somewhere (to visit) */
+  friends?(): readonly Friend[];
+  /** scenic stand points for a stroll, facing the view */
+  views?: readonly (XZ & { yaw: number })[];
+  /** personality 0..1: how often an outing beats sitting on, how much it likes company */
+  restless?: number;
+  chatty?: number;
 }
 
 const faceYaw = (from: XZ, to: XZ) => Math.atan2(to.x - from.x, to.z - from.z);
@@ -108,7 +140,7 @@ export const propOf = (a: Act): Prop | null => PROP_OF[a] ?? null;
 /** The thinking bale the plots package puts behind bench spot 0 (site-local z from the back fence, top height). */
 export const BALE = { back: 1.28, h: 0.5 } as const;
 
-const HUB_SPOT = (w: World, spot: number): XZ & { yaw: number } => ({ x: w.hub.x + (spot % 4) * 1.2 - 1.8, z: w.hub.z + 4, yaw: 0 });
+const HUB_SPOT = (w: World, spot: number): XZ & { yaw: number } => ({ x: w.hub.x + (spot % 4) * 1.45 - 2.175, z: w.hub.z + 4, yaw: 0 });
 
 /**
  * One planning step. `pos` is where the farmer stands now, `arrived` whether the mover reached the last intent.
@@ -120,6 +152,8 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
     return { key: 'exit', x: w.exit.x, z: w.exit.z, yaw: 0, act: 'stand', walkAct: 'bindle', gait: 'walk', prop: 'bindle', walkProp: 'bindle', vanish: true };
   }
   if (f.job !== m.job) {
+    m.trip = null;
+    m.beat = -1;
     // a one-off errand (a crate for a commit) finishes its trip before the next job, unless attention is needed
     const urgent = f.job === 'ask' || f.job === 'away' || f.job === 'done';
     if (!(m.errand?.once && m.errand.leg < 2 && !urgent)) m.errand = null;
@@ -229,14 +263,39 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
     case 'idle':
     case 'away': {
       const kind = m.job === 'away' ? 'nap' : 'leisure';
+      // on an outing between seats
+      const outing = (): Intent | null => {
+        const leg = kind === 'leisure' ? tripStep(m, w, pos, arrived, t, cues) : null;
+        if (!leg) return null;
+        const i = base(leg.key, leg, leg.act, leg.gait);
+        i.prop = leg.prop ?? propOf(leg.act);
+        return i;
+      };
+      if (m.trip) { const i = outing(); if (i) return i; }
       if (m.seat < 0 || t > m.seatUntil || (m.job === 'away') !== (w.seats[m.seat]?.kind === 'nap')) {
+        // the dwell ran out: maybe stretch the legs first (never on the very first pick, so a new idler settles)
+        if (kind === 'leisure' && m.seat >= 0 && !m.trip && wantsTrip(m, w, t)) {
+          const trip = planTrip(m, f, w, pos, t);
+          m.n++;
+          if (trip) {
+            w.release?.(f.id);
+            m.seat = -1;
+            m.trip = trip;
+            const first = trip.legs[0];
+            if (first.follow) cues.push(`hold:${first.follow}`);
+            const i = outing();
+            if (i) return i;
+          }
+        }
         m.seat = w.claim(f.id, kind, t);
-        m.seatUntil = t + (kind === 'nap' ? 1e9 : 70 + ((m.k * 7919 + m.n * 0.618) % 1) * 110);
+        m.seatUntil = t + (kind === 'nap' ? 1e9 : 60 + ((m.k * 7919 + m.n * 0.618) % 1) * 100);
         m.n++;
+        m.beat = -1;
       }
       const s = w.seats[m.seat];
       if (!s) return base('work', work, 'stand');
-      const i = base(`seat:${m.seat}`, s, s.act, 'amble');
+      const act = kind === 'nap' ? s.act : seatBeat(m, s, m.seat, w, arrived, t, cues);
+      const i = base(`seat:${m.seat}`, s, act, 'amble');
       if (s.y !== undefined) i.seatY = s.y;
       return i;
     }
@@ -271,9 +330,24 @@ export function buildSeats(src: SeatSource): Seat[] {
   const has = (k: string) => !!b && b.seats.some((x) => x.kind === k);
   if (b) {
     for (const st of b.seats) {
-      if (st.kind === 'fire') push({ x: st.x, z: st.z, y: st.y, yaw: st.yaw, act: 'campfire', kind: 'fire' });
-      else push({ x: st.x, z: st.z, y: st.y, yaw: st.yaw, act: 'sit', kind: st.kind === 'seat' ? 'porch' : 'bench' });
+      const at = { x: st.x, z: st.z, y: st.y, yaw: st.yaw };
+      switch (st.kind) {
+        case 'fire': push({ ...at, act: 'campfire', kind: 'fire' }); break;
+        // the leisure nooks (structures/nooks.ts)
+        case 'checkers': push({ ...at, act: 'checkers', kind: 'checkers' }); break;
+        case 'blanket': push({ ...at, act: 'picnic', kind: 'blanket', loop: 'blanket' }); break;
+        case 'soak': push({ ...at, act: 'soak', kind: 'soak' }); break;
+        case 'lookout': push({ ...at, act: 'sit', kind: 'lookout', loop: 'lookout' }); break;
+        default: push({ ...at, act: 'sit', kind: st.kind === 'seat' ? 'porch' : 'bench' });
+      }
     }
+    // the paired nook seats are published two by two, facing each other
+    for (const k of PAIRED) {
+      const idx = seats.map((s, i) => (s.kind === k ? i : -1)).filter((i) => i >= 0);
+      for (let i = 0; i + 1 < idx.length; i += 2) { seats[idx[i]].pair = idx[i + 1]; seats[idx[i + 1]].pair = idx[i]; }
+    }
+    const tel = b.get('telescope');
+    if (tel) push({ x: tel.x, z: tel.z, yaw: tel.yaw, act: 'telescope', kind: 'telescope' });
     const ham = b.get('hammock');
     if (ham) push({ x: ham.x, z: ham.z, y: ham.y, yaw: ham.yaw, act: 'lie', kind: 'nap' });
     const dock = b.get('dockEnd');
@@ -327,11 +401,19 @@ export function buildSeats(src: SeatSource): Seat[] {
   return seats;
 }
 
+/** seats that come in pairs (a partner waiting there is an invitation) */
+const PAIRED = ['chat', 'checkers', 'blanket'] as const;
+/** the liked-kind a seat kind counts as */
+const likeOf = (kind: string): string => (kind === 'telescope' ? 'lookout' : kind);
+/** preference shift per seat kind at full night: the fire and the stars after dark, the blanket and the river by day */
+const NIGHT: Readonly<Record<string, number>> = { fire: 1.6, lookout: 1.8, telescope: 1.8, soak: 0.8, blanket: -2, fish: -1, meadow: -1.5, board: -1, chat: -0.4 };
+
 /**
- * Pick a seat for `kind`: prefer the farmer's liked kinds, prefer joining a waiting chat partner (chatty farmers),
+ * Pick a seat for `kind`: prefer the farmer's liked kinds, prefer joining a waiting partner at a chat corner, the
+ * checkers table or the picnic blanket (chatty farmers), shift with the time of day, prefer nearer seats (`from`),
  * never a taken seat. `occ` maps seat index → farmer id. Deterministic given `r`.
  */
-export function pickSeat(seats: readonly Seat[], occ: ReadonlyMap<number, string>, id: string, kind: 'leisure' | 'nap', likes: readonly string[], chatty: number, r: () => number, avoid = -1): number {
+export function pickSeat(seats: readonly Seat[], occ: ReadonlyMap<number, string>, id: string, kind: 'leisure' | 'nap', likes: readonly string[], chatty: number, r: () => number, avoid = -1, night = 0, from?: XZ): number {
   const free = (i: number) => seats[i].kind !== 'off' && (!occ.has(i) || occ.get(i) === id);
   if (kind === 'nap') {
     const naps = seats.map((s, i) => i).filter((i) => seats[i].kind === 'nap' && free(i));
@@ -343,14 +425,17 @@ export function pickSeat(seats: readonly Seat[], occ: ReadonlyMap<number, string
   if (r() < 0.35 + chatty * 0.5) {
     for (let i = 0; i < seats.length; i++) {
       const s = seats[i];
-      if (s.kind === 'chat' && s.pair !== undefined && free(i) && occ.has(s.pair) && occ.get(s.pair) !== id && i !== avoid) return i;
+      if ((PAIRED as readonly string[]).includes(s.kind) && s.pair !== undefined && free(i) && occ.has(s.pair) && occ.get(s.pair) !== id && i !== avoid) return i;
     }
   }
   const score = (i: number) => {
     const s = seats[i];
-    const li = likes.indexOf(s.kind);
-    let v = li < 0 ? 1 : 3 - li * 0.5;
+    const li = likes.indexOf(likeOf(s.kind));
+    let v = li < 0 ? 1 : 3 - li * 0.4;
     if (s.kind === 'chat') v = 1 + chatty * 1.5;
+    v += (NIGHT[s.kind] ?? 0) * night;
+    // a long trek across the valley needs a better reason than a short stroll
+    if (from) v -= Math.hypot(s.x - from.x, s.z - from.z) / 70;
     if (s.kind === 'nap') v = -10;
     if (i === avoid) v -= 5;
     return v + r() * 1.5;

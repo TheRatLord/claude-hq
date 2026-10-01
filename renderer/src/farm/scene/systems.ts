@@ -12,6 +12,7 @@ import { floraSystem } from './flora/flora.ts';
 import { structuresSystem } from './structures/structures.ts';
 import { plotsSystem } from './plots/plots.ts';
 import { farmersSystem } from './farmers/farmers.ts';
+import { villagersSystem } from './villagers/villagers.ts';
 import { lifeSystem } from './life/life.ts';
 import { weatherSystem } from './weather/weather.ts';
 import { audioSystem } from '../audio/audio.ts';
@@ -26,6 +27,7 @@ export const SYSTEMS: readonly SystemFactory[] = [
   structuresSystem,
   plotsSystem,
   farmersSystem,
+  villagersSystem,
   lifeSystem,
   weatherSystem,
   audioSystem,

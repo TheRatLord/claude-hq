@@ -21,6 +21,8 @@ export interface PlotsService {
   field(plotId: string): { site: Site; stage: PlotStage; built: number } | null;
   /** animals of a plot with their world feet positions (empty for crop fields) */
   animalsNear(plotId: string): { id: string; name: string; species: string; pos: THREE.Vector3; sleeping: boolean; mode: string }[];
+  /** an idle farmer pets one of its field's animals (hearts, the animal's sound, it stops to enjoy it) */
+  petAnimal(plotId: string, animalId: string): void;
   /** ground height a character should stand on at (x, z): terrain, or the top of tilled soil inside a field */
   soilHeight(x: number, z: number): number;
   /** world position of a helper's scarecrow head (for markers / camera focus) */
@@ -94,6 +96,9 @@ export const plotsSystem: SystemFactory = (ctx) => {
       return f.animals().filter((a) => a.appear > 0.5 && a.mode !== 'gone').map((a) => ({
         id: a.id, name: a.name, species: a.sp.key, pos: f.world(a.x, 0, a.z, new THREE.Vector3()), sleeping: a.sleepK > 0.5, mode: `${a.mode}/${a.stage}${a.lying ? '/lying' : ''}`,
       }));
+    },
+    petAnimal(plotId, animalId) {
+      fields.get(plotId)?.petAnimal(animalId);
     },
     soilHeight(x, z) {
       const h = heightAt(x, z);

@@ -105,8 +105,8 @@ export function iconImage(svg: string): HTMLImageElement {
 
 // Portrait copies of the mascot sprite grids and colours (the HUD may not import scene systems). The master design
 // lives in scene/farmers/mascots.ts; scene/farmers/pure.test.ts fails if these drift from it.
-const CLAWD = { front: ['..############..', '..############..', '..##e######e##..', '..##e######e##..', 'aa############aa', 'aa############aa', '..############..', '..############..', '...l.l....l.l...', '...l.l....l.l...'] };
-const CODEX = { front: ['.........######.........', '....###..######..###....', '...#####.######.#####...', '...##################...', '...##################...', '....################....', '...##################...', '..#######E############..', 'aa####################aa', 'aa############M#######aa', '...##################...', '....################....', '...##################...', '...##################...', '....################....', '.......fff....fff.......', '.......fff....fff.......'] };
+const CLAWD = { front: ['..##############..', '..##############..', '..##e########e##..', '..##e########e##..', 'aa##############aa', 'aa##############aa', 'aa##############aa', '..##############..', '..##############..', '...ll.ll..ll.ll...', '...ll.ll..ll.ll...', '...ll.ll..ll.ll...'] };
+const CODEX = { front: ['.........######.........', '....###..######..###....', '...#####.######.#####...', '...##################...', '...##################...', '....################....', '...##################...', 'aa#######E############aa', 'aa####################aa', 'aa############M#######aa', '...##################...', '....################....', '...##################...', '...##################...', '....################....', '......ffff....ffff......', '......ffff....ffff......'] };
 const GLYPHS = { prompt: ['##...', '.##..', '..##.', '.##..', '##...'], cursor: ['###'] };
 const KIND_COLORS = {
   claude: { body: 0xd97757, dark: 0xb65d40, glyph: 0x1f1512 },
@@ -148,10 +148,10 @@ export function farmerFace(hue: number, kind: string, tier?: string | null): str
     put(GLYPHS.cursor, mc, mr);
     top = y0 + 2 * p; cx = 12; hp = 0.95;
   } else {
-    const p = 1.25, g = CLAWD.front, x0 = 12 - (g[0].length * p) / 2, y0 = 7.6;
+    const p = 1.1, g = CLAWD.front, x0 = 12 - (g[0].length * p) / 2, y0 = 7.0;
     grid(g, x0, y0, p, (ch) => (ch === '.' ? null : ch === 'e' ? glyphC : ch === 'l' ? hex(kc.dark) : body));
     if (kind === 'gemini') {
-      const sx = 12 - 0.5 * 0.7, sy = y0 + 4.6 * p;
+      const sx = 12 - 0.5 * 0.7, sy = y0 + 5.4 * p;
       for (const [dx, dy] of [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]]) face.push(`<rect x="${+(sx + dx * 0.7).toFixed(2)}" y="${+(sy + dy * 0.7).toFixed(2)}" width="0.7" height="0.7" fill="${hex(STAR_COLOR)}"/>`);
     }
     top = y0; cx = 12; hp = 1;

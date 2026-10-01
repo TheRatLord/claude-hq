@@ -5,7 +5,8 @@
  */
 import * as THREE from 'three';
 
-export type LabelStyle = 'name' | 'speech' | 'ask' | 'duck';
+/** 'villager': the persistent villagers' nameplate (a green signboard with the role), never confused with a farmer's */
+export type LabelStyle = 'name' | 'speech' | 'ask' | 'duck' | 'villager';
 
 interface Slot { sprite: THREE.Sprite; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; key: string; used: boolean; alpha: number; aspect: number }
 
@@ -32,6 +33,32 @@ function draw(c: HTMLCanvasElement, style: LabelStyle, title: string, sub: strin
   const g = c.getContext('2d')!;
   g.clearRect(0, 0, W, H);
   const font = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  if (style === 'villager') {
+    // a little painted signboard: green board, cream serif name, the role in small caps, two hanging cords
+    const serif = 'Georgia, "DejaVu Serif", serif';
+    g.font = `700 36px ${serif}`;
+    const tw = g.measureText(title).width;
+    g.font = `600 22px ${font}`;
+    const sw = sub ? g.measureText(sub.toUpperCase()).width + sub.length * 2 : 0;
+    const w = Math.min(W - 8, Math.max(tw, sw) + 48);
+    const h = sub ? 92 : 58;
+    const x = (W - w) / 2, y = H - h - 4;
+    g.strokeStyle = 'rgba(70,50,30,0.9)'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(x + 22, y); g.lineTo(W / 2, y - 22); g.lineTo(x + w - 22, y); g.stroke();
+    g.fillStyle = 'rgba(52,96,70,0.95)';
+    g.strokeStyle = 'rgba(240,214,150,0.95)'; g.lineWidth = 4;
+    g.beginPath(); g.roundRect(x, y, w, h, 10); g.fill(); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#fff3d6'; g.font = `700 36px ${serif}`;
+    g.fillText(title, W / 2, y + (sub ? 32 : h / 2));
+    if (sub) {
+      g.fillStyle = '#f0d696'; g.font = `600 22px ${font}`;
+      if ('letterSpacing' in g) (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '2px';
+      g.fillText(sub.toUpperCase(), W / 2, y + 68, W - 40);
+      if ('letterSpacing' in g) (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '0px';
+    }
+    return W / H;
+  }
   if (style === 'name' || style === 'duck') {
     const big = style === 'name' ? 38 : 30;
     g.font = `700 ${big}px ${font}`;

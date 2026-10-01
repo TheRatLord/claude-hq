@@ -7,6 +7,7 @@ import { buildBarn, buildSilo, buildWaterTower, buildWindmill } from './landmark
 import { buildMailbox, buildNoticeboard, buildShippingBin, buildSignpost, buildToolshed, buildWell } from './hub.ts';
 import type { Board } from './hub.ts';
 import { buildBridge, buildCampfire, buildDock } from './leisure.ts';
+import { buildHotSpring, buildLookout, buildPergola, buildPicnic } from './nooks.ts';
 import { Kit } from './kit.ts';
 import * as P from './props.ts';
 import { levelsFromParam, newLevels, rigOf } from './rig.ts';
@@ -45,6 +46,10 @@ defineAsset({ name: 'toolshed', group: 'structure', build: (o) => tag(buildTools
 defineAsset({ name: 'campfire', group: 'structure', note: 'flames, embers, a flickering local light (scene/lights) at night; log benches', build: (o) => tag(buildCampfire(opts(o)), o), animate });
 defineAsset({ name: 'dock', group: 'structure', note: 'walkable planks into the pond, a rod with a bobbing float', build: (o) => tag(buildDock(opts(o)), o), animate });
 defineAsset({ name: 'bridge', group: 'structure', note: 'walkable wooden arch over the river', build: (o) => tag(buildBridge(opts(o)), o), animate });
+defineAsset({ name: 'pergola', group: 'structure', note: 'leisure nook: checkers table under wisteria, two stools (farmers play each other), hanging lantern', build: (o) => tag(buildPergola(opts(o)), o), animate });
+defineAsset({ name: 'picnic', group: 'structure', note: 'leisure nook: gingham blanket for two, basket, parasol, firefly jar on a stump', build: (o) => tag(buildPicnic(opts(o)), o), animate });
+defineAsset({ name: 'lookout', group: 'structure', note: "leisure nook: stargazers' deck, brass telescope, benches facing the valley, pennant in the wind", build: (o) => tag(buildLookout(opts(o)), o), animate });
+defineAsset({ name: 'hotspring', group: 'structure', note: 'leisure nook: steaming foot-bath with rim seats, stone lanterns, bamboo spout, a rubber duck', build: (o) => tag(buildHotSpring(opts(o)), o), animate });
 
 // small props (the hub dressing merges these; registered for the gallery)
 const prop = (name: string, fn: (k: Kit, o: AssetBuildOpts) => void, note?: string) => defineAsset({ name, group: 'prop', note, build: (o) => { const k = new Kit(o.seed); fn(k, o); return k.build(new THREE.Group(), o.night ?? 0); } });

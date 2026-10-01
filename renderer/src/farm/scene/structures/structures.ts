@@ -26,6 +26,8 @@ import type { Arrow, Board, Note, Signpost } from './hub.ts';
 import { BRIDGE, CAMPFIRE_SEATS, DOCK, bridgeDeck, buildBridge, buildCampfire, buildDock, dockStart } from './leisure.ts';
 import type { BridgeOpts, DeckOpts } from './leisure.ts';
 import { buildDressing } from './dressing.ts';
+import { LOOKOUT, PERGOLA, PICNIC, SPRING, buildHotSpring, buildLookout, buildPergola, buildPicnic, lookoutFloor, lookoutSeats, springSeats, telescopeStand } from './nooks.ts';
+import type { NookSeat } from './nooks.ts';
 import { partName, recordParts } from '../parts.ts';
 
 import type { StructureSpot, StructureSpots } from '../context.ts';
@@ -38,6 +40,12 @@ const HUB_SAY_WISH = [
   'Plink! You wish for fewer merge conflicts.',
   'The well gurgles approvingly. Your tests feel luckier already.',
   'You wish for a cozy day in the valley. Granted, probably.',
+];
+
+const CHECKERS_SAY = [
+  'Red to move. Someone is about to be kinged. 👑',
+  'A tense endgame. Neither farmer will admit to a draw.',
+  'The scorecard reads: Clawds 12, Codexes 12. Rematch!',
 ];
 
 export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
@@ -116,6 +124,10 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     make('dock', buildDock(o, dockOpts(S('dock'))));
     make('bridge', buildBridge(o, bridgeOpts(S('bridge'))));
     make('signpost', buildSignpost(o));
+    make('pergola', buildPergola(o));
+    make('picnic', buildPicnic(o));
+    make('lookout', buildLookout(o));
+    make('hotspring', buildHotSpring(o));
     const flora = ctx.services.get('floraSolids') as { blocked(x: number, z: number, r: number): boolean } | undefined;
     const dr = buildDressing(season, 1, flora ? (x, z, r) => flora.blocked(x, z, r) : undefined);
     group.add(dr.root);
@@ -163,6 +175,26 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     circ(S('campfire'), 0, 0, 1.25);
     for (const [x, z] of CAMPFIRE_SEATS.slice(0, 3)) rect(S('campfire'), x, z, 2.0, 0.55, Math.atan2(-x, -z));
     for (const sgn of [-1, 1]) rect(S('bridge'), sgn * (BRIDGE.w / 2 + 0.05), 0, 0.24, BRIDGE.L - 0.4);
+    // leisure nooks: posts, tables, lanterns and rails are solid; seats stay reachable
+    const pg = S('pergola');
+    for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) circ(pg, x * PERGOLA.post, z * PERGOLA.post, 0.22);
+    circ(pg, 0, 0, 0.45);
+    rect(pg, PERGOLA.bench.x, PERGOLA.bench.z - 0.15, 2.2, 0.5);
+    const pc = S('picnic');
+    circ(pc, PICNIC.basket.x, PICNIC.basket.z, 0.3); circ(pc, PICNIC.parasol.x, PICNIC.parasol.z, 0.1); circ(pc, PICNIC.stump.x, PICNIC.stump.z, 0.26);
+    const lk = S('lookout');
+    circ(lk, LOOKOUT.telescope.x, LOOKOUT.telescope.z, 0.32);
+    circ(lk, LOOKOUT.lamp.x, LOOKOUT.lamp.z, 0.2);
+    for (const b of LOOKOUT.benches) rect(lk, b.x, b.z, LOOKOUT.benchW, 0.55, b.ry);
+    {
+      const vr = LOOKOUT.apothem / Math.cos(Math.PI / 8) - 0.1, side = 2 * (LOOKOUT.apothem - 0.1) * Math.tan(Math.PI / 8);
+      for (let i = 1; i < 8; i++) { const a = (i / 8) * Math.PI * 2; rect(lk, Math.sin(a) * (vr * Math.cos(Math.PI / 8)), Math.cos(a) * (vr * Math.cos(Math.PI / 8)), side + 0.1, 0.16, a); }
+    }
+    const hs = S('hotspring');
+    circ(hs, SPRING.cx, SPRING.cz, SPRING.r - 0.05); // the rim seats at seatR stay reachable
+    for (const l of SPRING.lanterns) circ(hs, l.x, l.z, 0.32);
+    circ(hs, SPRING.spout.x, SPRING.spout.z, 0.42);
+    rect(hs, 0, -3.5, 3.5, 0.3);
     for (const [x, z, r] of dr.circles) removers.push(ctx.colliders.circle(x, z, r));
     for (const [x, z, w, d, y] of dr.rects) removers.push(ctx.colliders.rect(x, z, w, d, y));
 
@@ -182,6 +214,16 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     for (const [x, z] of CAMPFIRE_SEATS) { const w = toWorld(cf, x * 0.88, z * 0.88); seatList.push({ x: w.x, y: heightAt(w.x, w.z) + 0.5, z: w.z, yaw: Math.atan2(-x, -z) + cf.yaw, kind: 'fire' }); }
     seatList.push(spotsMap.get('rocker')!);
     for (const st of dr.seats) seatList.push(st);
+    // leisure nooks (paired kinds — checkers, blanket — are published as consecutive pairs facing each other)
+    const nook = (id: StructureId, list: readonly NookSeat[], kind: string) => { for (const q of list) seatList.push(spot(`${id}:${kind}:${seatList.length}`, S(id), q.x, q.y, q.z, q.yaw, kind)); };
+    nook('pergola', PERGOLA.players, 'checkers');
+    nook('pergola', [PERGOLA.bench], 'bench');
+    nook('picnic', PICNIC.places, 'blanket');
+    nook('lookout', lookoutSeats(), 'lookout');
+    nook('hotspring', springSeats(), 'soak');
+    const ts = telescopeStand();
+    spot('telescope', S('lookout'), ts.x, ts.y, ts.z, ts.yaw, 'telescope');
+    spot('lookoutView', S('lookout'), 0, LOOKOUT.deck, LOOKOUT.apothem - 0.75, 0, 'view');
   }
 
   /** merge every mesh tagged `userData.bake` into per-cell meshes (world space), two materials total */
@@ -271,6 +313,10 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     ctx.interact.add({ id: 'farmhouse:door', kind: 'prop', verb: 'Knock on', label: () => 'Farmhouse door', pos: vec('farmhouse', 0, 1.6, FARMHOUSE.door.z + 0.1), use: () => say('Knock knock… nobody home. Everyone is out in the fields!') }),
     ctx.interact.add({ id: 'campfire', kind: 'structure', verb: 'Warm hands at', label: () => 'Campfire', pos: vec('campfire', 0, 0.6, 0), reach: 3.4, use: () => say(ctx.lighting.night > 0.5 ? 'Toasty. The stars are out over the valley. 🔥' : 'Warm and crackly. Someone left marshmallows.') }),
     ctx.interact.add({ id: 'dock', kind: 'structure', verb: 'Fish from', label: () => 'Dock', pos: vec('dock', 0, dockOpts(S('dock')).deckY + 0.6, DOCK.z1 - 0.8), reach: 3.2, use: () => say('You cast a line… the fish seem busy compiling. 🎣') }),
+    ctx.interact.add({ id: 'pergola', kind: 'structure', verb: 'Study', label: () => 'Checkers game', pos: vec('pergola', 0, PERGOLA.floor + 0.75, 0), reach: 3.2, use: () => say(CHECKERS_SAY[Math.floor(Math.random() * CHECKERS_SAY.length)]) }),
+    ctx.interact.add({ id: 'picnic', kind: 'structure', verb: 'Nibble at', label: () => 'Picnic', pos: vec('picnic', 0, 0.3, 0), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'The firefly jar glows. Someone saved you a slice of pie. 🥧' : 'Lemonade, sandwiches, a cherry pie. Help yourself! 🧺') }),
+    ctx.interact.add({ id: 'lookout:telescope', kind: 'prop', verb: 'Look through', label: () => 'Telescope', pos: vec('lookout', LOOKOUT.telescope.x, LOOKOUT.deck + 1.05, LOOKOUT.telescope.z), reach: 3.2, use: () => say(ctx.lighting.night > 0.5 ? 'So many stars… is that one shaped like a crab? ✨' : 'You can see every field from up here. Tiny farmers, hard at work. 🔭') }),
+    ctx.interact.add({ id: 'hotspring', kind: 'structure', verb: 'Dip toes in', label: () => 'Hot spring', pos: vec('hotspring', SPRING.cx, SPRING.water + 0.3, SPRING.cz), reach: 3.6, use: () => { audio()?.play('splash', { pos: vec('hotspring', SPRING.cx, SPRING.water, SPRING.cz)(new THREE.Vector3()), volume: 0.5 }); say('Ahh. Warm as a fresh build. ♨️'); } }),
     ctx.interact.add({ id: 'toolshed', kind: 'structure', verb: 'Peek into', label: () => 'Toolshed', pos: vec('toolshed', -0.6, 1.2, 1.4), use: () => say('Rakes, hoes, a very old keyboard. Everything in its place.') }),
   ];
 
@@ -301,6 +347,12 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     const dk = S('dock');
     l = toLocal(dk, x, z);
     if (Math.abs(l.x) <= DOCK.w / 2 + 0.05 && l.z >= dockZ0 - 0.1 && l.z <= DOCK.z1) return dk.y + dockO.deckY;
+    const lk = S('lookout');
+    if (Math.abs(x - lk.x) < 4 && Math.abs(z - lk.z) < 4) {
+      l = toLocal(lk, x, z);
+      const f = lookoutFloor(l.x, l.z);
+      if (f !== null) return lk.y + f;
+    }
     return null;
   };
   const bridgeO = bridgeOpts(S('bridge')), dockO = dockOpts(S('dock')), dockZ0 = dockStart(dockO);

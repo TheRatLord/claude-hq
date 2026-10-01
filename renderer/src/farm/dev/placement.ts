@@ -19,7 +19,11 @@ import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import type { SceneCtx } from '../scene/context.ts';
 import type { ValleyState } from '../model/types.ts';
-import { PATHS, SITES, WORLD, distToPolyline } from '../world/map.ts';
+import { NOOKS, PATHS, SITES, WORLD, distToPolyline, structure } from '../world/map.ts';
+import { Puppets } from '../scene/farmers/assets.ts';
+import { lookFor } from '../scene/farmers/look.ts';
+import { LOOPS } from '../scene/farmers/idle.ts';
+import type { StructureSpots } from '../scene/context.ts';
 import { partsOf } from '../scene/parts.ts';
 import type { Box, Check, Finding, ItemRef, Vec3 } from './placementCore.ts';
 import { assetOf, boxCenter, boxDiag, boxSize, emptyBox, frame, grow, overlapBox, pad, score, triangleSamples } from './placementCore.ts';
@@ -37,6 +41,11 @@ export interface AuditOpts {
   touch?: number;
   /** only items whose key matches (substring) */
   only?: string;
+  /**
+   * seat a rest-pose farmer of this body (largest look scale) at every leisure-nook seat and stand, and report only
+   * the overlaps involving them: farmer × structure and farmer × the farmer on a neighbouring seat
+   */
+  sitters?: 'claude' | 'codex';
 }
 
 interface Geo { pos: Float32Array; box: THREE.Box3; bvh?: MeshBVH }
@@ -57,7 +66,7 @@ interface Item extends ItemRef {
   mesh: THREE.Mesh;
 }
 
-const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots'];
+const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots', 'sitters'];
 /** ground cover and foliage: grounding checks only, never an overlap (grass through a fence is fine) */
 const SOFT = /grass|flowers-|clover|meadow|pebbles|reeds|cattails|lily-(pads|flowers)|paver#|soilBed#|\/ground$|\/(clod|pentile|decor|weed)#/;
 
@@ -222,7 +231,7 @@ function collect(ctx: SceneCtx, state: ValleyState, only?: string): Item[] {
             key = `${field}/${base}#${i}`;
             owner = group ? `${field}/${group}` : key;
           } else if (sys === 'plots' && names[0]?.startsWith('field:') && name.startsWith('crop:')) owner = `${names[0]}/crops`;
-          else if (sys === 'structures') owner = names[0] ?? path; // animated bits of a landmark (blades, pigeons…)
+          else if (sys === 'structures' || sys === 'sitters') owner = names[0] ?? path; // animated bits of a landmark (blades, pigeons…), one sitter's body parts
           add(mesh, sys, key, owner, geo, m);
         }
         return;
@@ -308,7 +317,7 @@ function supportBelow(self: Item, x: number, y: number, z: number, range: number
 // ---------------------------------------------------------------------------------------------------------------
 // checks
 
-function groundChecks(ctx: SceneCtx, it: Item, o: Required<Omit<AuditOpts, 'only'>>, out: Finding[]): void {
+function groundChecks(ctx: SceneCtx, it: Item, o: Required<Omit<AuditOpts, 'only' | 'sitters'>>, out: Finding[]): void {
   const wp = worldPos(it);
   const n = wp.length / 3;
   let minY = Infinity, maxY = -Infinity;
@@ -425,7 +434,7 @@ function separable(ba: MeshBVH, bb: MeshBVH, A: Item, B: Item, eps: number): boo
   }
   return false;
 }
-function overlapChecks(o: Required<Omit<AuditOpts, 'only'>>, out: Finding[]): number {
+function overlapChecks(o: Required<Omit<AuditOpts, 'only' | 'sitters'>>, out: Finding[]): number {
   const done = new Set<number>();
   let pairs = 0;
   const N = items.length;
@@ -481,6 +490,52 @@ function overlapChecks(o: Required<Omit<AuditOpts, 'only'>>, out: Finding[]): nu
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// sitters: farmers posed on the leisure seats
+
+/** the activity loop a farmer runs on each kind of nook seat (brain.ts buildSeats, idle.ts LOOPS) */
+const SIT_LOOP: Record<string, string> = { checkers: 'checkers', blanket: 'blanket', soak: 'soak', lookout: 'lookout', bench: 'sit', telescope: 'telescope' };
+
+/** the posed sitters stay in the scene (for the contact sheets) until the next audit */
+let sitterRoot: THREE.Group | null = null;
+function placeSitters(ctx: SceneCtx, body: 'claude' | 'codex'): THREE.Group {
+  const root = new THREE.Group();
+  root.name = 'sitters';
+  const spots = ctx.services.get('structureSpots') as StructureSpots | undefined;
+  if (!spots) return root;
+  const nookOf = (x: number, z: number): string | null => {
+    for (const id of NOOKS) { const s = structure(id); if (Math.hypot(x - s.x, z - s.z) < Math.max(s.size[0], s.size[1]) / 2 + 0.5) return id; }
+    return null;
+  };
+  const list = spots.seats().filter((s) => s.kind in SIT_LOOP).map((s) => ({ ...s }));
+  const tel = spots.get('telescope');
+  if (tel) list.push({ ...tel, kind: 'telescope' });
+  const n: Record<string, number> = {};
+  const look = lookFor({ seed: 'audit', tier: body === 'claude' ? 'opus' : null, kind: body }, 0x5a8fd6);
+  for (const s of list) {
+    const nook = nookOf(s.x, s.z);
+    if (!nook) continue;
+    // one seat = one owner; every act of its loop is posed there (they never meet each other, only the props and
+    // the neighbouring seats)
+    const g = new THREE.Group();
+    g.name = `${nook}:${s.kind}${(n[nook + s.kind] = (n[nook + s.kind] ?? -1) + 1)}:${body}`;
+    g.position.set(s.x, s.y, s.z); // SEAT_H is 0 for every nook act: the root sits on the published seat height
+    g.scale.setScalar(1.05); // the largest look scale
+    for (const act of new Set(LOOPS[SIT_LOOP[s.kind]].map((b) => b.act))) {
+      const p = new Puppets(1);
+      p.add(look, act, 0, 0, s.yaw);
+      p.tick(0.5, 1 / 60);
+      const a = new THREE.Group();
+      a.name = act;
+      a.add(p.crowd.group);
+      g.add(a);
+    }
+    root.add(g);
+  }
+  ctx.scene.add(root);
+  return root;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // public
 
 export interface AuditResult { items: number; pairs: number; ms: number; findings: Finding[]; perSystem: Record<string, number> }
@@ -491,11 +546,15 @@ export function audit(ctx: SceneCtx, state: ValleyState, opts: AuditOpts = {}): 
   clearHighlight(ctx);
   geoCache.clear();
   buildTerrain(ctx.scene);
+  sitterRoot?.removeFromParent();
+  const sitters = sitterRoot = opts.sitters ? placeSitters(ctx, opts.sitters) : null;
+  sitters?.updateMatrixWorld(true);
   items = collect(ctx, state, opts.only);
   buildGrid(items);
-  const out: Finding[] = [];
-  for (const it of items) groundChecks(ctx, it, o, out);
+  let out: Finding[] = [];
+  if (!sitters) for (const it of items) groundChecks(ctx, it, o, out);
   const pairs = overlapChecks(o, out);
+  if (sitters) out = out.filter((f) => f.a.key.startsWith('sitters/') || f.b?.key.startsWith('sitters/'));
   findings = out;
   const perSystem: Record<string, number> = {};
   for (const it of items) perSystem[it.system] = (perSystem[it.system] ?? 0) + 1;

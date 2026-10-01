@@ -12,7 +12,7 @@
 import './hud.css';
 import type { AgentPort, Letter, ValleyEvent, ValleyState } from '../model/types.ts';
 import { unreadCount } from '../model/valley.ts';
-import type { FrameInfo, Interactions, SfxName, UiPort } from '../scene/context.ts';
+import type { FrameInfo, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
 import { createPanels, displayName, h, loadPrefs, savePrefs, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
 import { letterKey, matchCombo, parseCombo, STATUS_RANK } from './format.ts';
@@ -47,6 +47,8 @@ export interface HudBindings {
   player?(): { x: number; z: number; yaw: number };
   /** optional: live world position of a farmer / helper (FarmerLocator); the map falls back to their field */
   locate?(id: string): { x: number; z: number } | null;
+  /** optional: the persistent villagers (scene service 'villagers'), drawn as role pins on the maps */
+  villagers?(): readonly VillagerPin[];
 }
 
 export interface Hud {
@@ -308,6 +310,7 @@ export function createHud(d: HudDeps): Hud {
       map: () => panels.open('map'),
       noticeboard: () => panels.open('noticeboard'),
       stats: () => panels.open('stats'),
+      roster: () => panels.open('roster'),
       say: (t, ms) => toasts.sayText(t, ms),
     },
     openTerminal: (id) => openTerminal(id),

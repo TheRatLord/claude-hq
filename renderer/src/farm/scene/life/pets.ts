@@ -11,7 +11,7 @@
  * Each pet is one skinned mesh (one draw call; real shadow) plus a soft contact blob.
  */
 import * as THREE from 'three';
-import type { FarmerLocator, FrameInfo, SceneCtx } from '../context.ts';
+import type { FarmerLocator, FrameInfo, PetsService, SceneCtx } from '../context.ts';
 import { SITES, WORLD, heightAt, siteToWorld, slopeAt, structure } from '../../world/map.ts';
 import { seeded } from '../../../core/rng.ts';
 import { PetBody, petInput } from './petBody.ts';
@@ -297,11 +297,12 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
         break;
       }
       case 'petted': {
-        halt(dogM, dt); face(dogM, player.x, player.z, dt, 5);
+        halt(dogM, dt); face(dogM, (dogPetBy ?? player).x, (dogPetBy ?? player).z, dt, 5);
         const asleep = dogPrev === 'sleep' || dogPrev === 'shelter';
         di.pose = asleep ? 'lie' : dogT > 1.6 ? 'stand' : 'sit';
         di.happy = 1; di.ears = -1; di.joy = 1; di.lean = Math.sin(now * 1.3) * 0.25 + 0.55; di.lookPitch = -0.35;
-        if (dogT <= 0) {
+        if (dogT <= 0 && dogPetBy) { dogPetBy = null; setDog(dogPrev === 'sleep' || dogPrev === 'shelter' ? dogPrev : 'wander'); dogAct = 'stand'; dogActT = 2; pickHomeSpot(); }
+        else if (dogT <= 0) {
           setDog(dogPrev === 'wander' || dogPrev === 'visit' || dogPrev === 'greet' || dogPrev === 'play' ? 'heel' : dogPrev);
           if ((dogState as DogState) === 'heel') { heelT = Math.max(heelT, 40); greetCool = 60; }
         }
@@ -321,6 +322,7 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
     return speed;
   }
   function petDog() {
+    dogPetBy = null;
     if (dogState !== 'petted' && dogState !== 'belly') dogPrev = dogState === 'shake' ? 'wander' : dogState;
     const r = dogAff.pet(now);
     const hx = dogM.x + Math.sin(dogM.yaw) * 0.35, hz = dogM.z + Math.cos(dogM.yaw) * 0.35;
@@ -531,14 +533,16 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
         ci.bump = catT > 2.2 && catT < 3.0 ? Math.sin((3.0 - catT) / 0.8 * Math.PI) : 0;
         ci.slowBlink = catT < 1.6 && catT > 0.3;
         ci.lean = 0.5;
-        face(catM, player.x, player.z, dt, 2);
-        if (catT <= 0) { setCat(catPrev === 'petted' || catPrev === 'fence' ? 'nap' : catPrev, 20 + rng() * 20); if ((catState as CatState) === 'watch') setCat('nap', 30); }
+        face(catM, (catPetBy ?? player).x, (catPetBy ?? player).z, dt, 2);
+        if (catT <= 0) {
+          catPetBy = null; setCat(catPrev === 'petted' || catPrev === 'fence' ? 'nap' : catPrev, 20 + rng() * 20); if ((catState as CatState) === 'watch') setCat('nap', 30); }
         break;
       }
     }
     return speed;
   }
   function petCat() {
+    catPetBy = null;
     if (catState === 'fence' && catM.lift > 0.2) return;
     if (catState !== 'petted') catPrev = catState;
     catAff.pet(now);
@@ -553,6 +557,37 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
 
   // ------------------------------------------------------------------ interactables
   const headPos = (m: Mover, fwd: number, up: number, out: THREE.Vector3) => out.set(m.x + Math.sin(m.yaw) * fwd, m.y + m.lift + up, m.z + Math.cos(m.yaw) * fwd);
+  // service 'pets': where Biscuit and Mochi are, so idle farmers can walk over and pet them (they wait, then enjoy it)
+  let dogPetBy: { x: number; z: number } | null = null, catPetBy: { x: number; z: number } | null = null;
+  const CAT_CALM: readonly CatState[] = ['nap', 'watch', 'groom', 'stroll', 'visit'];
+  const petsService: PetsService = {
+    list: () => [
+      { id: 'dog', name: 'Biscuit', x: dogM.x, z: dogM.z, free: dogState === 'wander' || dogState === 'visit' },
+      { id: 'cat', name: 'Mochi', x: catM.x, z: catM.z, free: CAT_CALM.includes(catState) && catM.lift < 0.2 },
+    ],
+    hold(id, farmerId, secs) {
+      if (id === 'dog' && (dogState === 'wander' || dogState === 'visit')) { dogVisit.x = dogM.x; dogVisit.z = dogM.z; dogVisit.id = farmerId; setDog('visit', secs); }
+      if (id === 'cat' && CAT_CALM.includes(catState) && catM.lift < 0.2) { catVisit.x = catM.x; catVisit.z = catM.z; catVisit.id = farmerId; setCat('visit', secs); }
+    },
+    pet(id, x, z) {
+      if (id === 'dog' && dogState !== 'petted' && dogState !== 'belly' && dogState !== 'greet' && dogState !== 'play' && dogState !== 'heel') {
+        dogPrev = dogState === 'shake' ? 'wander' : dogState;
+        dogPetBy = { x, z };
+        setDog('petted', 3.2);
+        fx.heartsAt(dogM.x + Math.sin(dogM.yaw) * 0.35, dogM.y + 0.95, dogM.z + Math.cos(dogM.yaw) * 0.35, 3, rng);
+        audio()?.play('pet', { pos: dogBody.root.position, volume: 0.6 });
+        critterSound(ctx, 'wag', dogM.x, dogM.y + 0.6, dogM.z, 10, 0.7);
+      }
+      if (id === 'cat' && catState !== 'petted' && catState !== 'greet' && catState !== 'wind' && !(catState === 'fence' && catM.lift > 0.2)) {
+        catPrev = catState;
+        catPetBy = { x, z };
+        setCat('petted', 3.4);
+        fx.heartsAt(catM.x + Math.sin(catM.yaw) * 0.22, catM.y + catM.lift + 0.55, catM.z + Math.cos(catM.yaw) * 0.22, 2, rng);
+        audio()?.play('purr', { pos: catBody.root.position, volume: 0.6 });
+      }
+    },
+  };
+  ctx.services.set('pets', petsService);
   const offDog = ctx.interact.add({ id: 'life:dog', kind: 'animal', verb: 'Pet', label: () => 'Biscuit', pos: (o) => headPos(dogM, 0.2, dogBody.headHeight() * 0.8, o), reach: 3.4, use: petDog });
   const offCat = ctx.interact.add({ id: 'life:cat', kind: 'animal', verb: 'Pet', label: () => 'Mochi', pos: (o) => headPos(catM, 0.1, catBody.headHeight() * 0.8, o), reach: 3.2, use: petCat });
 
@@ -624,6 +659,7 @@ export function createPets(ctx: SceneCtx, fx: Fx): Pets {
     stats: () => ({ dog: dogState, cat: catState }),
     dispose() {
       offDog(); offCat();
+      if (ctx.services.get('pets') === petsService) ctx.services.delete('pets');
       ctx.scene.remove(dogBody.root, catBody.root);
       dogBody.dispose(); catBody.dispose();
     },

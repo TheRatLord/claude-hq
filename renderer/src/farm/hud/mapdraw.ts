@@ -5,6 +5,7 @@
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import type { Status } from '../../../../shared/protocol.ts';
+import type { VillagerPin } from '../scene/context.ts';
 import { heightAt, PATHS, POND, RIVER, RIVER_HALF_WIDTH, SITES, siteToWorld, STRUCTURES, WORLD, type StructureId } from '../world/map.ts';
 import { KIND_ICON, iconImage } from './icons.ts';
 import { nice, STATUS_COLOR, WS_COLORS } from './format.ts';
@@ -26,6 +27,8 @@ export interface DrawOpts {
   player?: { x: number; z: number; yaw: number } | null;
   hover?: string | null;
   mini?: boolean;
+  /** the persistent villagers: little house-shaped role pins (never farmer dots, never clickable terminals) */
+  villagers?: readonly VillagerPin[];
 }
 
 const KIND_FILL: Record<PlotView['kind'], string> = {
@@ -34,7 +37,7 @@ const KIND_FILL: Record<PlotView['kind'], string> = {
 };
 const LABELS: Partial<Record<StructureId, string>> = {
   farmhouse: 'Farmhouse', barn: 'Barn', silo: 'Silo', windmill: 'Windmill', waterTower: 'Water tower', campfire: 'Campfire',
-  bridge: 'Bridge', waterfall: 'Waterfall',
+  bridge: 'Bridge', waterfall: 'Waterfall', pergola: 'Pergola', picnic: 'Picnic spot', lookout: 'Stargazers\' knoll', hotspring: 'Hot spring',
 };
 
 let base: HTMLCanvasElement | null = null;
@@ -156,9 +159,9 @@ export function getBase(): HTMLCanvasElement {
     g.save(); g.translate(x, y); g.rotate(-s.yaw);
     const w = s.size[0] * S, d = s.size[1] * S;
     const fill = s.id === 'barn' ? '#c9573f' : s.id === 'farmhouse' ? '#e0a26a' : s.id === 'dock' || s.id === 'bridge' ? '#b8864f'
-      : s.id === 'waterfall' ? '#a9d4ef' : s.id === 'campfire' ? '#e8742c' : s.id === 'silo' || s.id === 'waterTower' ? '#cfd6dc' : '#c8955a';
+      : s.id === 'waterfall' || s.id === 'hotspring' ? '#a9d4ef' : s.id === 'picnic' ? '#d86a5a' : s.id === 'campfire' ? '#e8742c' : s.id === 'silo' || s.id === 'waterTower' ? '#cfd6dc' : '#c8955a';
     g.fillStyle = fill; g.strokeStyle = '#4a2f19'; g.lineWidth = 0.35 * S;
-    if (s.id === 'silo' || s.id === 'waterTower' || s.id === 'well' || s.id === 'campfire') { g.beginPath(); g.arc(0, 0, Math.min(w, d) / 2.4, 0, Math.PI * 2); g.fill(); g.stroke(); }
+    if (s.id === 'silo' || s.id === 'waterTower' || s.id === 'well' || s.id === 'campfire' || s.id === 'hotspring' || s.id === 'lookout') { g.beginPath(); g.arc(0, 0, Math.min(w, d) / 2.4, 0, Math.PI * 2); g.fill(); g.stroke(); }
     else if (s.id === 'windmill') {
       g.beginPath(); g.arc(0, 0, w / 4, 0, Math.PI * 2); g.fill(); g.stroke();
       g.lineWidth = 0.9 * S; g.beginPath(); g.moveTo(-w / 1.6, 0); g.lineTo(w / 1.6, 0); g.moveTo(0, -w / 1.6); g.lineTo(0, w / 1.6); g.stroke();
@@ -306,6 +309,38 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
       g.fillStyle = hp.running ? '#ffd23f' : hp.exit === 'fail' ? '#d0584a' : '#b8a888';
       g.beginPath(); g.arc(x, y - 7, 3, 0, Math.PI * 2); g.fill(); g.stroke();
       hits.push({ id: hp.id, kind: 'helper', sx: x, sy: y, r: 8 });
+    }
+  }
+  // ---- villagers: house-shaped role pins in their own colours, names in italic serif (under the farmers) ----
+  if (o.villagers) {
+    const pr = mini ? 5 : Math.max(9, Math.min(12, v.scale * 1.4));
+    for (const vp of o.villagers) {
+      if (vp.inside && mini) continue;
+      const [x, y] = toScreen(v, vp.x, vp.z);
+      if (x < -20 || y < -20 || x > v.w + 20 || y > v.h + 20) continue;
+      g.globalAlpha = vp.inside ? 0.55 : 1;
+      g.beginPath();
+      g.moveTo(x, y - pr * 1.25); g.lineTo(x + pr, y - pr * 0.25); g.lineTo(x + pr, y + pr); g.lineTo(x - pr, y + pr); g.lineTo(x - pr, y - pr * 0.25); g.closePath();
+      g.fillStyle = vp.color; g.fill();
+      g.strokeStyle = '#f0d696'; g.lineWidth = mini ? 1.2 : 2; g.stroke();
+      if (!mini) {
+        g.fillStyle = '#fff8e6';
+        g.font = `700 ${Math.round(pr * 1.15)}px "DejaVu Sans", sans-serif`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(vp.glyph, x, y + pr * 0.25);
+        const label = vp.inside ? `${vp.name} (home)` : vp.name;
+        g.font = `italic 600 11px Georgia, "DejaVu Serif", serif`;
+        const tw = g.measureText(label).width + 8;
+        const ly = y + pr + 9;
+        const box: [number, number, number, number] = [x - tw / 2, ly - 7, x + tw / 2, ly + 7];
+        if (!placed.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1])) {
+          placed.push(box);
+          g.fillStyle = 'rgba(52, 96, 70, .88)';
+          roundRect(g, box[0], box[1], tw, 14, 4); g.fill();
+          g.fillStyle = '#fff3d6'; g.fillText(label, x, ly + 0.5);
+        }
+      }
+      g.globalAlpha = 1;
     }
   }
   // ---- farmers: screen positions, relaxed apart so clustered dots stay clickable ----

@@ -27,7 +27,8 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const legend = h('div.vh-legend', null,
     ...(['blocked', 'working', 'done', 'idle'] as const).map((s) => h('span', null, h(`i.vh-dot.st-${s}`), STATUS_LABEL[s])),
     h('span', null, h('i.vh-dot', { style: { background: '#d0584a', borderRadius: '2px', transform: 'rotate(45deg)' } }), 'You'),
-    h('span', null, h('i.vh-dot', { style: { background: '#ffd23f' } }), 'Scarecrow'));
+    h('span', null, h('i.vh-dot', { style: { background: '#ffd23f' } }), 'Scarecrow'),
+    h('span', null, h('i.vh-dot', { style: { background: '#3f6a4e', borderRadius: '3px 3px 1px 1px', clipPath: 'polygon(50% 0, 100% 40%, 100% 100%, 0 100%, 0 40%)' } }), 'Villager'));
   const list = h('div.list.vh-scroll', { 'data-testid': 'map-list' });
   const foot = h('div.vh-foot', null,
     h('span', null, 'Click a farmer: ', h('b', { text: 'terminal' })),
@@ -56,7 +57,7 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const draw = () => {
     if (!g || !view) return;
     const s = ctx.state();
-    hits = drawValley(g, view, s, { time: t, locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover });
+    hits = drawValley(g, view, s, { time: t, locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover, villagers: ctx.b?.villagers?.() });
   };
   const pos = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
@@ -198,7 +199,7 @@ export function createMinimap(ctx: HudCtx): { el: HTMLElement; frame(f: FrameInf
     const view: View = { cx: player.x, cz: player.z, scale: sz / 90, w: sz, h: sz };
     g.save();
     g.beginPath(); g.arc(sz / 2, sz / 2, sz / 2, 0, Math.PI * 2); g.clip();
-    drawValley(g, view, s, { time, locate: ctx.b?.locate, player, mini: true });
+    drawValley(g, view, s, { time, locate: ctx.b?.locate, player, mini: true, villagers: ctx.b?.villagers?.() });
     g.restore();
   }
   return {

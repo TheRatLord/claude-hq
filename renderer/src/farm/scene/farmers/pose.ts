@@ -31,6 +31,8 @@ export type Body = 'clawd' | 'codex';
 
 export const PROPS = [
   'hoe', 'trowel', 'can', 'crate', 'basket', 'rod', 'notebook', 'magnifier', 'hammer', 'saw', 'letter', 'bindle', 'broom', 'brush', 'book',
+  // villagers' night lantern (no act owns it; scene/villagers hands it over after dark)
+  'lantern',
 ] as const;
 export type Prop = (typeof PROPS)[number];
 export type Hold = 'L' | 'R' | 'both' | 'over';
@@ -44,6 +46,8 @@ export const ACTS = [
   'stand', 'plant', 'hoe', 'feed', 'brush', 'inspect', 'almanac', 'water', 'hammer', 'saw', 'carry', 'bend', 'read', 'plan',
   'talk', 'delegate', 'stretch', 'sweep', 'ask', 'done', 'campfire', 'fish', 'lean', 'board', 'nap', 'lie', 'chat', 'pet',
   'wave', 'cheer', 'scratch', 'oops', 'bindle', 'sitground', 'sit',
+  // leisure loops at the nooks
+  'reel', 'catch', 'toast', 'sitread', 'sitchat', 'picnic', 'stargaze', 'telescope', 'checkers', 'ponder', 'soak', 'gaze',
 ] as const;
 export type Act = (typeof ACTS)[number];
 
@@ -99,6 +103,18 @@ export const ACT_INFO: Readonly<Record<Act, ActInfo>> = {
   bindle: { prop: 'bindle', hold: 'R', carryWalk: true },
   sitground: { prop: null, face: 'happy', grounded: true },
   sit: { prop: null, face: 'happy', grounded: true },
+  reel: { prop: 'rod', hold: 'R', face: 'surprised', grounded: true },
+  catch: { prop: 'rod', hold: 'R', face: 'sparkle', grounded: true },
+  toast: { prop: null, face: 'happy', grounded: true },
+  sitread: { prop: 'book', hold: 'both', face: 'focused', grounded: true },
+  sitchat: { prop: null, face: 'talk', grounded: true },
+  picnic: { prop: null, face: 'happy', grounded: true },
+  stargaze: { prop: null, face: 'happy', grounded: true },
+  telescope: { prop: null, face: 'focused' },
+  checkers: { prop: null, face: 'focused', grounded: true },
+  ponder: { prop: null, face: 'neutral', grounded: true },
+  soak: { prop: null, face: 'happy', grounded: true },
+  gaze: { prop: null, face: 'happy' },
 };
 
 /** Default hold for a prop when the act does not say. */
@@ -108,7 +124,8 @@ export const holdOf = (act: Act): Hold => ACT_INFO[act].hold ?? 'R';
  * Body-bottom height above the root for seated acts (m). Seats publish the height of their surface; the system puts
  * the root there minus this, so the body lands on the log / bale / dock.
  */
-export const SEAT_H: Readonly<Partial<Record<Act, number>>> = { plan: 0, campfire: 0, fish: 0, nap: 0, sitground: 0, lie: 0, sit: 0 };
+export const SEAT_H: Readonly<Partial<Record<Act, number>>> = { plan: 0, campfire: 0, fish: 0, nap: 0, sitground: 0, lie: 0, sit: 0,
+  reel: 0, catch: 0, toast: 0, sitread: 0, sitchat: 0, picnic: 0, stargaze: 0, checkers: 0, ponder: 0, soak: 0 };
 
 const S = Math.sin, C = Math.cos, TAU = Math.PI * 2, PI = Math.PI;
 const fract = (x: number) => x - Math.floor(x);
@@ -482,6 +499,137 @@ export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, 
       o[CH.eyeX] = wander(T * 0.3) * 0.8; o[CH.eyeY] = S(T * 0.33) * 0.2;
       break;
     }
+    // ---- leisure loops (idle farmers at the valley's nooks) ----
+    case 'reel': {
+      // a bite! lean back, rod up, the other nub cranks the reel, legs kicking with excitement
+      seated(o);
+      const crank = S(T * 14);
+      o[CH.lean] = -0.2 + S(T * 3) * 0.04; o[CH.roll] = S(T * 5) * 0.05;
+      o[CH.aRy] = 1.0; o[CH.aRz] = 0.7 + S(T * 6) * 0.08; o[CH.pP] = -0.95 + S(T * 6) * 0.08; o[CH.prop] = 0.6 + S(T * 6) * 0.3;
+      o[CH.aLy] = 0.9 + crank * 0.16; o[CH.aLz] = 0.3 + C(T * 14) * 0.16;
+      o[CH.eyeS] = 0.25; o[CH.eyeY] = 0.1;
+      legs(o, -0.8 + S(T * 7) * 0.35, -0.8 - S(T * 7) * 0.35, -1.0, -1.0);
+      break;
+    }
+    case 'catch': {
+      // the catch held up high with a proud wiggle
+      seated(o);
+      const w = S(T * 4.2);
+      o[CH.aRy] = 0.5; o[CH.aRz] = 1.2 + w * 0.08; o[CH.aRe] = 0.3; o[CH.pP] = -1.25; o[CH.prop] = 1;
+      o[CH.aLy] = 0.4; o[CH.aLz] = 1.0 + S(T * 4.2 + 1) * 0.15; o[CH.aLe] = 0.3;
+      o[CH.lean] = -0.14; o[CH.roll] = w * 0.08; o[CH.bob] = Math.abs(w) * 0.02; o[CH.sq] += Math.abs(w) * 0.03;
+      o[CH.eyeY] = 0.45; o[CH.jig] = Math.abs(w);
+      legs(o, -1.0 + Math.abs(S(T * 6)) * 0.4, -1.0 + Math.abs(S(T * 6 + 1.5)) * 0.4, -1.0, -1.0);
+      break;
+    }
+    case 'toast': {
+      // a marshmallow held out over the flames, turned slowly; now and then pulled back and blown on
+      seated(o);
+      const turn = S(T * 2.2), blow = win(T * 0.12 + k, 0.14, 0.04);
+      o[CH.aRy] = 1.3; o[CH.aRz] = 0.1 + blow * 0.35; o[CH.aRe] = 0.5 - blow * 0.3; o[CH.aRx] = turn * 0.5;
+      o[CH.aLy] = 0.6; o[CH.aLz] = -0.2;
+      o[CH.lean] = 0.14 - blow * 0.2; o[CH.eyeY] = -0.25 + blow * 0.2; o[CH.eyeX] = turn * 0.15;
+      o[CH.sq] += blow * 0.04;
+      legs(o, S(T * 0.9) * 0.15, S(T * 0.9 + 1.5) * 0.15, 0, 0);
+      break;
+    }
+    case 'sitread': {
+      // seated with a book in both nubs, eyes running along the lines, a page turned now and then
+      seated(o);
+      const flip = win(T * 0.09, 0.1, 0.03);
+      arms(o, 1.15, 0.0, 1.15 - flip * 0.35, flip * 0.55);
+      o[CH.lean] = 0.12; o[CH.prop] = flip; o[CH.pP] = 0.35;
+      o[CH.eyeY] = -0.45; o[CH.eyeX] = S(T * 1.6) * 0.45;
+      o[CH.roll] = S(T * 0.4) * 0.04;
+      legs(o, -0.3 + S(T * 1.2) * 0.2, -0.3 + S(T * 1.2 + 2) * 0.2, -0.3, -0.3);
+      break;
+    }
+    case 'sitchat': {
+      // seated chatter: smaller gestures than standing, a laugh that rocks the body back
+      seated(o);
+      const g1 = S(T * 2.1), g2 = S(T * 1.6 + 1), laugh = win(T * 0.16 - 0.4, 0.14, 0.03);
+      o[CH.aRy] = 0.55 + g1 * 0.3; o[CH.aRz] = 0.1 + g2 * 0.35;
+      o[CH.aLy] = 0.4 + S(T * 1.3 + 2) * 0.2; o[CH.aLz] = -0.1 + S(T * 2.1) * 0.2;
+      o[CH.twist] = S(T * 0.7) * 0.1; o[CH.roll] = S(T * 1.1) * 0.04;
+      o[CH.lean] = 0.05 - 0.2 * laugh; o[CH.sq] += Math.abs(S(T * 16)) * 0.04 * laugh;
+      o[CH.eyeX] = S(T * 0.5) * 0.25;
+      legs(o, -0.3 + S(T * 1.4) * 0.2, -0.3 + S(T * 1.4 + 2.2) * 0.2, -0.3, -0.3);
+      break;
+    }
+    case 'picnic': {
+      // on the blanket: reach into the spread, then nibble (chew, chew), lean back on the other nub
+      seated(o);
+      const ph = fract(T * 0.11 + k);
+      const reach = bump(ph, 0.04, 0.22), eat = sstep(0.22, 0.32, ph) * (1 - sstep(0.8, 0.9, ph)), chew = S(T * 9) * eat;
+      o[CH.lean] = 0.04 + reach * 0.3;
+      o[CH.aRy] = 1.0 + reach * 0.3; o[CH.aRz] = -0.15 + eat * (0.6 + chew * 0.05) - reach * 0.2; o[CH.aRe] = reach * 0.4;
+      o[CH.aLy] = -0.3; o[CH.aLz] = -0.45;
+      o[CH.sq] += Math.abs(chew) * 0.025; o[CH.eyeY] = -0.35 * reach + eat * 0.1; o[CH.eyeX] = S(T * 0.3) * 0.3 * (1 - reach);
+      legs(o, 0.3 + S(T * 0.8) * 0.1, 0.3 + S(T * 0.8 + 2) * 0.1, 0, 0);
+      break;
+    }
+    case 'stargaze': {
+      // leaning right back on the bench, eyes on the sky; now and then a nub points out a star
+      seated(o);
+      const point = win(T * 0.1 + k, 0.22, 0.05);
+      o[CH.lean] = -0.14; o[CH.eyeY] = 0.9; o[CH.eyeX] = wander(T * 0.15) * 0.7;
+      arms(o, -0.4, -0.45, mix(-0.4, 0.9, point), mix(-0.45, 1.2, point));
+      o[CH.aRe] = point * 0.4; o[CH.twist] = wander(T * 0.12) * 0.12;
+      legs(o, -0.5 + S(T * 0.8) * 0.15, -0.5 + S(T * 0.8 + 2) * 0.15, -0.5, -0.5);
+      break;
+    }
+    case 'telescope': {
+      // stooped at the eyepiece, one nub on the focus knob; every so often straighten up in wonder
+      const adj = win(T * 0.17 + k, 0.25, 0.05), wow = win(T * 0.07 + k * 3, 0.1, 0.02);
+      o[CH.lean] = 0.28 - wow * 0.3; o[CH.drop] = 0.08 * (1 - wow);
+      o[CH.aRy] = 1.25; o[CH.aRz] = 0.35 + adj * S(T * 6) * 0.08; o[CH.aRe] = 0.2; o[CH.aRx] = adj * S(T * 3) * 0.4;
+      o[CH.aLy] = 0.7 + wow * 0.4; o[CH.aLz] = -0.2 + wow * 1.1;
+      o[CH.eyeX] = 0.3 * (1 - wow); o[CH.eyeY] = 0.35; o[CH.eyeS] = wow * 0.3;
+      o[CH.sq] += wow * 0.05; o[CH.bob] = wow * 0.02;
+      legs(o, 0.05, 0.05, -0.05, -0.05);
+      break;
+    }
+    case 'checkers': {
+      // my move: nub on the chin, eyes over the board… then reach out, hop a piece, tap, sit back
+      seated(o);
+      const ph = fract(T * 0.16 + k);
+      const move = bump(ph, 0.42, 0.8), tap = bump(ph, 0.6, 0.68);
+      o[CH.lean] = 0.18 + move * 0.15;
+      o[CH.aRy] = mix(0.5, 1.35, move); o[CH.aRz] = -0.1 - tap * 0.15; o[CH.aRe] = move * 0.35;
+      o[CH.aLy] = mix(1.0, 0.5, move); o[CH.aLz] = mix(0.45, -0.2, move);
+      o[CH.eyeY] = -0.55; o[CH.eyeX] = mix(wander(T * 0.6) * 0.5, 0.1, move);
+      o[CH.roll] = (1 - move) * S(T * 0.5) * 0.06; o[CH.sq] -= tap * 0.03;
+      legs(o, -0.4 + S(T * 1.3) * 0.1, -0.4 + S(T * 1.3 + 2) * 0.1, -0.4, -0.4);
+      break;
+    }
+    case 'ponder': {
+      // the opponent's turn: watching the board, nub on the chin, a sceptical tilt
+      seated(o);
+      const hmm = win(T * 0.13 + k, 0.25, 0.05);
+      o[CH.lean] = 0.1; o[CH.aLy] = 1.0; o[CH.aLz] = 0.5 + S(T * 3) * 0.03 * hmm; o[CH.aRy] = 0.35; o[CH.aRz] = -0.35;
+      o[CH.roll] = 0.04 + hmm * 0.12; o[CH.eyeY] = -0.5; o[CH.eyeX] = wander(T * 0.4) * 0.4;
+      legs(o, -0.4 + S(T * 1.7) * 0.12, -0.4 + S(T * 1.7 + 2) * 0.12, -0.4, -0.4);
+      break;
+    }
+    case 'soak': {
+      // on the rim with the feet in the warm water: propped back on the nubs, a long happy sigh, a splashy kick
+      seated(o);
+      const sigh = win(T * 0.09 + k, 0.2, 0.06), kick = win(T * 0.21 + k * 2, 0.12, 0.03);
+      o[CH.lean] = -0.12 - sigh * 0.1; o[CH.sq] += sigh * 0.04 - 0.01; o[CH.roll] = S(T * 0.35) * 0.05;
+      arms(o, -0.5, -0.5, -0.5, -0.5);
+      o[CH.eyeY] = 0.2 + sigh * 0.2;
+      legs(o, -1.1 + S(T * 1.1) * 0.18 + kick * S(T * 12) * 0.35, -1.1 + S(T * 1.1 + 2) * 0.18 - kick * S(T * 12) * 0.35, -1.1, -1.1);
+      break;
+    }
+    case 'gaze': {
+      // standing still to take in the view: nubs back, a slow look round, a contented little bounce
+      const sw = wander(T * 0.12), hop = win(T / 11 + k, 0.06, 0.015);
+      o[CH.eyeX] = sw * 0.8; o[CH.eyeY] = 0.25 + S(T * 0.17) * 0.12;
+      o[CH.twist] = sw * 0.25; o[CH.lean] = -0.06; o[CH.roll] = S(T * 0.4) * 0.04;
+      arms(o, -0.45, -0.3, -0.45, -0.3);
+      o[CH.bob] = hop * 0.03; o[CH.sq] += hop * 0.04;
+      break;
+    }
   }
   if (body === 'codex') {
     // the blob sits lower on its tiny feet, so seated legs read as feet sticking out; lobes wobble with any squash
@@ -497,7 +645,7 @@ export type GaitKind = 'walk' | 'jog' | 'amble';
 
 /** Distance covered per gait cycle (m). Clawd: one cycle = two diagonal footfalls; Codex: two hops. */
 export function cycleLength(body: Body, jog: number, heavy: boolean): number {
-  const c = body === 'clawd' ? 0.42 + jog * 0.24 : 0.6 + jog * 0.34;
+  const c = body === 'clawd' ? 0.5 + jog * 0.28 : 0.68 + jog * 0.38;
   return heavy ? c * 0.72 : c;
 }
 
@@ -532,7 +680,7 @@ export function footAt(body: Body, i: number, g: GaitState, out: { z: number; y:
     const off = i === 0 || i === 3 ? 0 : 0.5; // diagonal pairs: FL+BR, FR+BL
     const p = fract(g.cyc + off);
     const R = s * L; // stance travel = body travel while planted
-    const lift = (0.045 + g.jog * 0.035) * (g.heavy ? 0.6 : 1);
+    const lift = (0.06 + g.jog * 0.045) * (g.heavy ? 0.6 : 1);
     if (p < s) { out.z = R * (0.5 - p / s); out.y = 0; }
     else { const q = (p - s) / (1 - s); out.z = R * (-0.5 + q * q * (3 - 2 * q)); out.y = lift * S(q * PI); }
   } else {
@@ -552,7 +700,7 @@ export function footAt(body: Body, i: number, g: GaitState, out: { z: number; y:
   return out;
 }
 
-const hopHeight = (g: GaitState) => (0.07 + g.jog * 0.07) * g.bounce * (g.heavy ? 0.5 : 1);
+const hopHeight = (g: GaitState) => (0.08 + g.jog * 0.08) * g.bounce * (g.heavy ? 0.5 : 1);
 
 /**
  * Walk / jog / hop overlay on the body: bob and squash in time with the footfalls, counter-swinging nubs, leaning

@@ -9,13 +9,13 @@
  *
  *   Clawd  (kind 'claude'; 'gemini' and 'agent' are recolours)
  *     The Claude Code banner sprite read as pixel art. Terminal cells are twice as tall as they are wide, so every
- *     sprite pixel is 1 voxel wide and 2 voxels tall:
+ *     sprite pixel is about 1 voxel wide and 2 voxels tall, chunked up into a sturdier toy (2-wide legs, 3-tall nubs):
  *          ▐▛███▜▌
  *         ▝▜█████▛▘
  *           ▘▘ ▝▝
  *     legend:  #  body     e  eye (body voxel; the eye glyph is drawn on top of it, so it can blink)
  *              a  arm nub  l  leg          .  empty
- *     The body is extruded `depth` voxels. Legs are `legDepth` deep; the outer pair stands toward the front, the inner
+ *     The body is extruded `depth` voxels. A leg is a run of adjacent `l` columns, `legDepth` deep; the outer pair stands toward the front, the inner
  *     pair toward the back, so from the side you see two legs and from the front all four with the gap in the middle.
  *
  *   Codex  (kind 'codex')
@@ -35,28 +35,34 @@
 // Clawd
 
 export const CLAWD = {
-  u: 0.08,
-  depth: 6,
-  legDepth: 2,
+  u: 0.088,
+  depth: 7,
+  legDepth: 3,
   /** z of the leg column centres (voxels from the body centre): outer pair forward, inner pair back */
-  legZOuter: 1.5,
-  legZInner: -1.5,
+  legZOuter: 1.8,
+  legZInner: -1.8,
   /** the scarf wraps the body on this row (0 = top body row) */
   scarfRow: 4,
+  /**
+   * The banner sprite, chunked up into a sturdier toy: legs two voxels wide and three tall (the leg band reads in the
+   * walk cycle), arm nubs three voxels tall, the body 14 × 9.
+   */
   front: [
-    '..############..',
-    '..############..',
-    '..##e######e##..',
-    '..##e######e##..',
-    'aa############aa',
-    'aa############aa',
-    '..############..',
-    '..############..',
-    '...l.l....l.l...',
-    '...l.l....l.l...',
+    '..##############..',
+    '..##############..',
+    '..##e########e##..',
+    '..##e########e##..',
+    'aa##############aa',
+    'aa##############aa',
+    'aa##############aa',
+    '..##############..',
+    '..##############..',
+    '...ll.ll..ll.ll...',
+    '...ll.ll..ll.ll...',
+    '...ll.ll..ll.ll...',
   ],
   /** Gemini's sparkle, centred on the front face this many voxels below the body top */
-  starRow: 5.6,
+  starRow: 6.3,
 } as const;
 
 /** Body colours per kind (0xRRGGBB). */
@@ -72,7 +78,7 @@ export const STAR_COLOR = 0xfff0a8;
 // Codex
 
 export const CODEX = {
-  u: 0.05,
+  u: 0.063,
   /** total depth (voxels) in the middle and at the rim: a slab with a one-voxel bevel, grooved where lobes meet */
   maxDepth: 8,
   edgeDepth: 6,
@@ -86,7 +92,7 @@ export const CODEX = {
     '...##################...',
     '....################....',
     '...##################...',
-    '..#######E############..',
+    'aa#######E############aa',
     'aa####################aa',
     'aa############M#######aa',
     '...##################...',
@@ -94,8 +100,8 @@ export const CODEX = {
     '...##################...',
     '...##################...',
     '....################....',
-    '.......fff....fff.......',
-    '.......fff....fff.......',
+    '......ffff....ffff......',
+    '......ffff....ffff......',
   ],
   /** foot depth (voxels) */
   footDepth: 4,
@@ -282,8 +288,13 @@ function scan(grid: readonly string[], ch: string): Found {
 const centroid = (cs: [number, number][]) => { let x = 0, y = 0; for (const [a, b] of cs) { x += a; y += b; } return [x / cs.length, y / cs.length] as const; };
 /** split cells into left / right halves of the grid */
 const halves = (cs: [number, number][], mid: number) => [cs.filter(([c]) => c + 0.5 > mid), cs.filter(([c]) => c + 0.5 <= mid)] as const;
-/** group cells into vertical columns (legs) by column index */
-const columns = (cs: [number, number][]) => [...new Set(cs.map(([c]) => c))].sort((a, b) => a - b).map((c) => cs.filter(([x]) => x === c));
+/** group cells into legs: runs of adjacent columns, left → right */
+const legRuns = (cs: [number, number][]) => {
+  const cols = [...new Set(cs.map(([c]) => c))].sort((a, b) => a - b);
+  const runs: number[][] = [];
+  for (const c of cols) { const last = runs[runs.length - 1]; if (last && c === last[last.length - 1] + 1) last.push(c); else runs.push([c]); }
+  return runs;
+};
 
 /** Everything the rig needs to know about one body plan, in metres (model space: +z front, +x model-left, y up). */
 export interface Plan {
@@ -325,14 +336,14 @@ export const clawdPlan = (): Plan => {
   const g = CLAWD.front, u = CLAWD.u;
   const bb = bodyBounds(g, '#e');
   const m = mapper(g, bb.cols, bb.rows, u);
-  const legs = columns(scan(g, 'l').cells);
+  const legs = legRuns(scan(g, 'l').cells);
   const eyes = halves(scan(g, 'e').cells, m.cx);
   const arms = halves(scan(g, 'a').cells, m.cx);
   const armL = arms[0];
   const armRows = armL.map(([, r]) => r), armCols = armL.map(([c]) => c);
   const legLen = (Math.max(...scan(g, 'l').cells.map(([, r]) => r)) - bb.rows[1]) * u;
   // legs by column, left→right as seen from the front = −x … +x ; outer pair forward, inner pair back
-  const lx = legs.map((col) => m.x(col[0][0]));
+  const lx = legs.map((run) => (m.x(run[0]) + m.x(run[run.length - 1])) / 2);
   const zo = CLAWD.legZOuter * u, zi = CLAWD.legZInner * u;
   // order: FL (+x outer), FR (−x outer), BL (+x inner), BR (−x inner)
   const hips = [{ x: lx[3], z: zo }, { x: lx[0], z: zo }, { x: lx[2], z: zi }, { x: lx[1], z: zi }];
@@ -342,8 +353,8 @@ export const clawdPlan = (): Plan => {
     body: 'clawd', u, w: (bb.cols[1] - bb.cols[0] + 1) * u, h, d: CLAWD.depth * u, legLen, hips,
     shoulder: { x: m.x(bb.cols[1]) + u / 2, y: (m.y(Math.min(...armRows)) + m.y(Math.max(...armRows))) / 2, z: 0 },
     armLen: (Math.max(...armCols) - Math.min(...armCols) + 1) * u, armW: (Math.max(...armRows) - Math.min(...armRows) + 1) * u,
-    glyphs: e, glyphCell: u / 2,
-    hat: { x: 0, y: h, z: -0.2 * u, s: 1 }, eyeY: e[0].y,
+    glyphs: e, glyphCell: u * 0.58,
+    hat: { x: 0, y: h, z: -0.2 * u, s: 1.22 }, eyeY: e[0].y,
   };
 };
 
@@ -385,7 +396,7 @@ export const codexPlan = (): Plan => {
     shoulder: { x: m.x(bb.cols[1]) + u / 2 - 0.5 * u, y: (m.y(Math.min(...armRows)) + m.y(Math.max(...armRows))) / 2, z: 0 },
     armLen: (Math.max(...armCols) - Math.min(...armCols) + 1) * u + 0.5 * u, armW: (Math.max(...armRows) - Math.min(...armRows) + 1) * u,
     glyphs: [anchor('E'), anchor('M')], glyphCell: u,
-    hat: { x: 0, y: h, z: 0, s: 0.9 }, eyeY: anchor('E').y,
+    hat: { x: 0, y: h, z: 0, s: 1.05 }, eyeY: anchor('E').y,
   };
 };
 
@@ -426,11 +437,12 @@ export function clawdBody(): Vox {
   return v;
 }
 
-/** A Clawd leg: a column hanging from its hip (pivot at the top centre), `legDepth` deep. */
+/** A Clawd leg: a block column hanging from its hip (pivot at the top centre), as wide as its grid run, `legDepth` deep. */
 export function clawdLeg(): Vox {
   const v = new Vox();
-  const n = Math.round(CLAWD.front.filter((r) => r.includes('l')).length);
-  for (let y = 0; y < n; y++) for (let z = 0; z < CLAWD.legDepth; z++) v.cell(-0.5, -1 - y, z - CLAWD.legDepth / 2, SLOT.body, y === n - 1 ? 0xc4c4c4 : 0xe6e6e6);
+  const n = CLAWD.front.filter((r) => r.includes('l')).length;
+  const w = legRuns(scan(CLAWD.front, 'l').cells)[0].length;
+  for (let y = 0; y < n; y++) for (let x = 0; x < w; x++) for (let z = 0; z < CLAWD.legDepth; z++) v.cell(x - w / 2, -1 - y, z - CLAWD.legDepth / 2, SLOT.body, y === n - 1 ? 0xc4c4c4 : 0xe6e6e6);
   return v;
 }
 
@@ -530,6 +542,165 @@ export function hat(name: HatName, group: number): Vox {
     }
     case 'beanie': {
       v.ellipsoid(0, top + 1.1, 0, 1.6, 1.5, 1.6, 2, 0xffffff, group); // pompom
+      break;
+    }
+  }
+  return v;
+}
+
+// =====================================================================================================================
+// Villager dressing (scene/villagers): role hats and body wear. Villagers are Clawds too, so the mascot stays sacred;
+// what marks them as villagers (not agents) is a non-agent body colour, a role hat instead of a tier hat, and one
+// piece of wear over the body. All role hats share one instanced mesh (vgroup = ROLE_HAT_GROUP), all wear another.
+
+/** Role hats — same stacked-ellipse format as HATS (HAT_VOXEL cells); slot 3 = hat colour, 2 = band / trim. */
+export const ROLE_HATS = {
+  /** postmaster: a tall peaked cap with a dark visor and a brass badge */
+  postcap: { layers: [{ rx: 4.6, rz: 4.0, slot: 2 }, { rx: 4.6, rz: 4.0, slot: 3 }, { rx: 4.8, rz: 4.2, slot: 3 }, { rx: 5.2, rz: 4.6, slot: 3, shade: 0.94 }] as HatLayer[] },
+  /** shipping clerk: a green celluloid eyeshade on a band */
+  eyeshade: { layers: [{ rx: 4.5, rz: 3.9, slot: 2 }, { rx: 4.5, rz: 3.9, slot: 2, shade: 0.9 }] as HatLayer[] },
+  /** miller: a floppy linen cap slumped to one side */
+  millcap: { layers: [{ rx: 4.6, rz: 4.0, slot: 3 }, { rx: 5.4, rz: 4.8, slot: 3, dx: 0.4 }, { rx: 5.2, rz: 4.6, slot: 3, dx: 0.9, shade: 0.97 }, { rx: 4.0, rz: 3.6, slot: 3, dx: 1.4, shade: 0.93 }] as HatLayer[] },
+  /** mayor: a top hat with a ribbon band */
+  tophat: { layers: [{ rx: 6.0, rz: 5.2, slot: 3, shade: 0.9 }, { rx: 3.6, rz: 3.2, slot: 2 }, { rx: 3.6, rz: 3.2, slot: 2 }, { rx: 3.6, rz: 3.2, slot: 3 }, { rx: 3.6, rz: 3.2, slot: 3 }, { rx: 3.6, rz: 3.2, slot: 3 }, { rx: 3.7, rz: 3.3, slot: 3, shade: 0.92 }] as HatLayer[] },
+  /** ranger: a wide-brimmed campaign hat with a pinched crown */
+  ranger: { layers: [{ rx: 7.0, rz: 6.2, slot: 3 }, { rx: 3.8, rz: 3.4, slot: 2 }, { rx: 3.6, rz: 3.2, slot: 3, shade: 0.96 }, { rx: 3.0, rz: 2.6, slot: 3, shade: 0.93 }, { rx: 1.8, rz: 1.5, slot: 3, shade: 0.9 }] as HatLayer[] },
+  /** weather-watcher: a sou'wester, the brim long at the back to shed the rain */
+  souwester: { layers: [{ rx: 5.8, rz: 5.8, slot: 3, dz: -1.0 }, { rx: 4.2, rz: 3.8, slot: 3 }, { rx: 3.9, rz: 3.5, slot: 3, shade: 0.96 }, { rx: 3.1, rz: 2.7, slot: 3, shade: 0.92 }, { rx: 1.6, rz: 1.4, slot: 3, shade: 0.9 }] as HatLayer[] },
+} as const;
+export type RoleHatName = keyof typeof ROLE_HATS;
+export const ROLE_HAT_NAMES = Object.keys(ROLE_HATS) as RoleHatName[];
+
+const BRASS = 0xe2b64a, LEATHER_D = 0x5a3a22, PAPER = 0xf6efdc, SEAL = 0xd9453b, FLOUR = 0xf3eee4;
+
+/** A role hat (pivot: bottom centre, HAT_VOXEL cells, front = +z). */
+export function roleHat(name: RoleHatName, group: number): Vox {
+  const v = new Vox();
+  ROLE_HATS[name].layers.forEach((L, y) => {
+    for (let x = -Math.ceil(L.rx) - 1; x < Math.ceil(L.rx) + 1; x++) for (let z = -Math.ceil(L.rz) - 2; z < Math.ceil(L.rz) + 1; z++) {
+      const dx = (x + 0.5 - (L.dx ?? 0)) / L.rx, dz = (z + 0.5 - (L.dz ?? 0)) / L.rz;
+      if (dx * dx + dz * dz <= 1) v.cell(x, y, z, L.slot, L.rgb ?? Math.round((L.shade ?? 1) * 255) * 0x010101, group);
+    }
+  });
+  const top = ROLE_HATS[name].layers.length;
+  switch (name) {
+    case 'postcap':
+      for (let x = -3; x < 3; x++) for (let z = 4; z < 7; z++) v.cell(x, 0, z, 2, z === 6 ? 0x9a9a9a : 0xb8b8b8, group); // visor
+      v.box(0, 2.0, 4.35, 1.6, 1.4, 0.5, 0, BRASS, group); // badge
+      v.box(0, 2.0, 4.6, 0.6, 0.6, 0.2, 0, 0xfff2b8, group);
+      break;
+    case 'eyeshade':
+      // the translucent-green visor, angled down over the eyes
+      for (let x = -4; x < 4; x++) { for (let z = 4; z < 7; z++) v.cell(x, 0, z, 3, z === 6 ? 0xc8c8c8 : 0xffffff, group); for (let z = 7; z < 8; z++) v.cell(x, -1, z, 3, 0xb0b0b0, group); }
+      break;
+    case 'millcap':
+      for (const c of v.cells.values()) if (c.y >= 1 && hash3(c.x, 4, c.z) < 0.16) { c.slot = 0; c.rgb = FLOUR; } // flour dust
+      v.box(-4.2, 1.6, 0.8, 1.2, 0.6, 1.2, 0, 0xc9a46a, group); // a wheat sprig tucked in
+      v.box(-4.6, 2.3, 0.8, 0.5, 1.2, 0.5, 0, 0xe6c46a, group);
+      break;
+    case 'tophat':
+      v.box(2.6, 1.5, 2.6, 1.6, 1.6, 0.5, 0, 0xf2c94c, group); // a buttonhole flower on the band
+      v.box(2.6, 1.5, 2.95, 0.7, 0.7, 0.3, 0, 0xd96a3a, group);
+      break;
+    case 'ranger':
+      // pinch the crown front-to-back (the Montana dent)
+      for (const c of v.cells.values()) if (c.y >= top - 2 && Math.abs(c.x + 0.5) < 0.9) c.rgb = 0xc8c8c8;
+      v.box(-3.4, 1.3, 2.4, 0.4, 1.2, 1.4, 0, 0xc23b2a, group); // a red feather in the band
+      v.box(-3.6, 2.4, 2.0, 0.3, 1.2, 0.9, 0, 0xe8603f, group);
+      break;
+    case 'souwester':
+      for (const x of [-4, 3]) v.box(x + 0.5, -2.2, 0.5, 0.35, 4.2, 0.35, 2, 0xffffff, group); // chin ties
+      break;
+  }
+  return v;
+}
+
+/**
+ * Wear — one piece over the body, in Clawd body cells (CLAWD.u; pivot bottom centre, body x ∈ [−7, 7], y ∈ [0, 9],
+ * z ∈ [−3.5, 3.5], front +z). Eyes sit at y 5..7, x ±4.5; the scarf rings the sides and back at y ≈ 4.5; the arm
+ * nubs leave the sides at y 2..5. Slot 3 = the wear colour, slot 2 = its trim, 0 = baked details.
+ */
+export const WEAR_NAMES = ['satchel', 'apron', 'smock', 'sash', 'pack', 'cape'] as const;
+export type WearName = (typeof WEAR_NAMES)[number];
+
+export function wear(name: WearName, group: number): Vox {
+  const v = new Vox();
+  const B = (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, slot: number, rgb = 0xffffff) => v.box(cx, cy, cz, sx, sy, sz, slot, rgb, group);
+  const F = 3.5; // front face z
+  switch (name) {
+    case 'satchel': {
+      // a mail bag on the right hip, a strap up the side and over the shoulder, a letter peeking out
+      B(-7.75, 2.0, 0.6, 1.3, 2.8, 3.6, 3);
+      B(-7.85, 3.0, 0.6, 1.4, 1.2, 3.75, 2, 0xe8e8e8); // flap
+      B(-8.6, 2.6, 0.6, 0.2, 0.6, 0.8, 0, BRASS); // buckle
+      B(-7.6, 3.95, -0.5, 0.6, 0.5, 1.2, 0, PAPER); // letters
+      B(-7.6, 3.85, 1.0, 0.6, 0.5, 1.0, 0, 0xeadfc4);
+      B(-7.62, 3.8, -0.55, 0.62, 0.25, 0.35, 0, SEAL);
+      B(-7.32, 6.3, 0.6, 0.3, 5.0, 0.8, 2, 0xd0d0d0); // strap up the side (over the scarf)
+      B(-6.2, 9.1, 0.6, 2.4, 0.25, 0.8, 2, 0xd0d0d0); // …and over the shoulder
+      break;
+    }
+    case 'apron': case 'smock': {
+      const smock = name === 'smock';
+      B(0, 1.75, F + 0.12, 9.4, 4.3, 0.24, 3); // bib + skirt
+      B(0, 3.95, F + 0.13, 9.6, 0.3, 0.26, 2); // top hem
+      B(0, -0.35, F + 0.14, 9.0, 0.3, 0.24, 3, 0xe6e6e6); // skirt hangs just past the body
+      B(1.8, 1.3, F + 0.3, 3.0, 1.4, 0.16, 2); // pocket
+      if (!smock) { B(1.2, 1.9, F + 0.42, 0.25, 1.2, 0.12, 0, 0x3a3a44); B(2.2, 1.8, F + 0.42, 0.25, 1.0, 0.12, 0, 0xd9453b); } // pencils
+      // ties round the sides and back, bow at the back
+      for (const s of [-1, 1]) B(s * 7.1, 3.3, 0, 0.2, 0.32, 7.2, 3, 0xe0e0e0);
+      B(0, 3.3, -3.62, 14.3, 0.32, 0.2, 3, 0xe0e0e0);
+      B(0, 3.3, -3.8, 1.0, 1.0, 0.3, 3, 0xd8d8d8); B(-0.9, 3.0, -3.78, 0.9, 0.6, 0.2, 3, 0xe8e8e8); B(0.9, 3.0, -3.78, 0.9, 0.6, 0.2, 3, 0xe8e8e8);
+      if (smock) {
+        // flour dusting: on the top and shoulders (clear of the hat in the middle), the apron and the toes of the body
+        for (let x = -7; x < 7; x++) for (let z = -3; z < 3; z++) {
+          const hx = x + 0.5, hz = z + 0.5;
+          if (Math.abs(hx) < 3.3 && Math.abs(hz) < 2.8) continue;
+          if (hash3(x, 91, z) < 0.42) B(hx, 9.04, hz, 0.9, 0.08, 0.9, 0, FLOUR);
+        }
+        for (let i = 0; i < 9; i++) B(-3.6 + (i % 5) * 1.8 + (i > 4 ? 0.9 : 0), 0.5 + (i > 4 ? 1.9 : 0.5) + (i % 2) * 0.6, F + 0.27, 0.7, 0.5, 0.06, 0, FLOUR);
+        for (const s of [-1, 1]) for (let i = 0; i < 3; i++) B(s * 7.03, 6.6 + i * 0.8, -1.5 + i * 1.4, 0.06, 0.6, 0.8, 0, FLOUR);
+      }
+      break;
+    }
+    case 'sash': {
+      // a ribbon sash across the front, under the eyes, with the mayoral medal; it wraps the sides and back
+      const n = 14;
+      for (let i = 0; i < n; i++) {
+        const x = 6.5 - i, y = 3.7 - i * (3.1 / (n - 1));
+        B(x, y, F + 0.1, 1.08, 1.05, 0.2, 3);
+        B(-x, y, -F - 0.1, 1.08, 1.05, 0.2, 3);
+      }
+      B(7.1, 3.7, 0, 0.2, 1.05, 7.2, 3); B(-7.1, 0.6, 0, 0.2, 1.05, 7.2, 3);
+      for (let i = 0; i < n; i++) { const x = 6.5 - i, y = 3.7 - i * (3.1 / (n - 1)); B(x, y + 0.38, F + 0.22, 1.08, 0.18, 0.06, 2); B(x, y - 0.38, F + 0.22, 1.08, 0.18, 0.06, 2); }
+      B(0.2, 2.15, F + 0.35, 1.5, 1.5, 0.25, 0, BRASS); // medal
+      B(0.2, 2.15, F + 0.5, 0.7, 0.7, 0.1, 0, 0xfff2b8);
+      B(-0.25, 0.95, F + 0.3, 0.5, 1.0, 0.12, 2); B(0.65, 0.95, F + 0.3, 0.5, 1.0, 0.12, 2);
+      break;
+    }
+    case 'pack': {
+      // a rucksack with a rolled blanket on top; two straps over the shoulders, beside the eyes
+      B(0, 3.4, -F - 0.85, 7.4, 4.8, 1.7, 3);
+      B(0, 5.25, -F - 1.0, 7.6, 1.3, 2.0, 2); // flap
+      B(0, 2.4, -F - 1.85, 4.2, 1.8, 0.4, 2); // pocket
+      B(0, 2.9, -F - 2.08, 0.6, 0.6, 0.1, 0, BRASS);
+      B(0, 6.5, -F - 1.0, 8.6, 1.3, 1.3, 0, 0x9a4a3a); // bedroll
+      for (const x of [-2.4, 2.4]) B(x, 6.5, -F - 1.0, 0.3, 1.4, 1.4, 0, 0x5a3a22);
+      for (const s of [-1, 1]) {
+        B(s * 6.05, 9.07, 0, 0.8, 0.14, 7.1, 2, 0xd0d0d0); // over the top
+        B(s * 6.05, 7.1, F + 0.08, 0.8, 4.0, 0.16, 2, 0xd0d0d0); // down the front
+        B(s * 6.05, 5.6, F + 0.2, 0.5, 0.5, 0.1, 0, BRASS);
+      }
+      break;
+    }
+    case 'cape': {
+      // an oilskin cape over the shoulders and back, a collar round the top, a hem in trim
+      B(0, 5.2, -F - 0.35, 14.6, 7.8, 0.3, 3);
+      B(0, 1.45, -F - 0.37, 14.7, 0.4, 0.34, 2);
+      for (const s of [-1, 1]) { B(s * 7.22, 7.25, -0.4, 0.3, 3.5, 6.6, 3); B(s * 7.24, 5.55, -0.4, 0.34, 0.35, 6.7, 2); }
+      B(0, 9.12, -3.0, 14.8, 0.3, 1.4, 3, 0xe4e4e4); // collar
+      for (const s of [-1, 1]) B(s * 6.6, 9.12, 0, 1.6, 0.3, 7.2, 3, 0xe4e4e4);
+      B(6.4, 8.2, F + 0.1, 1.2, 1.0, 0.2, 0, BRASS); // clasp
       break;
     }
   }

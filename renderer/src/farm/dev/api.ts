@@ -7,7 +7,8 @@
  *   __valley.teleport(x, z, yaw?, pitch?) move the player (yaw 0 faces north / −z)
  *   __valley.pose(name)                   named viewpoints (see POSES)
  *   __valley.cam(x, y, z, yaw, pitch)     free camera (detached from the player); cam(null) re-attaches
- *   __valley.goTo(id)                     stand in front of a farmer / helper / plot / structure id
+ *   __valley.goTo(id)                     stand in front of a farmer / helper / plot / structure / villager id ('villager:posy' or 'posy')
+ *   __valley.villagers()                  the villager pins, and __valley.villager(id) → what one is doing
  *   __valley.setHour(h|null)  setWeather(kind|null, intensity?)  setSeason(s|null)
  *   __valley.timeScale(k)                 animation speed (0 freezes animation)
  *   __valley.perf()                       fps, draw calls, triangles, per-system ms
@@ -25,7 +26,7 @@ import type { Engine } from '../scene/engine.ts';
 import type { Controller } from '../player/controller.ts';
 import type { Valley } from '../model/valley.ts';
 import type { Season, WeatherKind } from '../model/types.ts';
-import type { FarmerLocator } from '../scene/context.ts';
+import type { FarmerLocator, VillagersService } from '../scene/context.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
 import type { StructureId } from '../world/map.ts';
 
@@ -76,6 +77,9 @@ export function installDevApi(d: DevDeps): void {
     }
     const plot = valley.state.plots.get(id);
     if (plot) { const s = SITES[plot.site]; return { x: s.x, z: s.z, face: s.gate }; }
+    // a villager ('villager:posy'): approach from the side they face
+    const vp = (ctx.services.get('villagers') as VillagersService | undefined)?.list().find((x) => x.id === id || x.id === `villager:${id}`);
+    if (vp) { const d = (ctx.services.get('villagers') as VillagersService).debug(vp.id) as { spot?: { yaw: number } } | null; const yaw = d?.spot?.yaw ?? 0; return { x: vp.x, z: vp.z, face: { x: vp.x + Math.sin(yaw), z: vp.z + Math.cos(yaw) } }; }
     if (STRUCTURES.some((s) => s.id === id)) { const s = structure(id as StructureId); return { x: s.x, z: s.z }; }
     const f = valley.state.farmers.get(id) ?? valley.state.helpers.get(id);
     if (f) { const pl = valley.state.plots.get(f.plotId); if (pl) { const s = SITES[pl.site]; const w = siteToWorld(s, 0, 0); return { x: w.x, z: w.z, face: s.gate }; } }
@@ -94,7 +98,7 @@ export function installDevApi(d: DevDeps): void {
     cam(x: number | null, y?: number, z?: number, yaw = 0, pitch = 0) {
       freeCam = x === null ? null : { x, y: y ?? heightAt(x, z ?? 0) + 30, z: z ?? 0, yaw, pitch };
     },
-    goTo(id: string, dist = 3.2) {
+    goTo(id: string, dist = 3.6) {
       const t = locate(id);
       if (!t) throw new Error(`nothing called ${id}`);
       const from = t.face ?? { x: t.x + dist, z: t.z };
@@ -112,6 +116,8 @@ export function installDevApi(d: DevDeps): void {
     force: (id: string, patch: Record<string, unknown>) => d.demoForce?.(id, patch),
     scenario: (name: string, seed?: number) => d.demoScenario?.(name, seed),
     interact() { ctx.interact.focused()?.use(); },
+    villagers: () => (ctx.services.get('villagers') as VillagersService | undefined)?.list().map((p) => ({ ...p })) ?? [],
+    villager: (id: string) => (ctx.services.get('villagers') as VillagersService | undefined)?.debug(id.startsWith('villager:') ? id : `villager:${id}`) ?? null,
     focused() { const f = ctx.interact.focused(); return f ? { id: f.id, kind: f.kind, verb: f.verb, label: f.label() } : null; },
     look: (x: number, y: number, z: number) => controller.lookAt(x, y, z),
     // placement audit: loaded on demand (three-mesh-bvh stays out of the game bundle's hot path)

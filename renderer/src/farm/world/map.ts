@@ -48,6 +48,8 @@ export interface Site {
 export const STRUCTURE_IDS = Object.freeze([
   'farmhouse', 'mailbox', 'shippingBin', 'noticeboard', 'well', 'waterTower', 'barn', 'silo', 'windmill', 'toolshed',
   'campfire', 'dock', 'bridge', 'signpost', 'waterfall',
+  // purpose-built leisure nooks (idle farmers' outings)
+  'pergola', 'picnic', 'lookout', 'hotspring',
 ] as const);
 export type StructureId = (typeof STRUCTURE_IDS)[number];
 
@@ -88,7 +90,15 @@ export const STRUCTURES: readonly Structure[] = [
   S('bridge', -56, 6, Math.PI / 2, [4, 14], false, true),
   S('signpost', 7, 6, -0.5, [0.6, 0.6]),
   S('waterfall', -25, -109, 0.25, [10, 6], false, true),
+  // leisure nooks: a checkers pergola east of the square, a picnic blanket in the south meadow, a stargazing deck on
+  // the windmill hill's shoulder, a hot-spring foot-bath on the river meadow behind the barn
+  S('pergola', 23, -6, -1.4, [5.4, 5.4]),
+  S('picnic', 3, 19.5, -2.95, [5.6, 4.6]),
+  S('lookout', 67, -24, -1.25, [7.8, 7.8]),
+  S('hotspring', -45, -25, 0.1, [7.6, 7.6]),
 ];
+/** The leisure nooks, each joined to the road network by a short footpath from its front. */
+export const NOOKS = ['pergola', 'picnic', 'lookout', 'hotspring'] as const satisfies readonly StructureId[];
 export const structure = (id: StructureId): Structure => {
   const s = STRUCTURES.find((x) => x.id === id);
   if (!s) throw new Error(`no structure ${id}`);
@@ -422,6 +432,29 @@ export const PATHS: readonly PathLine[] = (() => {
     }
     routeAround(pts, width / 2 + 0.9);
     out.push({ points: pts, width });
+  }
+  // footpaths: each leisure nook's front joins the nearest road with a narrow spur (added after the tree so the roads
+  // themselves keep their shape)
+  for (const id of NOOKS) {
+    const s = structure(id);
+    const e = front(id, s.size[1] / 2 + 0.9);
+    let best = Infinity, q: XZ = e;
+    // the square's exits count too (a nook beside the square joins it, not the far side of the nearest road)
+    for (const x of connected.slice(0, 4)) { const dd = Math.hypot(x.p.x - e.x, x.p.z - e.z); if (dd < best) { best = dd; q = x.p; } }
+    for (const p of out) for (let i = 0; i + 1 < p.points.length; i++) {
+      const a = p.points[i], b = p.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.z - a.z) * dz) / l2));
+      const c = { x: a.x + dx * t, z: a.z + dz * t }, dd = Math.hypot(c.x - e.x, c.z - e.z);
+      if (dd < best) { best = dd; q = c; }
+    }
+    if (best < 1.5) continue;
+    const n = Math.max(2, Math.round(best / 4));
+    const wob = fbm(e.x * 0.11, e.z * 0.11) * Math.min(1.6, best * 0.12);
+    const dx = e.x - q.x, dz = e.z - q.z, l = Math.hypot(dx, dz) || 1;
+    const pts: XZ[] = [];
+    for (let k = 0; k <= n; k++) { const t = k / n, bow = Math.sin(t * Math.PI) * wob; pts.push({ x: q.x + dx * t - (dz / l) * bow, z: q.z + dz * t + (dx / l) * bow }); }
+    routeAround(pts, 1.6);
+    out.push({ points: pts, width: 1.5 });
   }
   return out;
 })();

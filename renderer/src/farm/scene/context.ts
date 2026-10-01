@@ -49,7 +49,7 @@ export interface PlayerState {
   frozen: boolean;
 }
 
-export type InteractKind = 'farmer' | 'helper' | 'animal' | 'structure' | 'prop' | 'plot';
+export type InteractKind = 'farmer' | 'helper' | 'animal' | 'structure' | 'prop' | 'plot' | 'villager';
 export interface Interactable {
   id: string;
   kind: InteractKind;
@@ -66,6 +66,8 @@ export interface Interactable {
   use(): void;
   /** optional secondary action on a held / alternate key */
   alt?: { verb: string; use(): void };
+  /** optional one-line hint under the prompt (what using it does: "opens the mailbox · 2 unread") */
+  hint?(): string;
 }
 
 export interface Interactions {
@@ -93,6 +95,8 @@ export interface UiPort {
   noticeboard(): void;
   /** system stats panel (gauge landmarks call this when read) */
   stats(): void;
+  /** the farm ledger (roster of every farmer by field); optional for fakes */
+  roster?(): void;
   /** transient speech / toast line near the crosshair */
   say(text: string, ms?: number): void;
 }
@@ -139,6 +143,8 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'controller'  Controller (player/controller.ts) lead (main.ts): onStep, teleport, lookAt
  *   'settings'    Settings (core/settings.ts)       lead (main.ts): volumes, quality, reducedMotion…
  *   'lights'      LightsService (scene/lights)      lighting: lamps, lanterns, windows, fires as local light
+ *   'pets'        PetsService                       life package: the village dog and cat (idle farmers pet them)
+ *   'villagers'   VillagersService                  villagers package: the persistent villager cast (map pins, dev)
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
 export interface FarmerLocator {
@@ -146,6 +152,41 @@ export interface FarmerLocator {
   position(id: string): THREE.Vector3 | null;
   /** head position for markers and camera focus */
   head(id: string): THREE.Vector3 | null;
+}
+
+/** The village pets, for idle farmers who walk over to pet them. Published by the life package as service 'pets'. */
+export interface PetsService {
+  /** where each pet is (feet), and whether it is calm enough for a visit (not greeting / playing with the player) */
+  list(): readonly { id: 'dog' | 'cat'; name: string; x: number; z: number; free: boolean }[];
+  /** a farmer is on its way: the pet stays put (sits, watches the farmer come) for up to `secs` */
+  hold(id: 'dog' | 'cat', farmerId: string, secs: number): void;
+  /** a farmer standing at (x, z) pets it: hearts, a happy wiggle, facing the farmer */
+  pet(id: 'dog' | 'cat', x: number, z: number): void;
+}
+
+/**
+ * The persistent villagers (postmaster, shipping clerk, miller, mayor, ranger, weather-watcher): presentation-only
+ * townsfolk, never agents. Published by the villagers package as service 'villagers' (the HUD map draws them as
+ * role pins, dev tools walk up to them).
+ */
+export interface VillagerPin {
+  id: string;
+  name: string;
+  /** 'Postmaster', 'Shipping clerk', … */
+  role: string;
+  /** one glyph for map pins (a letter or a symbol) */
+  glyph: string;
+  /** body colour, css hex */
+  color: string;
+  x: number;
+  z: number;
+  /** indoors (asleep): not in the world right now */
+  inside: boolean;
+}
+export interface VillagersService {
+  list(): readonly VillagerPin[];
+  /** dev: what a villager is doing right now */
+  debug(id: string): unknown;
 }
 
 /** Sound effects every package may trigger (audio package synthesises them; no sample files). */

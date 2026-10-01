@@ -156,7 +156,7 @@ defineAsset({
   note: 'kind × tier: Clawd opus straw · sonnet cap · haiku bandana · other beanie; Codex; Gemini (star); agent (grey)',
   build: (o) => stage((p) => {
     const cast: [FarmerView['tier'], FarmerView['kind']][] = [['opus', 'claude'], ['sonnet', 'claude'], ['haiku', 'claude'], [null, 'claude'], ['opus', 'codex'], ['sonnet', 'codex'], [null, 'gemini'], [null, 'agent']];
-    cast.forEach(([tier, kind], i) => p.add(lookFor(fake(`cast${i}`, tier, kind), WORKSPACE_COLORS[i]), o.variant ?? 'stand', (i % 4 - 1.5) * 1.5, Math.floor(i / 4) * 1.6 - 0.8));
+    cast.forEach(([tier, kind], i) => p.add(lookFor(fake(`cast${i}`, tier, kind), WORKSPACE_COLORS[i]), o.variant ?? 'stand', (i % 4 - 1.5) * 1.9, Math.floor(i / 4) * 1.9 - 0.95));
   }, 8),
   animate,
 });
@@ -165,8 +165,8 @@ defineAsset({
   name: 'mascot-faces', group: 'character', note: 'every expression, Clawd (front row) and Codex (back row) — eyes blink, the cursor blinks',
   build: () => stage((p) => {
     FACES.forEach((f, i) => {
-      p.add(lookFor(fake(`face${i}`, 'sonnet', 'claude'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.3, Math.floor(i / 7) * 3.2 - 1.6, 0, f);
-      p.add(lookFor(fake(`face${i}`, null, 'codex'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.3, Math.floor(i / 7) * 3.2 - 0.2, 0, f);
+      p.add(lookFor(fake(`face${i}`, 'sonnet', 'claude'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.7, Math.floor(i / 7) * 3.6 - 1.8, 0, f);
+      p.add(lookFor(fake(`face${i}`, null, 'codex'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.7, Math.floor(i / 7) * 3.6 - 0.1, 0, f);
     });
   }, FACES.length * 2),
   animate,
@@ -178,8 +178,8 @@ defineAsset({
   build: (o) => stage((p) => {
     const prop = (o.variant as Prop) ?? 'hoe';
     const act = (ACTS.find((a) => propOf(a) === prop) ?? 'stand') as Act;
-    p.add(lookFor(fake('props', 'haiku', 'claude'), WORKSPACE_COLORS[2]), act, -0.7, 0);
-    p.add(lookFor(fake('props', null, 'codex'), WORKSPACE_COLORS[5]), act, 0.8, 0);
+    p.add(lookFor(fake('props', 'haiku', 'claude'), WORKSPACE_COLORS[2]), act, -0.9, 0);
+    p.add(lookFor(fake('props', null, 'codex'), WORKSPACE_COLORS[5]), act, 1.0, 0);
   }, 2),
   animate,
 });
@@ -187,7 +187,7 @@ defineAsset({
 defineAsset({
   name: 'mascot-poses', group: 'character', note: 'every act side by side (reading order = ACTS), alternating Clawd / Codex',
   build: () => stage((p) => {
-    ACTS.forEach((a, i) => p.add(lookFor(fake(`pose${i % 5}`, (['opus', 'sonnet', 'haiku', null, 'opus'] as const)[i % 5], i % 2 ? 'codex' : 'claude'), WORKSPACE_COLORS[i % 8]), a, (i % 7 - 3) * 1.6, Math.floor(i / 7) * 1.8 - 3.6, 0));
+    ACTS.forEach((a, i) => p.add(lookFor(fake(`pose${i % 5}`, (['opus', 'sonnet', 'haiku', null, 'opus'] as const)[i % 5], i % 2 ? 'codex' : 'claude'), WORKSPACE_COLORS[i % 8]), a, (i % 7 - 3) * 2.0, Math.floor(i / 7) * 2.2 - 4.4, 0));
   }, ACTS.length),
   animate,
 });

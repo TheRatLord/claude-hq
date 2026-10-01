@@ -11,6 +11,8 @@ const INK = '#2b2420';
 export const EMOTE = {
   bang: 0, question: 1, heart: 2, check: 3, sweat: 4, storm: 5, zzz: 6, bulb: 7, note: 8, thought: 9, dots: 10, sparkle: 11, star: 12, scribble: 13,
   halo: 14, puff: 15, egg: 16,
+  /** villagers: the postmaster's envelope, the miller's wheat, the clerk's crate tick */
+  mail: 17,
 } as const;
 export type EmoteName = keyof typeof EMOTE;
 
@@ -111,6 +113,12 @@ function drawEmote(g: CanvasRenderingContext2D, name: EmoteName) {
     case 'puff': {
       g.fillStyle = 'rgba(240,232,216,0.95)';
       for (const [x, y, r] of [[44, 74, 26], [70, 60, 32], [92, 78, 22], [64, 86, 24]] as const) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+      break;
+    }
+    case 'mail': {
+      outlined(() => { g.beginPath(); g.roundRect(18, 34, 92, 62, 8); }, '#fff6e0', '#5a3a10', 10);
+      g.strokeStyle = '#5a3a10'; g.lineWidth = 7; g.beginPath(); g.moveTo(22, 40); g.lineTo(64, 72); g.lineTo(106, 40); g.stroke();
+      g.fillStyle = '#d9453b'; g.beginPath(); g.arc(64, 72, 10, 0, Math.PI * 2); g.fill();
       break;
     }
     case 'egg': {

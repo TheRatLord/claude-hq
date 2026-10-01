@@ -4,4 +4,5 @@ import './flora/assets.ts';
 import './structures/assets.ts';
 import './plots/assets.ts';
 import './farmers/assets.ts';
+import './villagers/assets.ts';
 import './life/assets.ts';

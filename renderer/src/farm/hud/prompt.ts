@@ -32,6 +32,7 @@ export function createPrompt(ctx: HudCtx): Prompt {
       label = safe(() => c.label()) ?? '';
       if (c.kind === 'farmer' || c.kind === 'helper') { const f = ctx.farmer(c.id) ?? ctx.helper(c.id); if (f && label.toLowerCase().includes(f.name.toLowerCase())) label = label.split(f.name).join(nice(f.name)); }
       altText = c.alt?.verb ?? (c.kind === 'farmer' || c.kind === 'helper' ? 'Open terminal' : '');
+      if (c.hint) subText = safe(() => c.hint!()) ?? '';
       if (c.kind === 'farmer') {
         const f = ctx.farmer(c.id);
         if (f) { subText = f.needsYou ? `needs you: ${f.question ?? 'waiting'}` : `${nice(f.name)} · ${farmerLine(f)}`; ask = f.needsYou; }

@@ -45,6 +45,39 @@ the lead.
 * **Commit** = carries a crate to the shipping bin by the farmhouse. **Tests pass** = little celebration.
   **Test fail / error** = drops the watering can, "oops" puff, dusts off.
 * **Struggle** = sweat drops, crows circling the field, head scratching.
+* **Idle = leisure.** An idle farmer (no job for 4 s) picks a seat weighted by its `likes`, the hour and distance,
+  and runs a varied activity loop there (`scene/farmers/idle.ts`, pure + `idle.test.ts`): fishing casts, reels and
+  sometimes lands a catch; fireside toasting and chatting; reading on a bench; checkers turns with a partner. Four
+  purpose-built leisure nooks (`scene/structures/nooks.ts`, `NOOKS` in `world/map.ts`): the **Pergola** (checkers
+  table, spectators' bench, hanging lantern) north-east of the farmhouse, the **Picnic spot** (gingham blanket,
+  parasol, firefly jar) south of the square, **Stargazers' knoll** (octagonal deck, telescope, benches; favoured at
+  night) by the windmill, and the **Hot spring** foot-bath (steam, stone lanterns, rubber duck) on the river meadow
+  behind the barn. Restless or chatty farmers sometimes leave their seat for an outing: a stroll to a view, the
+  mailbox, their own field, visiting a friend, or petting the village dog/cat (service `pets`) or one of their
+  field's animals (`plots.petAnimal`).
+* **Villagers = the persistent townsfolk** (`scene/villagers/`, cast in `cast.ts`). Not agents, never in ValleyState,
+  the roster, the needs-you strip, the mailbox or the agent dots: Clawds in non-agent body colours, each with a role
+  hat (one shared instanced mesh), one piece of role wear over the body, a green role signboard for a nameplate and a
+  house-shaped pin on the maps. Talking to one (E) says a line about the valley (`lines.ts`, via `ui.say`) and a beat
+  later opens their shortcut; F just chats. The prompt's second line says what they open.
+
+  | villager | look | post | E opens | lunch · evening · night |
+  |---|---|---|---|---|
+  | **Posy**, postmaster | teal, peaked postcap, mail satchel | beside the mailbox | mailbox ("2 letters waiting, Flint needs you!"); waves you over with an envelope while a letter needs you | picnic meadow · farmhouse yard · farmhouse |
+  | **Bram**, shipping clerk | mustard, green eyeshade, canvas apron | by the shipping bin | farm ledger (commits shipped today); cheers every `ship` event | pergola · campfire · toolshed |
+  | **Hazel**, miller | flour-tan, floppy flour-dusted cap, smock | windmill door | system stats, with a line keyed to CPU / RAM / disk | the well · under the sails · the mill |
+  | **Mayor Marigold** | plum, top hat, sash + medal | by the noticeboard | noticeboard ("3 fields busy, 1 resting") | the square · pergola · farmhouse |
+  | **Fern**, ranger | forest green, campaign hat, rucksack + bedroll | the signpost; rounds to the bridge, waterfall, hot spring and pond | valley map | campfire · campfire · sleeps out by the fire |
+  | **Nimbus**, weather-watcher | sky blue, sou'wester, oilskin cape | stargazers' knoll (a night owl) | the real-clock weather report (say only) | the dock · the knoll · the mill's loft till late morning |
+
+  Routines run on the real clock (`schedule.ts`: a cyclic day plan per villager, ±18 min seeded jitter per day, rounds,
+  seeded act loops); indoors = they walk to their door and fade out (lights out). Storms (or heavy rain / snow) send
+  everyone indoors, the ranger to the barn. At social places they wander off to chat with an idle farmer or pet
+  Biscuit / Mochi (`pets.hold` / `pets.pet`). After dark they carry a hand lantern (prop `lantern`) that is a real
+  `LightEmitter`. They greet you like farmers do and walk the farmers' roads with the farmers' motion / gait / pose code.
+  Contracts (`scene/context.ts`): interactable kind `'villager'`, optional `Interactable.hint()` (the prompt's second
+  line), optional `UiPort.roster()`, service `'villagers'` → `VillagerPin[]` (the HUD gets them as `HudBindings.villagers`).
+  Gallery: `villagers` (variants `post walk wave night back`).
 * **System stats live in the landmarks:** windmill blade speed = CPU; water tower gauge/level = RAM; silo fill
   window = disk; farmhouse chimney smoke = disk IO; carrier pigeons between the farmhouse loft and the valley =
   network; a big thermometer on the barn = temperature; the greenhouse-glow / barn lantern = GPU. Each has a readable
@@ -104,16 +137,17 @@ the lead.
 |---|---|---|
 | **land** | `scene/terrain/*`, `scene/flora/*`, `scene/surface/*` (shared surface library), `world/map.ts` tuning | terrain look, water (river, pond, waterfall), path decals, trees/bushes/grass/flowers/rocks/logs scatter |
 | **atmosphere** | `scene/sky/*`, `scene/weather/*`, `scene/post/*`, `scene/lights/*` | `ctx.lighting`, services `wind`, `post`, `lights` |
-| **structures** | `scene/structures/*` | landmarks + gauges, hub decoration, service `walkSurface` |
+| **structures** | `scene/structures/*` | landmarks + gauges, hub decoration, leisure nooks, services `walkSurface`, `structureSpots` |
 | **plots** | `scene/plots/*` | 12 plot kinds × lifecycle, animals (pettable), scarecrow helpers, service `plots` |
 | **farmers** | `scene/farmers/*` | characters, jobs → animation, emotes, ducklings, greetings, service `farmers` |
-| **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), service `audio` |
+| **villagers** | `scene/villagers/*` (role hats / wear / lantern data live in `farmers/mascots.ts` + `geo.ts`, drawn by the shared rig) | the persistent villager cast, routines, dialogue, service `villagers` (`VillagersService`: map pins, debug) |
+| **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), services `audio`, `pets` |
 | **hud** | `hud/*` | every DOM overlay, terminal drawer, `UiPort` |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
 ## Budgets (1600×900 on the Radeon 780M iGPU, 12–16 agents, `mixed` demo)
 
-60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100, life ≤ 40,
+60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40,
 atmosphere ≤ 30 + post. One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 Check `__valley.perf()` → `calls`, `tris`, `systemMs`.
 
@@ -140,7 +174,8 @@ npm run app  |  npm run app:demo                    # Electron: live herdr sessi
 
 Read the PNGs you produce (they are the ground truth), compare against the art direction, iterate. Poses:
 `hub farmhouse square windmill pond barn river plots east` (`dev/api.ts`). The in-page API `window.__valley`
-(`dev/api.ts`) also offers `setHour`, `setWeather`, `setSeason`, `timeScale`, `force(id, patch)` (demo entity
+(`dev/api.ts`) also offers `setHour`, `setWeather`, `setSeason`, `timeScale`, `villagers()` / `villager(id)` (pins / what one is doing; `goTo('villager:posy')`
+walks up to one, then `interact()` talks), `force(id, patch)` (demo entity
 patch), `scenario(name)`, `debug(flag)`, `state()`. Demo scenarios: `mixed allStates crowd40 trio longIdle queue churn
 empty offline` (`--scenario`). Put scratch files under `scratch/` (gitignored).
 
@@ -168,6 +203,10 @@ Output: `scratch/placement/report.json` (every finding, ranked, with key / owner
 scenarios it appeared in) and one contact sheet per open class (`NN-check-asset.png`: best view, opposite side, from
 above; magenta = the item, cyan = what it hits, yellow = the problem region). Exit code 1 with `--strict` if anything
 is open. Options: `--scenario a,b`, `--season x|all`, `--top N`, `--only key`, `--all-sheets`, `--shots allowed`.
+`--sitters` adds a pass that poses a rest-pose Clawd and Codex (largest look scale) on every leisure-nook seat and the
+telescope stand, in every act of the seat's loop (`idle.ts` LOOPS), and reports only their overlaps (`sitters/<nook>:
+<seat>:<body>/<act>/…` against the nook and the neighbouring seats). Run it after changing a nook, a seat anchor or a
+seated pose; legs hanging through their own seat and soakers' feet in the pool are allowlisted.
 
 Intended cases live in `scripts/placement-allow.json` (globs over key / owner / asset, per check, optional `max` /
 `min` on the metrics, and a `reason` for each). Fix real findings at the source (the placing code), allowlist only

@@ -11,7 +11,7 @@
  * and a few pooled label sprites — independent of the number of farmers.
  */
 import * as THREE from 'three';
-import type { AudioService, FarmerLocator, FrameInfo, SceneCtx, SystemFactory } from '../context.ts';
+import type { AudioService, FarmerLocator, FrameInfo, PetsService, SceneCtx, SystemFactory } from '../context.ts';
 import type { FarmerView, Job, Mood, PlotKind, ValleyEvent } from '../../model/types.ts';
 import { HANGOUTS, PATHS, POND, SITES, WORLD, heightAt, structure } from '../../world/map.ts';
 import type { XZ } from '../../world/map.ts';
@@ -26,6 +26,7 @@ import { ACT_INFO, CH, SEAT_H, actPose, cycleLength, faceGlyphs, gait, holdOf, n
 import type { Act, Face, GaitState, GlyphState, Pose, Prop, Springs } from './pose.ts';
 import { buildSeats, newMind, pickSeat, plan, propOf } from './brain.ts';
 import type { BuiltSpot, Intent, Mind, Seat, World } from './brain.ts';
+import type { Critter, Friend } from './idle.ts';
 import { moveStep, newMover, place, separate } from './motion.ts';
 import type { Mover } from './motion.ts';
 import { buildRoads, route } from './roads.ts';
@@ -48,10 +49,17 @@ export const JOB_VERB: Readonly<Record<Job, string>> = {
   talk: 'chatting', delegate: 'directing ducklings', rest: 'tidying up', ask: 'needs you', done: 'all done', idle: 'taking a break', away: 'napping',
 };
 
+/** leisure acts that float a little emote now and then: [emote, period s, only after dark] */
+const LEISURE_EMOTE: Partial<Record<Act, readonly [EmoteName, number, boolean]>> = {
+  telescope: ['star', 6, true], stargaze: ['star', 5, true], ponder: ['thought', 6, false], checkers: ['bulb', 9, false],
+  soak: ['note', 8, false], picnic: ['heart', 9, false], toast: ['heart', 8, false], gaze: ['note', 10, false], pet: ['heart', 2.2, false],
+  reel: ['sweat', 1.2, false], sitread: ['dots', 11, false],
+};
+
 const MOOD_FACE: Readonly<Record<Mood, Face>> = { happy: 'happy', focused: 'focused', stuck: 'stuck', sleepy: 'sleepy', proud: 'proud', worried: 'worried' };
 
 /** Height above the body top that clears any hat (labels, emotes, the "!" beacon). */
-export const HAT_CLEAR = 0.3;
+export const HAT_CLEAR = 0.34;
 
 interface React { act: Act | null; face: Face | null; until: number; emote: EmoteName | null; emoteUntil: number }
 /** a 2-D damped spring (secondary motion) */
@@ -101,6 +109,8 @@ interface Actor {
   lastPropK: number;
   k: number;
   born: number;
+  /** wedged-walker detection: where it last made progress, when, and how often it has sidestepped */
+  stuckX: number; stuckZ: number; stuckT: number; stuckN: number;
 }
 
 const tmpV = new THREE.Vector3(), tmpA = new THREE.Vector3();
@@ -193,7 +203,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const bin = structure('shippingBin'), mailbox = structure('mailbox'), well = structure('well');
   const hub: XZ = { x: 0, z: -1 };
 
-  const routeFn = (from: XZ, to: XZ) => route(roads, SITES, from, to);
+  // road waypoints that fall inside a solid (the square's centre node sits in the sundial bed) are skipped
+  const routeFn = (from: XZ, to: XZ) => route(roads, SITES, from, to).filter((p, i, all) => i === all.length - 1 || !ctx.colliders.blocked(p.x, p.z, 0.3));
   const worldFor = (a: Actor): World => {
     const plot = ctx.valley.plots.get(a.view.plotId);
     return {
@@ -203,11 +214,73 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       claim: (id, kind, t) => {
         const prev = a.mind.seat;
         if (prev >= 0 && occ.get(prev) === id) occ.delete(prev);
-        const i = pickSeat(seats, occ, id, kind, a.look.likes, a.look.chatty, seeded(`${id}:${a.mind.n}:${Math.floor(t)}`), prev);
+        const i = pickSeat(seats, occ, id, kind, a.look.likes, a.look.chatty, seeded(`${id}:${a.mind.n}:${Math.floor(t)}`), prev, ctx.lighting.night, a.mv);
         occ.set(i, id);
         return i;
       },
+      // idle life: loops that react to company and the hour, outings between seats
+      night: ctx.lighting.night,
+      restless: a.look.restless, chatty: a.look.chatty,
+      company: (i) => company(a, i),
+      release: (id) => { const s = a.mind.seat; if (s >= 0 && occ.get(s) === id) occ.delete(s); },
+      critters: () => critters(a),
+      friends: () => friends(a),
+      views: views(),
     };
+  };
+
+  /** someone else settled (or standing still) within a few metres of seat i */
+  const company = (self: Actor, i: number): boolean => {
+    const s = seats[i];
+    if (!s) return false;
+    for (const b of actors.values()) if (b !== self && b.mv.arrived && b.mind.leaving === null && Math.abs(b.mv.x - s.x) < 4.6 && Math.abs(b.mv.z - s.z) < 4.6 && Math.hypot(b.mv.x - s.x, b.mv.z - s.z) < 4.6) return true;
+    return false;
+  };
+  /** the village pets (service 'pets', life package) and the farmer's own field animals (service 'plots') */
+  type PlotsSvc = { animalsNear(id: string): { id: string; species: string; pos: { x: number; z: number }; sleeping: boolean }[]; petAnimal?(plotId: string, animalId: string): void };
+  const petsSvc = () => ctx.services.get('pets') as PetsService | undefined;
+  const plotsSvc = () => ctx.services.get('plots') as PlotsSvc | undefined;
+  const REACH: Readonly<Record<string, number>> = { cow: 1.95, pig: 1.6, sheep: 1.55, chicken: 1.15, dog: 1.3, cat: 1.15 };
+  const critters = (a: Actor): Critter[] => {
+    const out: Critter[] = [];
+    for (const p of petsSvc()?.list() ?? []) out.push({ id: `pet:${p.id}`, x: p.x, z: p.z, reach: REACH[p.id], free: p.free });
+    for (const an of plotsSvc()?.animalsNear(a.view.plotId) ?? []) {
+      const sp = Object.keys(REACH).find((k) => an.species.startsWith(k));
+      if (sp) out.push({ id: `animal:${a.view.plotId}:${an.id}`, x: an.pos.x, z: an.pos.z, reach: REACH[sp], free: true });
+    }
+    return out;
+  };
+  const friends = (a: Actor): Friend[] => {
+    const out: Friend[] = [];
+    for (const b of actors.values()) {
+      if (b === a || b.view.job !== 'idle' || b.mind.seat < 0 || !b.mv.arrived || b.mind.leaving !== null || b.act === 'lie' || b.act === 'nap') continue;
+      out.push({ id: b.id, x: b.mv.x, z: b.mv.z });
+    }
+    return out;
+  };
+  /** scenic stand points for strolls (validated once against the colliders, once the structures have published) */
+  let viewList: (XZ & { yaw: number })[] | null = null;
+  const views = (): readonly (XZ & { yaw: number })[] => {
+    if (viewList) return viewList;
+    const sp = spotsSvc();
+    if (!sp || time < 1) return [];
+    const face = (p: XZ, to: XZ) => ({ x: p.x, z: p.z, yaw: Math.atan2(to.x - p.x, to.z - p.z) });
+    const front = (id: Parameters<typeof structure>[0], d: number) => { const s = structure(id); return { x: s.x + Math.sin(s.yaw) * d, z: s.z + Math.cos(s.yaw) * d }; };
+    const br = structure('bridge'), wm = structure('windmill'), fall = structure('waterfall'), fh = structure('farmhouse');
+    const lv = sp.get('lookoutView');
+    const beach = { x: POND.x + 0.26 * (POND.r + 1.6), z: POND.z + 0.97 * (POND.r + 1.6) };
+    const cand: (XZ & { yaw: number })[] = [
+      face(br, { x: br.x, z: br.z + 30 }),                      // mid-bridge, looking downstream
+      face(beach, POND),                                        // the pond's little beach
+      face(front('windmill', 6.5), wm),                         // under the windmill's sails
+      face({ x: -32, z: -94 }, fall),                           // the waterfall pool
+      face({ x: 0, z: 7 }, fh),                                 // the square, admiring the farmhouse
+      face(front('hotspring', 5.2), structure('hotspring')),    // the steaming spring
+      face(front('picnic', 4.2), structure('picnic')),          // the picnic meadow
+    ];
+    if (lv) cand.push({ x: lv.x, z: lv.z, yaw: lv.yaw });          // the stargazers' deck rail
+    viewList = cand.filter((p) => !ctx.colliders.blocked(p.x, p.z, 0.35) && (heightAt(p.x, p.z) > WORLD.water + 0.1 || !!surface()?.(p.x, p.z)));
+    return viewList;
   };
 
   const stands = (): World['stands'] => {
@@ -241,7 +314,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       glanceUntil: 0, callAt: 0, nameA: 0, bubbleA: 0, vanish: 0, trail: newTrail(0, 0), ducks: [], quackAt: time + 5 + k * 10,
       pos: new THREE.Vector3(), head: new THREE.Vector3(), hand: new THREE.Vector3(), eyes: new THREE.Vector3(),
       top0: new THREE.Vector3(1e9, 0, 0), vel0: new THREE.Vector3(), hat: spring2(), shear: spring2(), plag: spring2(), wob: 0, wobPh: k * 10,
-      unreg: () => {}, lastPropK: 0, k, born: time,
+      unreg: () => {}, lastPropK: 0, k, born: time, stuckX: 0, stuckZ: 0, stuckT: time, stuckN: 0,
     };
     const start = walkIn ? exit : null;
     if (start) { a.mv = newMover(start.x, start.z, Math.PI); }
@@ -263,7 +336,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     for (const d of f.ducklings) a.ducks.push(Ducks.make(d, a.mv.x, a.mv.z, a.y, false));
     a.unreg = ctx.interact.add({
       id: f.id, kind: 'farmer', verb: 'Talk to', label: () => a.view.name, reach: 3.4,
-      pos: (out) => out.set(a.pos.x, a.pos.y + 0.5 * a.look.scale, a.pos.z),
+      pos: (out) => out.set(a.pos.x, a.pos.y + 0.6 * a.look.scale, a.pos.z),
       enabled: () => a.mind.leaving === null,
       use: () => ctx.ui.farmerCard(a.id),
       alt: { verb: 'Open terminal', use: () => ctx.agents.openTerminal(a.id) },
@@ -312,8 +385,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     switch (e.kind) {
       case 'arrived': if (!a) arrivals.add(e.id); break;
       case 'left': if (a && a.mind.leaving === null) a.mind.leaving = time; break;
-      case 'celebrate': if (a) { reactTo(a, 'cheer', 'sparkle', 2.4, 'heart', 3); burst(a.pos.x, a.pos.y + 1.1, a.pos.z, 36, 'confetti'); audio()?.play('chime-pass', { pos: a.pos, volume: 0.6 }); } break;
-      case 'finished': if (a) { reactTo(a, 'cheer', 'proud', 2, 'star', 3); burst(a.pos.x, a.pos.y + 1.1, a.pos.z, 12, 'sparkle'); } break;
+      case 'celebrate': if (a) { reactTo(a, 'cheer', 'sparkle', 2.4, 'heart', 3); burst(a.pos.x, a.pos.y + 1.3, a.pos.z, 36, 'confetti'); audio()?.play('chime-pass', { pos: a.pos, volume: 0.6 }); } break;
+      case 'finished': if (a) { reactTo(a, 'cheer', 'proud', 2, 'star', 3); burst(a.pos.x, a.pos.y + 1.3, a.pos.z, 12, 'sparkle'); } break;
       case 'oops': if (a) { reactTo(a, 'oops', 'oops', 1.5, 'sweat', 3); burst(a.pos.x, a.pos.y + 0.1, a.pos.z, 10, 'dust'); a.propS = 0; audio()?.play('oops', { pos: a.pos, volume: 0.7 }); } break;
       case 'struggle': if (a) reactTo(a, 'scratch', 'stuck', 2.6, 'question', 3); break;
       case 'compact': if (a) reactTo(a, 'stretch', 'yawn', 3.4, null); break;
@@ -357,6 +430,20 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     for (const a of actors.values()) if (!farmers.has(a.id) && a.mind.leaving === null) a.mind.leaving = time;
   }
 
+  /** a walker pressed against a solid (a prop between it and its next waypoint) makes no progress: sidestep it */
+  function unwedge(a: Actor): void {
+    const mv = a.mv;
+    if (mv.arrived || !mv.path.length) { a.stuckX = mv.x; a.stuckZ = mv.z; a.stuckT = time; a.stuckN = 0; return; }
+    if (Math.hypot(mv.x - a.stuckX, mv.z - a.stuckZ) > 0.35) { a.stuckX = mv.x; a.stuckZ = mv.z; a.stuckT = time; return; }
+    if (time - a.stuckT < 1.6) return;
+    const p = mv.path[mv.pi], dx = p.x - mv.x, dz = p.z - mv.z, l = Math.hypot(dx, dz) || 1;
+    const side = (a.stuckN + Math.floor(a.k * 2)) % 2 ? 1 : -1, r = 1.4 + (a.stuckN % 3) * 0.6;
+    const q = { x: mv.x + (-dz / l) * side * r + (dx / l) * 0.6, z: mv.z + (dx / l) * side * r + (dz / l) * 0.6 };
+    if (!ctx.colliders.blocked(q.x, q.z, 0.3)) mv.path.splice(mv.pi, 0, q);
+    else if (mv.pi < mv.path.length - 1) mv.pi++;
+    a.stuckN++; a.stuckT = time; a.stuckX = mv.x; a.stuckZ = mv.z;
+  }
+
   // --------------------------------------------------------------------------------------------------------------
   const sepPts: { x: number; z: number; walking: boolean }[] = [];
   const order: Actor[] = [];
@@ -372,6 +459,21 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (const c of cues) {
         if (c === 'ship') { burst(bin.x, bin.y + 1.1, bin.z, 8, 'sparkle'); audio()?.play('ship', { pos: tmpV.set(bin.x, bin.y + 1, bin.z), volume: 0.7 }); }
         if (c === 'letter') audio()?.play('letter-open', { pos: a.pos, volume: 0.4 });
+        else if (c.startsWith('hold:pet:')) petsSvc()?.hold(c.slice(9) as 'dog' | 'cat', a.id, 40);
+        else if (c.startsWith('pet:')) {
+          // arrived at the critter: pet it (the pet / animal reacts), a heart over the farmer
+          if (c.startsWith('pet:pet:')) petsSvc()?.pet(c.slice(8) as 'dog' | 'cat', mv.x, mv.z);
+          else { const [, , plot, id] = c.split(':'); plotsSvc()?.petAnimal?.(plot, id); }
+          reactTo(a, null, 'happy', 5, 'heart', 2.4);
+        } else if (c === 'beat:catch') {
+          fwd.set(Math.sin(mv.yaw), 0, Math.cos(mv.yaw));
+          burst(mv.x + fwd.x * 2.2, WORLD.water + 0.05, mv.z + fwd.z * 2.2, 10, 'splash');
+          burst(a.head.x, a.head.y + 0.3, a.head.z, 8, 'sparkle');
+          audio()?.play('splash', { pos: a.pos, volume: 0.5 });
+          reactTo(a, null, 'sparkle', 3, 'star', 3);
+        } else if (c === 'beat:sitchat' || c === 'beat:checkers') {
+          if (a.pos.distanceTo(ctx.player.pos) < 22) audio()?.voice(f.seed, { pos: a.pos, mood: c === 'beat:sitchat' ? 'happy' : 'excited', syllables: 2 });
+        }
       }
       cues.length = 0;
       if (a.mind.seat >= 0 && f.job !== 'idle' && f.job !== 'away' && a.mind.leaving === null) {
@@ -463,7 +565,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       if (f.mood === 'stuck' && (face === 'focused' || face === 'neutral')) face = 'stuck';
       if (f.needsYou) face = 'surprised';
       if (greeting) face = 'happy';
-      if (face === 'talk' && act === 'chat' && Math.sin(time * 0.45 + (a.mind.seat % 2) * Math.PI) < 0) face = 'happy'; // listening
+      if (face === 'talk' && (act === 'chat' || act === 'sitchat') && Math.sin(time * 0.45 + (a.mind.seat % 2) * Math.PI) < 0) face = 'happy'; // listening
     }
     // blinks: personality timing, sometimes a double blink
     if (time > a.blinkAt) {
@@ -571,6 +673,11 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     } else if (a.mv.arrived && a.act === 'plan') {
       const bulb = frac(t / 9) > 0.78;
       bills.push(hp.x + side * 0.45, top + 0.1 + Math.sin(t * 1.3) * 0.03, hp.z + sideZ * 0.45, 0.5, bulb ? EMOTE.bulb : EMOTE.thought, far, bulb ? 1.5 : 1);
+    } else if (a.mv.arrived && LEISURE_EMOTE[a.act]) {
+      // leisure loops: a star at the telescope after dark, a thought over the board, a hum in the hot spring…
+      const [emote, every, night] = LEISURE_EMOTE[a.act]!;
+      const c = frac(t / every);
+      if (c < 0.3 && (!night || ctx.lighting.night > 0.5)) bills.push(hp.x + side * 0.35 + c * 0.2, top + c * 0.5, hp.z + sideZ * 0.35, 0.32, EMOTE[emote], far * Math.sin((c / 0.3) * Math.PI), 1.15, Math.sin(t * 2.4) * 0.15);
     } else if (a.mv.arrived && (a.act === 'fish' || a.act === 'campfire' || a.act === 'sweep')) {
       const c = frac(t / 7);
       if (c < 0.35) bills.push(hp.x + 0.2 + c * 0.4, top + c * 0.6, hp.z, 0.3, EMOTE.note, far * Math.sin((c / 0.35) * Math.PI), 1.1, Math.sin(t * 3) * 0.2);
@@ -580,7 +687,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         bills.push(hp.x - side * 0.35, top + c * 0.8, hp.z - sideZ * 0.35, 0.3, EMOTE.note, far * Math.sin((c / 0.3) * Math.PI), 1.2, -0.2);
         if (c > 0.1) bills.push(hp.x + side * 0.1, top + 0.15 + (c - 0.1) * 0.9, hp.z + sideZ * 0.1, 0.24, EMOTE.note, far * Math.sin(((c - 0.1) / 0.2) * Math.PI), 1.2, 0.25);
       }
-    } else if (a.mv.arrived && (a.act === 'talk' || a.act === 'chat') && !a.bubbleA) {
+    } else if (a.mv.arrived && (a.act === 'talk' || a.act === 'chat' || a.act === 'sitchat') && !a.bubbleA) {
       const c = frac(t * 0.4);
       if (c < 0.3) bills.push(hp.x + side * 0.4, top - 0.05, hp.z + sideZ * 0.4, 0.34, EMOTE.dots, far * Math.sin((c / 0.3) * Math.PI), 1);
     }
@@ -615,14 +722,26 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   }
 
   // --------------------------------------------------------------------------------------------------------------
-  const locator: FarmerLocator & { debug(id: string): unknown } = {
+  const locator: FarmerLocator & { debug(id: string): unknown; sit(id: string, kind: string, secs?: number): number } = {
+    /** dev (shots): put an idle farmer on the nearest free seat of `kind` ('checkers', 'blanket', 'soak', 'telescope'…) for `secs` */
+    sit(id, kind, secs = 600) {
+      const a = actors.get(id);
+      if (!a) return -1;
+      let best = -1, bd = Infinity;
+      seats.forEach((s, i) => { if (s.kind === kind && (!occ.has(i) || occ.get(i) === id)) { const d = Math.hypot(s.x - a.mv.x, s.z - a.mv.z); if (d < bd) { bd = d; best = i; } } });
+      if (best < 0) return -1;
+      if (a.mind.seat >= 0 && occ.get(a.mind.seat) === id) occ.delete(a.mind.seat);
+      occ.set(best, id);
+      a.mind.seat = best; a.mind.seatUntil = time + secs; a.mind.beat = -1; a.mind.trip = null; a.nextPlan = 0;
+      return best;
+    },
     position(id) { const a = actors.get(id); return a ? a.pos.clone() : null; },
     head(id) { const a = actors.get(id); return a ? a.head.clone() : null; },
     /** dev: what a farmer is doing right now */
     debug(id) {
       const a = actors.get(id);
       if (!a) return null;
-      return { job: a.view.job, act: a.act, body: a.look.body, intent: { key: a.intent.key, act: a.intent.act, x: a.intent.x, z: a.intent.z }, x: a.mv.x, z: a.mv.z, arrived: a.mv.arrived, path: a.mv.path.length, prop: a.prop, react: a.react?.act ?? null, errand: a.mind.errand };
+      return { job: a.view.job, act: a.act, beat: a.mind.beatAct, trip: a.mind.trip ? `${a.mind.trip.kind}:${a.mind.trip.i}` : null, seat: a.mind.seat >= 0 ? seats[a.mind.seat]?.kind : null, body: a.look.body, intent: { key: a.intent.key, act: a.intent.act, x: a.intent.x, z: a.intent.z }, x: a.mv.x, z: a.mv.z, arrived: a.mv.arrived, path: a.mv.path.length, prop: a.prop, react: a.react?.act ?? null, errand: a.mind.errand };
     },
   };
   ctx.services.set('farmers', locator);
@@ -650,11 +769,12 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       }
       const pp = (sepPts[order.length] ??= { x: 0, z: 0, walking: false });
       pp.x = ctx.player.pos.x; pp.z = ctx.player.pos.z; pp.walking = false;
-      separate(sepPts, 0.85, dt);
+      separate(sepPts, 1.0, dt);
       for (let i = 0; i < order.length; i++) {
         const a = order[i];
         a.mv.x = sepPts[i].x; a.mv.z = sepPts[i].z;
         if (!a.mv.arrived && Math.hypot(a.mv.goal.x - a.mv.x, a.mv.goal.z - a.mv.z) > 1.5) ctx.colliders.resolve(a.mv, 0.3);
+        unwedge(a);
       }
       // leaving: vanish at the exit
       for (const a of order) {
@@ -681,10 +801,10 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
           if (settled) {
             // a little arc behind the farmer, facing them
             const ang = a.mv.yaw + Math.PI + (i - (n - 1) / 2) * 0.5;
-            const r = 1.0 + (i % 2) * 0.3;
+            const r = 1.15 + (i % 2) * 0.3;
             spot = duckSpot; duckSpot.x = a.mv.x + Math.sin(ang) * r; duckSpot.z = a.mv.z + Math.cos(ang) * r;
           }
-          if (ducks.follow(d, a.trail, a.mv.x, a.mv.z, 0.9 + i * 0.42, dt, hop, ground, a.mv.yaw, spot)) {
+          if (ducks.follow(d, a.trail, a.mv.x, a.mv.z, 1.05 + i * 0.42, dt, hop, ground, a.mv.yaw, spot)) {
             burst(d.x, d.y, d.z, 8, 'shell');
             audio()?.play('pop', { pos: tmpV.set(d.x, d.y, d.z), volume: 0.5 });
           }

@@ -11,6 +11,8 @@
  *   npm run audit:placement -- --only hub-dressing           items whose key contains this
  *   npm run audit:placement -- --shots allowed               sheets for allowlisted findings too (review them)
  *   npm run audit:placement -- --strict                      exit 1 when anything is not allowlisted
+ *   npm run audit:placement -- --sitters                     also seat a rest-pose Clawd and Codex on every leisure-nook
+ *                                                           seat and report farmer × prop / farmer × farmer overlaps
  *
  * Writes scratch/placement/report.json (ranked findings, per-class summary) and one contact sheet PNG per top
  * finding: scratch/placement/NN-check-asset.png (magenta = a, cyan = b, yellow = the problem region; three views).
@@ -36,6 +38,7 @@ const top = Number(opt('--top', '25'));
 const perClass = !argv.includes('--all-sheets');
 const only = opt('--only', '');
 const shotAllowed = opt('--shots', '') === 'allowed';
+const sitters = argv.includes('--sitters');
 const allowFile = path.resolve(REPO, opt('--allow', 'scripts/placement-allow.json'));
 const [W, H] = [960, 600];
 
@@ -98,6 +101,11 @@ async function main(): Promise<void> {
         await page.evaluate(() => (window as unknown as V).__valley.timeScale(0));
         const t0 = Date.now();
         const res = await page.evaluate((o) => (window as unknown as V).__valley.audit(o), only ? { only } : {});
+        if (sitters) for (const body of ['claude', 'codex']) {
+          const sr = await page.evaluate((o) => (window as unknown as V).__valley.audit(o), { sitters: body });
+          console.log(`· ${run} sitters (${body}): ${sr.findings.length} findings`);
+          res.findings.push(...sr.findings);
+        }
         console.log(`· ${run}: ${res.items} items (${Object.entries(res.perSystem).map(([k, v]) => `${k} ${v}`).join(', ')}), ${res.pairs} candidate pairs, ${res.findings.length} findings in ${res.ms} ms (${Date.now() - t0} ms round trip)`);
         runs.push({ run, items: res.items, pairs: res.pairs, ms: res.ms, findings: res.findings.length, perSystem: res.perSystem });
         const fresh: Tagged[] = [];
