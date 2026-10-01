@@ -39,31 +39,36 @@ export interface PieceOpts {
   /** 0..1 how much the instance tint applies */
   mask?: number;
 }
-export interface Piece { g: THREE.BufferGeometry; color: number; o: PieceOpts }
+/** `color` null keeps the geometry's own vertex colours and normals (sculpted hulls); their per-face `coat` mask
+ * (sculpt.ts) scales `mask` */
+export interface Piece { g: THREE.BufferGeometry; color: number | null; o: PieceOpts }
 
-export const piece = (g: THREE.BufferGeometry, color: number, o: PieceOpts = {}): Piece => ({ g, color, o });
+export const piece = (g: THREE.BufferGeometry, color: number | null, o: PieceOpts = {}): Piece => ({ g, color, o });
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _c = new THREE.Color();
 
-/** Merge pieces into one flat-shaded, vertex-coloured geometry with `aPart` and `aMask` attributes. */
+/** Merge pieces into one vertex-coloured geometry with `aPart` and `aMask` attributes (flat-shaded, sculpted hulls smooth). */
 export function assemble(pieces: Piece[]): THREE.BufferGeometry {
   const gs = pieces.map(({ g, color, o }) => {
+    const pre = g.userData.coat as Float32Array | undefined;
     const n = (g.index ? g.toNonIndexed() : g.clone());
-    for (const k of Object.keys(n.attributes)) if (k !== 'position') n.deleteAttribute(k);
+    const keep = color === null ? ['position', 'normal', 'color'] : ['position'];
+    for (const k of Object.keys(n.attributes)) if (!keep.includes(k)) n.deleteAttribute(k);
     const sc = o.scale ?? 1;
     _s.set(...(typeof sc === 'number' ? [sc, sc, sc] as const : sc));
     _e.set(...(o.rot ?? [0, 0, 0] as const));
     _p.set(...(o.at ?? [0, 0, 0] as const));
     n.applyMatrix4(_m.compose(_p, _q.setFromEuler(_e), _s));
     const cnt = n.attributes.position.count;
-    const col = new Float32Array(cnt * 3), part = new Float32Array(cnt), mask = new Float32Array(cnt);
-    _c.setHex(color);
+    const col = color === null ? null : new Float32Array(cnt * 3), part = new Float32Array(cnt), mask = new Float32Array(cnt);
+    if (color !== null) _c.setHex(color);
     for (let i = 0; i < cnt; i++) {
-      col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
-      part[i] = o.part ?? 0; mask[i] = o.mask ?? 0;
+      if (col) { col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b; }
+      part[i] = o.part ?? 0; mask[i] = pre && pre.length === cnt ? pre[i] * (o.mask ?? 1) : o.mask ?? 0;
     }
-    n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (col) n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (!n.attributes.normal) n.computeVertexNormals();
     n.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
     n.setAttribute('aMask', new THREE.BufferAttribute(mask, 1));
     g.dispose();
@@ -72,7 +77,6 @@ export function assemble(pieces: Piece[]): THREE.BufferGeometry {
   const out = mergeGeometries(gs, false);
   for (const g of gs) g.dispose();
   if (!out) throw new Error('assemble: merge failed');
-  out.computeVertexNormals();
   out.computeBoundingSphere();
   return out;
 }

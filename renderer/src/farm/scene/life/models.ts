@@ -1,9 +1,12 @@
 /**
- * Critter models: chunky, faceted, slightly oversized so they read from first person. Every model is one merged
+ * Critter models: chunky, smooth low-poly hulls (sculpt.ts) with a few crisp accents, slightly oversized so they read
+ * from first person. Every model is one merged
  * geometry + a rig spec (see rig.ts). Front faces +z, feet at y = 0.
  */
 import * as THREE from 'three';
 import { PAL } from '../toon.ts';
+import { loft } from '../sculpt.ts';
+import type { Face, LoftOpts, Ring } from '../sculpt.ts';
 import { assemble, flatPoly, piece } from './rig.ts';
 import type { Piece, RigSpec } from './rig.ts';
 
@@ -14,6 +17,8 @@ const cyl = (rt: number, rb: number, h: number, s = 6) => new THREE.CylinderGeom
 const mirror = (pts: readonly (readonly [number, number])[]) => pts.map(([x, z]) => [-x, z] as const);
 
 const X = [1, 0, 0] as const, Y = [0, 1, 0] as const, Z = [0, 0, 1] as const;
+/** a smooth sculpted hull (sculpt.ts) for `piece(…, null, …)` */
+const L = (rings: readonly Ring[], paint: LoftOpts['paint'], o: Partial<LoftOpts> = {}) => loft(rings, { sides: 10, sub: 2, paint, ...o });
 
 export interface Model { geo: THREE.BufferGeometry; spec: RigSpec }
 
@@ -51,21 +56,24 @@ const tailFan = [[0, 0.02], [0.03, 0.01], [0.035, -0.1], [0, -0.085], [-0.035, -
 export function songbird(): Model {
   const beak = 0x5a4632;
   const p: Piece[] = [
-    piece(ball(0.085, 8, 6), LIGHT, { at: [0, 0.13, 0], scale: [1, 0.92, 1.3], mask: 1 }),
-    piece(ball(0.07, 7, 5), 0xffffff, { at: [0, 0.112, 0.042], scale: [0.98, 0.95, 1.05], mask: 2 }),
-    piece(ball(0.062, 8, 6), LIGHT, { at: [0, 0.192, 0.088], part: 3, mask: 1 }),
-    piece(ball(0.04, 6, 4), 0xffffff, { at: [0, 0.175, 0.118], scale: [1.2, 0.8, 0.8], part: 3, mask: 2 }),
-    piece(cone(0.018, 0.05, 4), beak, { at: [0, 0.188, 0.162], rot: [Math.PI / 2, 0, 0], part: 3 }),
-    piece(ball(0.013, 5, 4), PAL.ink, { at: [0.047, 0.2, 0.112], part: 3 }),
-    piece(ball(0.013, 5, 4), PAL.ink, { at: [-0.047, 0.2, 0.112], part: 3 }),
-    piece(ball(0.0045, 3, 2), 0xffffff, { at: [0.054, 0.205, 0.12], part: 3 }),
-    piece(ball(0.0045, 3, 2), 0xffffff, { at: [-0.054, 0.205, 0.12], part: 3 }),
+    // one plump body: tinted back, tint2 breast
+    piece(L([
+      { p: [0, 0.15, -0.12], r: 0.02 }, { p: [0, 0.14, -0.09], r: [0.06, 0.055, 0.05] }, { p: [0, 0.13, -0.03], r: [0.08, 0.075, 0.07] },
+      { p: [0, 0.125, 0.04], r: [0.078, 0.075, 0.072] }, { p: [0, 0.14, 0.08], r: [0.06, 0.06, 0.05] }, { p: [0, 0.158, 0.1], r: 0.035 },
+    ], (f) => Math.sin(f.a) < -0.25 && f.t > 0.3 ? 0xffffff : LIGHT, { coat: (f) => Math.sin(f.a) < -0.25 && f.t > 0.3 ? 2 : 1 }), null, { mask: 1 }),
+    piece(L([
+      { p: [0, 0.19, 0.03], r: 0.035 }, { p: [0, 0.196, 0.065], r: [0.06, 0.06, 0.056] }, { p: [0, 0.19, 0.11], r: [0.054, 0.05, 0.05] }, { p: [0, 0.184, 0.142], r: 0.024 },
+    ], (f) => Math.sin(f.a) < -0.2 && f.t > 0.35 ? 0xffffff : LIGHT, { coat: (f) => Math.sin(f.a) < -0.2 && f.t > 0.35 ? 2 : 1 }), null, { part: 3, mask: 1 }),
+    piece(cone(0.018, 0.05, 5), beak, { at: [0, 0.186, 0.162], rot: [Math.PI / 2, 0, 0], part: 3 }),
+    piece(ball(0.013, 6, 5), PAL.ink, { at: [0.046, 0.2, 0.108], part: 3 }),
+    piece(ball(0.013, 6, 5), PAL.ink, { at: [-0.046, 0.2, 0.108], part: 3 }),
+    piece(ball(0.0045, 3, 2), 0xffffff, { at: [0.054, 0.205, 0.116], part: 3 }),
+    piece(ball(0.0045, 3, 2), 0xffffff, { at: [-0.054, 0.205, 0.116], part: 3 }),
     piece(flatPoly(tailFan), 0xb8b0a4, { at: [0, 0.15, -0.1], rot: [0.35, 0, 0], part: 4, mask: 1 }),
-    // folded wing covers (what a perched bird shows)
-    piece(ball(0.05, 6, 4), 0xc4baac, { at: [0.068, 0.14, -0.03], scale: [0.4, 0.75, 1.6], rot: [0.25, 0, 0], mask: 1 }),
-    piece(ball(0.05, 6, 4), 0xc4baac, { at: [-0.068, 0.14, -0.03], scale: [0.4, 0.75, 1.6], rot: [0.25, 0, 0], mask: 1 }),
-    piece(box(0.02, 0.012, 0.05), 0x8a8276, { at: [0.078, 0.13, -0.08], rot: [0.3, 0, 0], mask: 1 }),
-    piece(box(0.02, 0.012, 0.05), 0x8a8276, { at: [-0.078, 0.13, -0.08], rot: [0.3, 0, 0], mask: 1 }),
+    // folded wing covers (what a perched bird shows): smooth leaves with dark primaries
+    ...[1, -1].map((s) => piece(L([
+      { p: [s * 0.066, 0.15, 0.04], r: [0.012, 0.03] }, { p: [s * 0.074, 0.145, -0.01], r: [0.016, 0.042] }, { p: [s * 0.074, 0.135, -0.07], r: [0.012, 0.03] }, { p: [s * 0.066, 0.125, -0.115], r: [0.006, 0.012] },
+    ], (f) => f.t > 0.62 ? 0x8a8276 : 0xc4baac), null, { mask: 1 })),
     // flight wings: inner (shoulder) + outer (hand) that folds at the wrist
     piece(flatPoly(innerWing), 0xd6cec2, { at: [0.055, 0.155, 0.02], part: 1, mask: 1 }),
     piece(flatPoly(mirror(innerWing)), 0xd6cec2, { at: [-0.055, 0.155, 0.02], part: 2, mask: 1 }),
@@ -102,21 +110,24 @@ const pOuter = [[0, 0.06], [0.06, 0.045], [0.13, -0.02], [0.1, -0.1], [0.04, -0.
 export function pigeon(): Model {
   const grey = 0xa9b0c0, dark = 0x6f7688, leather = 0x9a6a3a;
   const p: Piece[] = [
-    piece(ball(0.11, 8, 6), grey, { at: [0, 0.16, 0], scale: [1, 0.95, 1.35], mask: 1 }),
-    piece(ball(0.085, 7, 5), 0xb8bfd0, { at: [0, 0.15, 0.06], scale: [1, 0.95, 1], mask: 1 }),
-    piece(ball(0.07, 7, 5), 0x7fa39a, { at: [0, 0.22, 0.07], scale: [1.05, 0.9, 0.9], mask: 0.3 }), // iridescent neck
-    piece(ball(0.058, 8, 6), grey, { at: [0, 0.275, 0.11], part: 3, mask: 1 }),
-    piece(cone(0.016, 0.05, 4), 0x4a4a52, { at: [0, 0.265, 0.18], rot: [Math.PI / 2, 0, 0], part: 3 }),
+    // body rising into the iridescent neck in one piece
+    piece(L([
+      { p: [0, 0.18, -0.15], r: 0.03 }, { p: [0, 0.175, -0.11], r: [0.08, 0.075, 0.07] }, { p: [0, 0.16, -0.03], r: [0.11, 0.1, 0.1] },
+      { p: [0, 0.16, 0.05], r: [0.105, 0.1, 0.1] }, { p: [0, 0.19, 0.1], r: [0.08, 0.08, 0.08] }, { p: [0, 0.228, 0.115], r: 0.064 }, { p: [0, 0.255, 0.115], r: 0.04 },
+    ], (f) => f.t > 0.8 ? 0x7fa39a : Math.sin(f.a) < -0.3 ? 0xb8bfd0 : grey, { coat: (f) => f.t > 0.8 ? 0.3 : 1 }), null, { mask: 1 }),
+    piece(L([
+      { p: [0, 0.27, 0.07], r: 0.035 }, { p: [0, 0.278, 0.1], r: [0.058, 0.056, 0.054] }, { p: [0, 0.27, 0.14], r: [0.045, 0.04, 0.04] }, { p: [0, 0.266, 0.162], r: 0.018 },
+    ], grey), null, { part: 3, mask: 1 }),
+    piece(cone(0.016, 0.05, 5), 0x4a4a52, { at: [0, 0.265, 0.18], rot: [Math.PI / 2, 0, 0], part: 3 }),
     piece(ball(0.012, 4, 3), 0xf4f0ea, { at: [0, 0.278, 0.162], scale: [1.4, 0.8, 1], part: 3 }),
-    piece(ball(0.014, 5, 4), 0xe8762c, { at: [0.045, 0.285, 0.14], part: 3 }),
-    piece(ball(0.014, 5, 4), 0xe8762c, { at: [-0.045, 0.285, 0.14], part: 3 }),
-    piece(ball(0.007, 4, 3), PAL.ink, { at: [0.052, 0.287, 0.148], part: 3 }),
-    piece(ball(0.007, 4, 3), PAL.ink, { at: [-0.052, 0.287, 0.148], part: 3 }),
+    piece(ball(0.014, 6, 5), 0xe8762c, { at: [0.043, 0.285, 0.128], part: 3 }),
+    piece(ball(0.014, 6, 5), 0xe8762c, { at: [-0.043, 0.285, 0.128], part: 3 }),
+    piece(ball(0.007, 4, 3), PAL.ink, { at: [0.051, 0.287, 0.134], part: 3 }),
+    piece(ball(0.007, 4, 3), PAL.ink, { at: [-0.051, 0.287, 0.134], part: 3 }),
     piece(flatPoly(tailFan), dark, { at: [0, 0.18, -0.13], rot: [0.2, 0, 0], scale: [1.35, 1, 1.3], part: 4, mask: 0.6 }),
-    piece(ball(0.065, 6, 4), 0x8d95a8, { at: [0.088, 0.175, -0.04], scale: [0.4, 0.75, 1.55], rot: [0.2, 0, 0], mask: 1 }),
-    piece(ball(0.065, 6, 4), 0x8d95a8, { at: [-0.088, 0.175, -0.04], scale: [0.4, 0.75, 1.55], rot: [0.2, 0, 0], mask: 1 }),
-    piece(box(0.02, 0.015, 0.07), 0x4a4f5e, { at: [0.105, 0.18, -0.06] }),
-    piece(box(0.02, 0.015, 0.07), 0x4a4f5e, { at: [-0.105, 0.18, -0.06] }),
+    ...[1, -1].map((s) => piece(L([
+      { p: [s * 0.09, 0.2, 0.05], r: [0.014, 0.04] }, { p: [s * 0.1, 0.19, -0.01], r: [0.02, 0.055] }, { p: [s * 0.1, 0.18, -0.09], r: [0.016, 0.042] }, { p: [s * 0.09, 0.17, -0.15], r: [0.008, 0.016] },
+    ], (f) => f.t > 0.58 ? 0x4a4f5e : 0x8d95a8), null, { mask: 1 })),
     piece(flatPoly(pInner), 0x9aa2b4, { at: [0.08, 0.2, 0.02], part: 1, mask: 1 }),
     piece(flatPoly(mirror(pInner)), 0x9aa2b4, { at: [-0.08, 0.2, 0.02], part: 2, mask: 1 }),
     piece(flatPoly(pOuter), 0x7c8498, { at: [0.175, 0.2, 0.02], part: 5, mask: 1 }),
@@ -230,20 +241,23 @@ export const FISH_SPEC: RigSpec = {
 
 export function fish(): Model {
   const tail = [[0, 0], [0.075, -0.11], [0.02, -0.075], [0, -0.09], [-0.02, -0.075], [-0.075, -0.11]] as const;
+  const belly = (f: Face) => Math.sin(f.a) < -0.45;
   const p: Piece[] = [
-    piece(ball(0.075, 8, 6), 0xffffff, { at: [0, 0, 0.07], scale: [0.64, 0.95, 1.35], mask: 1 }),
-    piece(ball(0.055, 6, 4), 0xf4efe4, { at: [0, -0.03, 0.08], scale: [0.6, 0.55, 1.3] }),
-    piece(ball(0.068, 7, 5), 0xffffff, { at: [0, 0, -0.02], scale: [0.6, 0.88, 1.25], part: 1, mask: 1 }),
-    piece(ball(0.05, 6, 4), 0xf4efe4, { at: [0, -0.028, -0.02], scale: [0.55, 0.5, 1.2], part: 1 }),
+    piece(L([
+      { p: [0, 0, -0.03], r: [0.042, 0.06] }, { p: [0, 0.002, 0.05], r: [0.048, 0.07, 0.068] }, { p: [0, -0.002, 0.12], r: [0.036, 0.05, 0.048] }, { p: [0, -0.006, 0.16], r: [0.016, 0.02] },
+    ], (f) => belly(f) ? 0xf4efe4 : 0xffffff, { coat: (f) => belly(f) ? 0 : 1, caps: ['open', 'pole'] }), null, { mask: 1 }),
+    piece(L([
+      { p: [0, 0, -0.1], r: [0.03, 0.045] }, { p: [0, 0, -0.03], r: [0.041, 0.06] }, { p: [0, 0, 0.0], r: [0.042, 0.061] },
+    ], (f) => belly(f) ? 0xf4efe4 : 0xffffff, { coat: (f) => belly(f) ? 0 : 1, caps: ['pole', 'open'] }), null, { part: 1, mask: 1 }),
     piece(flatPoly([[0, 0.05], [0.07, -0.02], [0, -0.07]]), 0xffffff, { at: [0, 0.065, -0.01], rot: [0, 0, Math.PI / 2], part: 1, mask: 1.8 }),
-    piece(cone(0.042, 0.1, 6), 0xffffff, { at: [0, 0, -0.1], rot: [-Math.PI / 2, 0, 0], scale: [0.65, 1, 1], part: 2, mask: 1 }),
+    piece(L([{ p: [0, 0, -0.08], r: [0.028, 0.04] }, { p: [0, 0, -0.12], r: [0.018, 0.026] }, { p: [0, 0, -0.15], r: [0.008, 0.012] }], 0xffffff), null, { part: 2, mask: 1 }),
     piece(flatPoly(tail), 0xffffff, { at: [0, 0, -0.14], rot: [0, 0, Math.PI / 2], part: 3, mask: 1.8 }),
     piece(flatPoly([[0, 0.012], [0.045, -0.015], [0.03, -0.035], [0, -0.012]]), 0xffffff, { at: [0.04, -0.02, 0.06], part: 4, mask: 1.8 }),
     piece(flatPoly(mirror([[0, 0.012], [0.045, -0.015], [0.03, -0.035], [0, -0.012]])), 0xffffff, { at: [-0.04, -0.02, 0.06], part: 5, mask: 1.8 }),
-    piece(ball(0.014, 5, 4), 0xffffff, { at: [0.042, 0.022, 0.13] }),
-    piece(ball(0.014, 5, 4), 0xffffff, { at: [-0.042, 0.022, 0.13] }),
-    piece(ball(0.009, 4, 3), PAL.ink, { at: [0.05, 0.022, 0.134] }),
-    piece(ball(0.009, 4, 3), PAL.ink, { at: [-0.05, 0.022, 0.134] }),
+    piece(ball(0.014, 6, 5), 0xffffff, { at: [0.033, 0.02, 0.122] }),
+    piece(ball(0.014, 6, 5), 0xffffff, { at: [-0.033, 0.02, 0.122] }),
+    piece(ball(0.009, 4, 3), PAL.ink, { at: [0.042, 0.02, 0.126] }),
+    piece(ball(0.009, 4, 3), PAL.ink, { at: [-0.042, 0.02, 0.126] }),
     piece(box(0.03, 0.006, 0.01), 0x8a4a3a, { at: [0, -0.01, 0.168] }),
   ];
   return { geo: assemble(p), spec: FISH_SPEC };
@@ -265,28 +279,30 @@ export const FROG_SPEC: RigSpec = {
 export function frog(): Model {
   const g = 0x7fb04a, dk = 0x55803a, belly = 0xe8e0a8;
   const p: Piece[] = [
-    piece(ball(0.08, 8, 6), g, { at: [0, 0.07, 0], scale: [1.15, 0.72, 1.25], rot: [-0.15, 0, 0], mask: 1 }),
-    piece(ball(0.06, 7, 5), belly, { at: [0, 0.05, 0.035], scale: [1.1, 0.6, 1.1] }),
-    piece(ball(0.012, 4, 3), dk, { at: [0.035, 0.115, -0.02], mask: 1 }),
-    piece(ball(0.01, 4, 3), dk, { at: [-0.03, 0.118, -0.045], mask: 1 }),
-    piece(ball(0.014, 4, 3), dk, { at: [0.01, 0.12, -0.06], mask: 1 }),
+    // one squat body: wide flat head end, round rump, pale belly, a few darker spots
+    piece(L([
+      { p: [0, 0.07, -0.1], r: 0.03 }, { p: [0, 0.07, -0.07], r: [0.075, 0.05, 0.04] }, { p: [0, 0.072, -0.01], r: [0.092, 0.058, 0.045] },
+      { p: [0, 0.07, 0.05], r: [0.088, 0.055, 0.042] }, { p: [0, 0.066, 0.095], r: [0.066, 0.04, 0.03] }, { p: [0, 0.064, 0.115], r: [0.03, 0.02] },
+    ], (f) => {
+      if (Math.sin(f.a) < -0.35) return belly;
+      return Math.sin(f.x * 70 + 1) * Math.sin(f.z * 60) > 0.72 && f.ny > 0.5 ? dk : g;
+    }, { sides: 14, coat: (f) => Math.sin(f.a) < -0.35 ? 0 : 1 }), null, { mask: 1 }),
     // eyes on top (blink squashes them)
-    piece(ball(0.03, 6, 5), g, { at: [0.045, 0.118, 0.066], part: 2, mask: 1 }),
-    piece(ball(0.03, 6, 5), g, { at: [-0.045, 0.118, 0.066], part: 2, mask: 1 }),
-    piece(ball(0.018, 6, 4), 0xf2e6a0, { at: [0.052, 0.126, 0.084], part: 2 }),
-    piece(ball(0.018, 6, 4), 0xf2e6a0, { at: [-0.052, 0.126, 0.084], part: 2 }),
-    piece(box(0.024, 0.01, 0.01), PAL.ink, { at: [0.055, 0.127, 0.1], part: 2 }),
-    piece(box(0.024, 0.01, 0.01), PAL.ink, { at: [-0.055, 0.127, 0.1], part: 2 }),
-    piece(box(0.07, 0.006, 0.01), 0x3a5a2a, { at: [0, 0.07, 0.1], rot: [0, 0, 0] }),
+    piece(ball(0.03, 8, 6), g, { at: [0.045, 0.112, 0.062], part: 2, mask: 1 }),
+    piece(ball(0.03, 8, 6), g, { at: [-0.045, 0.112, 0.062], part: 2, mask: 1 }),
+    piece(ball(0.018, 7, 5), 0xf2e6a0, { at: [0.052, 0.12, 0.08], part: 2 }),
+    piece(ball(0.018, 7, 5), 0xf2e6a0, { at: [-0.052, 0.12, 0.08], part: 2 }),
+    piece(box(0.024, 0.01, 0.01), PAL.ink, { at: [0.055, 0.121, 0.096], part: 2 }),
+    piece(box(0.024, 0.01, 0.01), PAL.ink, { at: [-0.055, 0.121, 0.096], part: 2 }),
+    piece(box(0.07, 0.006, 0.01), 0x3a5a2a, { at: [0, 0.066, 0.108], rot: [0, 0, 0] }),
     // throat sac
     piece(ball(0.036, 7, 5), 0xf3e9b0, { at: [0, 0.045, 0.085], part: 1 }),
-    // hind legs: thigh + shin/foot (fold at the sides; extend on a jump)
-    piece(ball(0.042, 6, 4), dk, { at: [0.08, 0.045, -0.02], scale: [0.7, 0.6, 1.45], rot: [0, 0.35, 0], part: 3, mask: 1 }),
-    piece(ball(0.03, 5, 4), dk, { at: [0.1, 0.022, 0.03], scale: [0.6, 0.45, 1.5], rot: [0, -0.3, 0], part: 4, mask: 1 }),
-    piece(box(0.05, 0.008, 0.045), dk, { at: [0.108, 0.005, 0.085], part: 4, mask: 1 }),
-    piece(ball(0.042, 6, 4), dk, { at: [-0.08, 0.045, -0.02], scale: [0.7, 0.6, 1.45], rot: [0, -0.35, 0], part: 5, mask: 1 }),
-    piece(ball(0.03, 5, 4), dk, { at: [-0.1, 0.022, 0.03], scale: [0.6, 0.45, 1.5], rot: [0, 0.3, 0], part: 6, mask: 1 }),
-    piece(box(0.05, 0.008, 0.045), dk, { at: [-0.108, 0.005, 0.085], part: 6, mask: 1 }),
+    // hind legs: a fat thigh and a folded shin + webbed foot (fold at the sides; extend on a jump)
+    ...[1, -1].flatMap((s) => [
+      piece(L([{ p: [s * 0.055, 0.06, -0.06], r: 0.03 }, { p: [s * 0.085, 0.045, -0.02], r: [0.03, 0.028] }, { p: [s * 0.1, 0.035, 0.03], r: [0.02, 0.018] }], dk), null, { part: s > 0 ? 3 : 5, mask: 1 }),
+      piece(L([{ p: [s * 0.1, 0.03, 0.035], r: 0.016 }, { p: [s * 0.105, 0.016, -0.01], r: [0.016, 0.012] }, { p: [s * 0.1, 0.01, -0.04], r: 0.01 }], dk), null, { part: s > 0 ? 4 : 6, mask: 1 }),
+      piece(L([{ p: [s * 0.1, 0.006, 0.03], r: [0.012, 0.004], up: [0, 1, 0] }, { p: [s * 0.108, 0.005, 0.075], r: [0.028, 0.004], up: [0, 1, 0] }, { p: [s * 0.11, 0.005, 0.1], r: [0.02, 0.003], up: [0, 1, 0] }], dk), null, { part: s > 0 ? 4 : 6, mask: 1 }),
+    ]),
     // arms
     // short splayed forearms, elbows out, hands turned out with little finger pads
     piece(box(0.016, 0.042, 0.016), g, { at: [0.058, 0.026, 0.074], rot: [0.25, 0, -0.45], part: 7, mask: 1 }),
@@ -321,29 +337,35 @@ export const RABBIT_SPEC: RigSpec = {
 };
 
 export function rabbit(): Model {
-  const fur = 0xf2ede6;
+  const fur = 0xf2ede6, cream = 0xfff8f0;
   const p: Piece[] = [
-    piece(ball(0.13, 8, 6), fur, { at: [0, 0.15, -0.03], scale: [1, 0.92, 1.25], mask: 1 }),
-    piece(ball(0.09, 7, 5), 0xfff8f0, { at: [0, 0.12, 0.05], scale: [0.95, 0.8, 1] }),
-    piece(ball(0.085, 8, 6), fur, { at: [0, 0.26, 0.13], scale: [1, 0.95, 1.1], part: 1, mask: 1 }),
-    piece(ball(0.045, 6, 4), 0xfff8f0, { at: [0, 0.235, 0.19], scale: [1.2, 0.8, 0.9], part: 1 }),
-    piece(ball(0.018, 4, 3), 0xe89aa6, { at: [0, 0.258, 0.225], part: 4 }),
-    piece(ball(0.02, 5, 4), PAL.ink, { at: [0.052, 0.285, 0.185], scale: [0.8, 1.1, 0.7], part: 1 }),
-    piece(ball(0.02, 5, 4), PAL.ink, { at: [-0.052, 0.285, 0.185], scale: [0.8, 1.1, 0.7], part: 1 }),
-    piece(ball(0.006, 3, 2), 0xffffff, { at: [0.058, 0.293, 0.195], part: 1 }),
-    piece(ball(0.006, 3, 2), 0xffffff, { at: [-0.058, 0.293, 0.195], part: 1 }),
-    piece(ball(0.036, 5, 4), fur, { at: [0.035, 0.4, 0.1], scale: [1, 2.3, 0.55], rot: [-0.2, 0, -0.12], part: 2, mask: 1 }),
-    piece(ball(0.036, 5, 4), fur, { at: [-0.035, 0.4, 0.1], scale: [1, 2.3, 0.55], rot: [-0.2, 0, 0.12], part: 3, mask: 1 }),
-    piece(ball(0.018, 4, 3), 0xe9b4b8, { at: [0.035, 0.4, 0.114], scale: [1, 3, 0.5], rot: [-0.2, 0, -0.12], part: 2 }),
-    piece(ball(0.018, 4, 3), 0xe9b4b8, { at: [-0.035, 0.4, 0.114], scale: [1, 3, 0.5], rot: [-0.2, 0, 0.12], part: 3 }),
-    piece(ball(0.045, 6, 4), 0xffffff, { at: [0, 0.17, -0.19], part: 7 }),
-    // hind: haunch + long foot
-    piece(ball(0.06, 6, 4), fur, { at: [0.075, 0.1, -0.08], scale: [0.7, 1, 1.2], part: 6, mask: 1 }),
-    piece(ball(0.06, 6, 4), fur, { at: [-0.075, 0.1, -0.08], scale: [0.7, 1, 1.2], part: 6, mask: 1 }),
-    piece(box(0.045, 0.03, 0.13), fur, { at: [0.075, 0.018, -0.04], part: 6, mask: 1 }),
-    piece(box(0.045, 0.03, 0.13), fur, { at: [-0.075, 0.018, -0.04], part: 6, mask: 1 }),
-    piece(box(0.03, 0.1, 0.03), fur, { at: [0.045, 0.06, 0.09], part: 5, mask: 1 }),
-    piece(box(0.03, 0.1, 0.03), fur, { at: [-0.045, 0.06, 0.09], part: 5, mask: 1 }),
+    // a soft loaf of a body, cream underneath
+    piece(L([
+      { p: [0, 0.17, -0.2], r: 0.04 }, { p: [0, 0.165, -0.16], r: [0.1, 0.1, 0.085] }, { p: [0, 0.155, -0.07], r: [0.13, 0.12, 0.1] },
+      { p: [0, 0.15, 0.03], r: [0.115, 0.11, 0.095] }, { p: [0, 0.17, 0.1], r: [0.085, 0.085, 0.08] }, { p: [0, 0.2, 0.13], r: 0.05 },
+    ], (f) => Math.sin(f.a) < -0.45 ? cream : fur, { sides: 14, coat: (f) => Math.sin(f.a) < -0.45 ? 0 : 1 }), null, { mask: 1 }),
+    // head: round, a little snout, cream cheeks
+    piece(L([
+      { p: [0, 0.255, 0.05], r: 0.05 }, { p: [0, 0.262, 0.1], r: [0.085, 0.08, 0.078] }, { p: [0, 0.255, 0.16], r: [0.08, 0.075, 0.07] },
+      { p: [0, 0.245, 0.205], r: [0.048, 0.042, 0.04] }, { p: [0, 0.248, 0.225], r: 0.02 },
+    ], (f) => f.t > 0.55 && Math.sin(f.a) < 0.2 ? cream : fur, { sides: 12, coat: (f) => f.t > 0.55 && Math.sin(f.a) < 0.2 ? 0 : 1 }), null, { part: 1, mask: 1 }),
+    piece(ball(0.016, 5, 4), 0xe89aa6, { at: [0, 0.256, 0.226], part: 4 }),
+    piece(ball(0.022, 8, 6), PAL.ink, { at: [0.062, 0.28, 0.158], scale: [0.6, 1.1, 0.95], rot: [0, 0.6, 0], part: 1 }),
+    piece(ball(0.022, 8, 6), PAL.ink, { at: [-0.062, 0.28, 0.158], scale: [0.6, 1.1, 0.95], rot: [0, -0.6, 0], part: 1 }),
+    piece(ball(0.007, 4, 3), 0xffffff, { at: [0.072, 0.289, 0.166], part: 1 }),
+    piece(ball(0.007, 4, 3), 0xffffff, { at: [-0.072, 0.289, 0.166], part: 1 }),
+    // long ears, pink inside
+    ...[1, -1].map((s) => piece(L([
+      { p: [s * 0.032, 0.3, 0.1], r: [0.022, 0.014], up: [0, 0, 1] }, { p: [s * 0.04, 0.37, 0.095], r: [0.036, 0.016], up: [0, 0, 1] },
+      { p: [s * 0.045, 0.45, 0.085], r: [0.03, 0.013], up: [0, 0, 1] }, { p: [s * 0.046, 0.5, 0.08], r: [0.01, 0.008], up: [0, 0, 1] },
+    ], (f) => f.nz > 0.55 && f.t > 0.15 && f.t < 0.9 ? 0xe9b4b8 : fur, { coat: (f) => f.nz > 0.55 && f.t > 0.15 && f.t < 0.9 ? 0 : 1 }), null, { part: s > 0 ? 2 : 3, mask: 1 })),
+    piece(L([{ p: [0, 0.175, -0.17], r: 0.03 }, { p: [0, 0.18, -0.2], r: 0.045 }, { p: [0, 0.18, -0.235], r: 0.02 }], 0xffffff, { sides: 9 }), null, { part: 7 }),
+    // hind: a big haunch running into a long foot
+    ...[1, -1].flatMap((s) => [
+      piece(L([{ p: [s * 0.07, 0.15, -0.13], r: [0.035, 0.05] }, { p: [s * 0.08, 0.1, -0.08], r: [0.042, 0.06] }, { p: [s * 0.08, 0.06, -0.05], r: [0.03, 0.035] }], fur), null, { part: 6, mask: 1 }),
+      piece(L([{ p: [s * 0.078, 0.025, -0.1], r: [0.022, 0.018], up: [0, 1, 0] }, { p: [s * 0.078, 0.018, -0.03], r: [0.024, 0.016], up: [0, 1, 0] }, { p: [s * 0.078, 0.014, 0.025], r: [0.016, 0.01], up: [0, 1, 0] }], fur), null, { part: 6, mask: 1 }),
+    ]),
+    ...[1, -1].map((s) => piece(L(([{ p: [s * 0.045, 0.13, 0.09], r: 0.02 }, { p: [s * 0.045, 0.06, 0.095], r: 0.017 }, { p: [s * 0.045, 0.012, 0.105], r: [0.016, 0.02] }] as Ring[]).map((r) => ({ ...r, up: [0, 0, 1] as const })), fur), null, { part: 5, mask: 1 })),
   ];
   return { geo: assemble(p), spec: RABBIT_SPEC };
 }
@@ -364,31 +386,29 @@ export const SQUIRREL_SPEC: RigSpec = {
 export function squirrel(): Model {
   const fur = 0xc0643a, belly = 0xf4dcc0, tail = 0xd07a48, tip = 0xe8a070;
   const p: Piece[] = [
-    piece(ball(0.07, 7, 5), fur, { at: [0, 0.1, 0], scale: [0.9, 1, 1.3] }),
-    piece(ball(0.05, 6, 4), belly, { at: [0, 0.09, 0.035], scale: [0.9, 0.9, 1.2] }),
-    piece(ball(0.05, 7, 5), fur, { at: [0, 0.17, 0.09], part: 1 }),
-    piece(ball(0.03, 5, 4), belly, { at: [0, 0.155, 0.125], scale: [1.2, 0.8, 0.9], part: 1 }),
-    piece(cone(0.018, 0.045, 4), fur, { at: [0.025, 0.225, 0.085], part: 1 }),
-    piece(cone(0.018, 0.045, 4), fur, { at: [-0.025, 0.225, 0.085], part: 1 }),
-    piece(box(0.004, 0.012, 0.004), 0x5a3020, { at: [0.025, 0.252, 0.085], part: 1 }),
-    piece(box(0.004, 0.012, 0.004), 0x5a3020, { at: [-0.025, 0.252, 0.085], part: 1 }),
-    piece(ball(0.012, 5, 4), PAL.ink, { at: [0.032, 0.182, 0.126], scale: [0.9, 1.1, 0.7], part: 1 }),
-    piece(ball(0.012, 5, 4), PAL.ink, { at: [-0.032, 0.182, 0.126], scale: [0.9, 1.1, 0.7], part: 1 }),
-    piece(ball(0.004, 3, 2), 0xffffff, { at: [0.036, 0.187, 0.134], part: 1 }),
-    piece(ball(0.004, 3, 2), 0xffffff, { at: [-0.036, 0.187, 0.134], part: 1 }),
-    piece(ball(0.011, 4, 3), 0x5a3020, { at: [0, 0.165, 0.14], part: 1 }),
-    // big bushy three-part tail
-    piece(ball(0.05, 6, 4), tail, { at: [0, 0.12, -0.11], scale: [0.85, 1.2, 1], part: 2 }),
-    piece(ball(0.06, 6, 4), tail, { at: [0, 0.215, -0.14], scale: [0.9, 1.3, 1], part: 3 }),
-    piece(ball(0.055, 6, 4), tip, { at: [0, 0.3, -0.11], scale: [0.9, 1.05, 1.15], part: 4 }),
-    piece(ball(0.03, 5, 4), tip, { at: [0, 0.34, -0.07], part: 4 }),
+    piece(L([
+      { p: [0, 0.1, -0.09], r: 0.03 }, { p: [0, 0.1, -0.06], r: [0.06, 0.065, 0.06] }, { p: [0, 0.1, 0.0], r: [0.064, 0.07, 0.065] },
+      { p: [0, 0.115, 0.05], r: [0.05, 0.055, 0.05] }, { p: [0, 0.14, 0.075], r: 0.03 },
+    ], (f) => Math.sin(f.a) < -0.3 ? belly : fur), null),
+    piece(L([
+      { p: [0, 0.17, 0.05], r: 0.03 }, { p: [0, 0.175, 0.08], r: [0.05, 0.048, 0.046] }, { p: [0, 0.165, 0.12], r: [0.038, 0.033, 0.03] }, { p: [0, 0.163, 0.142], r: 0.012 },
+    ], (f) => f.t > 0.5 && Math.sin(f.a) < 0 ? belly : fur), null, { part: 1 }),
+    piece(L([{ p: [0.022, 0.205, 0.08], r: [0.016, 0.008], up: [0, 0, 1] }, { p: [0.026, 0.23, 0.08], r: [0.01, 0.006], up: [0, 0, 1] }, { p: [0.027, 0.252, 0.08], r: 0.002, up: [0, 0, 1] }], fur), null, { part: 1 }),
+    piece(L([{ p: [-0.022, 0.205, 0.08], r: [0.016, 0.008], up: [0, 0, 1] }, { p: [-0.026, 0.23, 0.08], r: [0.01, 0.006], up: [0, 0, 1] }, { p: [-0.027, 0.252, 0.08], r: 0.002, up: [0, 0, 1] }], fur), null, { part: 1 }),
+    piece(ball(0.012, 6, 5), PAL.ink, { at: [0.033, 0.182, 0.112], scale: [0.9, 1.1, 0.7], part: 1 }),
+    piece(ball(0.012, 6, 5), PAL.ink, { at: [-0.033, 0.182, 0.112], scale: [0.9, 1.1, 0.7], part: 1 }),
+    piece(ball(0.004, 3, 2), 0xffffff, { at: [0.037, 0.187, 0.12], part: 1 }),
+    piece(ball(0.004, 3, 2), 0xffffff, { at: [-0.037, 0.187, 0.12], part: 1 }),
+    piece(ball(0.01, 5, 4), 0x5a3020, { at: [0, 0.166, 0.145], part: 1 }),
+    // big bushy S-curved tail in three overlapping sections
+    piece(L([{ p: [0, 0.09, -0.07], r: 0.03 }, { p: [0, 0.11, -0.115], r: [0.045, 0.05] }, { p: [0, 0.16, -0.14], r: [0.05, 0.052] }, { p: [0, 0.19, -0.145], r: 0.04 }], tail, { bump: (a, t) => 1 + 0.08 * Math.cos(a * 6 + t * 9) }), null, { part: 2 }),
+    piece(L([{ p: [0, 0.16, -0.14], r: 0.04 }, { p: [0, 0.21, -0.15], r: [0.058, 0.062] }, { p: [0, 0.26, -0.135], r: [0.055, 0.058] }, { p: [0, 0.285, -0.12], r: 0.04 }], tail, { bump: (a, t) => 1 + 0.08 * Math.cos(a * 6 + t * 9 + 1) }), null, { part: 3 }),
+    piece(L([{ p: [0, 0.26, -0.13], r: 0.04 }, { p: [0, 0.3, -0.11], r: [0.055, 0.055] }, { p: [0, 0.33, -0.08], r: [0.042, 0.042] }, { p: [0, 0.345, -0.055], r: 0.015 }], (f) => f.t > 0.45 ? tip : tail, { bump: (a, t) => 1 + 0.08 * Math.cos(a * 6 + t * 9 + 2) }), null, { part: 4 }),
     // paws (hold a nut when nibbling) and hind legs
-    piece(box(0.022, 0.06, 0.026), fur, { at: [0.03, 0.06, 0.07], part: 5 }),
-    piece(box(0.022, 0.06, 0.026), fur, { at: [-0.03, 0.06, 0.07], part: 5 }),
+    ...[1, -1].map((s) => piece(L(([{ p: [s * 0.03, 0.095, 0.065], r: 0.014 }, { p: [s * 0.03, 0.06, 0.07], r: 0.012 }, { p: [s * 0.028, 0.032, 0.075], r: 0.013 }] as Ring[]).map((r) => ({ ...r, up: [0, 0, 1] as const })), fur), null, { part: 5 })),
     piece(ball(0.02, 5, 4), 0x9a6a2a, { at: [0, 0.035, 0.08], scale: [1, 1.2, 1], part: 6 }),
     piece(cone(0.014, 0.012, 5), 0x6a4a1a, { at: [0, 0.058, 0.08], part: 6 }),
-    piece(box(0.03, 0.03, 0.085), fur, { at: [0.045, 0.015, -0.03], part: 7 }),
-    piece(box(0.03, 0.03, 0.085), fur, { at: [-0.045, 0.015, -0.03], part: 7 }),
+    ...[1, -1].map((s) => piece(L([{ p: [s * 0.045, 0.06, -0.05], r: [0.025, 0.035] }, { p: [s * 0.047, 0.03, -0.03], r: [0.022, 0.025] }, { p: [s * 0.045, 0.012, 0.01], r: [0.016, 0.01] }], fur), null, { part: 7 })),
   ];
   return { geo: assemble(p), spec: SQUIRREL_SPEC };
 }

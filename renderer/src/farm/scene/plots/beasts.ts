@@ -15,6 +15,8 @@ import type { GaitDef, LieStyle } from './gait.ts';
 import { ball, box, cached, cone, cyl, dodec, jitter, rng, sphere, torus } from './geo.ts';
 import type { V3 } from './geo.ts';
 import { P, gradient, rbox, rigMerge, roundify, tag } from './rig.ts';
+import { blob, loft, mixHex } from '../sculpt.ts';
+import type { Face, Ring } from '../sculpt.ts';
 
 export interface Coat {
   /** instance tint on coat vertices */
@@ -91,74 +93,127 @@ function cowBody(): THREE.BufferGeometry {
   return cached('beast:cow:body', () => {
     const W = 0xfbf8f0;
     const p: THREE.BufferGeometry[] = [];
-    const coat = { coat: 1 };
-    // barrel, a deeper chest and a squarer rump
-    p.push(tag(rbox(0.9, 0.74, 1.52, W, { p: [0, 1.0, -0.04] }, 0.72), coat));
-    p.push(tag(rbox(0.86, 0.78, 0.62, W, { p: [0, 0.99, 0.42] }, 0.8), coat));
-    p.push(tag(rbox(0.84, 0.66, 0.5, W, { p: [0, 1.04, -0.5] }, 0.6), coat));
-    // udder + teats
-    p.push(ball(0.17, 0xf6b4b4, { p: [0, 0.66, -0.38], s: [1.05, 0.7, 1.1] }, 1));
-    for (const [x, z] of [[0.075, -0.3], [-0.075, -0.3], [0.075, -0.46], [-0.075, -0.46]]) p.push(cone(0.03, 0.09, 5, 0xe89a9e, { p: [x, 0.56, z], r: [Math.PI, 0, 0] }));
-    // tail: the root swings about the rump, the tuft lags behind
+    // one barrel from rump to brisket: square hips, a dipped back, a round belly and a deep chest
+    p.push(tag(loft([
+      { p: [0, 1.1, -0.86], r: [0.16, 0.12, 0.16], e: 2.4 },
+      { p: [0, 1.07, -0.78], r: [0.36, 0.25, 0.32], e: 2.8 },
+      { p: [0, 1.04, -0.6], r: [0.44, 0.3, 0.38], e: 3 },
+      { p: [0, 1.0, -0.3], r: [0.45, 0.3, 0.42], e: 2.7 },
+      { p: [0, 0.98, 0.02], r: [0.47, 0.32, 0.44], e: 2.5 },
+      { p: [0, 1.0, 0.34], r: [0.45, 0.34, 0.42], e: 2.6 },
+      { p: [0, 1.04, 0.6], r: [0.41, 0.34, 0.4], e: 2.6 },
+      { p: [0, 1.06, 0.78], r: [0.28, 0.28, 0.3], e: 2.3 },
+      { p: [0, 1.08, 0.86], r: [0.12, 0.12, 0.14] },
+    ], { sides: 14, paint: W, coat: () => 1 }), { coat: 1 }));
+    // udder: one soft bag with four teats
+    p.push(blob([0, 0.62, -0.38], [0.15, 0.1, 0.17], { paint: 0xf6b4b4, sides: 10 }));
+    for (const [x, z] of [[0.065, -0.3], [-0.065, -0.3], [0.065, -0.46], [-0.065, -0.46]]) p.push(loft([
+      { p: [x, 0.57, z], r: 0.028 }, { p: [x, 0.51, z], r: 0.022 },
+    ], { sides: 6, sub: 1, paint: 0xe89a9e, caps: ['open', 'pole'] }));
+    // tail: a tapering rope that swings about the rump, the tuft lags behind
     const root: V3 = [0, 1.3, -0.8];
-    p.push(tag(cyl(0.032, 0.045, 0.34, 5, W, { p: [0, 1.14, -0.83], r: [0.1, 0, 0] }), { part: P.TAIL, joint: root, coat: 1 }));
+    p.push(tag(loft([
+      { p: [0, 1.2, -0.84], r: 0.05 }, { p: [0, 1.06, -0.87], r: 0.035 }, { p: [0, 0.97, -0.87], r: 0.03 },
+    ], { sides: 6, sub: 2, paint: W, caps: ['pole', 'open'] }), { part: P.TAIL, joint: root, coat: 1 }));
     const tipPivot: V3 = [0, 0.98, -0.85];
-    p.push(tag(cyl(0.026, 0.032, 0.3, 5, W, { p: [0, 0.84, -0.855] }), { part: P.TAIL_TIP, pivot: tipPivot, joint: root, axis: [0, 0, 1], coat: 1 }));
-    for (let i = 0; i < 5; i++) p.push(tag(dodec(0.055, i % 2 ? 0x2a2222 : 0x3a302c, { p: [((i % 3) - 1) * 0.03, 0.66 - (i > 2 ? 0.07 : 0), -0.86 + (i % 2 - 0.5) * 0.03], s: [0.9, 1.6, 0.9] }), { part: P.TAIL_TIP, pivot: tipPivot, joint: root, axis: [0, 0, 1] }));
-    return jitter(rigMerge(p), 0.02, 5);
+    const tip = { part: P.TAIL_TIP, pivot: tipPivot, joint: root, axis: [0, 0, 1] as V3 };
+    p.push(tag(loft([
+      { p: [0, 0.99, -0.87], r: 0.028 }, { p: [0, 0.8, -0.865], r: 0.024 },
+    ], { sides: 6, sub: 1, paint: W, caps: ['open', 'open'] }), { ...tip, coat: 1 }));
+    p.push(tag(loft([
+      { p: [0, 0.82, -0.865], r: 0.03 }, { p: [0, 0.74, -0.865], r: 0.065 }, { p: [0, 0.64, -0.865], r: 0.05 }, { p: [0, 0.58, -0.865], r: 0.02 },
+    ], { sides: 7, sub: 2, paint: 0x3a302c }), tip));
+    return rigMerge(p);
   });
 }
 
 function cowHead(): THREE.BufferGeometry {
   return cached('beast:cow:head', () => {
-    const W = 0xfbf8f0, J = COW_J;
+    const W = 0xfbf8f0, J = COW_J, MUZZLE = 0xf6b6ae;
     const p: THREE.BufferGeometry[] = [];
     const head = { part: P.HEAD, joint: J };
-    // neck (does not nod) + collar and bell
-    p.push(tag(rbox(0.46, 0.52, 0.62, W, { p: [0, 0.04, 0.18], r: [-0.3, 0, 0] }, 0.75), { coat: 1 }));
-    p.push(torus(0.25, 0.04, 4, 14, 0xc2533e, { p: [0, 0.0, 0.28], r: [Math.PI / 2 - 0.3, 0, 0], s: [0.95, 1.08, 1] }));
-    p.push(cone(0.075, 0.12, 6, PAL.yellow, { p: [0, -0.27, 0.36], r: [-0.3, 0, 0] }), ball(0.032, 0x8a6a20, { p: [0, -0.33, 0.34] }), box(0.05, 0.08, 0.04, 0x8a3a2e, { p: [0, -0.2, 0.37], r: [-0.3, 0, 0] }));
-    // skull, forelock, horns
-    p.push(tag(rbox(0.56, 0.5, 0.5, W, { p: [0, 0.2, 0.6] }, 0.62), { ...head, coat: 1 }));
-    for (let i = 0; i < 3; i++) p.push(tag(dodec(0.07, W, { p: [(i - 1) * 0.07, 0.46 - Math.abs(i - 1) * 0.025, 0.66 + (i % 2) * 0.04] }), { ...head, coat: 1 }));
-    for (const s of [-1, 1]) {
-      p.push(tag(cone(0.06, 0.13, 6, 0xf4e6c4, { p: [s * 0.25, 0.46, 0.56], r: [0.1, 0, -s * 1.0] }), head));
-      p.push(tag(cone(0.038, 0.1, 6, 0xe8d4a8, { p: [s * 0.33, 0.54, 0.57], r: [0.15, 0, -s * 0.25] }), head));
-    }
-    // muzzle, nostrils, mouth line, blush
-    p.push(tag(rbox(0.5, 0.28, 0.3, 0xf6b6ae, { p: [0, 0.02, 0.85] }, 0.8), head));
-    for (const s of [-1, 1]) {
-      p.push(tag(ball(0.038, 0x7a3a3a, { p: [s * 0.1, 0.05, 0.985], s: [1, 1.4, 0.45] }), head));
-      p.push(tag(ball(0.05, 0xf49a9a, { p: [s * 0.21, 0.13, 0.82], s: [1, 0.55, 0.4] }), head));
-    }
-    p.push(tag(box(0.2, 0.015, 0.02, 0x9a4a4a, { p: [0, -0.075, 0.975] }), head));
-    // jaw (chews and moos)
+    // neck (does not nod): a thick tapering trunk from the shoulders up into the skull, with a dewlap underneath
+    p.push(tag(loft([
+      { p: [0, -0.16, -0.14], r: [0.3, 0.3, 0.34] },
+      { p: [0, -0.04, 0.12], r: [0.26, 0.27, 0.32] },
+      { p: [0, 0.1, 0.38], r: [0.21, 0.23, 0.25] },
+      { p: [0, 0.16, 0.48], r: [0.18, 0.2, 0.2] },
+    ], { sides: 12, paint: W, caps: ['open', 'pole'] }), { coat: 1 }));
+    // collar and bell
+    p.push(loft([
+      { p: [0, -0.065, 0.07], r: [0.29, 0.3, 0.355] }, { p: [0, -0.035, 0.12], r: [0.292, 0.302, 0.357] }, { p: [0, -0.005, 0.17], r: [0.288, 0.298, 0.35] },
+    ], { sides: 14, sub: 1, paint: 0xc2533e, caps: ['open', 'open'] }));
+    p.push(loft([
+      { p: [0, -0.34, 0.3], r: 0.025 }, { p: [0, -0.39, 0.31], r: 0.06 }, { p: [0, -0.47, 0.32], r: 0.08 },
+    ], { sides: 8, sub: 2, paint: PAL.yellow, caps: ['pole', 'flat'] }));
+    p.push(ball(0.026, 0x8a6a20, { p: [0, -0.48, 0.32] }));
+    // skull → muzzle in one piece: broad brow, long face, a wide soft nose (painted pink, no coat)
+    p.push(tag(loft([
+      { p: [0, 0.24, 0.36], r: [0.2, 0.18, 0.18] },
+      { p: [0, 0.25, 0.5], r: [0.27, 0.24, 0.24], e: 2.4 },
+      { p: [0, 0.21, 0.66], r: [0.25, 0.22, 0.24], e: 2.3 },
+      { p: [0, 0.11, 0.8], r: [0.21, 0.15, 0.19], e: 2.2 },
+      { p: [0, 0.04, 0.9], r: [0.25, 0.15, 0.14], e: 2.6 },
+      { p: [0, 0.03, 0.97], r: [0.21, 0.11, 0.1], e: 2.6 },
+      { p: [0, 0.03, 0.99], r: [0.12, 0.06, 0.05] },
+    ], {
+      sides: 14, round: 0.3,
+      paint: (f) => f.t > 0.53 ? MUZZLE : W,
+      coat: (f) => f.t > 0.53 ? 0 : 1,
+    }), head));
+    // nostrils and a little smile
+    for (const s of [-1, 1]) p.push(tag(blob([s * 0.09, 0.05, 0.985], [0.032, 0.042, 0.014], { paint: 0x7a3a3a, sides: 8, rings: 3 }), head));
+    for (const s of [-1, 1]) p.push(tag(blob([s * 0.19, 0.12, 0.83], [0.05, 0.03, 0.02], { paint: 0xf49a9a, sides: 8, rings: 3, tilt: 0, e: 2 }), head));
+    // horns: two short curved points
+    for (const s of [-1, 1]) p.push(tag(loft([
+      { p: [s * 0.16, 0.38, 0.52], r: 0.055 }, { p: [s * 0.25, 0.44, 0.53], r: 0.045 }, { p: [s * 0.31, 0.53, 0.55], r: 0.03 }, { p: [s * 0.32, 0.6, 0.56], r: 0.012 },
+    ], { sides: 7, sub: 2, paint: (f) => f.y > 0.52 ? 0xe8d4a8 : 0xf4e6c4, caps: ['open', 'pole'] }), head));
+    // forelock tuft
+    p.push(tag(loft([
+      { p: [0, 0.4, 0.5], r: [0.09, 0.04] }, { p: [0.01, 0.44, 0.58], r: [0.08, 0.035] }, { p: [0.03, 0.42, 0.66], r: [0.04, 0.02] },
+    ], { sides: 8, sub: 2, paint: W }), { ...head, coat: 1 }));
+    // jaw (chews and moos) and the mouth behind it
     const jaw = { part: P.JAW, pivot: [0, -0.08, 0.72] as V3, joint: J, axis: [1, 0, 0] as V3 };
-    p.push(tag(rbox(0.38, 0.11, 0.24, 0xf0aaa2, { p: [0, -0.14, 0.82] }, 0.7, 2), jaw));
-    p.push(tag(box(0.3, 0.05, 0.2, 0xc86a6a, { p: [0, -0.085, 0.82] }), jaw));
-    p.push(tag(box(0.3, 0.1, 0.16, 0x5a2424, { p: [0, -0.1, 0.84] }), head));
+    p.push(tag(loft([
+      { p: [0, -0.07, 0.7], r: [0.12, 0.05] }, { p: [0, -0.1, 0.82], r: [0.16, 0.06] }, { p: [0, -0.09, 0.9], r: [0.12, 0.045] },
+    ], { sides: 10, sub: 2, paint: (f) => f.y > -0.085 ? 0xc86a6a : 0xf0aaa2 }), jaw));
+    p.push(tag(box(0.26, 0.08, 0.14, 0x5a2424, { p: [0, -0.07, 0.86] }), head));
     // eyes
-    for (const s of [-1, 1]) p.push(...eye([s * 0.14, 0.27, 0.84], 0.058, J));
+    for (const s of [-1, 1]) p.push(...eye([s * 0.2, 0.28, 0.7], 0.056, J, { side: s * 0.45 }));
     // flop ears (pink inside), a yellow tag in the left ear
     for (const s of [-1, 1]) {
-      const pivot: V3 = [s * 0.24, 0.3, 0.6];
+      const pivot: V3 = [s * 0.22, 0.3, 0.52];
       const t = { part: s > 0 ? P.EAR_L : P.EAR_R, pivot, joint: J, axis: [0, 0, s] as V3 };
-      p.push(tag(ball(0.14, W, { p: [s * 0.39, 0.25, 0.62], s: [1.3, 0.36, 0.75], r: [0.2, s * 0.25, s * -0.4] }, 1), { ...t, coat: 1 }));
-      p.push(tag(ball(0.1, 0xf4a8a8, { p: [s * 0.4, 0.235, 0.655], s: [1.2, 0.28, 0.5], r: [0.2, s * 0.25, s * -0.4] }), t));
-      if (s > 0) p.push(tag(rbox(0.08, 0.09, 0.025, PAL.yellow, { p: [0.43, 0.19, 0.69], r: [0, 0.2, -0.4] }, 0.5, 1), t));
+      p.push(tag(loft([
+        { p: [s * 0.2, 0.31, 0.52], r: [0.05, 0.03], up: [0, 0.4, 1] },
+        { p: [s * 0.3, 0.29, 0.53], r: [0.09, 0.03], up: [0, 0.4, 1] },
+        { p: [s * 0.42, 0.25, 0.55], r: [0.08, 0.025], up: [0, 0.4, 1] },
+        { p: [s * 0.48, 0.23, 0.56], r: [0.03, 0.015], up: [0, 0.4, 1] },
+      ], { sides: 10, sub: 2, paint: (f) => f.z > 0.55 + f.y * 0 && f.nz > 0.5 ? 0xf4a8a8 : W, coat: (f) => f.nz > 0.5 ? 0 : 1 }), t));
+      if (s > 0) p.push(tag(rbox(0.07, 0.08, 0.02, PAL.yellow, { p: [0.4, 0.2, 0.57], r: [0, 0.1, -0.3] }, 0.5, 1), t));
     }
     return rigMerge(p);
   });
 }
 
+/** a leg bone (modelled at its rest length, hanging from y = 0): thigh / shin with a little knee */
+const legLoft = (rings: Ring[], paint: number | ((f: Face) => number), coat?: (f: Face) => number, sides = 9) =>
+  loft(rings.map((r) => ({ ...r, up: [0, 0, 1] as V3 })), { sides, sub: 2, paint, coat });
+
 const cowUpper = () => cached('beast:cow:upper', () => rigMerge([
-  tag(rbox(0.22, 0.5, 0.24, 0xfbf8f0, { p: [0, -0.14, 0] }, 0.65, 2, 1.2), { coat: 1 }),
+  tag(legLoft([
+    { p: [0, 0.14, -0.01], r: [0.1, 0.12] }, { p: [0, 0.02, 0], r: [0.13, 0.15] }, { p: [0, -0.18, 0.01], r: [0.1, 0.11] }, { p: [0, -0.36, 0], r: [0.08, 0.085] }, { p: [0, -0.42, 0], r: [0.05, 0.05] },
+  ], 0xfbf8f0), { coat: 1 }),
 ]));
 const cowLower = () => cached('beast:cow:lower', () => rigMerge([
-  tag(rbox(0.18, 0.13, 0.19, 0xfbf8f0, { p: [0, -0.01, 0] }, 0.8, 2), { coat: 1 }),
-  tag(rbox(0.15, 0.34, 0.16, 0xfbf8f0, { p: [0, -0.17, 0] }, 0.55, 2, 1.1), { coat: 1 }),
-  rbox(0.085, 0.1, 0.19, 0x3a2e2c, { p: [0.045, -0.35, 0.012] }, 0.35, 1), rbox(0.085, 0.1, 0.19, 0x3a2e2c, { p: [-0.045, -0.35, 0.012] }, 0.35, 1),
-  rbox(0.18, 0.04, 0.18, 0x4a3a36, { p: [0, -0.3, 0.005] }, 0.4, 1),
+  tag(legLoft([
+    { p: [0, 0.04, 0], r: [0.085, 0.09] }, { p: [0, -0.04, 0], r: [0.08, 0.085] }, { p: [0, -0.2, 0], r: [0.065, 0.07] }, { p: [0, -0.3, 0.005], r: [0.07, 0.075] },
+  ], 0xfbf8f0), { coat: 1 }),
+  // hoof: a wide dark cup, cleft at the front
+  legLoft([
+    { p: [0, -0.3, 0.008], r: [0.075, 0.082] }, { p: [0, -0.36, 0.012], r: [0.088, 0.095], e: 2.6 }, { p: [0, -0.4, 0.014], r: [0.092, 0.1], e: 2.8 },
+  ], 0x3a2e2c),
+  box(0.012, 0.07, 0.03, 0x1e1616, { p: [0, -0.36, 0.105] }),
 ]));
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -167,27 +222,28 @@ const cowLower = () => cached('beast:cow:lower', () => rigMerge([
 const SHEEP_J: V3 = [0, 0.06, 0.16];
 const FACE = 0x3a3230;
 
+/** wool: soft egg-crate lumps over a hull, so a fleece reads as a cloud without being a pile of balls */
+const woolly = (k: number, around = 9, along = 7, seed = 0) => (a: number, t: number) =>
+  1 + k * (0.55 * Math.cos(a * around + seed) * Math.cos(t * Math.PI * along + seed * 0.7) + 0.45 * Math.cos(a * (around - 2) - t * 9 + seed * 1.3) * 0.5);
+
 function sheepBody(season: Season): THREE.BufferGeometry {
   return cached(`beast:sheep:body:${season}`, () => {
-    const r = rng('sheep-wool');
-    const wool = season === 'winter' ? 0xfffdf8 : 0xf8f3e6, shade = 0xe6dcc8;
+    const wool = season === 'winter' ? 0xfffdf8 : 0xf8f3e6, shade = 0xe8dfcc;
     const p: THREE.BufferGeometry[] = [];
-    const coat = { coat: 1 };
-    p.push(tag(ball(0.34, wool, { p: [0, 0.64, 0], s: [1, 0.92, 1.3] }, 1), coat));
-    // lumpy cloud: puffs scattered over an ellipsoid shell, a bit fuller on top
-    const N = 44;
-    for (let i = 0; i < N; i++) {
-      const y = 1 - (i + 0.5) / N * 1.7, rad = Math.sqrt(Math.max(0, 1 - y * y)), th = i * 2.39996 + r() * 0.4;
-      const x = Math.cos(th) * rad, z = Math.sin(th) * rad;
-      if (y < -0.55) continue;
-      const s = 0.12 + r() * 0.05 + (y > 0.3 ? 0.02 : 0);
-      p.push(tag(dodec(s, y < -0.2 ? shade : i % 4 ? wool : 0xefe8d8, { p: [x * 0.36, 0.64 + y * 0.32, z * 0.47], r: [r() * 3, r() * 3, 0] }), coat));
-    }
+    // one fleece: a fat lumpy loaf, fuller on top, a shade darker underneath
+    p.push(tag(loft([
+      { p: [0, 0.66, -0.56], r: [0.12, 0.1] },
+      { p: [0, 0.66, -0.47], r: [0.3, 0.26, 0.24] },
+      { p: [0, 0.65, -0.3], r: [0.37, 0.32, 0.28] },
+      { p: [0, 0.64, -0.05], r: [0.39, 0.34, 0.29] },
+      { p: [0, 0.65, 0.2], r: [0.38, 0.33, 0.28] },
+      { p: [0, 0.67, 0.4], r: [0.31, 0.29, 0.26] },
+      { p: [0, 0.69, 0.5], r: [0.16, 0.16, 0.15] },
+    ], { sides: 22, sub: 3, round: 0.5, bump: woolly(0.1), paint: (f) => f.ny < -0.35 ? shade : wool, coat: () => 1 }), { coat: 1 }));
     // woolly stub tail
     const root: V3 = [0, 0.72, -0.5];
-    p.push(tag(dodec(0.08, wool, { p: [0, 0.66, -0.56], s: [0.9, 1.3, 0.9] }), { part: P.TAIL, joint: root, coat: 1 }));
-    p.push(tag(dodec(0.06, wool, { p: [0, 0.57, -0.57] }), { part: P.TAIL, joint: root, coat: 1 }));
-    return jitter(rigMerge(p), 0.03, 7);
+    p.push(tag(blob([0, 0.62, -0.58], [0.07, 0.09, 0.06], { paint: wool, sides: 9, bump: woolly(0.1, 5, 3) }), { part: P.TAIL, joint: root, coat: 1 }));
+    return rigMerge(p);
   });
 }
 
@@ -196,38 +252,47 @@ function sheepHead(): THREE.BufferGeometry {
     const J = SHEEP_J, wool = 0xf8f3e6;
     const p: THREE.BufferGeometry[] = [];
     const head = { part: P.HEAD, joint: J };
-    p.push(ball(0.12, FACE, { p: [0, 0.03, 0.08], s: [0.9, 1, 1.2] }));
-    // face: long soft wedge
-    p.push(tag(ball(0.15, FACE, { p: [0, 0.04, 0.3], s: [0.85, 0.95, 1.25], r: [0.25, 0, 0] }, 1), head));
-    p.push(tag(ball(0.1, 0x4a4040, { p: [0, -0.04, 0.44], s: [1, 0.85, 0.9] }), head));
-    // nose + nostrils
-    p.push(tag(ball(0.035, 0xc89090, { p: [0, 0.0, 0.525], s: [1.4, 0.8, 0.6] }), head));
-    for (const s of [-1, 1]) p.push(tag(ball(0.014, INK, { p: [s * 0.028, 0.0, 0.545] }), head));
+    // a woolly ruff where the neck meets the fleece (does not nod)
+    p.push(tag(blob([0, 0.02, 0.04], [0.17, 0.16, 0.15], { paint: wool, sides: 14, bump: woolly(0.09, 7, 3, 1) }), { coat: 1 }));
+    // face: one long soft wedge, a greyer nose
+    p.push(tag(loft([
+      { p: [0, 0.07, 0.06], r: [0.09, 0.09] },
+      { p: [0, 0.09, 0.17], r: [0.115, 0.12, 0.11] },
+      { p: [0, 0.07, 0.31], r: [0.11, 0.105, 0.1] },
+      { p: [0, 0.01, 0.43], r: [0.08, 0.075, 0.07] },
+      { p: [0, -0.02, 0.51], r: [0.06, 0.05, 0.05] },
+    ], { sides: 12, round: 0.45, paint: (f) => f.t > 0.82 ? 0x4e4444 : FACE }), head));
+    for (const s of [-1, 1]) p.push(tag(blob([s * 0.026, -0.01, 0.535], [0.016, 0.012, 0.008], { paint: INK, sides: 6, rings: 2 }), head));
     // wool cap
-    for (let i = 0; i < 6; i++) p.push(tag(dodec(0.07 + (i % 2) * 0.015, wool, { p: [Math.cos(i * 1.9) * 0.07, 0.17 + (i % 3) * 0.02, 0.22 + Math.sin(i * 1.9) * 0.06] }), { ...head, coat: 1 }));
+    p.push(tag(blob([0, 0.19, 0.18], [0.12, 0.08, 0.12], { paint: wool, sides: 14, bump: woolly(0.12, 6, 3, 2) }), { ...head, coat: 1 }));
     // eyes (white sclera so they read on the dark face)
-    for (const s of [-1, 1]) p.push(...eye([s * 0.085, 0.09, 0.4], 0.034, J, { sclera: 0xfbf8f2, side: s * 0.35 }));
-    // side ears
+    for (const s of [-1, 1]) p.push(...eye([s * 0.088, 0.105, 0.34], 0.032, J, { sclera: 0xfbf8f2, side: s * 0.5 }));
+    // side ears: soft leaves, pink inside
     for (const s of [-1, 1]) {
       const pivot: V3 = [s * 0.11, 0.1, 0.25];
       const t = { part: s > 0 ? P.EAR_L : P.EAR_R, pivot, joint: J, axis: [0, 0, s] as V3 };
-      p.push(tag(ball(0.09, FACE, { p: [s * 0.2, 0.08, 0.24], s: [1.4, 0.38, 0.7], r: [0, s * 0.3, s * -0.15] }), t));
-      p.push(tag(ball(0.06, 0xd89a9a, { p: [s * 0.21, 0.095, 0.25], s: [1.3, 0.2, 0.5], r: [0, s * 0.3, s * -0.15] }), t));
+      p.push(tag(loft([
+        { p: [s * 0.09, 0.11, 0.24], r: [0.03, 0.018], up: [0, 0.3, 1] },
+        { p: [s * 0.17, 0.09, 0.25], r: [0.05, 0.02], up: [0, 0.3, 1] },
+        { p: [s * 0.25, 0.06, 0.26], r: [0.025, 0.014], up: [0, 0.3, 1] },
+      ], { sides: 8, sub: 2, paint: (f) => f.nz > 0.6 && f.t > 0.25 ? 0xd89a9a : FACE }), t));
     }
     // jaw + pink mouth (baa!)
     const jaw = { part: P.JAW, pivot: [0, -0.06, 0.36] as V3, joint: J, axis: [1, 0, 0] as V3 };
-    p.push(tag(ball(0.06, 0x3e3434, { p: [0, -0.1, 0.44], s: [1, 0.5, 1.2] }), jaw));
-    p.push(tag(ball(0.05, 0xd86a78, { p: [0, -0.07, 0.45], s: [1, 0.5, 1.1] }), jaw));
+    p.push(tag(loft([
+      { p: [0, -0.06, 0.36], r: [0.05, 0.025] }, { p: [0, -0.07, 0.43], r: [0.055, 0.028] }, { p: [0, -0.06, 0.49], r: [0.035, 0.02] },
+    ], { sides: 8, sub: 2, paint: (f) => f.ny > 0.5 ? 0xd86a78 : 0x3e3434 }), jaw));
     return rigMerge(p);
   });
 }
 
 const sheepUpper = () => cached('beast:sheep:upper', () => rigMerge([
-  tag(dodec(0.085, 0xf8f3e6, { p: [0, -0.03, 0], s: [1, 1.2, 1] }), { coat: 1 }),
-  box(0.07, 0.2, 0.075, FACE, { p: [0, -0.1, 0] }),
+  tag(blob([0, -0.03, 0], [0.085, 0.11, 0.085], { paint: 0xf8f3e6, sides: 10, bump: woolly(0.1, 5, 3) }), { coat: 1 }),
+  legLoft([{ p: [0, 0, 0], r: 0.036 }, { p: [0, -0.12, 0.004], r: 0.033 }, { p: [0, -0.21, 0], r: 0.03 }], FACE, undefined, 7),
 ]));
 const sheepLower = () => cached('beast:sheep:lower', () => rigMerge([
-  box(0.06, 0.2, 0.065, FACE, { p: [0, -0.1, 0] }), box(0.075, 0.045, 0.085, 0x221c1c, { p: [0, -0.2, 0.008] }),
+  legLoft([{ p: [0, 0.02, 0], r: 0.033 }, { p: [0, -0.1, 0], r: 0.028 }, { p: [0, -0.17, 0.004], r: 0.03 }], FACE, undefined, 7),
+  legLoft([{ p: [0, -0.165, 0.006], r: [0.034, 0.037] }, { p: [0, -0.22, 0.01], r: [0.042, 0.046], e: 2.6 }], 0x221c1c, undefined, 7),
 ]));
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -235,27 +300,30 @@ const sheepLower = () => cached('beast:sheep:lower', () => rigMerge([
 
 const PIG_J: V3 = [0, 0.0, 0.04];
 const PINK_TOP = 0xffd2d6, PINK_BOTTOM = 0xf09aa8;
+const pink = (y: number, y0: number, y1: number) => mixHex(PINK_BOTTOM, PINK_TOP, Math.min(1, Math.max(0, (y - y0) / (y1 - y0))));
 
 function pigBody(): THREE.BufferGeometry {
   return cached('beast:pig:body', () => {
     const p: THREE.BufferGeometry[] = [];
-    const coat = { coat: 1 };
-    p.push(tag(gradient(ball(0.36, 0xffffff, { p: [0, 0.46, -0.02], s: [0.9, 0.82, 1.3] }, 1), PINK_TOP, PINK_BOTTOM, 0.2, 0.75), coat));
-    p.push(tag(gradient(ball(0.26, 0xffffff, { p: [0, 0.47, 0.26], s: [1.1, 1.05, 1] }, 1), PINK_TOP, PINK_BOTTOM, 0.22, 0.72), coat));
-    // haunches and shoulders
-    for (const s of [-1, 1]) {
-      p.push(tag(gradient(ball(0.15, 0xffffff, { p: [s * 0.2, 0.4, -0.3], s: [0.8, 1, 1.1] }), PINK_TOP, PINK_BOTTOM, 0.25, 0.6), coat));
-      p.push(tag(gradient(ball(0.13, 0xffffff, { p: [s * 0.2, 0.4, 0.28], s: [0.8, 1, 1] }), PINK_TOP, PINK_BOTTOM, 0.25, 0.6), coat));
-    }
+    // one round barrel with a high rump and broad shoulders
+    p.push(tag(loft([
+      { p: [0, 0.5, -0.52], r: [0.12, 0.11] },
+      { p: [0, 0.49, -0.44], r: [0.27, 0.26, 0.25] },
+      { p: [0, 0.48, -0.28], r: [0.33, 0.31, 0.3] },
+      { p: [0, 0.46, -0.02], r: [0.345, 0.31, 0.32] },
+      { p: [0, 0.47, 0.24], r: [0.33, 0.3, 0.3] },
+      { p: [0, 0.48, 0.42], r: [0.26, 0.25, 0.25] },
+      { p: [0, 0.49, 0.5], r: [0.13, 0.13] },
+    ], { sides: 16, round: 0.45, blend: true, paint: (f) => pink(f.y, 0.2, 0.72), coat: () => 1 }), { coat: 1 }));
     // belly row
-    for (const z of [-0.12, 0.02, 0.16]) for (const s of [-1, 1]) p.push(ball(0.018, 0xe07a8a, { p: [s * 0.08, 0.2, z] }));
+    for (const z of [-0.12, 0.02, 0.16]) for (const s of [-1, 1]) p.push(ball(0.016, 0xe07a8a, { p: [s * 0.08, 0.155, z] }));
     // curly tail: a corkscrew that wiggles about the rump
     const root: V3 = [0, 0.56, -0.47];
     const t = { part: P.TAIL, joint: root, coat: 1 };
-    p.push(tag(torus(0.045, 0.016, 4, 10, 0xf6a8b4, { p: [0, 0.6, -0.52], r: [0, Math.PI / 2, 0] }, Math.PI * 1.7), t));
-    p.push(tag(torus(0.032, 0.014, 4, 8, 0xf6a8b4, { p: [0.012, 0.61, -0.555], r: [0.3, Math.PI / 2, 0.4] }, Math.PI * 1.5), t));
-    p.push(tag(cyl(0.017, 0.02, 0.07, 4, 0xf6a8b4, { p: [0, 0.57, -0.49], r: [-1.1, 0, 0] }), t));
-    return jitter(rigMerge(p), 0.02, 9);
+    p.push(tag(torus(0.045, 0.016, 6, 12, 0xf6a8b4, { p: [0, 0.6, -0.54], r: [0, Math.PI / 2, 0] }, Math.PI * 1.7), t));
+    p.push(tag(torus(0.032, 0.014, 6, 10, 0xf6a8b4, { p: [0.012, 0.61, -0.575], r: [0.3, Math.PI / 2, 0.4] }, Math.PI * 1.5), t));
+    p.push(tag(cyl(0.017, 0.02, 0.07, 6, 0xf6a8b4, { p: [0, 0.57, -0.51], r: [-1.1, 0, 0] }), t));
+    return rigMerge(p);
   });
 }
 
@@ -264,39 +332,51 @@ function pigHead(): THREE.BufferGeometry {
     const J = PIG_J;
     const p: THREE.BufferGeometry[] = [];
     const head = { part: P.HEAD, joint: J };
-    const coatHead = { ...head, coat: 1 };
-    p.push(tag(gradient(ball(0.25, 0xffffff, { p: [0, 0.03, 0.15], s: [1, 0.92, 0.95] }, 1), PINK_TOP, PINK_BOTTOM, -0.2, 0.25), coatHead));
-    // jowls
-    for (const s of [-1, 1]) p.push(tag(gradient(ball(0.12, 0xffffff, { p: [s * 0.12, -0.1, 0.22] }), PINK_TOP, PINK_BOTTOM, -0.2, 0.05), coatHead));
-    // snout disc + nostrils
-    p.push(tag(cyl(0.105, 0.115, 0.13, 10, 0xf6a6b2, { p: [0, -0.03, 0.4], r: [Math.PI / 2, 0, 0] }), head));
-    p.push(tag(cyl(0.1, 0.1, 0.02, 10, 0xffc0c8, { p: [0, -0.03, 0.47], r: [Math.PI / 2, 0, 0] }), head));
-    for (const s of [-1, 1]) p.push(tag(ball(0.026, 0x8a3a4a, { p: [s * 0.04, -0.03, 0.478], s: [0.8, 1.3, 0.4] }), head));
+    // head → jowls → snout in one hull; the flat end is the snout disc
+    p.push(tag(loft([
+      { p: [0, 0.03, -0.1], r: [0.16, 0.15] },
+      { p: [0, 0.05, 0.04], r: [0.23, 0.2, 0.22] },
+      { p: [0, 0.03, 0.18], r: [0.22, 0.18, 0.2] },
+      { p: [0, -0.01, 0.3], r: [0.14, 0.12, 0.12] },
+      { p: [0, -0.03, 0.37], r: [0.1, 0.09] },
+      { p: [0, -0.03, 0.45], r: [0.11, 0.1], e: 2.2 },
+    ], {
+      sides: 16, caps: ['pole', 'flat'],
+      paint: (f) => f.t >= 0.999 ? 0xffc0c8 : f.t > 0.72 ? 0xf6a6b2 : pink(f.y, -0.2, 0.22),
+      coat: (f) => f.t > 0.72 ? 0 : 1,
+    }), head));
+    for (const s of [-1, 1]) p.push(tag(blob([s * 0.04, -0.03, 0.452], [0.022, 0.034, 0.008], { paint: 0x8a3a4a, sides: 8, rings: 2 }), head));
     // blush
-    for (const s of [-1, 1]) p.push(tag(ball(0.05, 0xff8a9a, { p: [s * 0.17, -0.02, 0.3], s: [1, 0.6, 0.35], r: [0, s * 0.6, 0] }), head));
+    for (const s of [-1, 1]) p.push(tag(blob([s * 0.165, -0.02, 0.21], [0.012, 0.035, 0.05], { paint: 0xff8a9a, sides: 8, rings: 3 }), head));
     // eyes
-    for (const s of [-1, 1]) p.push(...eye([s * 0.105, 0.1, 0.35], 0.042, J));
+    for (const s of [-1, 1]) p.push(...eye([s * 0.12, 0.1, 0.25], 0.04, J, { side: s * 0.45 }));
     // triangle ears that flop forward
     for (const s of [-1, 1]) {
       const pivot: V3 = [s * 0.14, 0.2, 0.12];
-      const t = { part: s > 0 ? P.EAR_L : P.EAR_R, pivot, joint: J, axis: [1, 0, s * 0.3] as V3, coat: 1 };
-      p.push(tag(gradient(cone(0.1, 0.19, 3, 0xffffff, { p: [s * 0.18, 0.28, 0.16], r: [0.55, s * 0.5, -s * 0.45], s: [1, 1, 0.45] }), 0xffd2d6, 0xffb6c0, 0.2, 0.36), t));
-      p.push(tag(cone(0.065, 0.13, 3, 0xff9aaa, { p: [s * 0.18, 0.27, 0.185], r: [0.55, s * 0.5, -s * 0.45], s: [1, 1, 0.3] }), { ...t, coat: 0 }));
+      const t = { part: s > 0 ? P.EAR_L : P.EAR_R, pivot, joint: J, axis: [1, 0, s * 0.3] as V3 };
+      p.push(tag(loft([
+        { p: [s * 0.1, 0.19, 0.04], r: [0.08, 0.025], up: [0, 0.8, 1] },
+        { p: [s * 0.16, 0.26, 0.1], r: [0.075, 0.022], up: [0, 0.6, 1] },
+        { p: [s * 0.22, 0.29, 0.18], r: [0.04, 0.016], up: [0, 0.2, 1] },
+        { p: [s * 0.25, 0.27, 0.24], r: [0.01, 0.008], up: [0, 0, 1] },
+      ], { sides: 8, sub: 2, paint: (f) => f.nz > 0.35 && f.ny > -0.2 && f.t > 0.2 ? 0xff9aaa : 0xffc8d0, coat: (f) => f.nz > 0.35 && f.t > 0.2 ? 0 : 1 }), t));
     }
     // jaw (oink!)
     const jaw = { part: P.JAW, pivot: [0, -0.1, 0.24] as V3, joint: J, axis: [1, 0, 0] as V3 };
-    p.push(tag(ball(0.08, 0xf2a2ae, { p: [0, -0.15, 0.33], s: [1.1, 0.45, 1] }), jaw));
-    p.push(tag(ball(0.06, 0xc85a6a, { p: [0, -0.12, 0.34], s: [1.1, 0.35, 0.9] }), jaw));
+    p.push(tag(loft([
+      { p: [0, -0.12, 0.22], r: [0.07, 0.03] }, { p: [0, -0.14, 0.31], r: [0.08, 0.032] }, { p: [0, -0.12, 0.38], r: [0.05, 0.022] },
+    ], { sides: 8, sub: 2, paint: (f) => f.ny > 0.5 ? 0xc85a6a : 0xf2a2ae }), jaw));
     return rigMerge(p);
   });
 }
 
 const pigUpper = () => cached('beast:pig:upper', () => rigMerge([
-  tag(gradient(ball(0.08, 0xffffff, { p: [0, -0.05, 0], s: [1, 1.3, 1.1] }), PINK_TOP, PINK_BOTTOM, -0.12, 0.02), { coat: 1 }),
+  tag(legLoft([{ p: [0, 0.06, 0], r: 0.07 }, { p: [0, -0.04, 0.005], r: [0.085, 0.09] }, { p: [0, -0.13, 0], r: 0.055 }], PINK_BOTTOM), { coat: 1 }),
 ]));
 const pigLower = () => cached('beast:pig:lower', () => rigMerge([
-  tag(cyl(0.05, 0.045, 0.14, 6, PINK_BOTTOM, { p: [0, -0.07, 0] }), { coat: 1 }),
-  box(0.045, 0.045, 0.08, 0x8a5a5a, { p: [0.024, -0.13, 0.01] }), box(0.045, 0.045, 0.08, 0x8a5a5a, { p: [-0.024, -0.13, 0.01] }),
+  tag(legLoft([{ p: [0, 0.02, 0], r: 0.052 }, { p: [0, -0.08, 0], r: 0.046 }, { p: [0, -0.115, 0.004], r: 0.047 }], PINK_BOTTOM, undefined, 8), { coat: 1 }),
+  legLoft([{ p: [0, -0.11, 0.006], r: [0.048, 0.05] }, { p: [0, -0.15, 0.012], r: [0.054, 0.058], e: 2.6 }], 0x8a5a5a, undefined, 8),
+  box(0.008, 0.035, 0.02, 0x5a3434, { p: [0, -0.135, 0.065] }),
 ]));
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -309,32 +389,37 @@ function chickenBody(): THREE.BufferGeometry {
   return cached('beast:chicken:body', () => {
     const W = 0xfbf8f0, S = 0xece6d8;
     const p: THREE.BufferGeometry[] = [];
-    const coat = { coat: 1 };
-    p.push(tag(ball(0.17, W, { p: [0, 0.31, -0.02], s: [0.88, 0.88, 1.12], r: [-0.25, 0, 0] }, 1), coat));
-    p.push(tag(ball(0.13, W, { p: [0, 0.33, 0.1], s: [0.95, 1, 0.9] }, 1), coat));
-    p.push(tag(ball(0.12, S, { p: [0, 0.22, -0.02], s: [0.9, 0.6, 1.1] }), coat));
-    // feather tiers down the flanks
-    for (const s of [-1, 1]) for (let row = 0; row < 3; row++) for (let k = 0; k < 4; k++) {
-      const z = 0.06 - k * 0.07 - row * 0.02, y = 0.36 - row * 0.05;
-      p.push(tag(ball(0.045, row % 2 ? S : W, { p: [s * (0.135 - row * 0.005), y, z], s: [0.35, 0.55, 1], r: [0.2, s * 0.15, 0] }), coat));
-    }
-    // tail feathers: a fan of tiers
+    // one plump boat: the rump sweeps up into the tail, a round breast rises into the neck
+    p.push(tag(loft([
+      { p: [0, 0.5, -0.235], r: [0.025, 0.03] },
+      { p: [0, 0.45, -0.2], r: [0.05, 0.065] },
+      { p: [0, 0.38, -0.14], r: [0.1, 0.1, 0.1] },
+      { p: [0, 0.32, -0.06], r: [0.145, 0.13, 0.13] },
+      { p: [0, 0.3, 0.02], r: [0.155, 0.14, 0.14] },
+      { p: [0, 0.32, 0.1], r: [0.135, 0.125, 0.12] },
+      { p: [0, 0.38, 0.14], r: [0.09, 0.085, 0.08] },
+      { p: [0, 0.44, 0.13], r: [0.06, 0.06] },
+    ], { sides: 14, round: 0.4, paint: (f) => f.ny < -0.45 ? S : W, coat: () => 1 }), { coat: 1 }));
+    // tail feathers: a slim fan out of the rump that cocks up and back
     const root: V3 = [0, 0.38, -0.15];
-    const tail = { part: P.TAIL, joint: root, coat: 1 };
-    for (let i = 0; i < 5; i++) {
-      const a = (i - 2) * 0.28;
-      p.push(tag(ball(0.07, i % 2 ? S : W, { p: [Math.sin(a) * 0.05, 0.47 + Math.cos(a) * 0.02, -0.2], s: [0.28, 1.2, 0.7], r: [-0.55, 0, a] }), tail));
-    }
-    for (let i = 0; i < 3; i++) p.push(tag(ball(0.06, W, { p: [(i - 1) * 0.045, 0.42, -0.2], s: [0.3, 1, 0.7], r: [-0.9, 0, (i - 1) * 0.3] }), tail));
-    // wings with a darker trailing tier
+    p.push(tag(loft([
+      { p: [0, 0.44, -0.19], r: [0.03, 0.05] },
+      { p: [0, 0.51, -0.23], r: [0.022, 0.055] },
+      { p: [0, 0.58, -0.25], r: [0.014, 0.04] },
+      { p: [0, 0.62, -0.25], r: [0.008, 0.015] },
+    ], { sides: 8, sub: 2, round: 0.35, paint: (f) => f.t > 0.6 ? S : W, coat: () => 1 }), { part: P.TAIL, joint: root, coat: 1 }));
+    // wings: smooth folded teardrops with a darker trailing edge
     for (const s of [-1, 1]) {
       const pivot: V3 = [s * 0.12, 0.38, 0.04];
       const t = { part: s > 0 ? P.WING_L : P.WING_R, pivot, axis: [0, 0.15 * s, s] as V3, coat: 1 };
-      p.push(tag(ball(0.13, W, { p: [s * 0.145, 0.31, -0.04], s: [0.3, 0.62, 1.05], r: [0.15, 0, s * 0.08] }), t));
-      p.push(tag(ball(0.1, S, { p: [s * 0.15, 0.28, -0.11], s: [0.28, 0.5, 1], r: [0.35, 0, s * 0.1] }), t));
-      for (let k = 0; k < 2; k++) p.push(tag(ball(0.05, k % 2 ? W : S, { p: [s * 0.155, 0.27 - k * 0.012, -0.13 - k * 0.035], s: [0.25, 0.4, 1.0], r: [0.5, 0, 0] }), t));
+      p.push(tag(loft([
+        { p: [s * 0.12, 0.35, 0.08], r: [0.015, 0.045] },
+        { p: [s * 0.14, 0.33, 0.01], r: [0.024, 0.08] },
+        { p: [s * 0.142, 0.315, -0.08], r: [0.02, 0.068] },
+        { p: [s * 0.125, 0.31, -0.15], r: [0.01, 0.025] },
+      ], { sides: 10, sub: 2, paint: (f) => f.t > 0.62 ? S : W, coat: () => 1 }), t));
     }
-    return jitter(rigMerge(p), 0.025, 3);
+    return rigMerge(p);
   });
 }
 
@@ -343,35 +428,52 @@ function chickenHead(): THREE.BufferGeometry {
     const J = HEN_J, W = 0xfbf8f0;
     const p: THREE.BufferGeometry[] = [];
     const head = { part: P.HEAD, joint: J };
-    p.push(tag(ball(0.085, W, { p: [0, 0.04, 0.0], s: [1, 1.2, 1] }, 1), { coat: 1 }));
-    p.push(tag(ball(0.08, W, { p: [0, 0.16, 0.05] }, 1), { ...head, coat: 1 }));
+    // neck (does not nod)
+    p.push(tag(loft([
+      { p: [0, -0.06, -0.01], r: [0.085, 0.085] }, { p: [0, 0.04, 0.0], r: [0.072, 0.075] }, { p: [0, 0.12, 0.02], r: [0.06, 0.06] },
+    ], { sides: 12, sub: 2, paint: W, caps: ['open', 'pole'] }), { coat: 1 }));
+    // head: a round skull drawn forward toward the beak
+    p.push(tag(loft([
+      { p: [0, 0.15, -0.035], r: [0.05, 0.05] },
+      { p: [0, 0.165, 0.02], r: [0.072, 0.078, 0.074] },
+      { p: [0, 0.165, 0.08], r: [0.066, 0.07, 0.068] },
+      { p: [0, 0.155, 0.125], r: [0.038, 0.036] },
+    ], { sides: 12, sub: 2, round: 0.4, paint: W, coat: () => 1 }), { ...head, coat: 1 }));
     // beak: upper fixed, lower opens
-    p.push(tag(cone(0.03, 0.08, 5, BEAK, { p: [0, 0.155, 0.155], r: [Math.PI / 2 + 0.15, 0, 0], s: [1, 1, 0.75] }), head));
-    p.push(tag(cone(0.022, 0.05, 5, 0xe0902a, { p: [0, 0.13, 0.14], r: [Math.PI / 2 + 0.4, 0, 0], s: [1, 1, 0.6] }), { part: P.JAW, pivot: [0, 0.135, 0.11], joint: J, axis: [1, 0, 0] }));
-    // comb (wobbles) and wattle (swings)
+    p.push(tag(loft([{ p: [0, 0.158, 0.12], r: [0.03, 0.022] }, { p: [0, 0.15, 0.165], r: [0.016, 0.012] }, { p: [0, 0.14, 0.19], r: 0.004 }], { sides: 6, sub: 2, paint: BEAK }), head));
+    p.push(tag(loft([{ p: [0, 0.134, 0.115], r: [0.022, 0.012] }, { p: [0, 0.13, 0.155], r: [0.012, 0.007] }], { sides: 6, sub: 1, paint: 0xe0902a }), { part: P.JAW, pivot: [0, 0.135, 0.11], joint: J, axis: [1, 0, 0] }));
+    // comb (wobbles): one wavy crest
     const comb = { part: P.EAR_L, pivot: [0, 0.22, 0.06] as V3, joint: J, axis: [0, 0, 1] as V3 };
-    for (let i = 0; i < 4; i++) p.push(tag(ball(0.03 - Math.abs(i - 1.2) * 0.003, COMB, { p: [0, 0.255 + (i === 1 || i === 2 ? 0.015 : 0), 0.0 + i * 0.035], s: [0.55, 1.2, 0.9] }), comb));
+    p.push(tag(loft([
+      { p: [0, 0.215, -0.02], r: [0.012, 0.022, 0.02] },
+      { p: [0, 0.215, 0.01], r: [0.016, 0.055, 0.02] },
+      { p: [0, 0.215, 0.04], r: [0.017, 0.04, 0.02] },
+      { p: [0, 0.215, 0.065], r: [0.016, 0.058, 0.02] },
+      { p: [0, 0.21, 0.095], r: [0.012, 0.03, 0.02] },
+    ], { sides: 8, sub: 3, paint: COMB }), comb));
+    // wattle (swings)
     const wat = { part: P.EAR_R, pivot: [0, 0.12, 0.12] as V3, joint: J, axis: [1, 0, 0] as V3 };
-    for (const s of [-1, 1]) p.push(tag(ball(0.022, COMB, { p: [s * 0.014, 0.085, 0.125], s: [0.7, 1.4, 0.7] }), wat));
-    // eyes on the sides, a red cheek
+    p.push(tag(loft([{ p: [0, 0.125, 0.12], r: [0.018, 0.012] }, { p: [0, 0.095, 0.125], r: [0.03, 0.02] }, { p: [0, 0.07, 0.12], r: [0.02, 0.015] }], { sides: 8, sub: 2, paint: COMB }), wat));
+    // eyes on the sides, a red earlobe
     for (const s of [-1, 1]) {
-      p.push(...eye([s * 0.058, 0.18, 0.09], 0.024, J, { side: s * 0.7 }));
-      p.push(tag(ball(0.02, COMB, { p: [s * 0.07, 0.13, 0.06], s: [0.4, 1, 1] }), head));
+      p.push(...eye([s * 0.062, 0.18, 0.075], 0.022, J, { side: s * 0.75 }));
+      p.push(tag(blob([s * 0.068, 0.14, 0.04], [0.008, 0.018, 0.016], { paint: COMB, sides: 6, rings: 2 }), head));
     }
     return rigMerge(p);
   });
 }
 
 const chickenUpper = () => cached('beast:chicken:upper', () => rigMerge([
-  tag(ball(0.055, 0xf4efe4, { p: [0, -0.02, 0], s: [1, 1.3, 1.1] }), { coat: 1 }),
+  tag(blob([0, -0.02, 0], [0.058, 0.075, 0.062], { paint: 0xf4efe4, sides: 10 }), { coat: 1 }),
 ]));
 const chickenLower = () => cached('beast:chicken:lower', () => {
   const p: THREE.BufferGeometry[] = [];
-  // scaly shank: alternating bands
-  for (let i = 0; i < 4; i++) p.push(cyl(0.017 - i * 0.001, 0.018 - i * 0.001, 0.03, 5, i % 2 ? SHANK : 0xe0a030, { p: [0, -0.015 - i * 0.03, 0] }));
+  p.push(legLoft([{ p: [0, 0.0, 0], r: 0.019 }, { p: [0, -0.06, 0], r: 0.016 }, { p: [0, -0.11, 0.002], r: 0.017 }], (f) => (Math.floor(f.y * -70) % 2 ? SHANK : 0xe6a634), undefined, 6));
   // three toes forward, one back
-  for (const a of [-0.45, 0, 0.45]) p.push(box(0.016, 0.012, 0.075, SHANK, { p: [Math.sin(a) * 0.035, -0.114, Math.cos(a) * 0.035], r: [0, a, 0] }));
-  p.push(box(0.014, 0.012, 0.04, SHANK, { p: [0, -0.114, -0.02] }));
+  for (const a of [-0.5, 0, 0.5]) p.push(loft([
+    { p: [0, -0.112, 0.004], r: [0.011, 0.008] }, { p: [Math.sin(a) * 0.045, -0.116, Math.cos(a) * 0.045], r: [0.009, 0.007] }, { p: [Math.sin(a) * 0.07, -0.118, Math.cos(a) * 0.07], r: 0.004 },
+  ], { sides: 5, sub: 2, paint: SHANK }));
+  p.push(loft([{ p: [0, -0.112, 0], r: 0.009 }, { p: [0, -0.117, -0.035], r: 0.005 }], { sides: 5, sub: 1, paint: SHANK }));
   return rigMerge(p);
 });
 
@@ -381,32 +483,33 @@ const chickenLower = () => cached('beast:chicken:lower', () => {
 export const CHICK_J: V3 = [0, 0.1, 0.02];
 export function chickBody(): THREE.BufferGeometry {
   return cached('beast:chick', () => {
-    const r = rng('chick');
     const Y = 0xffe070, Y2 = 0xf6c848;
     const p: THREE.BufferGeometry[] = [];
-    p.push(tag(gradient(ball(0.07, 0xffffff, { p: [0, 0.075, 0], s: [1, 0.95, 1.1] }, 1), 0xfff0a0, Y2, 0.02, 0.13), { coat: 1 }));
-    for (let i = 0; i < 6; i++) {
-      const a = i * 2.4 + 2, e = 0.3 + r() * 0.6;
-      p.push(tag(dodec(0.022, i % 3 ? Y : Y2, { p: [Math.cos(a) * Math.cos(e) * 0.06, 0.075 + Math.sin(e) * 0.06, Math.sin(a) * Math.cos(e) * 0.07 - 0.01] }), { coat: 1 }));
-    }
-    p.push(tag(ball(0.022, Y, { p: [0, 0.1, -0.075], s: [1, 0.8, 1] }), { coat: 1 }));
+    // a fluffy egg with a stubby tail
+    p.push(tag(loft([
+      { p: [0, 0.1, -0.085], r: 0.02 },
+      { p: [0, 0.085, -0.06], r: [0.055, 0.055] },
+      { p: [0, 0.075, -0.01], r: [0.072, 0.066, 0.066] },
+      { p: [0, 0.08, 0.045], r: [0.062, 0.06, 0.058] },
+      { p: [0, 0.095, 0.075], r: 0.03 },
+    ], { sides: 12, sub: 2, blend: true, bump: woolly(0.04, 7, 4), paint: (f) => mixHex(Y2, 0xfff0a0, Math.min(1, Math.max(0, (f.y - 0.02) / 0.11))) }), { coat: 1 }));
     const head = { part: P.HEAD, joint: CHICK_J };
-    p.push(tag(ball(0.05, Y, { p: [0, 0.14, 0.035] }, 1), { ...head, coat: 1 }));
-    p.push(tag(dodec(0.018, 0xfff0a0, { p: [0, 0.19, 0.03] }), { ...head, coat: 1 }));
-    p.push(tag(cone(0.014, 0.03, 4, BEAK, { p: [0, 0.135, 0.09], r: [Math.PI / 2, 0, 0] }), head));
-    for (const s of [-1, 1]) p.push(...eye([s * 0.028, 0.155, 0.072], 0.012, CHICK_J));
+    p.push(tag(blob([0, 0.14, 0.035], [0.05, 0.048, 0.05], { paint: Y, sides: 12 }), { ...head, coat: 1 }));
+    p.push(tag(loft([{ p: [0, 0.18, 0.03], r: 0.012 }, { p: [0.004, 0.2, 0.025], r: 0.01 }, { p: [0.012, 0.212, 0.015], r: 0.003 }], { sides: 5, sub: 2, paint: 0xfff0a0 }), { ...head, coat: 1 }));
+    p.push(tag(cone(0.014, 0.03, 5, BEAK, { p: [0, 0.135, 0.092], r: [Math.PI / 2, 0, 0] }), head));
+    for (const s of [-1, 1]) p.push(...eye([s * 0.03, 0.155, 0.07], 0.012, CHICK_J, { side: s * 0.4 }));
     for (const s of [-1, 1]) {
       const t = { part: s > 0 ? P.WING_L : P.WING_R, pivot: [s * 0.06, 0.1, 0] as V3, axis: [0, 0, s] as V3, coat: 1 };
-      p.push(tag(ball(0.035, Y2, { p: [s * 0.07, 0.075, -0.01], s: [0.35, 0.8, 1.1] }), t));
+      p.push(tag(loft([{ p: [s * 0.064, 0.09, 0.02], r: [0.01, 0.022] }, { p: [s * 0.07, 0.08, -0.01], r: [0.014, 0.03] }, { p: [s * 0.066, 0.07, -0.05], r: [0.006, 0.012] }], { sides: 8, sub: 2, paint: Y2 }), t));
     }
     return rigMerge(p);
   });
 }
 export const chickLeg = () => cached('beast:chickleg', () => rigMerge([
-  cyl(0.007, 0.008, 0.035, 4, SHANK, { p: [0, -0.017, 0] }),
+  cyl(0.007, 0.008, 0.035, 5, SHANK, { p: [0, -0.017, 0] }),
   box(0.03, 0.006, 0.025, SHANK, { p: [0, -0.035, 0.008] }),
 ]));
-export const eggGeo = () => cached('beast:egg', () => rigMerge([sphere(0.06, 8, 6, 0xffffff, { p: [0, 0.07, 0], s: [1, 1.3, 1] })], { coat: 1 }));
+export const eggGeo = () => cached('beast:egg', () => rigMerge([tag(blob([0, 0.07, 0], [0.06, 0.06, 0.078], { paint: 0xffffff, sides: 10, rings: 5, tilt: Math.PI / 2 }), { coat: 1 })], { coat: 1 }));
 
 // ---------------------------------------------------------------------------------------------------------------
 // Species table

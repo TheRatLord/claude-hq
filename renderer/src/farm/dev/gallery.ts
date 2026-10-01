@@ -2,7 +2,7 @@
  * Asset gallery (/gallery/): every registered asset in isolation, with the game's lighting and post-processing.
  * Mouse: drag to orbit, wheel to zoom, right-drag to pan. Keys: G grid view, W wireframe, Space pause, R reset.
  *
- * URL (for scripts/shoot.ts): ?asset=name&variant=v&season=autumn&night=0.8&param=0.5&time=3&grid=group|all&turn=0.6
+ * URL (for scripts/shoot.ts): ?asset=name&variant=v&season=autumn&night=0.8&param=0.5&time=3&grid=group|all&turn=0.6&pitch=0.35&zoom=0.6
  * window.__gallery: { ready, list(), show(name, opts), grid(group|null), info() }
  */
 import * as THREE from 'three';
@@ -50,7 +50,7 @@ const state = {
   asset: params.get('asset') ?? '', variant: params.get('variant') ?? '', season: (params.get('season') ?? 'summer') as Season,
   night: Number(params.get('night') ?? 0), param: Number(params.get('param') ?? 0.5), paused: false, wire: false,
   grid: params.get('grid'), t: Number(params.get('time') ?? 0) || 0,
-  yaw: Number(params.get('turn') ?? 0.7), pitch: 0.35, dist: 0, target: new THREE.Vector3(),
+  yaw: Number(params.get('turn') ?? 0.7), pitch: Number(params.get('pitch') ?? 0.35), dist: 0, target: new THREE.Vector3(),
 };
 let shown: { def: AssetDef; obj: THREE.Object3D }[] = [];
 
@@ -58,7 +58,7 @@ function frameObject(o: THREE.Object3D) {
   const box = new THREE.Box3().setFromObject(o);
   const size = box.getSize(new THREE.Vector3());
   box.getCenter(state.target);
-  state.dist = Math.max(size.x, size.y, size.z) * 1.9 + 0.5;
+  state.dist = (Math.max(size.x, size.y, size.z) * 1.9 + 0.5) * Number(params.get('zoom') ?? 1);
   const r = Math.max(size.x, size.z) * 0.8 + 4;
   Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r });
   sun.shadow.camera.updateProjectionMatrix();

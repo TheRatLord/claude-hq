@@ -37,6 +37,9 @@ export function tag(g: THREE.BufferGeometry, t: Tag = {}): THREE.BufferGeometry 
     axis[i * 3] = ax[0] / al; axis[i * 3 + 1] = ax[1] / al; axis[i * 3 + 2] = ax[2] / al;
     coat[i] = t.coat ?? 0;
   }
+  // a sculpted hull may carry its own per-face coat mask (sculpt.ts `coat`), scaled by the tag's coat (default 1)
+  const pre = g.userData.coat as Float32Array | undefined;
+  if (pre) for (let i = 0; i < n; i++) coat[i] = pre[i] * (t.coat ?? 1);
   g.setAttribute('aRig', new THREE.BufferAttribute(rig, 4));
   g.setAttribute('aJoint', new THREE.BufferAttribute(joint, 3));
   g.setAttribute('aAxis', new THREE.BufferAttribute(axis, 3));
@@ -44,12 +47,17 @@ export function tag(g: THREE.BufferGeometry, t: Tag = {}): THREE.BufferGeometry 
   return g;
 }
 
-/** Tag every untagged part with `t` (default: rigid, no coat) and merge into one faceted geometry. */
+/**
+ * Tag every untagged part with `t` (default: rigid, no coat) and merge into one geometry. Parts that bring normals
+ * (sculpted hulls) keep them smooth; the rest are faceted.
+ */
 export function rigMerge(parts: THREE.BufferGeometry[], t: Tag = {}): THREE.BufferGeometry {
-  for (const p of parts) if (!p.attributes.aRig) tag(p, t);
+  for (const p of parts) {
+    if (!p.attributes.aRig) tag(p, t);
+    if (!p.attributes.normal) p.computeVertexNormals();
+  }
   const g = mergeGeometries(parts, false);
   if (!g) throw new Error('[plots] rig merge failed');
-  g.computeVertexNormals();
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;

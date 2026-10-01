@@ -19,9 +19,15 @@ export interface SkinPieceOpts {
   bone: string;
   /** blend toward another bone along a model-space axis between two coordinates (weight 0 → 1) */
   blend?: { to: string; axis: 0 | 1 | 2; from: number; till: number };
+  /**
+   * ride a bone chain (tails, one-piece legs): `bones[i]` owns the vertex at coordinate `at[i]` along `axis`, and the
+   * weight slides linearly between neighbours (overrides `bone` / `blend`; `bone` should still be the chain's root)
+   */
+  chain?: { bones: string[]; axis: 0 | 1 | 2; at: number[] };
 }
-export interface SkinPiece { g: THREE.BufferGeometry; color: number; o: SkinPieceOpts }
-export const sp = (g: THREE.BufferGeometry, color: number, o: SkinPieceOpts): SkinPiece => ({ g, color, o });
+/** `color` null keeps the geometry's own vertex colours and normals (sculpted, painted hulls) */
+export interface SkinPiece { g: THREE.BufferGeometry; color: number | null; o: SkinPieceOpts }
+export const sp = (g: THREE.BufferGeometry, color: number | null, o: SkinPieceOpts): SkinPiece => ({ g, color, o });
 
 export interface SkinnedModel {
   mesh: THREE.SkinnedMesh;
@@ -54,7 +60,8 @@ export function buildSkinned(name: string, defs: BoneDef[], pieces: SkinPiece[])
   }
   const gs = pieces.map(({ g, color, o }) => {
     const n = g.index ? g.toNonIndexed() : g.clone();
-    for (const k of Object.keys(n.attributes)) if (k !== 'position') n.deleteAttribute(k);
+    const keep = color === null ? ['position', 'normal', 'color'] : ['position'];
+    for (const k of Object.keys(n.attributes)) if (!keep.includes(k)) n.deleteAttribute(k);
     const sc = o.scale ?? 1;
     _s.set(...(typeof sc === 'number' ? [sc, sc, sc] as const : sc));
     _e.set(...(o.rot ?? [0, 0, 0] as const));
@@ -62,14 +69,30 @@ export function buildSkinned(name: string, defs: BoneDef[], pieces: SkinPiece[])
     n.applyMatrix4(_m.compose(_p, _q.setFromEuler(_e), _s));
     const pos = n.attributes.position;
     const cnt = pos.count;
-    const col = new Float32Array(cnt * 3), si = new Uint16Array(cnt * 4), sw = new Float32Array(cnt * 4);
-    _c.setHex(color);
+    const col = color === null ? (n.attributes.color.array as Float32Array) : new Float32Array(cnt * 3);
+    const si = new Uint16Array(cnt * 4), sw = new Float32Array(cnt * 4);
+    if (color !== null) _c.setHex(color);
+    const chain = o.chain ? o.chain.bones.map((b) => {
+      const i = index.get(b);
+      if (i === undefined) throw new Error(`skin ${name}: no bone ${b}`);
+      return i;
+    }) : null;
     const a = index.get(o.bone);
     if (a === undefined) throw new Error(`skin ${name}: no bone ${o.bone}`);
     const b = o.blend ? index.get(o.blend.to) : undefined;
     if (o.blend && b === undefined) throw new Error(`skin ${name}: no bone ${o.blend.to}`);
     for (let i = 0; i < cnt; i++) {
-      col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
+      if (color !== null) { col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b; }
+      if (chain && o.chain) {
+        const v = pos.getComponent(i, o.chain.axis), at = o.chain.at;
+        const dir = at[at.length - 1] >= at[0] ? 1 : -1;
+        let k = 0;
+        while (k < at.length - 2 && (v - at[k + 1]) * dir > 0) k++;
+        const w = Math.min(1, Math.max(0, (v - at[k]) / (at[k + 1] - at[k] || 1)));
+        si[i * 4] = chain[k]; si[i * 4 + 1] = chain[k + 1];
+        sw[i * 4] = 1 - w; sw[i * 4 + 1] = w;
+        continue;
+      }
       let w = 0;
       if (o.blend && b !== undefined) {
         // per-vertex (coincident corners share a weight, so the surface never tears)
@@ -79,7 +102,8 @@ export function buildSkinned(name: string, defs: BoneDef[], pieces: SkinPiece[])
       si[i * 4] = a; si[i * 4 + 1] = b ?? 0;
       sw[i * 4] = 1 - w; sw[i * 4 + 1] = w;
     }
-    n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (color !== null) n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (!n.attributes.normal) n.computeVertexNormals();
     n.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
     n.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
     g.dispose();
@@ -88,7 +112,6 @@ export function buildSkinned(name: string, defs: BoneDef[], pieces: SkinPiece[])
   const geo = mergeGeometries(gs, false);
   for (const g of gs) g.dispose();
   if (!geo) throw new Error(`skin ${name}: merge failed`);
-  geo.computeVertexNormals();
   geo.computeBoundingSphere();
   const mat = toon(0xffffff, { vertexColors: true, shared: false });
   const mesh = new THREE.SkinnedMesh(geo, mat);
