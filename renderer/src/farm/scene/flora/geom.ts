@@ -52,16 +52,3 @@ export function blade(h: number, w: number, lean: number, yaw: number, curl = 0.
   g.rotateY(yaw);
   return g;
 }
-
-/** Per-face colour jitter on a non-indexed geometry (hand-painted variety). */
-export function faceJitter(g: THREE.BufferGeometry, k: number, seed: number): THREE.BufferGeometry {
-  const c = g.attributes.color;
-  let s = seed >>> 0;
-  const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  for (let i = 0; i < c.count; i += 3) {
-    const m = 1 + (r() - 0.5) * 2 * k;
-    for (let j = 0; j < 3 && i + j < c.count; j++) c.setXYZ(i + j, c.getX(i + j) * m, c.getY(i + j) * m, c.getZ(i + j) * m);
-  }
-  c.needsUpdate = true;
-  return g;
-}

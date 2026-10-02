@@ -23,7 +23,8 @@ import path from 'node:path';
 import { chromium } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { startDev, REPO } from './devserver.ts';
-import { GPU_ARGS, contactSheet } from './shoot.ts';
+import { GPU_ARGS } from './gpu.ts';
+import { contactSheet } from './shoot.ts';
 import { CHECKS, allowedBy, findingId, sortFindings, summarize } from '../renderer/src/farm/dev/placementCore.ts';
 import type { AllowEntry, Box, Finding } from '../renderer/src/farm/dev/placementCore.ts';
 

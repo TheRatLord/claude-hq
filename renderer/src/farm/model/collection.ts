@@ -9,6 +9,7 @@
  */
 import type { Season, WeatherKind } from './types.ts';
 import { dayKey } from './almanac.ts';
+import { mulberry32 } from '../../../../shared/identity.ts';
 
 export type CollectKind = 'forage' | 'fish';
 /** where a forageable grows: open meadow, under / beside trees, the water's edge, the foot of the cliffs */
@@ -171,23 +172,15 @@ const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
 export const collectDef = (id: string): CollectDef | undefined => BY_ID.get(id);
 
 // ---------------------------------------------------------------------------------------------
-// Deterministic randomness (same mixing as shared/identity, kept local so the module stays standalone)
+// Deterministic randomness for the day's plans (forage spots, requests, wild visits): plain FNV-1a over UTF-16 code
+// units (NOT shared/identity's hash32, whose avalanche finaliser would reshuffle every seeded day) + mulberry32
 
 export function hashKey(s: string): number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-export function rand(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export const rand: (seed: number) => () => number = mulberry32;
 const weighted = <T extends { weight: number }>(xs: readonly T[], r: () => number): T => {
   let sum = 0;
   for (const x of xs) sum += x.weight;

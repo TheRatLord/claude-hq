@@ -13,7 +13,7 @@ import type { Platform } from '../platform.ts';
 import { TERM_FONT as MONO, injectTerminalStyles } from './styles.ts';
 import { createInputPipe, PASTE_HARD_CAP } from './input.ts';
 import { lifeView, peekKey, type LifeView } from './lifecycle.ts';
-import { gridFor, letterbox, hardMinPx, type Grid } from './fit.ts';
+import { letterbox, hardMinPx, type Grid } from './fit.ts';
 
 import { copyText, readClipboard, setPrimary, getPrimary } from './clipboard.ts';
 import { terminalKey, type TerminalKeyAction } from './keys.ts';
@@ -790,14 +790,4 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     chip(key, spec) { if (!!spec !== chips.has(key) || (spec && chips.get(key)?.firstChild?.textContent !== spec.text)) chip(key, spec); },
   };
   return view;
-}
-
-/**
- * Best grid for a terminal host box at the user's font size.
- */
-export function terminalGrid(box: HTMLElement, px: number): Grid | null {
-  const c = cellSize(px);
-  const w = box.clientWidth - PAD_W, hh = box.clientHeight - PAD_H;
-  if (w <= 0 || hh <= 0) return null;
-  return gridFor(w, hh, c.w, c.h);
 }

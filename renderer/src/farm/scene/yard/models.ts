@@ -28,6 +28,8 @@ export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   // the first-run welcome's present (model/onboarding.ts)
   welcome: 0.35,
   'keep-posy': 0.4, 'keep-bram': 0.4, 'keep-hazel': 0.4, 'keep-marigold': 0.4, 'keep-fern': 0.4, 'keep-nimbus': 0.4,
+  // the stamp book's trophies (model/stamps.ts)
+  'trophy-bronze': 0.35, 'trophy-silver': 0.35, 'trophy-gold': 0.4,
 });
 
 /** keepsake portraits: the villager's body colour, role hat colour and the canvas backdrop */
@@ -55,6 +57,37 @@ function keepsake(k: Kit, who: string): void {
   k.box(0.34, 0.07, 0.02, hat, at(0, 0.07));
   k.box(0.22, 0.08, 0.02, hat, at(0, 0.13));
   k.box(0.58, 0.05, 0.02, 0x6fae4f, at(0, -0.235, -0.005));
+}
+
+/** metal, shade per stamp-book trophy tier */
+const CUP: Readonly<Record<string, readonly [number, number]>> = {
+  bronze: [0xc07a3a, 0x8a5226], silver: [0xd4dbe2, 0x98a4b0], gold: [GOLD, GOLD_DARK],
+};
+
+/** A stamp-book trophy: a loving cup with two handles on a wooden plinth, a red ink stamp on the plinth's face. */
+function trophy(k: Kit, tier: string): void {
+  const [metal, dark] = CUP[tier] ?? CUP.bronze;
+  const big = tier === 'gold' ? 1.15 : 1;
+  k.surf(['planks', { scale: 0.5 }], () => k.box(0.44 * big, 0.34, 0.44 * big, PAL.woodDark, { y: 0.17 }));
+  k.box(0.5 * big, 0.04, 0.5 * big, PAL.wood, { y: 0.36 });
+  // the inked stamp on the front of the plinth: a square of red with a cream centre
+  k.box(0.18, 0.18, 0.012, 0xc8402e, { y: 0.18, z: 0.22 * big + 0.004 });
+  k.box(0.12, 0.12, 0.012, 0xf3e6c8, { y: 0.18, z: 0.22 * big + 0.01 });
+  k.ball(0.035, 0xc8402e, { y: 0.18, z: 0.22 * big + 0.016, s: [1, 1, 0.4] });
+  // foot, stem, knop, bowl, rim
+  k.cyl(0.13 * big, 0.05, dark, { y: 0.405 }, 10, 0.1 * big);
+  k.cyl(0.035 * big, 0.14, metal, { y: 0.5 }, 8);
+  k.ball(0.055 * big, metal, { y: 0.57 });
+  k.cyl(0.06 * big, 0.26 * big, metal, { y: 0.6 + 0.13 * big }, 12, 0.17 * big);
+  k.cyl(0.17 * big, 0.03, dark, { y: 0.6 + 0.26 * big }, 12);
+  // handles: three short beams each side
+  for (const s of [-1, 1]) {
+    const x0 = s * 0.12 * big, x1 = s * 0.24 * big, y0 = 0.62 + 0.05 * big, y1 = 0.6 + 0.22 * big;
+    k.beam(x0, y1, 0, x1, y1, 0, 0.03, metal);
+    k.beam(x1, y1, 0, x1, y0, 0, 0.03, metal);
+    k.beam(x1, y0, 0, x0 * 0.7, y0 - 0.04, 0, 0.03, metal);
+  }
+  if (tier === 'gold') k.cone(0.05, 0.08, GOLD, { y: 0.6 + 0.3 * big }, 5);
 }
 
 function gnome(k: Kit, hat: number, gold: boolean): void {
@@ -394,7 +427,9 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
       }
       break;
     }
-    default: if (id.startsWith('keep-')) keepsake(k, id.slice(5));
+    default:
+      if (id.startsWith('keep-')) keepsake(k, id.slice(5));
+      else if (id.startsWith('trophy-')) trophy(k, id.slice(7));
   }
   return out;
 }

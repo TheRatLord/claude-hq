@@ -1,0 +1,52 @@
+/* The stamp book (hud/stamps.ts): the Almanac panel's Stamps tab, and the stamp in an earned-stamp toast. */
+
+/* tabs on the Almanac panel (hud/almanac.ts) */
+.vh-al-tabs { display: flex; gap: 6px; padding: 0 4px 2px; border-bottom: 2px dashed rgba(122,82,49,.28); }
+.vh-al-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 7px; border: 2px solid rgba(122,82,49,.4); border-bottom: none;
+  border-radius: 10px 10px 0 0; background: rgba(255,246,224,.55); color: var(--ink-soft); font: 800 13.5px/1 var(--round); cursor: pointer; margin-bottom: -2px; }
+.vh-al-tabs button:hover { color: var(--ink); background: #fff6e0; }
+.vh-al-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); border-color: var(--wood-dark); }
+.vh-al-tabs button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.vh-al-tabs .n { font-weight: 700; color: var(--ink-faint); font-size: 12px; }
+.vh-al-page[hidden] { display: none !important; }
+.vh-al-page { display: flex; flex-direction: column; gap: 12px; }
+
+/* the page */
+.vh-stampbook { display: flex; flex-direction: column; gap: 10px; }
+.vh-sb-head { display: flex; align-items: center; gap: 14px; padding: 6px 10px; border-radius: 12px; background: rgba(255,246,224,.6); box-shadow: inset 0 0 0 1.5px rgba(122,82,49,.2); }
+.vh-sb-head .t { flex: 1; min-width: 0; }
+.vh-sb-head .cnt { font: 800 19px/1.15 var(--serif, Georgia, serif); }
+.vh-sb-head .sub { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.vh-sb-head .cups { display: flex; gap: 8px; }
+.vh-sb-head .cup { display: flex; flex-direction: column; align-items: center; gap: 1px; color: #c9b89a; font: 800 11px/1 var(--round); opacity: .7; }
+.vh-sb-head .cup .ic { width: 28px; height: 28px; display: block; }
+.vh-sb-head .cup .ic svg { width: 100%; height: 100%; }
+.vh-sb-head .cup.have { opacity: 1; }
+.vh-sb-head .cup.have[data-tier="bronze"] { color: #b06a2c; }
+.vh-sb-head .cup.have[data-tier="silver"] { color: #8d9aa8; }
+.vh-sb-head .cup.have[data-tier="gold"] { color: #e0a51c; }
+.vh-sb-head .cup b { color: var(--ink-soft); }
+
+.vh-sb-pages { display: flex; flex-direction: column; gap: 6px; }
+.vh-sb-sec .vh-h3 { margin: 4px 2px 6px; }
+.vh-sb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
+.vh-stamp { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px 7px; border-radius: 10px; text-align: center;
+  background: rgba(255,250,236,.55); box-shadow: inset 0 0 0 1px rgba(122,82,49,.14); outline: none; }
+.vh-stamp:focus-visible { box-shadow: inset 0 0 0 2px var(--gold); }
+.vh-stamp .art { width: 84px; height: 84px; display: grid; place-items: center; }
+.vh-stamp img { width: 84px; height: 84px; display: block; user-select: none; }
+.vh-stamp .nm { font: 800 12.5px/1.15 var(--round); color: var(--ink); }
+.vh-stamp .sub { font-size: 11px; line-height: 1.25; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.vh-stamp.inked .nm { color: var(--ink); }
+.vh-stamp.inked .art { animation: vh-stamp-in .45s cubic-bezier(.2,1.6,.4,1) both; }
+.vh-stamp.blank .nm, .vh-stamp.secret .nm { color: var(--ink-faint); }
+.vh-stamp.blank .sub { font-style: italic; }
+.vh-stamp.secret .sub { font-style: italic; color: var(--ink-faint); }
+.vh-stamp .bar { width: 82%; height: 5px; margin-top: 3px; border-radius: 3px; background: rgba(59,42,30,.12); overflow: hidden; position: relative; }
+.vh-stamp .bar[hidden] { display: none; }
+.vh-stamp .bar i { display: block; height: 100%; border-radius: inherit; background: var(--stamp-ink, var(--gold)); opacity: .75; }
+.vh-stamp:has(.bar:not([hidden])) .sub { -webkit-line-clamp: 2; }
+@keyframes vh-stamp-in { 0% { transform: scale(1.5) rotate(-6deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: none; } }
+
+/* the earned toast's icon: the inked stamp itself */
+.vh-ico .vh-stamp-ico { width: 100%; height: 100%; display: block; transform: scale(1.25); }

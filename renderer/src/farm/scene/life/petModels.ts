@@ -39,6 +39,17 @@ export interface PetDims {
   tail: string[];
   /** half height of the barrel (lying / rolled clearance) */
   belly: number;
+  /** body bone height when sitting */
+  sitY: number;
+  /** head top above the body bone (hearts, look-at) */
+  headTop: number;
+  /** resting tail carriage (default: Biscuit's curl over the back / Mochi's question mark) */
+  tailLift?: number;
+  tailCurl?: number;
+  /** dog rig with the tail authored straight back (along −z) instead of up: it wags about y, lift raises it */
+  tailBack?: boolean;
+  /** floppy ears (hanging from the top of the head): perk lifts them forward, flat-back flies them out */
+  flopEars?: boolean;
 }
 
 export interface PetModel extends SkinnedModel { dims: PetDims }
@@ -162,7 +173,7 @@ export function dogModel(): PetModel {
   return {
     ...m,
     dims: {
-      kind: 'dog', standY: 0.425, restY: 0.44, scale: 1, belly: 0.19,
+      kind: 'dog', standY: 0.425, restY: 0.44, scale: 1, belly: 0.19, sitY: 0.3, headTop: 0.38,
       legs: [lf(['lf0', 'lf1', 'lf2'], 'chest', 0.185, 0.175, 1), lf(['rf0', 'rf1', 'rf2'], 'chest', 0.185, 0.175, 1),
         lf(['lh0', 'lh1', 'lh2'], 'hips', 0.19, 0.18, -1), lf(['rh0', 'rh1', 'rh2'], 'hips', 0.19, 0.18, -1)],
       neutral: [[0.1, 0.235], [-0.1, 0.235], [0.1, -0.225], [-0.1, -0.225]],
@@ -284,7 +295,7 @@ export function catModel(): PetModel {
   return {
     ...m,
     dims: {
-      kind: 'cat', standY: 0.25, restY: 0.26, scale: 0.6, belly: 0.1,
+      kind: 'cat', standY: 0.25, restY: 0.26, scale: 0.6, belly: 0.1, sitY: 0.19, headTop: 0.2,
       legs: [lf(['lf0', 'lf1', 'lf2'], 'chest', 0.112, 0.108, 1), lf(['rf0', 'rf1', 'rf2'], 'chest', 0.112, 0.108, 1),
         lf(['lh0', 'lh1', 'lh2'], 'hips', 0.115, 0.115, -1), lf(['rh0', 'rh1', 'rh2'], 'hips', 0.115, 0.115, -1)],
       neutral: [[0.052, 0.15], [-0.052, 0.15], [0.055, -0.14], [-0.055, -0.14]],

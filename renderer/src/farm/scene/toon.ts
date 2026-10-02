@@ -91,17 +91,3 @@ export function paint(g: THREE.BufferGeometry, color: number | THREE.Color): THR
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
   return g;
 }
-
-/** Deterministic per-vertex colour jitter (±k in lightness), for hand-painted variety on flat-shaded meshes. */
-export function jitterColors(g: THREE.BufferGeometry, k = 0.05, seed = 1): THREE.BufferGeometry {
-  const col = g.attributes.color;
-  if (!col) return g;
-  let s = seed >>> 0;
-  const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  for (let i = 0; i < col.count; i++) {
-    const d = (r() - 0.5) * 2 * k;
-    col.setXYZ(i, Math.max(0, col.getX(i) + d), Math.max(0, col.getY(i) + d), Math.max(0, col.getZ(i) + d));
-  }
-  col.needsUpdate = true;
-  return g;
-}

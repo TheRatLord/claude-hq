@@ -269,11 +269,6 @@ function pumpkinProp(k: Kit, t: Xf, r = 0.25): void {
   });
 }
 
-/** Snow cap on a flat-ish top (winter). */
-export function snowCap(k: Kit, t: Xf, w: number, d: number): void {
-  k.box(w, 0.12, d, PAL.snow, t);
-}
-
 export const barrel = labelled('barrel', barrelProp);
 export const crate = labelled('crate', crateProp);
 export const hayBale = labelled('hayBale', hayBaleProp);

@@ -22,7 +22,7 @@ import type { DecorDef } from '../model/shop.ts';
 import { WORK_CAP, YARD_SLOTS } from '../model/wallet.ts';
 import type { Piece, ShopEntry, WalletChange, WalletService } from '../model/wallet.ts';
 import { collectIcon } from './collection.ts';
-import { ICONS, icon } from './icons.ts';
+import { ICONS, INK, ITEM_OUTLINE as ol, icon, svgIcon as S } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
 /** what the panel needs from the scene's yard (service 'yard', scene/yard/yard.ts) */
@@ -37,9 +37,6 @@ export type ShopTab = 'buy' | 'sell' | 'yard';
 /** where the panel was opened: at the store (buy + sell), with Bram (sell), anywhere else (look only) */
 export type ShopAt = 'store' | 'bram' | 'pocket';
 
-const INK = '#3b2a1e';
-const ol = `stroke="${INK}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"`;
-const S = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 
 /** a copper bit stamped with a sprout */
 export const COIN_ICON = S(`<circle cx="12" cy="12" r="9.5" fill="#e0913f" ${ol}/><circle cx="12" cy="12" r="7" fill="none" stroke="#a85f22" stroke-width="1.2"/>`

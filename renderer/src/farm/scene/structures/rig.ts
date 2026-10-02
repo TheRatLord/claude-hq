@@ -80,6 +80,4 @@ export function levelsFromParam(p: number, out: Levels): Levels {
   out.gpu = p; out.tempC = 25 + 75 * p; out.temp = p; out.host = 'gallery';
   return out;
 }
-
-export const fmtBytes = (b: number): string => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB/s` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB/s` : b >= 1e3 ? `${Math.round(b / 1e3)} KB/s` : `${Math.round(b)} B/s`);
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;

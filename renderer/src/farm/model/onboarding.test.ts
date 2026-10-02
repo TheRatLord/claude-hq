@@ -19,7 +19,7 @@ test('onboarding: steps are the tour in order, the pastime last; the welcome dec
   assert.ok(def?.gift, 'the welcome piece is a gift');
   assert.equal(lockOf(def!, { rank: 9, season: 'summer', owned: 0 }), 'keepsake');
   assert.ok(!shopView(emptyWallet(), { rank: 9, season: 'summer' }).some((e) => e.def.id === WELCOME_DECOR), 'never on the shelves');
-  assert.equal(DECOR.filter((d) => d.gift).length, 1);
+  assert.equal(DECOR.filter((d) => d.gift && !d.id.startsWith('trophy-')).length, 1, 'the only gift besides the stamp book trophies (model/stamps.ts)');
 });
 
 test('onboarding: signals only count while the checklist runs; steps tick in any order; next = first open', () => {

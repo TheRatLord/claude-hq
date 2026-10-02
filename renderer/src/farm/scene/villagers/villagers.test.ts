@@ -119,6 +119,7 @@ function state(o: Partial<ValleyState> = {}): ValleyState {
     now: 0, link: 'live', demo: true, farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
     sky: { hour: 14.5, daylight: 1, season: 'autumn', dayOfYear: 274, weather: { kind: 'rain', intensity: 0.5, clouds: 0.8, wind: 3, windDir: 0 }, trace: { wet: 1, snow: 0, sinceRain: null }, festival: { active: null, next: null } },
     almanac: almanacView(emptyAlmanac(), 0),
+    timeline: { day: '', now: 0, farmers: new Map(), rev: 0 },
     ...o,
   };
 }

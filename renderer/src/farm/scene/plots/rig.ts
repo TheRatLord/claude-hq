@@ -63,9 +63,6 @@ export function rigMerge(parts: THREE.BufferGeometry[], t: Tag = {}): THREE.Buff
   return g;
 }
 
-/** Shorthand: tag a list of parts with the same tag and return them (for spreading into a parts list). */
-export const tagAll = (t: Tag, ...gs: THREE.BufferGeometry[]): THREE.BufferGeometry[] => gs.map((g) => tag(g, t));
-
 /** Vertical colour gradient over a painted part (pig pinks, chick fluff, wool shading). */
 export function gradient(g: THREE.BufferGeometry, top: number, bottom: number, y0: number, y1: number): THREE.BufferGeometry {
   const pos = g.attributes.position, col = g.attributes.color as THREE.BufferAttribute;

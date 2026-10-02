@@ -640,5 +640,3 @@ export function show(ctx: SceneCtx, keys: string[], focus: Box, view: number): {
   const vx = c[0] - p.x, vy = c[1] - p.y, vz = c[2] - p.z;
   return { x: p.x, y: p.y, z: p.z, yaw: Math.atan2(-vx, -vz), pitch: Math.atan2(vy, Math.hypot(vx, vz)) };
 }
-
-export const lastFindings = (): Finding[] => findings;

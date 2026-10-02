@@ -3,11 +3,14 @@
  * Keyboard-first: type to filter, ↑/↓ to move, Enter = terminal, Shift+Enter (or W) = walk there, Ctrl+I (or C) = card,
  * Ctrl+Enter = give an idle / finished farmer a new task. The summary chips (needs you · working · done · idle) are
  * status filters (click the active chip again for everyone); typing "needs", "working", "done" filters by text too.
+ * Each farmer row carries a mini day strip (timeline.ts) on one shared window, so the agents' days compare at a glance.
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
 import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, rosterFilterHit, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS, type RosterFilter } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
+import { earliest, stripRange } from '../model/timeline.ts';
+import { paintMiniStrip } from './timeline.ts';
 
 const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
@@ -59,6 +62,9 @@ export function createRoster(ctx: HudCtx): Panel {
   let visible: string[] = [];
   let sig = '';
   const rowEls = new Map<string, HTMLElement>();
+  /** per row: its mini day strip (kept across row refills) */
+  const strips = new Map<string, HTMLElement>();
+  const stripOf = (id: string) => { let el = strips.get(id); if (!el) { el = h('span.vh-lstrip', { 'data-testid': 'roster-day' }); strips.set(id, el); } return el; };
 
   const select = (id: string | null, scroll = true) => {
     sel = id;
@@ -105,6 +111,7 @@ export function createRoster(ctx: HudCtx): Panel {
       row.replaceChildren(
         face, h('div.nm', { title: [shortName(f), alt].filter(Boolean).join('\n') }, h('span.n', { text: nm }), h('small', { text: alt ? `${kindLine(f)} · ${alt}` : kindLine(f) })),
         h('div', null, h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status] })),
+        stripOf(id),
         job,
         h('div.since', null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
         acts);
@@ -117,6 +124,7 @@ export function createRoster(ctx: HudCtx): Panel {
       row.replaceChildren(
         face, h('div.nm', { title: [shortName(hp), alt].filter(Boolean).join('\n') }, h('span.n', { text: nm }), h('small', { text: alt ? `Scarecrow · ${alt}` : 'Scarecrow · shell' })),
         h('div', null, h('span.vh-pill', { text: hp.running ? 'Running' : hp.exit === 'fail' ? 'Failed' : 'Resting', style: { background: hp.running ? '#c98f12' : hp.exit === 'fail' ? '#d0584a' : '#a08a68' } })),
+        h('span.vh-lstrip', { 'aria-hidden': 'true' }),
         h('div.job', { title: hp.label }, h('b', { text: HELPER_LABEL[hp.activity] }), hp.label ? ` · ${hp.label}` : '', hp.ports.length ? ` · :${hp.ports.join(' :')}` : ''),
         h('div.since', null, ago), acts);
     }
@@ -163,7 +171,7 @@ export function createRoster(ctx: HudCtx): Panel {
         }
         nodes.push(grp);
       }
-      for (const id of [...rowEls.keys()]) if (!live.has(id)) rowEls.delete(id);
+      for (const id of [...rowEls.keys()]) if (!live.has(id)) { rowEls.delete(id); strips.delete(id); }
       const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
       if (!visible.length && only) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), `Nobody ${only === 'needs' ? 'needs you' : `is ${only === 'done' ? 'done' : only}`}${q ? ` matching "${q}"` : ''} right now.`,
         h('small', { text: 'Click the chip again to see everyone.' })));
@@ -182,11 +190,19 @@ export function createRoster(ctx: HudCtx): Panel {
       const hs = `${g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}`;
       if (head && head.dataset.sig !== hs) { const nh = groupHead(g); nh.dataset.sig = hs; head.replaceWith(nh); }
     }
+    // day strips share one window (the earliest record today → now, in 5-minute steps) and repaint only on a change
+    const tl = s.timeline;
+    const range = stripRange(earliest(tl.farmers.values()), Math.floor(tl.now / 300_000) * 300_000 || tl.now);
     for (const [id, re] of rowEls) {
       const r = byId.get(id);
       if (!r) continue;
       const rs = rowSig(r);
       if (re.dataset.sig !== rs) { re.dataset.sig = rs; fillRow(re, r); }
+      if (r.kind === 'farmer') {
+        const st = stripOf(id), fd = tl.farmers.get(id);
+        const ds = `${fd?.rev ?? -1}|${range.from}|${range.to}`;
+        if (st.dataset.sig !== ds) { st.dataset.sig = ds; paintMiniStrip(st, fd, range.from, range.to); }
+      }
       if (r.kind === 'farmer') {
         const t = re.querySelector('.since .t');
         const txt = dur(s.now - r.f.lastActive);

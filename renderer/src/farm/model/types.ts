@@ -9,6 +9,7 @@
 import type { Kind, ModelTier, Status, ToolClass } from '../../../../shared/protocol.ts';
 import type { AlmanacView } from './almanac.ts';
 import type { FestivalView } from './calendar.ts';
+import type { TimelineView } from './timeline.ts';
 
 /** What a farmer is visibly doing. Coarse on purpose: tool churn inside a family never shows as a switch. */
 export const JOBS = Object.freeze([
@@ -271,6 +272,8 @@ export interface ValleyState {
   almanac: AlmanacView;
   gauges: Gauges | null;
   sky: Sky;
+  /** each farmer's day so far: spans of what they did, asks + how long they waited, ships, test runs (model/timeline.ts) */
+  timeline: TimelineView;
 }
 
 /** What the presentation may ask for. Implemented over the store in main; faked in the gallery and tests. */

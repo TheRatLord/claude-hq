@@ -109,6 +109,13 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
   // the first-run welcome's present (model/onboarding.ts WELCOME_DECOR)
   D('welcome', 'Welcome sign', 60, 1, '#3d9fa8', 'Posy\'s hand-painted welcome: a little teal envelope on a post, with a box of flowers. Every new farm gets one; nobody can buy one.',
     { gift: true }),
+  // the stamp book's trophies (model/stamps.ts TROPHIES: 10 stamps, 25, every one), given into the yard
+  D('trophy-bronze', 'Bronze stamp cup', 120, 1, '#c07a3a', 'A little bronze cup for ten stamps in the book. Bram polished it with his sleeve before handing it over.',
+    { gift: true }),
+  D('trophy-silver', 'Silver stamp cup', 240, 1, '#c8d0d8', 'A silver cup for twenty-five stamps, engraved by Hazel with a very steady hand.',
+    { gift: true }),
+  D('trophy-gold', 'Golden stamp cup', 600, 1, '#f2c33a', 'The golden cup, for a stamp book with every page inked. The Mayor made a speech. It was long.',
+    { gift: true }),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));

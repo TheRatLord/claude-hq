@@ -15,7 +15,7 @@ import { catModel, dogModel } from './petModels.ts';
 import type { PetDims, PetModel } from './petModels.ts';
 
 export type PetKind = 'dog' | 'cat';
-export type PetPose = 'stand' | 'walk' | 'sit' | 'lie' | 'curl' | 'belly' | 'bow' | 'shake' | 'stretch' | 'loaf' | 'groom' | 'knead';
+export type PetPose = 'stand' | 'walk' | 'sit' | 'lie' | 'curl' | 'belly' | 'bow' | 'shake' | 'stretch' | 'loaf' | 'groom' | 'knead' | 'point';
 
 export interface PetInput {
   pose: PetPose;
@@ -79,12 +79,12 @@ function poseTargets(d: PetDims, pose: PetPose, t: number, time: number, T: Floa
   const dog = d.kind === 'dog', s = d.scale;
   T.fill(0); O.fill(0);
   T[Y] = d.standY; T[EYE] = 1; T[LOCO] = 1; T[BREATH] = 1;
-  if (dog) { T[TLIFT] = 0.35; T[TCURL] = 0.82; } else { T[TLIFT] = 0.75; T[TCURL] = 0.55; }
+  if (dog) { T[TLIFT] = d.tailLift ?? 0.35; T[TCURL] = d.tailCurl ?? 0.82; } else { T[TLIFT] = d.tailLift ?? 0.75; T[TCURL] = d.tailCurl ?? 0.55; }
   const lying = d.belly + 0.02 * s;
   switch (pose) {
     case 'stand': case 'walk': break;
     case 'sit': {
-      T[LOCO] = 0; T[Y] = dog ? 0.3 : 0.19; T[PITCH] = dog ? -0.52 : -0.62; T[BODYZ] = -0.03 * s;
+      T[LOCO] = 0; T[Y] = d.sitY; T[PITCH] = dog ? -0.52 : -0.62; T[BODYZ] = -0.03 * s;
       T[NECKP] = dog ? 0.2 : 0.25; T[HEADP] = dog ? 0.25 : 0.3;
       foot(T, 0, -0.02 * s); foot(T, 1, -0.02 * s);
       foot(T, 2, 0.17 * s); foot(T, 3, 0.17 * s);
@@ -157,7 +157,7 @@ function poseTargets(d: PetDims, pose: PetPose, t: number, time: number, T: Floa
     }
     case 'groom': {
       // sitting; lick a front paw, then wipe it over the face
-      T[LOCO] = 0; T[Y] = dog ? 0.3 : 0.19; T[PITCH] = dog ? -0.52 : -0.62; T[BODYZ] = -0.03 * s;
+      T[LOCO] = 0; T[Y] = d.sitY; T[PITCH] = dog ? -0.52 : -0.62; T[BODYZ] = -0.03 * s;
       foot(T, 1, -0.02 * s); foot(T, 2, 0.17 * s); foot(T, 3, 0.17 * s);
       T[TLIFT] = -0.35; T[TSIDE] = -1.1; T[TCURL] = 0;
       const cyc = t % 4.2, wipe = smooth01((cyc - 2.4) / 0.3) * (1 - smooth01((cyc - 3.8) / 0.3));
@@ -168,6 +168,15 @@ function poseTargets(d: PetDims, pose: PetPose, t: number, time: number, T: Floa
       O[EXA] = wipe * Math.sin(time * TAU * 1.6) * 0.25;
       T[TONGUE] = lick * (Math.sin(time * TAU * 3.2) > 0.2 ? 0.55 : 0.1);
       T[EARP] = -0.15 * wipe; T[EARO] = 0.35 * wipe;
+      break;
+    }
+    case 'point': {
+      // a pointer's stance at a find: one fore paw tucked up, nose out level, ears pricked, tail straight out behind
+      T[PITCH] = 0.05; T[NECKP] = -0.3; T[HEADP] = 0.12; T[EARP] = 0.4; T[BODYZ] = 0.01 * s;
+      ex(T, 0, -1.05, 2.15, 1.05);
+      foot(T, 1, 0.01 * s); foot(T, 2, -0.02 * s); foot(T, 3, -0.03 * s);
+      T[TLIFT] = dog ? (d.tailBack ? 0.15 : -1.15) : 0.5; T[TCURL] = dog ? 0.05 : 0.15;
+      O[Y] = Math.sin(time * TAU * 0.8) * 0.002 * s;
       break;
     }
     case 'knead': {
@@ -214,9 +223,10 @@ export class PetBody {
   private readonly jointZ: number[] = [];
   private readonly parentZ: number[] = [];
   private readonly tail: THREE.Bone[];
-  constructor(kind: PetKind) {
+  /** `model` (optional) swaps in another body on the same rig family: the player's own pet (companionModels.ts) */
+  constructor(kind: PetKind, model?: PetModel) {
     this.kind = kind;
-    this.model = kind === 'dog' ? dogModel() : catModel();
+    this.model = model ?? (kind === 'dog' ? dogModel() : catModel());
     this.mesh = this.model.mesh;
     this.d = this.model.dims;
     this.b = this.model.bones;
@@ -238,7 +248,7 @@ export class PetBody {
   /** 0 (lying / low) … 1 standing: how "up" the body is right now (for the brain's timing) */
   get standing(): number { return clamp((this.cur[Y] - this.d.belly) / (this.d.standY - this.d.belly), 0, 1); }
   /** world-ish height of the head top above the root, for hearts and look-at */
-  headHeight(): number { return this.cur[Y] + (this.kind === 'dog' ? 0.38 : 0.2); }
+  headHeight(): number { return this.cur[Y] + this.d.headTop; }
 
   private rnd(): number { this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0; return this.seed / 4294967296; }
 
@@ -352,8 +362,13 @@ export class PetBody {
     const earBack = -run * 0.55;
     const eP = C[EARP] + OC[EARP] + this.earX + earBack;
     const eO = C[EARO] + OC[EARO] + Math.abs(this.earX) * 0.6;
-    b.earL.rotation.set(eP - twL * 0.35, swivel + twL * 0.6, -eO - twL * 0.2);
-    b.earR.rotation.set(eP - twR * 0.35, -swivel - twR * 0.6, eO + twR * 0.2);
+    if (d.flopEars) {
+      b.earL.rotation.set(-eP * 0.7 + twL * 0.2, twL * 0.3, eO * 0.9 + twL * 0.15);
+      b.earR.rotation.set(-eP * 0.7 + twR * 0.2, -twR * 0.3, -eO * 0.9 - twR * 0.15);
+    } else {
+      b.earL.rotation.set(eP - twL * 0.35, swivel + twL * 0.6, -eO - twL * 0.2);
+      b.earR.rotation.set(eP - twR * 0.35, -swivel - twR * 0.6, eO + twR * 0.2);
+    }
     b.tag.rotation.set(-(bodyP + chestP + C[NECKP]) * 0.8 + this.tagX, 0, -(C[ROLL] + OC[ROLL]) * 0.8);
 
     // ---- eyes: blink, slow blink, happy
@@ -381,8 +396,14 @@ export class PetBody {
     const tl = this.tail;
     if (dog) {
       const amp = (0.12 + joy * 0.55) * (1 - asleepK(C[EYE]) * 0.9);
-      tl[0].rotation.set(C[TLIFT] - run * 0.4, 0, wag * amp + C[TSIDE] + OC[TSIDE]);
-      for (let i = 1; i < tl.length; i++) tl[i].rotation.set(C[TCURL] * (1 - run * 0.35), 0, Math.sin(this.wagT - i * 0.7) * amp * 0.3 + C[TSIDE] * 0.8);
+      if (d.tailBack) {
+        // authored straight back: lift raises it (never into the ground), the wag sweeps about y
+        tl[0].rotation.set(Math.max(-0.5, C[TLIFT] - run * 0.5), wag * amp + C[TSIDE] + OC[TSIDE], 0);
+        for (let i = 1; i < tl.length; i++) tl[i].rotation.set(C[TCURL] * (1 - run * 0.35), Math.sin(this.wagT - i * 0.7) * amp * 0.3 + C[TSIDE] * 0.5, 0);
+      } else {
+        tl[0].rotation.set(C[TLIFT] - run * 0.4, 0, wag * amp + C[TSIDE] + OC[TSIDE]);
+        for (let i = 1; i < tl.length; i++) tl[i].rotation.set(C[TCURL] * (1 - run * 0.35), 0, Math.sin(this.wagT - i * 0.7) * amp * 0.3 + C[TSIDE] * 0.8);
+      }
     } else {
       // tip flicks: a quick separate motion of the last two segments
       this.flickIn -= dt;

@@ -1,12 +1,13 @@
 /**
  * Farmer card (talking to a farmer in the valley, or C in the ledger) and scarecrow card. A side sheet that keeps the
  * valley visible: who they are, what they're doing, progress, last words, and the actions — terminal, answers,
- * acknowledge, or a new prompt for an idle farmer (with a confirmation step).
+ * acknowledge, or a new prompt for an idle farmer (with a confirmation step). "Today" is their day timeline (timeline.ts).
  */
 import type { FarmerView, HelperView } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
 import { ago, altName, shortName, dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, nice, pct, seedHue, STATUS_LABEL } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
+import { createDayCard } from './timeline.ts';
 
 export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void; showHelper(id: string): void } {
   const { el, body, closeBtn } = framePanel('card', 'Farmer', ICONS.hand);
@@ -18,6 +19,8 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
   let draft = '';
   let confirming = false;
   let sending = false;
+  // the day timeline section: one node, re-appended on rebuilds, repainting itself on its own signature
+  const day = createDayCard(ctx);
 
   function farmerView(f: FarmerView): void {
     const s = ctx.state()!;
@@ -63,6 +66,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     if (f.unseenDone) acts.append(h('button.vh-btn', { type: 'button', 'data-testid': 'card-ack', onclick: () => { ctx.b?.agents.ack(f.id); ctx.sfx('chime-done'); ctx.toast({ text: `Thanked ${shortName(f)}`, sub: 'marked as reviewed', level: 'good', icon: ICONS.check }); ctx.panels.close(); } }, icon(ICONS.check), 'Acknowledge', h('kbd.vh-k', { text: 'A' })));
     kids.push(acts);
     if ((f.status === 'idle' || f.status === 'done') && !f.needsYou) kids.push(promptBox(f));
+    kids.push(day.el);
     body.replaceChildren(...kids.filter((k): k is Node => !!k));
   }
 
@@ -129,6 +133,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const s = ctx.state();
     if (!s || !id) return;
     const f = s.farmers.get(id), hp = s.helpers.get(id);
+    if (f) day.update(f.id);
     const nsig = f ? JSON.stringify([f.status, f.job, f.detail, f.title, f.needsYou, f.unseenDone, f.question, f.options, f.todos, f.work, Math.round((f.context ?? 0) * 50), f.said, f.ducklings, Math.floor((s.now - f.lastActive) / 60000)])
       : hp ? JSON.stringify(hp) : 'gone';
     if (nsig === sig) return;

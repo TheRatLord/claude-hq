@@ -13,8 +13,6 @@ import { gableRoof } from './farmhouse.ts';
 // ---------------------------------------------------------------------------------------------
 // Mailbox — flag up while there is unread mail; wiggles when a letter lands
 
-export const MAILBOX = Object.freeze({ top: new THREE.Vector3(0, 1.25, 0) });
-
 export function buildMailbox(o: BuildOpts): THREE.Group {
   const root = new THREE.Group();
   root.name = 'mailbox';

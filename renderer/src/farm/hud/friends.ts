@@ -20,12 +20,10 @@ import { FRIENDS, MAX_HEARTS, friendDef } from '../model/friends.ts';
 import type { FriendDef, FriendView, FriendsChange, FriendsService, RequestView, Tier } from '../model/friends.ts';
 import { collectIcon } from './collection.ts';
 import { COIN_ICON, decorIcon } from './shop.ts';
-import { ICONS, icon } from './icons.ts';
+import { ICONS, INK, ITEM_OUTLINE as ol, icon, svgIcon as S } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
+import { readLocal, writeLocal } from '../storage.ts';
 
-const INK = '#3b2a1e';
-const ol = `stroke="${INK}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"`;
-const S = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 
 export const HEART_ICON = S(`<path d="M12 20.5C6 16.3 2.8 12.9 2.8 9.1A4.6 4.6 0 0112 6.6a4.6 4.6 0 019.2 2.5c0 3.8-3.2 7.2-9.2 11.4z" fill="#e0574a" ${ol}/><path d="M7 8.6c.6-1 1.6-1.5 2.6-1.4" stroke="#ffd0c8" stroke-width="1.5" stroke-linecap="round" fill="none"/>`);
 const SCROLL_ICON = S(`<path d="M6 4h11a2 2 0 012 2v12a2 2 0 01-2 2H7" fill="#fff6e0" ${ol}/><path d="M6 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2zM7 20a2 2 0 002-2v-1H5v1a2 2 0 002 2z" fill="#e6d0a2" ${ol}/><path d="M10 9h6M10 12h6M10 15h4" stroke="#8a5a32" stroke-width="1.3" stroke-linecap="round"/>`);
@@ -175,7 +173,7 @@ const FOLD_KEY = 'valley.hud.quests';
 export function createQuests(ctx: HudCtx): { el: HTMLElement; refresh(): void; toggle(): boolean } {
   // collapsed to the chip unless pinned open (a click / Q) or peeking (a request just turned ready)
   let pinned = false, peekUntil = 0;
-  try { pinned = localStorage.getItem(FOLD_KEY) === 'open'; } catch { /* storage blocked */ }
+  pinned = readLocal(FOLD_KEY) === 'open';
   const n = h('span.n');
   const lab = h('span.l', { text: 'requests' });
   const flag = h('span.flag', { text: '!' });
@@ -186,7 +184,7 @@ export function createQuests(ctx: HudCtx): { el: HTMLElement; refresh(): void; t
   const el = h('div.vh-quests', { 'data-testid': 'quests' }, h('div.bar', null, headBtn, openBtn), list);
   const setPinned = (v: boolean) => {
     pinned = v; peekUntil = 0;
-    try { localStorage.setItem(FOLD_KEY, v ? 'open' : 'chip'); } catch { /* blocked */ }
+    writeLocal(FOLD_KEY, v ? 'open' : 'chip');
     ctx.sfx('ui-click'); sig = ''; refresh();
   };
   headBtn.addEventListener('click', (e) => { e.stopPropagation(); setPinned(!pinned); });

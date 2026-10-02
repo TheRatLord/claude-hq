@@ -9,7 +9,12 @@ import type { Engine } from './scene/engine.ts';
 import type { AudioService } from './scene/context.ts';
 import type { Valley } from './model/valley.ts';
 
-export interface PhotoMode { readonly on: boolean; toggle(on?: boolean): void }
+export interface PhotoMode {
+  readonly on: boolean;
+  toggle(on?: boolean): void;
+  /** a picture was saved (Enter); the stamp book listens (model/stamps.ts) */
+  onSave(fn: () => void): () => void;
+}
 
 const FOV = 62;
 
@@ -59,7 +64,9 @@ export function installPhotoMode(engine: Engine, controller: Controller, valley:
     refresh();
   };
 
+  const saved = new Set<() => void>();
   const save = () => {
+    for (const f of [...saved]) { try { f(); } catch (err) { console.error('[photo] listener threw', err); } }
     engine.renderOnce();
     canvas.toBlob((blob) => {
       if (!blob) return;
@@ -78,6 +85,7 @@ export function installPhotoMode(engine: Engine, controller: Controller, valley:
 
   const api: PhotoMode = {
     get on() { return on; },
+    onSave(fn) { saved.add(fn); return () => saved.delete(fn); },
     toggle(want = !on) {
       if (want === on) return;
       if (want && ctx.player.frozen) return; // a panel owns the input

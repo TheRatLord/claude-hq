@@ -130,7 +130,8 @@ export const interiorSystem: SystemFactory = (ctx: SceneCtx) => {
     if (v === undefined) { v = false; o.traverse((c) => { if ((c as THREE.Light).isLight) v = true; }); lit.set(o, v); }
     return v;
   };
-  const keep = (o: THREE.Object3D) => o === built?.holder || o === fadeCard || (o as THREE.Light).isLight || hasLight(o);
+  // `userData.indoors`: an outdoor object that comes in with you (your pet, curled by the hearth: scene/life/companion.ts)
+  const keep = (o: THREE.Object3D) => o === built?.holder || o === fadeCard || (o as THREE.Light).isLight || o.userData.indoors === true || hasLight(o);
   function hideOutdoors(): void { for (const o of ctx.scene.children) if (o.visible && !keep(o)) { o.visible = false; hidden.add(o); } }
   function showOutdoors(): void { for (const o of hidden) o.visible = true; hidden.clear(); }
 

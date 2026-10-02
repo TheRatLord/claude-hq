@@ -4,9 +4,14 @@
  */
 import type { LetterKind, PlotKind, WeatherKind } from '../model/types.ts';
 
-const INK = '#3b2a1e';
-const S = (body: string, vb = '0 0 24 24') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" aria-hidden="true">${body}</svg>`;
+/** the HUD's ink: outlines, eyes and lettering on paper (icons, map pins, map labels) */
+export const INK = '#3b2a1e';
+/** an inline SVG icon string around `body` (24×24 viewBox by default) */
+export const svgIcon = (body: string, vb = '0 0 24 24') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" aria-hidden="true">${body}</svg>`;
+const S = svgIcon;
 const ol = `stroke="${INK}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"`;
+/** the slightly finer outline of item drawings (collectibles, decor, gifts) */
+export const ITEM_OUTLINE = `stroke="${INK}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"`;
 
 export const ICONS = {
   // ---- UI ----

@@ -13,6 +13,8 @@ import type { SkyOverrides } from './sky.ts';
 import { PLOT_KINDS } from './types.ts';
 import { almanacView, dayKey, emptyAlmanac, parseAlmanac, recapDue, recapLetter, recordHarvest, RANKS } from './almanac.ts';
 import type { AlmanacData, HarvestKind } from './almanac.ts';
+import { createTimeline } from './timeline.ts';
+import type { MarkKind, SeedFn, TimelineRecorder, TimelineStore } from './timeline.ts';
 import type {
   FarmerView, Gauges, HelperView, Job, Letter, LetterKind, LinkState, Mood, PlotKind, PlotStage, PlotView, ValleyEvent, ValleyState,
 } from './types.ts';
@@ -62,6 +64,10 @@ export interface Valley {
   useAlmanac(store: AlmanacStore): void;
   /** a harvest that is not a valley event (the player's first-ever finds for the Collections book): points, maybe a rank */
   harvest(kind: HarvestKind): number;
+  /** each farmer's day (model/timeline.ts): fed by tick / ingest; read through `state.timeline` */
+  readonly timeline: TimelineRecorder;
+  /** switch where the timeline lives (the demo valley keeps a seeded morning in memory) */
+  useTimeline(store: TimelineStore | undefined, seed?: SeedFn | null): void;
   /** a letter from a villager (model/friends.ts milestones): a 'news' letter at `at`, once per `id` */
   post(l: { id: string; at: number; from: string; fromName: string; title: string; body: string }): void;
 }
@@ -77,7 +83,12 @@ const HARVEST_OF: Partial<Record<ValleyEvent['kind'], HarvestKind>> = {
   ship: 'commit', celebrate: 'tests', finished: 'finished', unblocked: 'answered', 'plot-opened': 'tilled', 'duckling-hatched': 'ducklings',
 };
 
-export function createValley(src: ValleySource, { wallNow = Date.now, almanac: alStore }: { wallNow?: () => number; almanac?: AlmanacStore } = {}): Valley {
+/** wire events that are moments on a farmer's day timeline */
+const MARK_OF: Partial<Record<EventMsg['kind'], MarkKind>> = {
+  commit: 'ship', 'test-pass': 'pass', 'test-fail': 'fail', error: 'error', finished: 'finished', 'subagent-spawned': 'sub', compact: 'compact',
+};
+
+export function createValley(src: ValleySource, { wallNow = Date.now, almanac: alStore, timeline: tlStore }: { wallNow?: () => number; almanac?: AlmanacStore; timeline?: TimelineStore } = {}): Valley {
   const listeners = new Set<(e: ValleyEvent) => void>();
   const send = (e: ValleyEvent) => { for (const f of [...listeners]) { try { f(e); } catch (err) { console.error('[valley] listener threw', err); } } };
   const loadAlmanac = (st: AlmanacStore | undefined): AlmanacData => { try { return parseAlmanac(st?.load()) ?? emptyAlmanac(); } catch { return emptyAlmanac(); } };
@@ -97,6 +108,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     const h = HARVEST_OF[e.kind];
     if (h) harvest(h);
   };
+  const tl = createTimeline(tlStore, { now: wallNow() });
   const farmerRecs = new Map<string, FarmerRec>();
   const plotRecs = new Map<string, PlotRec>();
   const cpuHist: number[] = [], memHist: number[] = [];
@@ -113,6 +125,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     farmers: new Map(), helpers: new Map(), plots: new Map(), letters: [], commitsToday: 0, gauges: null,
     sky: skyAt(new Date(wallNow())),
     almanac: almanacView(alData, wallNow()),
+    timeline: tl.view,
   };
 
   const letter = (kind: LetterKind, e: Entity | undefined, id: string, title: string, body = '') => {
@@ -318,6 +331,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     state.farmers = farmers;
     state.helpers = helpers;
     state.plots = new Map([...plotRecs].map(([id, r]) => [id, r.view]));
+    tl.observe(farmers.values(), wallNow());
     for (const l of state.letters) {
       if (l.kind === 'needs-you' && !l.resolved) {
         const f = farmers.get(l.farmerId);
@@ -350,6 +364,10 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     const e = [...src.entities()].find((x) => x.id === m.id);
     const name = e?.name ?? m.id;
     state.now = src.now();
+    const mk = MARK_OF[m.kind];
+    if (mk) tl.mark(m.id, mk, wallNow(), m.kind === 'finished' ? e?.title ?? '' : m.kind === 'subagent-spawned' ? detailText(m.detail, 'label', 'type')
+      : detailText(m.detail, 'msg', 'message', 'subject', 'cmd', 'summary', 'tool'));
+    else if (m.kind === 'struggle' && ((m.detail as { level?: number } | undefined)?.level ?? 0) >= 2) tl.mark(m.id, 'struggle', wallNow(), detailText(m.detail, 'detail', 'reason'));
     switch (m.kind) {
       case 'blocked': letter('needs-you', e, m.id, `${name} needs you`, e?.prompt?.question ?? e?.activity?.detail ?? ''); break;
       case 'finished': letter('finished', e, m.id, `${name} finished`, e?.title ?? e?.lastText ?? ''); emit({ kind: 'finished', id: m.id }); break;
@@ -387,6 +405,8 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       state.almanac = almanacView(alData, wallNow());
     },
     harvest,
+    timeline: tl,
+    useTimeline(st, seed) { tl.use(st, seed); state.timeline = tl.view; },
     post(l) {
       const id = `V:${l.id}`;
       if (state.letters.some((x) => x.id === id)) return;

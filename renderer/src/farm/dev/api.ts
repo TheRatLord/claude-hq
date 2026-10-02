@@ -19,14 +19,21 @@
  *   __valley.scenario(name, seed?)        demo backend: reset to a scenario             (demo only)
  *   __valley.forage(day?)  forageGo(i)  fish(step?)  collect(n)   pastimes (scene/forage): today's finds, walk up, cast at the dock, fill the book
  *   __valley.wildlife(id?, 'here'|'spook') wild visitors (deer fox heron owl hedgehog geese): list, or bring one out and stand in view
+ *   __valley.pet(cmd?, a?, b?)      your own pet (scene/life/companion.ts): adopt ('puppy' coat name), fetch, find, pet, home, reset
  *   __valley.coins(n)  buy(id, free?)  sell()  yard(step?)  furnish()   the economy (model/wallet.ts, scene/yard): add bits,
  *                                         buy decor, sell the basket, stand in the yard / at the store, a furnished demo yard
  *   __valley.hearts(id?, n?)  requests(step?)  gift(id, item)   friendship (model/friends.ts): set a villager's hearts (milestones
  *                                         fire), today's requests (requests('ready') completes them, requests('YYYY-MM-DD') rolls that
  *                                         day's set), give a gift (stashed first if the basket lacks it)
+ *   __valley.stamps(step?)  stamp(id)      the stamp book (model/stamps.ts): stamps() lists every stamp (earned / at / progress),
+ *                                         stamps(n) inks the first n quietly (shots), stamps('reset') forgets; stamp(id) inks one now
+ *                                         (reward, toast, thunk)
  *   __valley.gather(kind?, seg?, stay?)   evening gatherings (scene/gather): gather('campfire' | 'concert' | 'market') puts one on now and
  *                                         stands you there (stay=true: don't move); seg jumps the campfire to 'story' | 'laugh' |
  *                                         'toast' | 'sing' | 'chat'; gather(null) back to the calendar; gather() → what's going on
+ *   __valley.timeline(id?, 'seed'|'clear') a farmer's day (model/timeline.ts): timeline() → every farmer's summary, timeline(id) → the day,
+ *                                         its summary and key moments; 'seed' (demo only; id or '*') replaces it with a plausible
+ *                                         morning (demoDay), 'clear' empties it
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
@@ -37,6 +44,7 @@ import * as THREE from 'three';
 import type { Engine } from '../scene/engine.ts';
 import type { Controller } from '../player/controller.ts';
 import type { Valley } from '../model/valley.ts';
+import { demoDay, keyMoments, summarize } from '../model/timeline.ts';
 import type { Season, WeatherKind } from '../model/types.ts';
 import type { FarmerLocator, IndoorSpace, StructureSpots, VillagersService } from '../scene/context.ts';
 import type { ForageDebug } from '../scene/forage/forage.ts';
@@ -45,6 +53,7 @@ import type { WildlifeService } from '../scene/life/wildlife.ts';
 import type { WildId } from '../scene/life/wild.ts';
 import type { WalletService } from '../model/wallet.ts';
 import type { FriendsService } from '../model/friends.ts';
+import type { StampsService } from '../model/stamps.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
 import { gatherViewpoint } from '../scene/gather/gather.ts';
@@ -224,6 +233,23 @@ export function installDevApi(d: DevDeps): void {
     villager: (id: string) => (ctx.services.get('villagers') as VillagersService | undefined)?.debug(id.startsWith('villager:') ? id : `villager:${id}`) ?? null,
     focused() { const f = ctx.interact.focused(); return f ? { id: f.id, kind: f.kind, verb: f.verb, label: f.label() } : null; },
     look: (x: number, y: number, z: number) => controller.lookAt(x, y, z),
+    /** the day timeline: read one / all, or (demo) seed a plausible morning, or clear */
+    timeline(id?: string, step?: 'seed' | 'clear') {
+      const tv = valley.state.timeline;
+      const ids = !id || id === '*' ? [...valley.state.farmers.keys()] : [id];
+      if (step) {
+        if (step === 'seed' && !valley.state.demo) return 'seed is for the demo valley';
+        for (const x of ids) {
+          const f = valley.state.farmers.get(x);
+          if (!f) continue;
+          valley.timeline.put(step === 'seed' ? demoDay(f, tv.now || Date.now()) : { id: f.id, tag: f.tag, name: f.name, spans: [], marks: [], rev: 1 });
+        }
+        return ids.length;
+      }
+      if (!id) return [...tv.farmers.values()].map((fd) => ({ id: fd.id, tag: fd.tag, spans: fd.spans.length, marks: fd.marks.length, ...summarize(fd) }));
+      const fd = tv.farmers.get(id);
+      return fd ? JSON.parse(JSON.stringify({ day: fd, summary: summarize(fd), moments: keyMoments(fd) })) : null;
+    },
     /** set the almanac's prosperity (no save): crossing a rank pops its upgrade in and sets off a level-up */
     almanac: (points: number) => valley.setAlmanac(points),
     /** a shooting star where the camera looks */
@@ -269,6 +295,9 @@ export function installDevApi(d: DevDeps): void {
       if (v) api.teleport(v.x, v.z, v.yaw, v.pitch);
       return v;
     },
+    /** your own pet (scene/life/companion.ts): pet() its state; pet('puppy' | 'kitten' | 'fox', coat?, name?) adopts one
+     *  free and sits it in front of you; pet('fetch' | 'find' | 'pet' | 'home' | 'sniff' | 'reset') */
+    pet: (cmd?: string, a?: string, b?: string) => (ctx.services.get('companion') as { dev(c?: string, a?: string, b?: string): unknown } | undefined)?.dev(cmd, a, b) ?? null,
     /** add (or take, negative) bits; returns the balance */
     coins(n = 500) { const w = ctx.services.get('wallet') as WalletService | undefined; w?.devCoins(n); return w?.coins() ?? 0; },
     /** friendship (model/friends.ts): hearts(id, n) sets a villager's hearts (milestones fire); hearts() lists everyone's */
@@ -292,6 +321,17 @@ export function installDevApi(d: DevDeps): void {
       if (!(w.data().basket[item] > 0)) w.stash(item, 1);
       return fr.give(id, item);
     },
+    /** the stamp book: stamps() lists them; stamps(n) inks the first n (no rewards: shots); stamps('reset') forgets the book */
+    stamps(step?: number | 'reset') {
+      const st = ctx.services.get('stamps') as StampsService | undefined;
+      if (!st) return null;
+      if (step === 'reset') st.devReset();
+      else if (typeof step === 'number') st.devFill(step);
+      const v = st.view();
+      return { earned: v.earned, total: v.total, trophies: v.trophies, bits: v.bits, stamps: v.entries.map((e) => ({ id: e.def.id, cat: e.def.cat, name: e.def.name, earned: e.earned, day: e.day, secret: !!e.def.secret, progress: e.progress })) };
+    },
+    /** ink one stamp now, as if earned (bits, a trophy at a milestone, the toast and the thunk) */
+    stamp(id: string) { const st = ctx.services.get('stamps') as StampsService | undefined; const e = st?.devAward(id); return e ? { id: e.def.id, count: e.count, bits: e.bits, trophy: e.trophy?.decor ?? null } : null; },
     /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
     buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },
     /** sell the whole basket (as at Bram's) */

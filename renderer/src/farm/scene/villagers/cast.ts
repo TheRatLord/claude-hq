@@ -179,8 +179,6 @@ export const CAST: readonly Villager[] = [
   },
 ];
 
-export const villagerById = (id: string): Villager | undefined => CAST.find((v) => v.id === id);
-
 /** A villager's look: a Clawd in its own colours, role hat and wear (never an agent kind colour). */
 export function villagerLook(v: Villager): Look {
   return {

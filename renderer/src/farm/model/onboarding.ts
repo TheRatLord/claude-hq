@@ -123,7 +123,6 @@ export function parseOnboarding(raw: unknown): OnboardingData | null {
 // ---------------------------------------------------------------------------------------------
 // The checklist
 
-export const stepDef = (id: StepId): StepDef | undefined => STEPS.find((s) => s.id === id);
 export const stepDone = (d: OnboardingData, id: StepId): boolean => !!d.steps[id];
 export const allDone = (d: OnboardingData): boolean => STEPS.every((s) => stepDone(d, s.id));
 

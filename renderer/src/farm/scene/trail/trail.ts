@@ -25,6 +25,7 @@ import { SUMMIT, benchKit, binocularMask, bridgeKit, cairnKit, flagMesh, offerin
 import type { Solid } from './build.ts';
 import { bridgeFloor, flightOf, platformFloor, spanOf, stairsFloor } from './decks.ts';
 import { damp } from '../../../core/math.ts';
+import { readJson, writeJson } from '../../storage.ts';
 
 export interface TrailService {
   /** look through the summit viewer at farmer i (in viewer order); teleports you to it first */
@@ -124,7 +125,7 @@ export const trailSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // the cairn counter, per browser profile
   let store = { stones: 0, day: '' };
-  try { const raw = localStorage.getItem(STORE); if (raw) store = { ...store, ...JSON.parse(raw) }; } catch { /* private mode */ }
+  store = { ...store, ...(readJson(STORE) as Partial<typeof store> | null) };
   const spot = { x: 0, y: 0, z: 0, ry: 0 };
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e3 = new THREE.Euler(), v3 = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   function placeStones(): void {
@@ -239,7 +240,7 @@ export const trailSystem: SystemFactory = (ctx: SceneCtx) => {
       use: () => {
         if (store.day === today()) { say(`Your stone from today is up there already, with ${store.stones - 1 || 'no'} other${store.stones === 2 ? '' : 's'}. Come back tomorrow.`); return; }
         store = { stones: store.stones + 1, day: today() };
-        try { localStorage.setItem(STORE, JSON.stringify(store)); } catch { /* private mode */ }
+        writeJson(STORE, store);
         placeStones();
         audio()?.play('pop', { pos: cairnBase, volume: 0.6, pitch: 0.7 });
         audio()?.play('sparkle', { pos: cairnBase, volume: 0.4 });

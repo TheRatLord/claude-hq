@@ -270,6 +270,18 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
     noise(c, out, t, { kind: 'white', gain: 0.05, a: 0.001, d: 0.04, filter: 'bandpass', f: 5200, q: 3, delay: 0.02 });
     return max(end, tone(c, out, t, { f: 1568 * o.pitch, f2: 2093 * o.pitch, glide: 0.02, gain: 0.08, a: 0.003, d: 0.35, delay: 0.26 }));
   },
+  stamp: (c, out, t, o) => {
+    // the stamp book (model/stamps.ts): a rubber stamp pressed onto a page. A tiny ink-pad tap, then the thunk: a
+    // short woody body thump, a papery slap, and the faint peel of rubber lifting off
+    const p = o.pitch;
+    noise(c, out, t, { kind: 'pink', gain: 0.07, a: 0.001, d: 0.03, filter: 'bandpass', f: 1800 * p, q: 1.2 });
+    const hit = t + 0.11;
+    tone(c, out, hit, { f: 150 * p, f2: 62 * p, glide: 0.07, gain: 0.42, a: 0.002, d: 0.16 });
+    tone(c, out, hit, { type: 'triangle', f: 420 * p, f2: 260 * p, glide: 0.04, gain: 0.09, a: 0.001, d: 0.06 });
+    noise(c, out, hit, { kind: 'pink', gain: 0.32, a: 0.001, d: 0.07, filter: 'lowpass', f: 1500 * p, f2: 500 });
+    noise(c, out, hit, { kind: 'white', gain: 0.07, a: 0.001, d: 0.035, filter: 'bandpass', f: 3200, q: 0.8 });
+    return noise(c, out, hit, { kind: 'white', gain: 0.035, a: 0.03, d: 0.08, filter: 'highpass', f: 2600, delay: 0.16 });
+  },
   reel: (c, out, t, o) => {
     let end = t;
     for (let i = 0; i < 14; i++) end = noise(c, out, t, { kind: 'white', gain: 0.1 * (1 - i / 20), a: 0.001, d: 0.018, filter: 'bandpass', f: (2600 + (i % 3) * 300) * o.pitch, q: 4, delay: i * 0.045 });
@@ -457,7 +469,7 @@ export function sendOf(name: SfxName): number {
     case 'bell': return 0.5;
     case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'fanfare': return 0.25;
     case 'thunder': case 'firework': return 0.4;
-    case 'ui-hover': case 'ui-click': case 'ui-open': case 'ui-close': case 'step-grass': case 'step-wood': case 'step-water': return 0;
+    case 'ui-hover': case 'ui-click': case 'ui-open': case 'ui-close': case 'step-grass': case 'step-wood': case 'step-water': case 'stamp': return 0;
     default: return 0.12;
   }
 }

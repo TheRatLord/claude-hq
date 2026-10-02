@@ -440,8 +440,6 @@ const PARTS: Partial<Record<PlotKind, PartDef[]>> = {
   berries: [P('bush', berryBush, { bend: 0.05, droop: 0.15, min: 0.62, perennial: true }), P('berries', () => berries(), { bend: 0.05, droop: 0.15, growth: 'fruit', ripens: true, noWinter: true })],
   bees: [P('lavender', () => lavender(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false }), P('daisies', () => daisies(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false }), P('cosmos', () => cosmos(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false })],
 };
-
-export const hasCrops = (k: PlotKind) => !!PARTS[k];
 const DECOR = P('decor', decorClump, { bend: 0.25, droop: 0.3, shadow: false, growth: 'decor' });
 
 /**

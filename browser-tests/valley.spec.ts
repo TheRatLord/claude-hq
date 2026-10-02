@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './server.ts';
+import { useGpu } from './gpu.ts';
 
 interface HudHandle {
   current(): string | null;
@@ -10,15 +11,16 @@ declare global { interface Window { __hud?: HudHandle; __valley?: { ready: boole
 async function openValley(page: Page, origin: string, token: string): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  // low quality: headless CI renders the 3D valley in software
+  // low quality: cheapest frames (and the only bearable setting when the suite falls back to software rendering)
   await page.goto(`${origin}/?t=${token}&quality=low`);
   await page.waitForFunction(() => window.__valley?.ready === true, null, { timeout: 30_000 });
   return errors;
 }
 
-// one worker for this file: two full 3D valleys rendering at once starve each other's frames and the timing-
-// sensitive HUD steps flake ('default' runs the tests in order without skipping the rest on a failure)
-test.describe.configure({ mode: 'default', timeout: 120_000 });
+// On the GPU (browser-tests/gpu.ts) every test gets its own worker and demo server. In SwiftShader two full 3D
+// valleys rendering at once starve each other's frames and the timing-sensitive HUD steps flake, so the file runs on
+// one worker ('default' runs the tests in order without skipping the rest on a failure).
+test.describe.configure({ mode: useGpu() ? 'parallel' : 'default', timeout: 120_000 });
 
 test('the valley HUD reaches every terminal: ledger, map click, needs-you answers', async ({ page, demoServer }) => {
   test.slow(); // software rendering: ~45 steps, each waiting on ~0.5 s frames
@@ -197,7 +199,7 @@ test('photo mode: P hides the HUD and flies the camera, P again puts the view ba
 test('pastimes: pick up a forageable, catch a fish, both land in the Collections book (K)', async ({ page, demoServer }) => {
   test.slow(); // software rendering
   const errors = await openValley(page, demoServer.origin, demoServer.token);
-  type V = { forage(): { id: string; picked: boolean }[]; forageGo(i: number): unknown; fish(step?: string): Promise<unknown>; focused(): { id: string } | null; ctx: { services: Map<string, unknown> } };
+  type V = { forage(): { key: string; id: string; picked: boolean }[]; forageGo(i: number): unknown; fish(step?: string): Promise<unknown>; focused(): { id: string } | null; ctx: { services: Map<string, unknown> } };
   const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
   await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
   // the book starts empty, every entry a silhouette
@@ -211,8 +213,10 @@ test('pastimes: pick up a forageable, catch a fish, both land in the Collections
   await expect.poll(() => v((x) => x.forage().length)).toBeGreaterThanOrEqual(8);
   await v((x) => x.forageGo(0));
   await expect.poll(() => v((x) => x.focused()?.id ?? '')).toMatch(/^forage:/);
+  // E picks up whichever find the crosshair is on (a neighbour of #0 when they lie close together)
+  const spot = (await v((x) => x.focused()?.id ?? '')).slice('forage:'.length);
   await page.keyboard.press('KeyE');
-  await expect.poll(() => v((x) => x.forage()[0].picked)).toBe(true);
+  await expect.poll(() => page.evaluate((key) => (window as unknown as { __valley: V }).__valley.forage().find((f) => f.key === key)?.picked, spot)).toBe(true);
   // fishing at the dock: cast, the bobber dips, E hooks it
   expect(await v((x) => x.fish())).toBe(true);
   await expect.poll(() => v((x) => (x.ctx.services.get('forage') as { phase(): string }).phase()), { timeout: 15_000 }).toBe('wait');

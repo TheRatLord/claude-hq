@@ -10,7 +10,7 @@ import { FIRST_REST, barSeconds, isGatherScene, musicScene, planBar, planPiece }
 import type { MusicIn, MusicScene, Piece, Role } from './musicPlan.ts';
 import { playNote } from './instruments.ts';
 
-/** Overall music level before the music bus (calibrated against the ambient beds, see docs/VALLEY.md → Sound). */
+/** Overall music level before the music bus (calibrated against the ambient beds, see docs/valley/audio.md). */
 export const MUSIC_LEVEL = 0.36;
 /** Role balance inside a piece. */
 export const ROLE_GAIN: Readonly<Record<Role, number>> = { lead: 1, counter: 0.5, comp: 0.5, bass: 0.75, pad: 0.4, perc: 0.3 };

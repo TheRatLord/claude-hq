@@ -39,11 +39,15 @@ import type { YardPort } from './shop.ts';
 import type { WalletService } from '../model/wallet.ts';
 import { createFriendsPanel, createQuests } from './friends.ts';
 import type { FriendsService } from '../model/friends.ts';
-import { UPGRADES } from '../model/almanac.ts';
+import { UPGRADES, dayKey } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
 import { createNotifier } from './notify.ts';
 import { createOnboarding } from './onboarding.ts';
+import { createPetPanel } from './pet.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
+import type { StampsService } from '../model/stamps.ts';
+import { stampIconHtml } from './stamps.ts';
+import { readJson, writeJson } from '../storage.ts';
 
 export interface HudBindings {
   valley: () => ValleyState;
@@ -75,6 +79,8 @@ export interface HudBindings {
   friends?(): FriendsService;
   /** optional: the first-run welcome tour + one-time tips (model/onboarding.ts, hud/onboarding.ts) */
   onboarding?(): OnboardingService;
+  /** optional: the stamp book (model/stamps.ts; the Almanac's Stamps tab, hud/stamps.ts) */
+  stamps?(): StampsService;
   /** optional: a scene service by name (ctx.services), duck-typed by the reader: the map reads 'forage', 'wildlife', 'festivals', 'yard' */
   service?(name: string): unknown;
 }
@@ -155,8 +161,9 @@ export function createHud(d: HudDeps): Hud {
 
   // ---- read-state persistence (letter ids restart per page; keys survive) ----
   const readKeys = new Set<string>();
-  try { for (const k of JSON.parse(localStorage.getItem(READ_KEY) ?? '[]') as string[]) readKeys.add(k); } catch { /* storage blocked */ }
-  const saveRead = () => { try { localStorage.setItem(READ_KEY, JSON.stringify([...readKeys].slice(-400))); } catch { /* storage blocked */ } };
+  const stored = readJson(READ_KEY);
+  if (Array.isArray(stored)) for (const k of stored as string[]) readKeys.add(k);
+  const saveRead = () => writeJson(READ_KEY, [...readKeys].slice(-400));
   const synthRead = new Set<string>();
   const mark = {
     synthRead,
@@ -169,7 +176,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -410,6 +417,7 @@ export function createHud(d: HudDeps): Hud {
       collection: () => panels.open('collection'),
       shop: (tab, at) => panels.open('shop', { tab: tab ?? 'buy', at: at ?? (tab === 'yard' ? 'pocket' : 'store') }),
       friends: (o) => panels.open('friends', o),
+      pet: () => panels.open('pet'),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
@@ -436,6 +444,18 @@ export function createHud(d: HudDeps): Hud {
         // a first-ever sighting of a wild visitor (scene/life/wildlife.ts) for the field guide
         x.collection?.().onSight((r) => {
           if (r.isNew) toasts.push({ text: `New in your field guide: ${r.def.name}`, sub: 'K for the Collections book', icon: ICONS.book, level: 'good', key: `sight|${r.def.id}` });
+        });
+      } catch { /* optional */ }
+      // a stamp inked into the stamp book (model/stamps.ts): the stamp itself on the toast, a rubber-stamp thunk
+      try {
+        let thunkAt = 0;
+        x.stamps?.().onEarn((e) => {
+          toasts.push({
+            text: `Stamp inked: ${e.def.name}`, sub: `+${e.bits} bits · ${e.def.blurb} (H, then S: the stamp book)`,
+            icon: stampIconHtml(e.def, dayKey(e.at)), level: 'good', ms: 6500, key: `stamp|${e.def.id}`, group: 'stamp',
+          });
+          if (e.trophy) toasts.push({ text: `A trophy for your yard: the ${e.trophy.name.toLowerCase()}`, sub: `${e.trophy.at} stamps in the book`, icon: ICONS.rosette, level: 'good', ms: 8000, key: `trophy|${e.trophy.decor}` });
+          if (performance.now() - thunkAt > 1200) { thunkAt = performance.now(); ctx.sfx('stamp'); }
         });
       } catch { /* optional */ }
       tick();

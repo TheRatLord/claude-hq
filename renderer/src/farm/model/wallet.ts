@@ -286,6 +286,7 @@ export type WalletChange =
   | { kind: 'buy'; piece: Piece; price: number }
   | { kind: 'take'; id: string; n: number }
   | { kind: 'reward'; coins: number; why: string }
+  | { kind: 'spend'; coins: number; why: string }
   | { kind: 'gift'; piece: Piece }
   | { kind: 'yard'; uid: number }
   | { kind: 'dev' };
@@ -308,6 +309,8 @@ export interface WalletService {
   take(id: string, n?: number): number;
   /** bits for something done (a villager's request) */
   reward(coins: number, why: string): void;
+  /** pay bits for something that isn't decor (the pet's kibble-fund donation); false (and nothing taken) if short */
+  spend(coins: number, why: string): boolean;
   /** a free decor piece (a villager's keepsake), straight into the yard when there's room */
   gift(id: string): Piece | null;
   work(kind: ValleyEventKind): number;
@@ -359,6 +362,15 @@ export function createWallet(st: WalletStore | undefined, o: { now?: () => numbe
       if (!k) return;
       d.coins = Math.min(COIN_MAX, d.coins + k);
       changed({ kind: 'reward', coins: k, why });
+    },
+    spend(c, why) {
+      const k = Math.max(0, Math.floor(c));
+      if (k > d.coins) return false;
+      if (!k) return true;
+      d.coins -= k;
+      d.total.spent += k;
+      changed({ kind: 'spend', coins: k, why });
+      return true;
     },
     gift(id) { const r = buy(d, id, { rank: 99, season: 'spring', autoPlace: true, free: true }); if (!r.ok) return null; changed({ kind: 'gift', piece: r.piece }, true); return r.piece; },
     work(kind) { const c = workPay(d, kind, now()); if (c) changed({ kind: 'work', coins: c }); return c; },

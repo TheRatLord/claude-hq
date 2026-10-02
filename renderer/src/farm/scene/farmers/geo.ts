@@ -48,9 +48,6 @@ export const nubGeometry = () => once('nub', () => {
 export const GLYPH_GROUP = (g: GlyphName) => 1 + GLYPH_NAMES.indexOf(g);
 export const glyphGeometry = () => once('glyphs', () => toGeometry(joinMeshes(GLYPH_NAMES.map((n) => glyph(n, GLYPH_GROUP(n)).mesh(1)))));
 
-export const HAT_GROUP = (h: HatName) => 1 + HAT_NAMES.indexOf(h);
-/** All hats in one geometry (the gallery's hat sheet). */
-export const hatGeometry = () => once('hats', () => toGeometry(joinMeshes(HAT_NAMES.map((n) => hat(n, HAT_GROUP(n)).mesh(HAT_VOXEL)))));
 /** One hat (vgroup 0): the crowd draws each hat as its own instanced mesh, so no farmer sends the three it isn't wearing. */
 export const hatGeometryOf = (h: HatName) => once(`hat:${h}`, () => toGeometry(hat(h, 0).mesh(HAT_VOXEL)));
 

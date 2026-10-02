@@ -26,7 +26,7 @@ import path from 'node:path';
 import { chromium } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { startDev, REPO } from './devserver.ts';
-import { GPU_ARGS } from './shoot.ts';
+import { GPU_ARGS } from './gpu.ts';
 
 const argv = process.argv.slice(2);
 const opt = (k: string, d: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };

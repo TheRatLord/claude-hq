@@ -531,22 +531,6 @@ export function plaque(wm: number, hm: number, px = 256): Plaque {
   };
 }
 
-/** Radial soft spot texture (light pools, glows). */
-let spotTex: THREE.Texture | null = null;
-export function softSpot(): THREE.Texture {
-  if (spotTex) return spotTex;
-  const c = canvasTex(128, 128);
-  const gr = c.g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gr.addColorStop(0, 'rgba(255,255,255,1)');
-  gr.addColorStop(0.35, 'rgba(255,255,255,0.55)');
-  gr.addColorStop(1, 'rgba(255,255,255,0)');
-  c.g.fillStyle = gr;
-  c.g.fillRect(0, 0, 128, 128);
-  c.tex.needsUpdate = true;
-  spotTex = c.tex;
-  return c.tex;
-}
-
 export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 /** frame-rate independent exponential approach */
 export const damp = (a: number, b: number, k: number, dt: number): number => a + (b - a) * (1 - Math.exp(-k * dt));

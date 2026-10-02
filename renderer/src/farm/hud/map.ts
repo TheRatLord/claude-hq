@@ -13,17 +13,17 @@ import { fishOdds, SIGHTINGS } from '../model/collection.ts';
 import { PLACE_NAME, type VisitPlace } from '../model/friends.ts';
 import type { Status } from '../../../../shared/protocol.ts';
 import './map.css';
+import { readJson, readLocal, writeJson, writeLocal } from '../storage.ts';
 
 // ---------------------------------------------------------------------------------------------- layers + extras
 
 const LAYERS_KEY = 'valley.hud.mapLayers';
 function loadLayers(): MapLayers {
-  try { const raw = localStorage.getItem(LAYERS_KEY); if (raw) return { ...DEFAULT_LAYERS, ...(JSON.parse(raw) as Partial<MapLayers>) }; } catch { /* storage blocked */ }
-  return { ...DEFAULT_LAYERS };
+  return { ...DEFAULT_LAYERS, ...(readJson(LAYERS_KEY) as Partial<MapLayers> | null) };
 }
 /** shared by the panel and the minimap (one object: a toggle in the panel shows on the minimap at once) */
 const layers: MapLayers = loadLayers();
-const saveLayers = () => { try { localStorage.setItem(LAYERS_KEY, JSON.stringify(layers)); } catch { /* storage blocked */ } };
+const saveLayers = () => writeJson(LAYERS_KEY, layers);
 
 const CAP = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 let extrasAt = -1;
@@ -134,9 +134,10 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     h('span', null, 'Wheel zoom · drag pan · ', h('kbd.vh-k', { text: '0' }), ' reset'));
   // the key starts open on tall screens (laptops keep the room for the farmer list); a toggle is remembered
   let keyOpen = innerHeight > 860;
-  try { const k = localStorage.getItem('valley.hud.mapKey'); if (k) keyOpen = k === 'open'; } catch { /* storage blocked */ }
+  const k = readLocal('valley.hud.mapKey');
+  if (k) keyOpen = k === 'open';
   const keyBox = h('details.vh-mapkeybox', { open: keyOpen }, h('summary', { text: 'Key' }), legend);
-  keyBox.addEventListener('toggle', () => { try { localStorage.setItem('valley.hud.mapKey', keyBox.open ? 'open' : 'closed'); } catch { /* storage blocked */ } });
+  keyBox.addEventListener('toggle', () => writeLocal('valley.hud.mapKey', keyBox.open ? 'open' : 'closed'));
   const side = h('div.vh-mapside', null, layerRow, keyBox, h('div.vh-h3', null, icon(ICONS.book), 'Farmers'), list, foot);
   body.append(wrap, side);
 

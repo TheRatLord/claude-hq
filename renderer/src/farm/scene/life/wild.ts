@@ -9,6 +9,7 @@
  * down, walk again. Sprinting inside its notice range, or getting inside `flee`, sends it off at once.
  */
 import type { Season, WeatherKind } from '../../model/types.ts';
+import { hashKey, rand } from '../../model/collection.ts';
 
 export const WILD_IDS = ['deer', 'fox', 'heron', 'owl', 'hedgehog', 'geese'] as const;
 export type WildId = (typeof WILD_IDS)[number];
@@ -56,22 +57,6 @@ export function wildAbout(id: WildId, hour: number, season: Season, weather: Wea
 
 // ---------------------------------------------------------------------------------------------
 // The day's plan (deterministic per date)
-
-export function hashKey(s: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-export function rand(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export interface WildDay {
   id: WildId;

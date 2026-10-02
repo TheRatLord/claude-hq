@@ -8,10 +8,11 @@ import type { HudDeps } from './port.ts';
 import type { HudBindings } from './hud.ts';
 import { h } from '../../ui/dom.ts';
 import { shortName } from './format.ts';
+import { readJson, writeJson } from '../storage.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet';
 
 export interface Panel {
   id: PanelId;
@@ -74,15 +75,9 @@ export interface Prefs {
 const PREFS_KEY = 'valley.hud.prefs';
 export function loadPrefs(): Prefs {
   const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true };
-  try {
-    const raw = localStorage.getItem(PREFS_KEY);
-    if (raw) return { ...def, ...(JSON.parse(raw) as Partial<Prefs>) };
-  } catch { /* storage blocked */ }
-  return def;
+  return { ...def, ...(readJson(PREFS_KEY) as Partial<Prefs> | null) };
 }
-export function savePrefs(p: Prefs): void {
-  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* storage blocked */ }
-}
+export function savePrefs(p: Prefs): void { writeJson(PREFS_KEY, p); }
 
 export interface HudCtx {
   d: HudDeps;

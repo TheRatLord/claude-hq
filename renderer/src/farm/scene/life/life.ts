@@ -1,6 +1,6 @@
 /**
  * Ambient life: birds, carrier pigeons (network), crows over struggling fields, butterflies, dragonflies, fireflies,
- * fish, frogs, rabbits, squirrels, the village pets Biscuit and Mochi, and the shy wild visitors (wildlife.ts: deer, fox,
+ * fish, frogs, rabbits, squirrels, the village pets Biscuit and Mochi, your own pet (companion.ts), and the shy wild visitors (wildlife.ts: deer, fox,
  * heron, owl, hedgehog, geese). Everything is scheduled by the sky
  * (`schedule.ts`) and drawn instanced: ~20 draw calls in total.
  */
@@ -11,6 +11,7 @@ import { Fx } from './util.ts';
 import { createBirds } from './birds.ts';
 import { createCritters } from './critters.ts';
 import { createPets } from './pets.ts';
+import { createCompanion } from './companion.ts';
 import { createWildlife } from './wildlife.ts';
 
 export const lifeSystem: SystemFactory = (ctx) => {
@@ -19,6 +20,7 @@ export const lifeSystem: SystemFactory = (ctx) => {
     { name: 'birds', sys: createBirds(ctx, fx) },
     { name: 'critters', sys: createCritters(ctx, fx) },
     { name: 'pets', sys: createPets(ctx, fx) },
+    { name: 'companion', sys: createCompanion(ctx, fx) },
     { name: 'wildlife', sys: createWildlife(ctx, fx) },
   ];
   const clock: LifeClock = { hour: 12, daylight: 1, night: 0, weather: 'clear', intensity: 0, season: 'summer' };

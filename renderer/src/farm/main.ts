@@ -6,6 +6,7 @@
  *
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
+ *             ?timeline=0 (demo: no seeded morning on the farmers' day timelines, model/timeline.ts)
  *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior)
  *             ?welcome=1 (open the first-run welcome tour, fresh; automated browsers skip it otherwise) | ?welcome=0 (never)
  */
@@ -17,6 +18,7 @@ import { createSettings } from '../core/settings.ts';
 import { createPlatform } from '../ui/platform.ts';
 import { createValley } from './model/valley.ts';
 import { demoAlmanac } from './model/almanac.ts';
+import { demoDay } from './model/timeline.ts';
 import { createCollection } from './model/collection.ts';
 import { createWallet } from './model/wallet.ts';
 import { createFriends, friendDef } from './model/friends.ts';
@@ -24,6 +26,8 @@ import type { FriendLetter } from './model/friends.ts';
 import { createOnboarding, shouldWelcome, tipsAllowed, parseOnboarding, emptyOnboarding } from './model/onboarding.ts';
 import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
+import { installStampBook, watchPhotos } from './stampbook.ts';
+import { localJson } from './storage.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
 import type { Quality } from './scene/context.ts';
@@ -59,16 +63,19 @@ const hudNet: HudNet = {
 
 /** the almanac persists per browser profile; the demo valley keeps a believable fortnight in memory instead */
 const ALMANAC_KEY = 'claude-valley.almanac.v1';
+/** each farmer's day timeline (model/timeline.ts): today only, per browser profile; the demo seeds a morning in memory */
+const TIMELINE_KEY = 'claude-valley.timeline.v1';
 const valley = createValley(storeSource, {
-  almanac: {
-    load: () => { const raw = localStorage.getItem(ALMANAC_KEY); return raw ? JSON.parse(raw) : null; },
-    save: (d) => localStorage.setItem(ALMANAC_KEY, JSON.stringify(d)),
-  },
+  almanac: localJson(ALMANAC_KEY),
+  timeline: localJson(TIMELINE_KEY),
 });
+addEventListener('pagehide', () => valley.timeline.flush());
 store.on('hello', (h) => {
   if (!h.demo) return;
   let mem: unknown = demoAlmanac(Date.now(), params.get('almanac') ? Number(params.get('almanac')) : undefined);
   valley.useAlmanac({ load: () => mem, save: (d) => { mem = d; } });
+  let tmem: unknown = null;
+  valley.useTimeline({ load: () => tmem, save: (d) => { tmem = d; } }, params.get('timeline') === '0' ? null : demoDay);
 });
 const hour = params.get('hour');
 if (hour !== null && hour !== '') valley.setSky({ hour: Number(hour) });
@@ -91,30 +98,21 @@ engine.ctx.services.set('controller', controller);
 engine.ctx.services.set('settings', settings);
 // the Collections book (forage + fishing, scene/forage): browser-local like the almanac; a first-ever find is a harvest
 const COLLECTION_KEY = 'claude-valley.collection.v1';
-const collection = createCollection({
-  load: () => { const raw = localStorage.getItem(COLLECTION_KEY); return raw ? JSON.parse(raw) : null; },
-  save: (d) => localStorage.setItem(COLLECTION_KEY, JSON.stringify(d)),
-});
+const collection = createCollection(localJson(COLLECTION_KEY));
 collection.onFind((r) => { if (r.isNew) valley.harvest('found'); });
 collection.onSight((r) => { if (r.isNew) valley.harvest('found'); });
 engine.ctx.services.set('collection', collection);
 // the wallet (bits, the basket of finds, yard decor: model/wallet.ts; the store + yard are scene/yard, the panel hud/shop.ts):
 // browser-local; finds go into the basket, real agent work pays a few bits a day (capped)
 const WALLET_KEY = 'claude-valley.wallet.v1';
-const wallet = createWallet({
-  load: () => { const raw = localStorage.getItem(WALLET_KEY); return raw ? JSON.parse(raw) : null; },
-  save: (d) => localStorage.setItem(WALLET_KEY, JSON.stringify(d)),
-}, { seed: () => Object.fromEntries(Object.entries(collection.data().found).map(([id, f]) => [id, f.n])) });
+const wallet = createWallet(localJson(WALLET_KEY), { seed: () => Object.fromEntries(Object.entries(collection.data().found).map(([id, f]) => [id, f.n])) });
 collection.onFind((r) => wallet.stash(r.def.id));
 valley.on((e) => { wallet.work(e.kind); });
 engine.ctx.services.set('wallet', wallet);
 // friendship with the villagers + their daily requests (model/friends.ts; the villagers system talks, hud/friends.ts shows):
 // browser-local; gifts come out of the basket, requests pay bits, milestone letters go in the mailbox
 const FRIENDS_KEY = 'claude-valley.friends.v1';
-const friends = createFriends({
-  load: () => { const raw = localStorage.getItem(FRIENDS_KEY); return raw ? JSON.parse(raw) : null; },
-  save: (d) => localStorage.setItem(FRIENDS_KEY, JSON.stringify(d)),
-}, {
+const friends = createFriends(localJson(FRIENDS_KEY), {
   season: () => valley.state.sky.season,
   basket: { count: (id) => wallet.data().basket[id] ?? 0, take: (id, n) => wallet.take(id, n), stash: (id, n) => wallet.stash(id, n) },
   pay: (c, why) => wallet.reward(c, why),
@@ -129,11 +127,11 @@ engine.ctx.services.set('friends', friends);
 // the first-run welcome tour + one-time tips (model/onboarding.ts; hud/onboarding.ts shows it): browser-local. Real
 // people get it on their first visit; tests / shots (navigator.webdriver) only with ?welcome=1
 const ONBOARDING_KEY = 'claude-valley.onboarding.v1';
-const loadOnboarding = () => { try { const raw = localStorage.getItem(ONBOARDING_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } };
+const onboardingStore = localJson(ONBOARDING_KEY);
 const welcomeParam = params.get('welcome');
 const automated = !!navigator.webdriver;
-const onboarding = createOnboarding({ load: loadOnboarding, save: (d) => localStorage.setItem(ONBOARDING_KEY, JSON.stringify(d)) }, {
-  autostart: shouldWelcome(parseOnboarding(loadOnboarding()) ?? emptyOnboarding(), { param: welcomeParam, automated }),
+const onboarding = createOnboarding(onboardingStore, {
+  autostart: shouldWelcome(parseOnboarding(onboardingStore.load()) ?? emptyOnboarding(), { param: welcomeParam, automated }),
   tips: tipsAllowed({ param: welcomeParam, automated }),
   pay: (c, why) => wallet.reward(c, why),
   gift: (id) => { wallet.gift(id); },
@@ -141,6 +139,10 @@ const onboarding = createOnboarding({ load: loadOnboarding, save: (d) => localSt
 });
 if (onboarding.data().letter) { const l = onboarding.data().letter!; valley.post({ ...l, fromName: friendDef(l.from)?.name ?? 'Posy' }); }
 collection.onFind((r) => onboarding.signal(r.def.kind === 'fish' ? 'fish' : 'forage'));
+// the stamp book (model/stamps.ts, wired in stampbook.ts; hud/stamps.ts draws it in the Almanac): long-term goals read
+// off every service above; browser-local; stamps pay a few bits and bring yard trophies at 10 / 25 / all
+const stamps = installStampBook({ engine, controller, valley, collection, wallet, friends, ready: () => store.hello !== null });
+engine.ctx.services.set('stamps', stamps);
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
@@ -183,6 +185,7 @@ hud.bind({
   wallet: () => wallet,
   friends: () => friends,
   onboarding: () => onboarding,
+  stamps: () => stamps,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
   service: (name) => engine.ctx.services.get(name),
 });
@@ -196,6 +199,7 @@ installDevApi({
 installOverlay(engine);
 const photo = installPhotoMode(engine, controller, valley, canvas);
 engine.ctx.services.set('photo', photo);
+watchPhotos(stamps, photo, valley);
 const ts = Number(params.get('timescale'));
 if (params.get('timescale') !== null && Number.isFinite(ts)) engine.setTimeScale(ts);
 const pose = params.get('pose');

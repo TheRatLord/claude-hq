@@ -25,7 +25,7 @@ import { valleyImpulse } from './synth.ts';
  * The master chain (live and offline mixdowns share it): a gentle glue compressor that keeps the beds and the music
  * together, then a fast limiter that catches stacked one-shots. WebAudio compressors add automatic make-up gain (here
  * ≈ +7 dB for quiet material); with the trim at 1 a needs-you alert lands where it did behind the old single limiter
- * (≈ −5 dBFS peak at default sliders) while the quiet beds come up ~2.5 dB (measured, docs/VALLEY.md → Sound).
+ * (≈ −5 dBFS peak at default sliders) while the quiet beds come up ~2.5 dB (measured, docs/valley/audio.md → Levels).
  */
 export function buildMaster(c: BaseAudioContext, dest: AudioNode): GainNode {
   const input = c.createGain();

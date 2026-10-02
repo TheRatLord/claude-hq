@@ -8,7 +8,7 @@
   --serif: "Georgia", "DejaVu Serif", "Times New Roman", serif;
   --round: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI", system-ui, "DejaVu Sans", sans-serif;
   --shadow: 0 12px 34px rgba(34, 18, 6, .45), 0 2px 0 rgba(0, 0, 0, .15);
-  /* HUD zones (see docs/VALLEY.md "HUD layout"): one width for the left column, one gutter, and the z-order */
+  /* HUD zones (see docs/valley/hud.md "HUD layout"): one width for the left column, one gutter, and the z-order */
   --gut: 12px; --left-w: 300px;
   --z-world: 5; --z-prompt: 6; --z-hints: 20; --z-backdrop: 30; --z-left: 40; --z-dock: 41; --z-welcome: 45;
   --z-panel: 50; --z-drawer-dim: 54; --z-drawer: 55; --z-toasts: 60; --z-banner: 70;

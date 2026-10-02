@@ -2,7 +2,7 @@
  * The valley band: small synthesized instruments for the music (a few oscillators per note, everything low-passed;
  * no harsh raw saws or squares reach the speakers). `playNote` schedules one note and returns when it stops ringing.
  * `INSTRUMENT_GAIN` trims each to the same loudness for a mid-register note at velocity 1 (measured offline with
- * `_debug.render('inst:NAME:MIDI')`, see docs/VALLEY.md → Sound).
+ * `_debug.render('inst:NAME:MIDI')`, see docs/valley/audio.md).
  */
 import type { Instrument } from './musicPlan.ts';
 import { midiHz } from './musicPlan.ts';

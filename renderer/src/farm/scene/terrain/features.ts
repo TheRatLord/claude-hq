@@ -174,5 +174,3 @@ export function trickleDist(x: number, z: number): number {
 
 /** Stones in the stream bed (for water foam): river boulders + ford stones. */
 export const WATER_STONES: readonly Stone[] = [...RIVER_ROCKS, ...FORD_STONES];
-
-export const FORD_AT: Readonly<XZ> = { x: FORD.x, z: FORD.z };

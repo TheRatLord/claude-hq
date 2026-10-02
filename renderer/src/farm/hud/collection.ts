@@ -6,12 +6,9 @@
 import './collection.css';
 import { sightText, whereText } from '../model/collection.ts';
 import type { CollectDef, CollectionEntry, CollectionService, SightDef, SightEntry } from '../model/collection.ts';
-import { ICONS, KIND_ICON, icon } from './icons.ts';
+import { ICONS, INK, ITEM_OUTLINE as ol, KIND_ICON, icon, svgIcon as S } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
-const INK = '#3b2a1e';
-const ol = `stroke="${INK}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"`;
-const S = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 
 /** A little hand-drawn icon per collectible (the silhouette is the same drawing, blacked out by css). */
 export function collectIcon(d: CollectDef): string {

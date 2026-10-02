@@ -140,8 +140,3 @@ export function rockColor(x: number, y: number, z: number, ny: number, season: S
   if (y > line) out.lerp(GROUND.snowShade, ss(0.45, 0.7, ny) * ss(line, line + 4, y));
   return out;
 }
-
-/** Colour of the ground under a point, for props that want to blend in (grass tufts). */
-export function groundColorAt(x: number, z: number, season: Season, out: THREE.Color): THREE.Color {
-  return groundColor(sampleGround(x, z), season, out);
-}

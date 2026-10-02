@@ -162,3 +162,6 @@ pet('cat', 'cat', 'Mochi: naps, loafs, stretches, grooms, kneads, walks the fenc
 
 // the wild visitors (deer, fox, heron, owl, hedgehog, geese)
 import './wildAssets.ts';
+
+// your own pet (companion.ts): puppy, kitten, fox kit, the foundlings' basket, the fetch stick
+import './companionAssets.ts';

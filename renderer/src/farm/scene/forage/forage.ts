@@ -384,6 +384,17 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
     cast: () => { if (st.phase !== 'idle') return true; aimAtWater(); cast(); return (st.phase as Phase) === 'cast'; },
     bite: () => { if (st.phase === 'wait') st.t = st.dur; },
     phase: () => st.phase,
+    near(x, z, r, out) {
+      let best: Placed | null = null, bd = r;
+      for (const p of placed) {
+        if (p.picked) continue;
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bd) { bd = d; best = p; }
+      }
+      if (!best) return false;
+      out.key = best.spawn.key; out.name = best.def.name; out.x = best.x; out.y = best.y; out.z = best.z;
+      return true;
+    },
   };
   ctx.services.set('forage', debug);
 
@@ -481,4 +492,6 @@ export interface ForageDebug {
   /** the fish bites right now (while waiting) */
   bite(): void;
   phase(): string;
+  /** the nearest unpicked find within r metres of (x, z), written into `out` (no allocation; your pet's nose uses it) */
+  near(x: number, z: number, r: number, out: { key: string; name: string; x: number; y: number; z: number }): boolean;
 }

@@ -82,8 +82,6 @@ export interface ActiveFestival {
 export interface UpcomingFestival { id: FestivalId; name: string; blurb: string; /** ≥ 1 */ inDays: number; start: string }
 export interface FestivalView { active: ActiveFestival | null; next: UpcomingFestival | null }
 
-export const NO_FESTIVAL: FestivalView = Object.freeze({ active: null, next: null });
-
 // ---- day numbers (local calendar dates, DST-proof) ----
 const dayNum = (y: number, m: number, d: number): number => Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
 const iso = (n: number): string => new Date(n * 86_400_000).toISOString().slice(0, 10);

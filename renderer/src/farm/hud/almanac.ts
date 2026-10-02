@@ -2,11 +2,15 @@
  * The Valley Almanac (H): how prosperous the valley has grown from the agents' work. The rank and its progress, today's
  * harvest by kind, the last seven days, the streak, and the town upgrades each rank brings (model/almanac.ts). The
  * status sign carries a compact rank chip that opens it; a new rank pops a toast with a fanfare.
+ *
+ * Two tabs: the Almanac itself and the **stamp book** (model/stamps.ts, drawn by hud/stamps.ts). `open('almanac',
+ * 'stamps')` (or `{ tab: 'stamps' }`) opens on the stamps; 1 / 2 or S switch while it is open.
  */
 import { HARVEST, HARVEST_KINDS, RANKS, STAR_POINTS, UPGRADES } from '../model/almanac.ts';
 import type { AlmanacView, HarvestKind } from '../model/almanac.ts';
 import { ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
+import { createStampPage } from './stamps.ts';
 
 export const HARVEST_ICON: Record<HarvestKind, string> = {
   commit: LETTER_ICON.commit, tests: LETTER_ICON['test-pass'], finished: LETTER_ICON.finished,
@@ -66,10 +70,35 @@ export function createAlmanac(ctx: HudCtx): Panel {
     h('b', { text: 'How the valley grows: ' }),
     ...HARVEST_KINDS.map((k) => h('span', null, icon(HARVEST_ICON[k]), `${HARVEST[k].one} +${HARVEST[k].points}`)));
 
-  body.append(head, h('div.vh-al-row', null, today, week), h('div.vh-h3', { text: 'Town upgrades' }), ups, legend);
+  // two tabs: the almanac and the stamp book
+  const almanacPage = h('div.vh-al-page', null, head, h('div.vh-al-row', null, today, week), h('div.vh-h3', { text: 'Town upgrades' }), ups, legend);
+  const stampBook = createStampPage();
+  const stampsPage = h('div.vh-al-page', { hidden: true }, stampBook.el);
+  const tabAl = h('button', { type: 'button', role: 'tab', 'aria-selected': 'true', 'data-testid': 'almanac-tab-almanac' }, 'Almanac');
+  const stampN = h('span.n');
+  const tabSt = h('button', { type: 'button', role: 'tab', 'aria-selected': 'false', 'data-testid': 'almanac-tab-stamps' }, 'Stamp book', stampN);
+  const tabs = h('div.vh-al-tabs', { role: 'tablist' }, tabAl, tabSt);
+  let tab: 'almanac' | 'stamps' = 'almanac';
+  const stamps = () => { try { return ctx.b?.stamps?.() ?? null; } catch { return null; } };
+  const show = (t: typeof tab, quiet = false) => {
+    if (t !== tab && !quiet) ctx.sfx('page');
+    tab = t;
+    tabAl.setAttribute('aria-selected', String(t === 'almanac'));
+    tabSt.setAttribute('aria-selected', String(t === 'stamps'));
+    almanacPage.hidden = t !== 'almanac';
+    stampsPage.hidden = t !== 'stamps';
+    el.dataset.tab = t;
+    render();
+  };
+  tabAl.addEventListener('click', () => show('almanac'));
+  tabSt.addEventListener('click', () => show('stamps'));
+  body.append(tabs, almanacPage, stampsPage);
 
   let sig = '';
   function render(): void {
+    const sv = stamps()?.view() ?? null;
+    stampN.textContent = sv ? `${sv.earned}/${sv.total}` : '';
+    if (tab === 'stamps') stampBook.render(sv);
     const s = ctx.state();
     if (!s) return;
     const a = s.almanac;
@@ -111,5 +140,20 @@ export function createAlmanac(ctx: HudCtx): Panel {
         h('div.s', { text: have ? u.blurb : `${RANKS[rank].name} · ${RANKS[rank].at.toLocaleString()} prosperity` }));
     }));
   }
-  return { id: 'almanac', el, onOpen() { sig = ''; render(); }, refresh: render };
+  return {
+    id: 'almanac', el,
+    onOpen(arg) {
+      sig = '';
+      const want = arg === 'stamps' || (arg && typeof arg === 'object' && (arg as { tab?: string }).tab === 'stamps') ? 'stamps' : 'almanac';
+      show(want, true); // quietly: the panel's own open sound plays
+    },
+    refresh: render,
+    key(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      if (e.key === '1') { show('almanac'); return true; }
+      if (e.key === '2') { show('stamps'); return true; }
+      if (e.code === 'KeyS') { show(tab === 'stamps' ? 'almanac' : 'stamps'); return true; }
+      return false;
+    },
+  };
 }

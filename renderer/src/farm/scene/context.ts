@@ -113,6 +113,11 @@ export interface UiPort {
    */
   friends?(o?: { give?: string }): void;
   /**
+   * Your own pet (model/pet.ts, scene/life/companion.ts, hud/pet.ts): the adoption card (species, coat, a name) at
+   * Fern's foundlings basket, or your pet's card once you have one. Optional for fakes.
+   */
+  pet?(): void;
+  /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the
    * screen. `o.who` heads the bubble (the speaker's name) when it is pinned to the screen edge.
@@ -256,6 +261,8 @@ export const SFX = Object.freeze([
   'cast', 'plop', 'bite', 'reel',
   // the economy (scene/yard, hud/shop): bits changing hands
   'coins',
+  // the stamp book (model/stamps.ts, hud/stamps.ts): a stamp inked into the book
+  'stamp',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 
