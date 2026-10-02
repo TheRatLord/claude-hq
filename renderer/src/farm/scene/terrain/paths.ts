@@ -12,6 +12,7 @@ import { SURF, surfaceMaterial } from '../surface/index.ts';
 import { merge } from '../flora/geom.ts';
 import { rockGeometry } from './rocks.ts';
 import { GROUND } from './ground.ts';
+import { OUTCROPS } from './features.ts';
 import { partName } from '../parts.ts';
 
 interface Peb { x: number; y: number; z: number; s: number; yaw: number }
@@ -69,6 +70,8 @@ function kerbs(): Peb[] {
 
 /** Old dry-stone walls: short wandering runs in open meadow, and runs following the farm tracks. */
 function walls(): { x: number; z: number; y: number }[][] {
+  // (a run breaks off rather than marching through a boulder: outcrops only keep clear of `clearance`, not of walls)
+  const rocky = (x: number, z: number) => OUTCROPS.some((o) => Math.abs(o.x - x) < 6 && Math.hypot(o.x - x, o.z - z) < o.r * 1.4 + 0.8);
   const r = seeded('land:walls');
   const runs: { x: number; z: number; y: number }[][] = [];
   for (let tries = 0; tries < 400 && runs.length < 9; tries++) {
@@ -79,7 +82,7 @@ function walls(): { x: number; z: number; y: number }[][] {
     const run: { x: number; z: number; y: number }[] = [];
     let ok = true;
     for (let s = 0; s < len; s += 0.5) {
-      if (clearance(x, z) < 1.6 || slopeAt(x, z) > 0.25 || heightAt(x, z) < WORLD.water + 0.6) { ok = false; break; }
+      if (clearance(x, z) < 1.6 || slopeAt(x, z) > 0.25 || heightAt(x, z) < WORLD.water + 0.6 || rocky(x, z)) { ok = false; break; }
       run.push({ x, z, y: heightAt(x, z) });
       h += fbm(x / 9, z / 9) * 0.08;
       x += Math.sin(h) * 0.5; z += Math.cos(h) * 0.5;
@@ -102,7 +105,7 @@ function walls(): { x: number; z: number; y: number }[][] {
       for (let t = i === i0 ? rp() * l * 0.5 : 0; t < l && acc < len; t += 0.5, acc += 0.5) {
         const x = a.x + (dx * t) / l - (dz / l) * off * side, z = a.z + (dz * t) / l + (dx / l) * off * side;
         const R = Math.hypot(x, z * 1.05);
-        if (R < 26 || R > 86 || clearance(x, z) < 1.5 || slopeAt(x, z) > 0.22 || heightAt(x, z) < WORLD.water + 0.6) { ok = false; break; }
+        if (R < 26 || R > 86 || clearance(x, z) < 1.5 || slopeAt(x, z) > 0.22 || heightAt(x, z) < WORLD.water + 0.6 || rocky(x, z)) { ok = false; break; }
         run.push({ x, z, y: heightAt(x, z) });
       }
       if (!ok) break;

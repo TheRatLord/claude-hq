@@ -92,7 +92,7 @@ export function createBoat(sh: Shared): Pastime {
   const env: BoatEnv = { depth, pads, wind: { x: 0, z: 0 } };
   const rowIn = { fwd: 0, turn: 0 };
   let dev: { fwd: number; turn: number; until: number } | null = null;
-  let rowStamped = false, hinted = false, bumpSay = 0, t = 0;
+  let rowStamped = false, rowFlushed = 0, hinted = false, bumpSay = 0, t = 0;
 
   // ------------------------------------------------------------------ the pose (and everything riding on it)
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), one = new THREE.Vector3(1, 1, 1);
@@ -178,6 +178,7 @@ export function createBoat(sh: Shared): Pastime {
         if (bumpSay <= 0 && st.bump > 0.7) { bumpSay = 20; sh.say('Bonk. She bounces off gently: no harm done.', 2200, 'Rowboat'); }
       }
       if (!rowStamped && st.rowed > 12) { rowStamped = true; sh.stamp('row'); }
+      if (st.rowed - rowFlushed >= 10) flushRowed();   // metres rowed → the stamp book, ten at a time (and the rest on leaving)
       return true;
     },
   };
@@ -187,7 +188,7 @@ export function createBoat(sh: Shared): Pastime {
     if (!c || mode === 'winter' || mode === 'aboard') return;
     if (mode === 'return') { mode = 'moored'; }
     st.vx = st.vz = st.w = 0; st.active = 0; st.rowed = 0; st.bump = 0;
-    rowStamped = false;
+    rowStamped = false; rowFlushed = 0;
     mode = 'aboard';
     c.ride(rider, () => { if (mode === 'aboard') leave(); });
     p.yaw = st.yaw + Math.PI;
@@ -196,8 +197,16 @@ export function createBoat(sh: Shared): Pastime {
     perch.active = true;
     if (!hinted) { hinted = true; sh.say('Into the rowboat! W / S to row, A / D to turn. Look at the water and E to fish; E by the dock to step out.', 6500, 'Rowboat'); }
   }
+  /** hand the whole metres rowed since the last flush to the stamp book */
+  function flushRowed(): void {
+    const m = Math.floor(st.rowed - rowFlushed);
+    if (m <= 0) return;
+    rowFlushed += m;
+    sh.rowed(m);
+  }
   function leave(): void {
     if (mode !== 'aboard') return;
+    flushRowed();
     mode = 'return';
     perch.active = false;
     dev = null;

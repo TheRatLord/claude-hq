@@ -15,6 +15,8 @@ import { almanacView, dayKey, emptyAlmanac, parseAlmanac, recapDue, recapLetter,
 import type { AlmanacData, HarvestKind } from './almanac.ts';
 import { createTimeline } from './timeline.ts';
 import type { MarkKind, SeedFn, TimelineRecorder, TimelineStore } from './timeline.ts';
+import { createRecaps, recapLine } from './recap.ts';
+import type { Recap, RecapObs, RecapRecorder, RecapSeedFn, RecapStore } from './recap.ts';
 import { contextFill, emptySpendLedger, modelLabel, plotRepo, recordSpend, repoView, spendToday, todoItems, valleySpend } from './signals.ts';
 import type {
   FarmerView, Gauges, HelperView, Job, Letter, LetterKind, LinkState, Mood, PlotKind, PlotStage, PlotView, ValleyEvent, ValleyState,
@@ -71,6 +73,10 @@ export interface Valley {
   readonly timeline: TimelineRecorder;
   /** switch where the timeline lives (the demo valley keeps a seeded morning in memory) */
   useTimeline(store: TimelineStore | undefined, seed?: SeedFn | null): void;
+  /** harvest recaps (model/recap.ts): what each farmer did in its last stretches of work; read through `state.recaps` */
+  readonly recaps: RecapRecorder;
+  /** switch where the recaps live (the demo valley keeps a seeded history in memory) */
+  useRecaps(store: RecapStore | undefined, seed?: RecapSeedFn | null): void;
   /** a letter from a villager (model/friends.ts milestones): a 'news' letter at `at`, once per `id` */
   post(l: { id: string; at: number; from: string; fromName: string; title: string; body: string }): void;
 }
@@ -91,7 +97,7 @@ const MARK_OF: Partial<Record<EventMsg['kind'], MarkKind>> = {
   commit: 'ship', 'test-pass': 'pass', 'test-fail': 'fail', error: 'error', finished: 'finished', 'subagent-spawned': 'sub', compact: 'compact',
 };
 
-export function createValley(src: ValleySource, { wallNow = Date.now, almanac: alStore, timeline: tlStore }: { wallNow?: () => number; almanac?: AlmanacStore; timeline?: TimelineStore } = {}): Valley {
+export function createValley(src: ValleySource, { wallNow = Date.now, almanac: alStore, timeline: tlStore, recaps: rcStore }: { wallNow?: () => number; almanac?: AlmanacStore; timeline?: TimelineStore; recaps?: RecapStore } = {}): Valley {
   const listeners = new Set<(e: ValleyEvent) => void>();
   const send = (e: ValleyEvent) => { for (const f of [...listeners]) { try { f(e); } catch (err) { console.error('[valley] listener threw', err); } } };
   const loadAlmanac = (st: AlmanacStore | undefined): AlmanacData => { try { return parseAlmanac(st?.load()) ?? emptyAlmanac(); } catch { return emptyAlmanac(); } };
@@ -112,6 +118,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     if (h) harvest(h);
   };
   const tl = createTimeline(tlStore, { now: wallNow() });
+  const rc = createRecaps(rcStore, { now: wallNow() });
   const farmerRecs = new Map<string, FarmerRec>();
   const spendLedger = emptySpendLedger();
   const plotRecs = new Map<string, PlotRec>();
@@ -130,6 +137,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     sky: skyAt(new Date(wallNow())),
     almanac: almanacView(alData, wallNow()),
     timeline: tl.view,
+    recaps: rc.view,
     spend: valleySpend(spendLedger, wallNow()),
   };
 
@@ -338,6 +346,18 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     state.helpers = helpers;
     state.plots = new Map([...plotRecs].map(([id, r]) => [id, r.view]));
     tl.observe(farmers.values(), wallNow());
+    // harvest recaps: a stretch of work that just ended becomes a recap (a postcard in the HUD, the card's history)
+    const obs: RecapObs[] = [];
+    for (const e of ordered) {
+      const f = farmers.get(e.id);
+      if (!f) continue;
+      obs.push({
+        id: f.id, tag: f.tag, name: f.name, status: e.status, title: e.title, said: e.lastText, work: e.work, usage: e.usage ?? null, todos: e.todos,
+        git: f.git ? { repo: f.git.repo, branch: f.git.branch, head: f.git.head, dirty: f.git.dirty, ahead: f.git.ahead } : null,
+        context: f.context, contextTokens: f.contextTokens ?? null, model: f.model ?? null,
+      });
+    }
+    for (const r of rc.observe(obs, wallNow())) harvested(r, ordered.find((x) => x.id === r.farmerId));
     // the field's repo (branch on the sign, weeds, crates) and the valley's spend today
     const byPlot = new Map<string, Entity[]>();
     for (const e of ordered) { const l = byPlot.get(e.workspace.id); if (l) l.push(e); else byPlot.set(e.workspace.id, [e]); }
@@ -366,6 +386,18 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     if (entities.length || src.workspaces().length || (state.link === 'live' && ++liveTicks > 8)) primed = true;
   }
 
+  /** a recap closed: hang it on the farmer's finished letter (or post one: a stretch that ended idle has none) and tell the HUD */
+  function harvested(r: Recap, e: Entity | undefined) {
+    const line = recapLine(r);
+    const fin = state.letters.find((l) => l.farmerId === r.farmerId && l.kind === 'finished' && !l.recap && state.now - l.at < 120_000);
+    if (fin) { fin.recap = r.key; fin.body = [r.title, line].filter(Boolean).join(' · '); }
+    else if (r.end !== 'left' || e) {
+      letter('finished', e, r.farmerId, `${r.name} ${r.end === 'left' ? 'went home mid-task' : 'wrapped up'}`, [r.title, line].filter(Boolean).join(' · '));
+      if (state.letters[0]?.farmerId === r.farmerId) state.letters[0].recap = r.key;
+    }
+    send({ kind: 'harvested', id: r.farmerId, detail: r.key });
+  }
+
   const detailText = (d: unknown, ...keys: string[]): string => {
     if (!d || typeof d !== 'object') return '';
     for (const k of keys) { const v = (d as Record<string, unknown>)[k]; if (typeof v === 'string' && v) return v; }
@@ -380,6 +412,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     if (mk) tl.mark(m.id, mk, wallNow(), m.kind === 'finished' ? e?.title ?? '' : m.kind === 'subagent-spawned' ? detailText(m.detail, 'label', 'type')
       : detailText(m.detail, 'msg', 'message', 'subject', 'cmd', 'summary', 'tool'));
     else if (m.kind === 'struggle' && ((m.detail as { level?: number } | undefined)?.level ?? 0) >= 2) tl.mark(m.id, 'struggle', wallNow(), detailText(m.detail, 'detail', 'reason'));
+    rc.event(m.id, m.kind, wallNow(), { msg: detailText(m.detail, 'msg', 'message', 'subject'), sha: detailText(m.detail, 'sha') || null });
     switch (m.kind) {
       case 'blocked': letter('needs-you', e, m.id, `${name} needs you`, e?.prompt?.question ?? e?.activity?.detail ?? ''); break;
       case 'finished': letter('finished', e, m.id, `${name} finished`, e?.title ?? e?.lastText ?? ''); emit({ kind: 'finished', id: m.id }); break;
@@ -420,6 +453,8 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     almanacData: () => alData,
     timeline: tl,
     useTimeline(st, seed) { tl.use(st, seed); state.timeline = tl.view; },
+    recaps: rc,
+    useRecaps(st, seed) { rc.use(st, seed); state.recaps = rc.view; },
     post(l) {
       const id = `V:${l.id}`;
       if (state.letters.some((x) => x.id === id)) return;

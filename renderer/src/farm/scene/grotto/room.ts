@@ -486,6 +486,7 @@ function buildGrotto(host: RoomHost, _season: Season): RoomBuilt {
 
   const tint = new THREE.Color();
   const dayC = new THREE.Color();
+  const DAMP = new THREE.Color(0.6, 0.74, 0.78);
   let firstLine = false;
 
   return {
@@ -516,7 +517,7 @@ function buildGrotto(host: RoomHost, _season: Season): RoomBuilt {
       // the crystals' colours (the same wheel as the shader) and their mirror in the pool
       for (let i = 0; i < crystalLights.length; i++) {
         const e = crystalLights[i];
-        crystalTint(big[i].phase, f.time, e.color);
+        crystalTint(big[i].phase, f.time, e.color).lerp(DAMP, 0.4);   // the light on the walls: the crystal's hue, washed toward cool damp stone
         poolU.uLights.value[i].copy(e.pos);
         poolU.uLightCols.value[i].copy(e.color).multiplyScalar(e.intensity);
       }

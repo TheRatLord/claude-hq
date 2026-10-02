@@ -10,6 +10,7 @@ import type { RepoView } from '../model/types.ts';
 import './signals.css';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { createDayCard } from './timeline.ts';
+import { createHarvestSection, openRecap } from './recap.ts';
 import { mascotOf } from '../model/mascots.ts';
 
 export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void; showHelper(id: string): void } {
@@ -24,6 +25,8 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
   let sending = false;
   // the day timeline section: one node, re-appended on rebuilds, repainting itself on its own signature
   const day = createDayCard(ctx);
+  // the last harvests (hud/recap.ts): newest recap + history, repainting on its own signature
+  const harvest = createHarvestSection(ctx);
 
   function farmerView(f: FarmerView): void {
     const s = ctx.state()!;
@@ -75,7 +78,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     if (f.unseenDone) acts.append(h('button.vh-btn', { type: 'button', 'data-testid': 'card-ack', onclick: () => { ctx.b?.agents.ack(f.id); ctx.sfx('chime-done'); ctx.toast({ text: `Thanked ${shortName(f)}`, sub: 'marked as reviewed', level: 'good', icon: ICONS.check }); ctx.panels.close(); } }, icon(ICONS.check), 'Acknowledge', h('kbd.vh-k', { text: 'A' })));
     kids.push(acts);
     if ((f.status === 'idle' || f.status === 'done') && !f.needsYou) kids.push(promptBox(f));
-    kids.push(day.el);
+    kids.push(harvest.el, day.el);
     body.replaceChildren(...kids.filter((k): k is Node => !!k));
   }
 
@@ -152,7 +155,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const s = ctx.state();
     if (!s || !id) return;
     const f = s.farmers.get(id), hp = s.helpers.get(id);
-    if (f) day.update(f.id);
+    if (f) { day.update(f.id); harvest.update(f.id); }
     const nsig = f ? JSON.stringify([f.status, f.job, f.detail, f.title, f.needsYou, f.unseenDone, f.question, f.options, f.todos, f.work, Math.round((f.context ?? 0) * 50), f.said, f.ducklings, Math.floor((s.now - f.lastActive) / 60000),
       f.model, f.git, f.spend && [f.spend.tokens >> 14, Math.round((f.spend.cost ?? 0) * 100)]])
       : hp ? JSON.stringify([hp, Math.floor(s.now / 60000)]) : 'gone';
@@ -191,6 +194,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
       const f = ctx.farmer(id);
       if (e.code === 'KeyT') { ctx.openTerminal(id); return true; }
       if (e.code === 'KeyN' && !e.shiftKey) return focusTask();
+      if (e.code === 'KeyR' && f) return openRecap(ctx, f.id);
       if (e.code === 'KeyA' && f?.unseenDone) { (el.querySelector('[data-testid="card-ack"]') as HTMLButtonElement | null)?.click(); return true; }
       if (f?.needsYou && /^Digit[1-9]$/.test(e.code)) {
         const o = f.options[Number(e.code.slice(5)) - 1];

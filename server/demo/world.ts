@@ -15,7 +15,7 @@
 import { HerdrSource, Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, Logger, RawAgent, RawLayout, RawPane, RawTab, RawWorkspace, TimerHandle } from '../interfaces.ts';
 import { FIELD_OWNERS, KINDS, SCENARIOS, STATUSES, TOOL_CLASSES, VALIDATE, mayEmit } from '../../shared/protocol.ts';
-import type { Activity, DemoConfig, Entity, EventKind, GitInfo, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, Usage, WorkStats } from '../../shared/protocol.ts';
+import type { Activity, DemoConfig, DiffFile, DiffResult, Entity, EventKind, GitInfo, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, Usage, WorkStats } from '../../shared/protocol.ts';
 import { costOf, localDay, tokensOf } from '../../shared/pricing.ts';
 import type { TokenUse } from '../../shared/pricing.ts';
 import { hashHex, identityKey, placeOf } from '../../shared/identity.ts';
@@ -229,6 +229,8 @@ export class DemoWorld extends HerdrSource {
   facts: Map<string, Facts>;
   /** workspace id → its repository (rev 2; every pane of the workspace shares it); null = not a git repo */
   gits: Map<string, GitInfo | null>;
+  /** workspace id → the HEADs it has had (oldest first) and every edit, tagged with the HEAD it landed on (`git.diff`, rev 4) */
+  edits: Map<string, DemoEdits>;
   /** pane id → schedule state */
   sims: Map<string, Sim>;
   /** Optional pane reader for pane.read visible/recent (app wires FakeTerminals.read). */
@@ -262,6 +264,7 @@ export class DemoWorld extends HerdrSource {
     this.log = log ?? { debug() {}, info() {}, warn() {}, error() {} };
     this.facts = new Map();
     this.gits = new Map();
+    this.edits = new Map();
     this.sims = new Map();
     this.paneReader = null;
     this.paneScroll = null;
@@ -379,6 +382,7 @@ export class DemoWorld extends HerdrSource {
     this.raw = emptyRaw();
     this.facts.clear();
     this.gits.clear();
+    this.edits.clear();
     this.sims.clear();
     this._wsSeq = 0;
     this._termSeq = 0;
@@ -432,6 +436,65 @@ export class DemoWorld extends HerdrSource {
       ahead: branch === 'spike/webgpu' ? null : R.chance(0.5) ? R.int(1, 7) : 0, behind: R.chance(0.2) ? R.int(1, 4) : 0,
       lastCommit: { subject: R.pick(COMMITS), at: this.clock.now() - R.int(4, 240) * MIN },
     };
+  }
+
+  /** git.diff bookkeeping: the workspace's HEAD history starts at the HEAD it was seeded with. */
+  _editsOf(wsId: string): DemoEdits | null {
+    const g = this.gits.get(wsId);
+    if (!g) return null;
+    let e = this.edits.get(wsId);
+    if (!e) { e = { heads: [g.head ?? '0000000'], log: [] }; this.edits.set(wsId, e); }
+    return e;
+  }
+  _logEdit(wsId: string | undefined, file: string, added: number, removed: number, created: boolean): void {
+    const e = wsId ? this._editsOf(wsId) : null;
+    if (!e) return;
+    e.log.push({ head: e.heads.length - 1, file, added, removed, created });
+    if (e.log.length > 2000) e.log.splice(0, e.log.length - 2000);
+  }
+  _logHead(wsId: string | undefined, head: string): void {
+    const e = wsId ? this._editsOf(wsId) : null;
+    if (e && e.heads.at(-1) !== head) e.heads.push(head);
+  }
+
+  /**
+   * `git.diff` (rev 4) over the demo's own edit log: from a HEAD the workspace had to a later one (or the working tree),
+   * every edit made on the HEADs in between, summed per file; `path` adds a made-up but plausible patch. A HEAD the
+   * log never had (the seeded morning's recaps) gets a seeded diffstat of its own, so every recap has something to show.
+   */
+  async diff(id: string, _root: string | null, q: { from?: string; to?: string; path?: string }): Promise<DiffResult> {
+    const wsId = this._pane(id)?.workspace_id;
+    const g = wsId ? this.gits.get(wsId) : null;
+    if (!wsId || !g) throw Object.assign(new Error('not a git repository'), { code: 'not_accepted' });
+    const e = this._editsOf(wsId)!;
+    const from = q.from ?? e.heads.at(-1)!;
+    const to = q.to ?? null;
+    const a = e.heads.indexOf(from);
+    const b = to ? e.heads.indexOf(to) : e.heads.length;
+    const per = new Map<string, { added: number; removed: number; created: boolean }>();
+    if (a >= 0 && b >= a) {
+      for (const x of e.log) {
+        if (x.head < a || x.head >= b) continue;
+        const c = per.get(x.file) ?? { added: 0, removed: 0, created: x.created };
+        c.added += x.added; c.removed += x.removed;
+        per.set(x.file, c);
+      }
+    } else {
+      const R = rng(`diff:${wsId}:${from}:${to ?? ''}`);
+      const n = R.int(1, 6);
+      for (let i = 0; i < n; i++) {
+        const file = activityFor(R, R.chance(0.2) ? 'write' : 'edit').detail || `src/file${i}.ts`;
+        const added = R.int(2, 80);
+        per.set(file, { added, removed: R.int(0, Math.round(added * 0.7)), created: R.chance(0.15) });
+      }
+    }
+    const files: DiffFile[] = [...per].map(([path, c]) => ({ path, status: c.created ? (to || (b > a && e.log.some((x) => x.file === path && x.head < e.heads.length - 1)) ? 'A' : '?') : 'M', added: c.added, removed: c.created ? 0 : c.removed }))
+      .sort((x, y) => (y.added! + y.removed!) - (x.added! + x.removed!) || x.path.localeCompare(y.path));
+    const res: DiffResult = { root: g.root, from: from.slice(0, 12), to: to ? to.slice(0, 12) : null, files, added: files.reduce((s, f) => s + f.added!, 0), removed: files.reduce((s, f) => s + f.removed!, 0), more: 0 };
+    if (!q.path) return res;
+    const f = files.find((x) => x.path === q.path);
+    if (!f) throw Object.assign(new Error('that file is not in this diff'), { code: 'not_accepted' });
+    return { ...res, patch: { path: f.path, text: demoPatch(f, `${wsId}:${from}`), truncated: false } };
   }
 
   /** Change a workspace's repo and tell every pane in it. */
@@ -986,6 +1049,7 @@ export class DemoWorld extends HerdrSource {
         const ahead = g.ahead == null ? null : parseInt(head[0], 16) % 2 ? 0 : g.ahead + 1;
         return { ...g, head, dirty: 0, untracked: 0, ahead, behind: 0, lastCommit: { subject, at: this.clock.now() } };
       });
+      this._logHead(this._pane(sim.id)?.workspace_id, head);
       this._event(sim.id, 'commit', { push: false, msg: subject, sha: head, branch: this.gits.get(this._pane(sim.id)?.workspace_id ?? '')?.branch ?? undefined });
       this._todos(sim, 'git');
     } else if ((cls === 'build' && R.chance(0.15)) || (cls !== 'think' && cls !== 'talk' && R.chance(0.03))) {
@@ -1012,6 +1076,7 @@ export class DemoWorld extends HerdrSource {
     const added = cls === 'write' ? R.int(12, 140) : a.tool === 'MultiEdit' ? R.int(4, 40) : R.int(1, 18);
     const removed = cls === 'write' ? 0 : R.int(0, Math.max(1, Math.round(added * 0.8)));
     f.work = { since: f.work.since, added: f.work.added + added, removed: f.work.removed + removed, files: Math.max(f.work.files, sim.files.size) };
+    this._logEdit(this._pane(sim.id)?.workspace_id, a.detail || 'file', added, removed, cls === 'write');
     sim.turnEdits = (sim.turnEdits ?? 0) + 1;
   }
 
@@ -1708,4 +1773,32 @@ export function createDemo({ clock, n = 12, seed = 1, scenario = 'mixed', log }:
   const demo = new DemoEnricher(source);
   const procinfo = new ProcInfoEnricher({ source, clock, log: log?.child?.('procinfo') });
   return { source, demo, enrichers: [demo, procinfo] };
+}
+
+/** A demo workspace's git history for `git.diff`: HEADs oldest first, and every edit with the index of the HEAD it landed on. */
+export interface DemoEdits { heads: string[]; log: { head: number; file: string; added: number; removed: number; created: boolean }[] }
+
+const PATCH_ADD = ['  const next = settle(prev, now);', '  if (!next) return null;', '  // keep the order stable for the HUD', '  out.push({ id, at: now, ...patch });',
+  '  return list.filter((x) => x.live);', '  for (const r of rows) total += r.n;', "  log.debug(`sweep ${n} roots`);", '  await queue.flush();', '  cache.delete(key);', '  return { ok: true, value };'];
+const PATCH_DEL = ['  const next = prev;', '  // TODO: remove once the race is fixed', '  return list;', '  total = rows.length;', '  await sleep(50);'];
+/** A made-up but plausible unified diff for one demo file (deterministic per file and range; ≤ ~60 lines). */
+export function demoPatch(f: DiffFile, key: string): string {
+  const R = rng(`patch:${key}:${f.path}`);
+  const add = Math.min(f.added ?? 0, 40), del = Math.min(f.removed ?? 0, 16);
+  const lines: string[] = [`diff --git a/${f.path} b/${f.path}`];
+  if (f.status === 'A' || f.status === '?') lines.push('new file mode 100644', '--- /dev/null', `+++ b/${f.path}`, `@@ -0,0 +1,${f.added} @@`);
+  else lines.push(`index ${hashHex(`${key}a`).slice(0, 7)}..${hashHex(`${key}b`).slice(0, 7)} 100644`, `--- a/${f.path}`, `+++ b/${f.path}`);
+  let left = add, gone = del, at = R.int(8, 120);
+  while (left > 0 || gone > 0) {
+    const a = Math.min(left, R.int(1, 8)), d = Math.min(gone, R.int(0, 4));
+    if (f.status !== 'A' && f.status !== '?') lines.push(`@@ -${at},${d + 3} +${at},${a + 3} @@ export function ${R.pick(['tick', 'render', 'sweep', 'apply', 'load'])}(`);
+    if (f.status !== 'A' && f.status !== '?') lines.push(`   ${R.pick(['const now = clock.now();', 'if (!state) return;', 'let n = 0;'])}`);
+    for (let i = 0; i < d; i++) lines.push(`-${R.pick(PATCH_DEL)}`);
+    for (let i = 0; i < a; i++) lines.push(`+${R.pick(PATCH_ADD)}`);
+    if (f.status !== 'A' && f.status !== '?') lines.push(`   ${R.pick(['}', 'return out;', '// …'])}`);
+    left -= a; gone -= d; at += R.int(12, 60);
+    if (!a && !d) break;
+  }
+  if ((f.added ?? 0) > add || (f.removed ?? 0) > del) lines.push(`@@ … ${(f.added ?? 0) - add + (f.removed ?? 0) - del} more lines in this demo file @@`);
+  return `${lines.join('\n')}\n`;
 }

@@ -22,6 +22,10 @@ to `renderer/src/farm/`.
 * They draw last (transparent list, `NoBlending`, `renderOrder` 1000: opaque, and over the summit viewer's mask). No
   cast or received shadows (their real position is often inside the thing you stand at); no wet sheen / snow
   (`#undef VW_TOON`: it washed them out).
+* **Fill** (`vmFill`, albedo-tinted emissive): the held lantern's warm glow (stronger the darker it is) plus a little
+  cool ambient after dusk. The toon ramp's facing term left the paw's top and the sleeve black at night (the lantern
+  hangs below them); the fill keeps them reading as lit by it. The sleeve slims and bends down past the cuff so a
+  reach (grab, pat, the raised lantern) doesn't fill the view with forearm.
 * Draws: left paw + its item, right paw + its item, the lantern's glass (unlit, `warmEmitter`). A swinging or flying
   part (lantern, basket, the flipped coin) is the same draw: vertices with `aPart = 1` move by the paw's `vmPart` matrix.
 * Where the paws meet the world they are **FOV-matched**: a camera-space point is scaled by

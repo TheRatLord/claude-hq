@@ -78,6 +78,7 @@ export const HINTS: readonly HintDef[] = Object.freeze([
   { id: 'campfire', nudge: true, who: 'villager:fern', text: 'There\'s a campfire tonight', sub: 'Find a free log by the fire and press {use} to sit down with everyone.' },
   { id: 'trail', nudge: true, who: 'villager:fern', text: 'The summit trail starts here', sub: 'Follow the switchbacks up the cliff to the lookout; the valley viewer up top can spy any farmer.' },
   { id: 'pet', nudge: true, who: 'villager:fern', text: 'A basket of foundlings', sub: 'A puppy and a kitten are looking for a home: {use} on the basket to meet them.' },
+  { id: 'orchard', nudge: true, who: 'villager:fern', text: 'The hillside orchard', sub: 'Something\'s ripe: look at a fruit tree and press {use} to give it a shake. The hives have honey too.' },
   { id: 'notebook', nudge: true, who: 'villager:fern', text: 'Fern\'s field notebook', sub: '{notebook} opens it: how to do everything you\'ve found, and hints for the things you haven\'t yet.' },
 ] as HintDef[]);
 /** a nudge counts only if it was queued this recently (the world still says so: you're still by the dock) */

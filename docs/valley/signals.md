@@ -22,6 +22,7 @@ adding a signal, changing how one is derived, or moving where one appears.
 | **token spend today (+ USD estimate)** | **transcripts usage (new)** | **`usage`** (rev 2) | **`FarmerView.spend`, `ValleyState.spend`** | **card, ledger column + total, Almanac** |
 | commit subject | transcripts (git's `[branch sha] subject` / `-m`) | `commit` event `detail.msg/sha/branch` (rev 2) | letter body, timeline mark | mailbox, Today moments |
 | output tokens | transcripts | `outputTokens` | — | not shown (spend supersedes it) |
+| **diffstat of a stretch (files, lines, one file's patch)** | **`enrich/gitDiff.ts` on request** | **`git.diff` reply** (rev 4) | `Recap.git.from/to` → `AgentPort.diff` | **the harvest postcard's View changes ([recap.md](recap.md))** |
 | `res` (cpu / rss) | reserved, always null | `res` | — | card when present |
 
 Not derived (no reliable source today): PR links, CI status, per-test names, permission-mode, Codex / Gemini usage
@@ -85,7 +86,7 @@ Today card `Model spend: $64 · 120M tokens across 23 farmers`. Subagent transcr
 
 Additive, inside `PROTOCOL_VERSION` 1: `PROTOCOL_REVISION` 2 (sent as `hello.revision`) adds `Entity.git`,
 `Entity.usage` (both optional on the type, always sent by a rev-2 server, `null` when unknown) and `detail.msg / sha /
-branch` on `commit` events. Older servers and recordings simply lack them: the model reads absent as `null`, and every
+branch` on `commit` events. `PROTOCOL_REVISION` 4 adds the read-only request `git.diff` ([recap.md](recap.md)). Older servers and recordings simply lack them: the model reads absent as `null`, and every
 presentation path handles `null`. The new View fields are optional on `FarmerView` / `HelperView` / `PlotView` /
 `ValleyState` so hand-built views (gallery, scene tests) need not fill them; `createValley` always does.
 

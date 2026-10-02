@@ -77,6 +77,7 @@ const CASES: Record<ClientMsgType, [Record<string, unknown>, Record<string, unkn
   'settings.set': [{ patch: { fov: 70 } }, { patch: { evil: 1 } }],
   'world.get': [{}, { x: 1 }],
   'timeline.get': [{ since: 0 }, { since: 'yesterday' }],
+  'git.diff': [{ id: 'w1:p1', from: 'abc1234', path: 'src/a.ts' }, { id: 'w1:p1', from: 'HEAD~1; rm -rf /' }],
   'note.set': [{ id: 'w1:p1', text: null }, { id: 'w1:p1', text: 'x'.repeat(281) }],
   'demo.force': [{ id: 'd1:p1', patch: { status: 'blocked' } }, { id: 'd1:p1', patch: [] }],
   'demo.scenario': [{ name: 'longIdle' }, { name: '../etc' }],

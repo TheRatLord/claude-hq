@@ -206,7 +206,7 @@ test('pastimes: pick up a forageable, catch a fish, both land in the Collections
   await page.keyboard.press('KeyK');
   const book = page.getByTestId('panel-collection');
   await expect(book).toBeVisible();
-  await expect(book).toContainText('0 of 30 found');
+  await expect(book).toContainText('0 of 35 found');
   await page.keyboard.press('Escape');
   await expect(book).toBeHidden();
   // today's forageables lie about the valley; walk up to one and press E
@@ -226,7 +226,7 @@ test('pastimes: pick up a forageable, catch a fish, both land in the Collections
   await expect.poll(() => v((x) => (x.ctx.services.get('forage') as { phase(): string }).phase()), { timeout: 15_000 }).toMatch(/show|idle/);
   await page.keyboard.press('KeyK');
   await expect(book).toBeVisible();
-  await expect(book).toContainText('2 of 30 found');
+  await expect(book).toContainText('2 of 35 found');
   expect(errors).toEqual([]);
 });
 

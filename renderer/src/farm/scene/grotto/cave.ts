@@ -6,7 +6,7 @@
  *    to the plan's floor, painted per face (cool wet rock, moss by the pool and the mouth, darker overhead), with the
  *    stalactites and stalagmites merged in: one draw;
  *  - the crystals and the little glow-caps: one draw, a toon material whose emissive cycles slowly through teal,
- *    violet and rose per cluster (`crystalTint` mirrors it on the CPU for the LightEmitters);
+ *    periwinkle, lilac and ice blue per cluster (`crystalTint` mirrors it on the CPU for the LightEmitters);
  *  - the pool: one draw, a still dark mirror that reflects the crystals, the lantern and the mouth analytically (no
  *    second render), rippled by the drips; blind cave fish under it (one instanced draw);
  *  - the cave paintings: one canvas texture on a quad grid hugging the north wall;
@@ -112,7 +112,7 @@ function surfaceNets(f: (x: number, y: number, z: number) => number, b: Box, h: 
 }
 
 /** Rock colours: cool and a little damp; moss where the pool and the mouth keep it wet and lit. */
-const ROCK = C(0x6c6774), ROCK_WARM = C(0x7a6e66), ROCK_DARK = C(0x45414f), FLOOR = C(0x5e5862), MOSS = C(0x4f7a3e), MOSS_DARK = C(0x3a5a34), WET = C(0x3c3a48), CALCITE = C(0xb2a796);
+const ROCK = C(0x646c6e), ROCK_WARM = C(0x746c64), ROCK_DARK = C(0x3e4549), FLOOR = C(0x5a5e5c), MOSS = C(0x4f7a3e), MOSS_DARK = C(0x3a5a34), WET = C(0x343c42), CALCITE = C(0xb2aa98);
 
 function shellColor(x: number, y: number, z: number, ny: number, out: THREE.Color): THREE.Color {
   const n = noise3(x * 0.7, y * 0.7, z * 0.7), band = Math.sin(y * 3.1 + n * 2.2);
@@ -290,7 +290,7 @@ export function buildCrystals(clusters: readonly Cluster[]): THREE.BufferGeometr
 }
 
 /** crystal palette the colour cycles through (linear-ish sRGB values; the shader and the CPU agree) */
-const CYCLE = [new THREE.Color(0x3ff0d8), new THREE.Color(0x9a6cff), new THREE.Color(0xff6fd0), new THREE.Color(0x58b8ff)];
+const CYCLE = [new THREE.Color(0x3ff0d8), new THREE.Color(0x7c9cff), new THREE.Color(0xa88cf0), new THREE.Color(0x58c4ff)];   // teal, periwinkle, a soft lilac, ice blue: cool cave light, no hot pinks
 const CYCLE_GLSL = CYCLE.map((c) => `vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)})`);
 /** seconds per full turn of the colour wheel */
 export const CYCLE_SECS = 48;

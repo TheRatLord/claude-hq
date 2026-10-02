@@ -337,8 +337,46 @@ function glowcap(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** the hillside orchard's fruit (scene/orchard), sitting on the ground: a body, a stalk and a leaf */
+function fruit(color: number, sy: number, s: number, blush?: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const r = 0.07 * s;
+  parts.push(partName(blob([0, r * sy, 0], [r, r * sy, r], { paint: (f) => (blush !== undefined && f.nx < -0.2 && f.ny > -0.3 ? blush : color), sides: 10, rings: 6 }), 'fruit'));
+  parts.push(partName(stalk(0, 0, r * sy * 1.9, r * sy * 2.5, 0.006, C(0x6a4424), [0.01, 0, 0]), 'stalk'));
+  parts.push(partName(place(leaf(0.06 * s, 0.025 * s, { pitch: 0.3, base: C(0x3f7a2f), tip: C(0x7ab84a) }), 0.005, r * sy * 2.3, 0, 0.8), 'leaf'));
+  return merge(parts);
+}
+const apple = () => fruit(C(0xd8402e), 0.92, 1, C(0xf2a040));
+const pear = () => fruit(C(0xd0c454), 1.3, 0.95, C(0xc8a040));
+const plum = () => fruit(C(0x6a3a8a), 1.08, 0.85, C(0x9a6ab8));
+function cherry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, z] of [[-0.035, 0], [0.035, 0.012]] as const) {
+    parts.push(partName(blob([x, 0.035, z], [0.035, 0.034, 0.035], { paint: (f) => (f.nx < -0.3 && f.ny > 0 ? C(0xff7a8a) : C(0xc81a36)), sides: 9, rings: 5 }), 'cherry'));
+    parts.push(partName(loft([{ p: [x, 0.065, z], r: 0.004 }, { p: [x * 0.4, 0.12, z * 0.5], r: 0.004 }, { p: [0, 0.15, 0.005], r: 0.003 }], { sides: 4, sub: 2, paint: C(0x5a7a2a) }), 'stalk'));
+  }
+  parts.push(partName(place(leaf(0.07, 0.03, { pitch: 0.4, base: C(0x3f7a2f), tip: C(0x7ab84a) }), 0, 0.15, 0.005, -0.6), 'leaf'));
+  return merge(parts);
+}
+function honey(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 9), C(0xe8a422)).translate(0, 0.05, 0), 'jar'));
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.056, 0.056, 0.022, 9), C(0xd9453b)).translate(0, 0.11, 0), 'lid'));
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.051, 0.051, 0.04, 9, 1, true), C(0xf6efe0)).translate(0, 0.055, 0), 'label'));
+  return merge(parts);
+}
+function cider(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.04, 0.042, 0.14, 8), C(0x5a8a4a)).translate(0, 0.07, 0), 'bottle'));
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.014, 0.03, 0.06, 7), C(0x5a8a4a)).translate(0, 0.17, 0), 'neck'));
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.016, 0.016, 0.02, 6), C(0xb98a4a)).translate(0, 0.21, 0), 'cork'));
+  parts.push(partName(prim(new THREE.CylinderGeometry(0.0425, 0.0425, 0.05, 8, 1, true), C(0xe8b04a)).translate(0, 0.07, 0), 'label'));
+  return merge(parts);
+}
+
 const FORAGE_BUILD: Record<string, () => THREE.BufferGeometry> = {
   morel, wildleek, violet, berries, feather, shell, skipstone, chanterelle, acorn, hazelnut, mapleleaf, holly, pinecone, crystal, glowcap,
+  apple, pear, plum, cherry, honey, cider,
 };
 const forageCache = new Map<string, THREE.BufferGeometry>();
 /** a forageable's geometry (cached; base at y = 0) */

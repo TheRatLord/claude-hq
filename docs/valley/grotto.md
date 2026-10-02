@@ -34,6 +34,10 @@ Key sources (paths relative to `renderer/src/farm/`):
   where it always did, and the cut opens a real gap behind it.
 * `pathAt` paints the tread as worn rock. `clearance` keeps scatter off it, and bank pebbles skip its foot.
 
+The mouth's arch is 13 wet-stone lumps on a symmetric ellipse (mirrored sizes, heavier at the jambs, flattened along
+the curve, moss only on top faces), set into mirrored shoulders and a lintel that hide the throat's tunnel walls in
+the groove the cut leaves past the mouth.
+
 Outside dressing comes to 4 draws: one merged vertex-coloured mesh (slabs, boulders, arch, a dark throat), the throat's
 crystal glow, spray, and `curtainBack()`. `curtainBack()` redraws the falls' own sheet a hand's width toward the cliff,
 back faces only, as streaky backlit water: pale blue by day, moonlit by night.
@@ -63,6 +67,9 @@ It uses two optional `RoomDef` fields:
 * **Shell:** an SDF (blended ellipsoid lobes + 3D noise + a floor), polygonised with surface nets at 0.36 m. Floor
   vertices snap to `caveFloor`. Faces are painted per face (moss low and near the mouth, wet dark rock, mineral
   streaks). Stalactites, the bat roost and the stalagmites that hide the chest are merged in.
+* **Palette:** cool, damp grey-green stone (no violet cast); the crystal wheel is teal, periwinkle, a soft lilac and
+  ice blue, and the light the crystals throw on the walls is their hue washed 40 % toward cool stone (`DAMP` in
+  `room.ts`), so the glow tints the cave without flooding it purple.
 * **Crystals:** clusters raycast onto the walls. The emissive colour wheel (`crystalTint`, `CYCLE_SECS` = 48) runs in
   the shader, and 4 real `LightEmitter`s follow the same wheel. Also lit:
   * the explorer's lantern (flickers; E dims it);

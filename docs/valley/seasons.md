@@ -30,7 +30,9 @@ Key sources: `scene/seasons/` (`seasons.ts` the system + service, `boat.ts`, `sk
 * A lantern on the bow lights after dusk (glow mesh + a `lights` emitter). Your pet, if you have one, hops into the
   bow and rides along facing you (service `petPerch`, read by `companion.ts`), and hops out by you after.
 * Winter: hauled up upside down on the south beach (a collider; "Look at" says to try the ice).
-* "First row" stamp: 12 m rowed in one outing (`StampEvent 'row'`).
+* "First row" stamp: 12 m rowed in one outing (`StampEvent 'row'`). Every metre rowed also goes into the book's
+  lifetime `n.rowM` (`stamps.rowed(m)`, flushed ten metres at a time and on stepping out): Fern's notebook shows it on
+  the rowboat page ("1.2 km rowed on the pond · 5 outings").
 
 ## Skating (winter, the pond frozen)
 

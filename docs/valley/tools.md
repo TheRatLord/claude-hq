@@ -197,7 +197,14 @@ crowd40 …), `panels` (every HUD panel and a farmer card), `terminal`, `toasts`
 puddles / snow / rainbow), `inside`, `gather`, `wildlife`, `festival`, `forage` (+ fishing), `pet`, `flap` (rapid
 status changes), `socket` (drops the valley's WebSocket), `hidden` (tab hidden, the page clock jumps 1–5 h), `midnight`
 (the page clock jumps to 8 s before midnight) — then returns to a fixed baseline (first scenario, hub, 10:00 clear,
-panels closed), settles, forces a GC (CDP) and samples:
+panels closed), settles, forces a GC (CDP) and samples. Before the first sample a **warm-up** opens every panel
+under every scenario and runs every action twice (`--warmup 0` skips it): panels, rooms, gatherings and festival
+dressing are built lazily on first use, and without it those one-off builds landed in the run's second half and were
+fitted as growth. The baseline waits for the scene's object count to hold for 3 reads 2 s apart before sampling
+(dressing that comes down over a few seconds of game time otherwise reads as a spike). `hudTop` names each panel
+(`section.vh-frame.vh-<id>`); `sceneTop` (in the JSON) names the scene's biggest top-level subtrees, so an object spike
+says what it is made of. A few samples still catch `plots` at +300–500 objects (date-driven field stages after
+`hidden` / `midnight` clock jumps); they come and go and are not growth.
 
 | metric | from |
 |---|---|
@@ -230,7 +237,10 @@ scratch/snap`, symlink `node_modules`, copy your files over).
 Finding the source of a leak: run one action at a time (`--actions X`), then look at what is retained — CDP
 `DOM.getDetachedDomNodes` names detached elements; for GPU memory, hook `BufferGeometry.prototype.addEventListener`
 (three adds its `'dispose'` listener when it uploads a geometry) to list uploaded geometries that are not in the scene
-by creation stack. Last round (fixed): every toast was kept alive by the anchored bubbles' obstacle set (`hud/anchors.ts`
+by creation stack; for a detached DOM subtree, `DOM.getDetachedDomNodes` + a heap snapshot's retainer path names the
+holder (that is how the ledger's day-strip map was found: a strip kept for a departed farmer held its old row and the
+row's whole group). Fixed since: `hud/roster.ts` prunes `strips` by the live rows itself (a forced render cleared
+`rowEls` first, so strips of farmers who left were never dropped; ~2.5k nodes per scenario reseed). Last round (fixed): every toast was kept alive by the anchored bubbles' obstacle set (`hud/anchors.ts`
 prunes it now), a duplicate `visibilitychange` started a second rAF chain (`core/loop.ts`), and a season change leaked
 the town upgrades' geometry (`structures/upgrades.ts` dispose).
 
@@ -293,5 +303,5 @@ seated pose; legs hanging through their own seat and soakers' feet in the pool a
 Intended cases live in `scripts/placement-allow.json` (globs over key / owner / asset, per check, optional `max` /
 `min` on the metrics, and a `reason` for each). Fix real findings at the source (the placing code), allowlist only
 what is meant to be (apples hang in trees, outcrops are bedded into slopes), and keep `max` tight so a regression
-still surfaces. Entries that match nothing are reported; delete them. In page: `__valley.audit({ only })`,
+still surfaces. Entries that match nothing are reported; delete them (`sitters/…` entries are only checked in a `--sitters` run). In page: `__valley.audit({ only })`,
 `__valley.auditShow(keys, focus, view)`, `__valley.auditClear()`.

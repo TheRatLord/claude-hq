@@ -216,7 +216,7 @@ export const STRUCTURE_PLACES: Readonly<Record<string, { name: string; r: number
   campfire: { name: 'the campfire', r: 10 }, dock: { name: 'the fishing dock', r: 9 }, bridge: { name: 'the old bridge', r: 12 },
   signpost: { name: 'the signpost', r: 4 }, waterfall: { name: 'the waterfall', r: 22 }, pergola: { name: 'the pergola', r: 8 },
   picnic: { name: 'the picnic meadow', r: 9 }, lookout: { name: 'the stargazing deck', r: 10 }, hotspring: { name: 'the hot spring', r: 9 },
-  orchard: { name: 'the orchard', r: 14 }, stones: { name: 'the standing stones', r: 12 }, haymeadow: { name: 'the hay meadow', r: 13 },
+  orchard: { name: 'the honey stand', r: 14 }, stones: { name: 'the standing stones', r: 12 }, haymeadow: { name: 'the hay meadow', r: 13 },
   swingtree: { name: 'the swing tree', r: 10 },
 });
 

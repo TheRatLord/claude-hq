@@ -195,7 +195,7 @@ test('stamps: tolerant parse; the view hides unearned secrets and reports progre
   assert.equal(parseStamps({ v: 2 }), null);
   const d = parseStamps({ v: 1, earned: { 'first-fish': T0, bogus: T0, rainbow: 'x' }, n: { ship: 3.7, answered: -1 }, plots: { a: [1, 2], b: 'x' }, nooks: ['pergola', 'pergola', 3], fests: ['harvest', 'nope'], seasons: ['winter', 'monsoon'], trophies: 9 })!;
   assert.deepEqual(d.earned, { 'first-fish': T0 });
-  assert.deepEqual(d.n, { ship: 3, answered: 0, photo: 0, late: 0, row: 0, eight: 0, snowman: 0 });
+  assert.deepEqual(d.n, { ship: 3, answered: 0, photo: 0, late: 0, row: 0, rowM: 0, eight: 0, snowman: 0 });
   assert.deepEqual(d.plots, { a: [1, 2] });
   assert.deepEqual(d.nooks, ['pergola']);
   assert.deepEqual(d.fests, ['harvest']);
@@ -209,4 +209,13 @@ test('stamps: tolerant parse; the view hides unearned secrets and reports progre
   assert.deepEqual(v.entries.find((e) => e.def.id === 'cairn-7')?.progress, { have: 3, need: 7 });
   assert.equal(v.byCat.pastimes.earned, 1);
   assert.equal(v.bits, 10);
+});
+
+test('stamps: metres rowed add up across outings (whole metres, junk ignored) and survive a reload', () => {
+  let saved: unknown = null;
+  const store = { load: () => saved, save: (d: unknown) => { saved = JSON.parse(JSON.stringify(d)); } };
+  const s = createStamps(store as never);
+  s.rowed(12.7); s.rowed(30); s.rowed(-4); s.rowed(Number.NaN); s.rowed(0.4);
+  assert.equal(s.data().n.rowM, 42);
+  assert.equal(createStamps(store as never).data().n.rowM, 42);
 });

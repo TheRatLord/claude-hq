@@ -47,6 +47,20 @@ function slab(x: number, y: number, z: number, r: number, yaw: number, color: nu
   return f;
 }
 
+/** Repaint a rock per face by its world normal: wet blue-grey stone, darker undersides, moss on the tops. */
+function stone(g: THREE.BufferGeometry, seed: number): THREE.BufferGeometry {
+  const f = clean(g), p = f.attributes.position, nrm = f.attributes.normal, col = new Float32Array(p.count * 3), c = new THREE.Color();
+  const r = rnd(500 + seed);
+  for (let i = 0; i < p.count; i += 3) {
+    const ny = (nrm.getY(i) + nrm.getY(i + 1) + nrm.getY(i + 2)) / 3, nz = (nrm.getZ(i) + nrm.getZ(i + 1) + nrm.getZ(i + 2)) / 3;
+    c.setHex(ny > 0.6 ? 0x56784a : ny < -0.4 ? 0x41474c : nz > 0.3 ? 0x6b7174 : 0x585e63);
+    if (ny <= 0.6 && r() < 0.15) c.multiplyScalar(0.88);
+    for (let k = 0; k < 3; k++) c.toArray(col, (i + k) * 3);
+  }
+  f.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return f;
+}
+
 /** The ledge's slabs, the boulders and the mouth's arch + throat (one geometry, vertex coloured). */
 export function buildOutside(): THREE.BufferGeometry {
   const r = rnd(41);
@@ -70,14 +84,30 @@ export function buildOutside(): THREE.BufferGeometry {
     const y = heightAt(x, z);
     parts.push(partName(blob([x, y + s * 0.35, z], [s, s * 0.75, s * 0.85], { paint: (f) => (f.ny > 0.5 ? 0x5e8a46 : 0x7a766e), sides: 8, rings: 4 }), 'boulder'));
   }
-  // the mouth: a rough arch of rock lumps round the opening, bedded into the cut
-  const O = OPENING;
-  for (let i = 0; i <= 10; i++) {
-    const a = Math.PI * (i / 10);
-    const x = O.x + Math.cos(a) * (O.w / 2 + 0.35), y = O.y + Math.sin(a) * O.h * 0.92 + (i === 0 || i === 10 ? -0.1 : 0.12);
-    const s = 0.42 + r() * 0.2 + (i === 0 || i === 10 ? 0.15 : 0);
-    parts.push(partName(blob([x, y, O.z - 0.15], [s, s * 0.9, 0.5], { paint: (f) => (f.ny > 0.55 ? 0x5a7a46 : f.nz > 0.3 ? 0x6e6a70 : 0x58545e), sides: 7, rings: 4 }), 'arch'));
+  // the mouth: a natural arch of wet stone round the opening, bedded into the cut. Symmetric about the opening (each lump
+  // mirrors its partner, only the facets differ), heavier at the feet, flattened along the curve so the lumps read
+  // as one weathered rim rather than a string of beads; moss only where the top faces catch the drip.
+  const O = OPENING, N = 13, ar = rnd(77);
+  const jit = Array.from({ length: Math.ceil(N / 2) }, () => ar());
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1), a = Math.PI * t, m = jit[Math.min(i, N - 1 - i)];
+    const foot = Math.pow(Math.abs(Math.cos(a)), 3);                       // 1 at the jambs, 0 at the crown
+    const rx = O.w / 2 + 0.3 + foot * 0.06, ry = O.h * 0.9 + 0.1;
+    const x = O.x + Math.cos(a) * rx, y = O.y - 0.05 + Math.sin(a) * ry;
+    const s = 0.34 + m * 0.08 + foot * 0.12;
+    const g = blob([0, 0, 0], [s * 1.25, s * 0.78, 0.5 + foot * 0.08], { paint: 0x777777, sides: 7, rings: 4 });
+    g.rotateZ(a + Math.PI / 2).translate(x, y, O.z - 0.15);
+    parts.push(partName(stone(g, i < N / 2 ? i : N - 1 - i), 'arch'));
   }
+  // the rock the arch is set in: the ledge's cut runs on past the mouth (world/grotto.ts CUT), so without these the
+  // throat's tunnel stood bare in the groove (a black box beside the arch from the ledge). Mirrored shoulders + a lintel.
+  const hood = (x: number, y: number, z: number, r: [number, number, number], seed: number) =>
+    parts.push(partName(stone(blob([O.x + x, O.y + y, O.z + z], r, { paint: 0x777777, sides: 8, rings: 5 }), seed), 'arch'));
+  for (const sx of [-1, 1]) {
+    hood(sx * 1.45, 0.9, -1.55, [0.55, 1.1, 1.35], 20);
+    hood(sx * 1.1, 2.15, -1.6, [0.5, 0.6, 1.3], 22);
+  }
+  hood(0, 2.65, -1.8, [0.9, 0.3, 1.2], 21);
   // the throat: a short tunnel into the rock, its walls darkening to black
   {
     const pos: number[] = [], col: number[] = [];
@@ -86,7 +116,7 @@ export function buildOutside(): THREE.BufferGeometry {
       const a = Math.PI * (i / R), d = j / L;
       return [O.x + Math.cos(a) * (O.w / 2 - 0.05) * (1 - d * 0.15), O.y - 0.02 + Math.sin(a) * O.h * (1 - d * 0.18), O.z - d * 2.6];
     };
-    const shade = (j: number) => { const k = Math.min(1, j / L); return new THREE.Color(0x3a3644).lerp(new THREE.Color(0x07060a), Math.pow(k, 0.6)); };
+    const shade = (j: number) => { const k = Math.min(1, j / L); return new THREE.Color(0x343a40).lerp(new THREE.Color(0x05070a), Math.pow(k, 0.6)); };
     for (let j = 0; j < L; j++) for (let i = 0; i < R; i++) {
       const A = ring(j, i), B = ring(j, i + 1), C = ring(j + 1, i), D = ring(j + 1, i + 1);
       for (const [p, jj] of [[A, j], [C, j + 1], [B, j], [B, j], [C, j + 1], [D, j + 1]] as const) { pos.push(...p); col.push(...shade(jj).toArray()); }
@@ -125,7 +155,7 @@ export function glowCard(): THREE.Mesh {
       void main() {
         float d = length(vUv - 0.5) * 2.0;
         float a = smoothstep(1.0, 0.0, d) * (0.18 + 0.06 * sin(uTime * 0.6));
-        vec3 c = mix(vec3(0.25, 0.95, 0.85), vec3(0.6, 0.4, 1.0), 0.5 + 0.5 * sin(uTime * 0.13));
+        vec3 c = mix(vec3(0.25, 0.95, 0.85), vec3(0.45, 0.6, 1.0), 0.5 + 0.5 * sin(uTime * 0.13));
         gl_FragColor = vec4(c * a, a);
       }`,
   });

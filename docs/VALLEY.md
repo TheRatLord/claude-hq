@@ -17,6 +17,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [lore.md](valley/lore.md) | writing copy or changing how agent state shows: fields, farmers, ducklings, jobs, field traces, idle leisure and nooks, system-stat landmarks |
 | [art.md](valley/art.md) | building or restyling anything visible: toon/facet rules, sculpted creatures, surface library, palette, local lights, post, seasons, the land (strata, ivy, meadow, horizon) |
 | [hud.md](valley/hud.md) | touching DOM overlays: names/tags, anchored bubbles, the interaction tag, terminal routes, power-user loop, keys, layout zones, z-order, layer classes, drawer |
+| [recap.md](valley/recap.md) | changing harvest recaps: what a stretch of work records, when it closes, the postcard / toast / card / ledger, the read-only `git.diff` |
 | [timeline.md](valley/timeline.md) | changing the per-farmer day timeline: what is recorded, its bounds and storage, the card's Today section, the ledger strips |
 | [signals.md](valley/signals.md) | changing what the server knows about an agent and where it shows: model, context fill, todo checklist, git per field, token spend; the known-vs-surfaced audit |
 | [map.md](valley/map.md) | changing the map panel or minimap: painted base, live layers, pin language, layer toggles |
@@ -38,6 +39,8 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [album.md](valley/album.md) | changing photo mode's looks, frames, timer or "say cheese", the photo album (IndexedDB, limits, the panel) or the farmhouse photo wall |
 | [interior.md](valley/interior.md) | changing the walk-in rooms (farmhouse, barn: chores, machine room) |
 | [grotto.md](valley/grotto.md) | changing the secret grotto behind the waterfall: the ledge cut, the cave room, its secrets (glow-caps, cave fish, the chest, the stamp), the map's "?" |
+| [orchard.md](valley/orchard.md) | changing the hillside orchard & apiary: the fruit trees through the seasons, shaking a tree (E), the hives, bees and honey, the cider press, its site on the east slope |
+| [projects.md](valley/projects.md) | changing the Valley Projects: the Mayor's board on the square, the six plans (bits, finds, a friend's blessing, real work; the demo never counts), the ruined and restored places, the unveiling, the board's panel |
 | [trail.md](valley/trail.md) | changing the summit trail, its decks, the lookout or the valley viewer |
 | [viewmodel.md](valley/viewmodel.md) | changing your first-person paws: what they hold, gestures, the lantern, their overlay drawing, the `hands` service |
 | [desktop.md](valley/desktop.md) | changing the Electron shell: tray icon + menu, dock / taskbar badges, native notifications, the summon hotkey, window state, start at login, background rendering, the preload bridge |
@@ -108,7 +111,7 @@ the lead.
 | **trail** | `scene/trail/*` (route + cut in `world/trail.ts`) | the summit trail's dressing, staircase / bridge / deck `walkSurface`s (wrapping structures'), the valley viewer, the summit cairn, service `trail` |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
-Not assigned a row: `scene/seasons/*` (system `seasons`: rowboat, ice, snowmen; [seasons.md](valley/seasons.md)), `scene/forage/*` (system `forage`), `scene/viewmodel/*` (system `viewmodel`, service `hands`; [viewmodel.md](valley/viewmodel.md)), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
+Not assigned a row: `scene/seasons/*` (system `seasons`: rowboat, ice, snowmen; [seasons.md](valley/seasons.md)), `scene/forage/*` (system `forage`), `scene/viewmodel/*` (system `viewmodel`, service `hands`; [viewmodel.md](valley/viewmodel.md)), `scene/orchard/*` (system / service `orchard`, site in `world/orchard.ts`; [orchard.md](valley/orchard.md)), `scene/projects/*` (system `projects`, service `projectsScene`, sites in `world/projects.ts`; [projects.md](valley/projects.md)), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
 (system `yard`, service `wallet`) — ask the lead before editing them; `scene/sculpt.ts` and `scene/parts.ts` are shared
 helpers.
 
@@ -118,7 +121,7 @@ helpers.
 
 * 60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it),
   life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), trail ≤ 8, viewmodel ≤ 4, interior ≤ 40 (only while
-  inside), seasons ≤ 8 (rowboat 3–4, winter ice 1 + snowmen 3), atmosphere ≤ 30 + post.
+  inside), seasons ≤ 8 (rowboat 3–4, winter ice 1 + snowmen 3), orchard ≤ 8 + shadows ([orchard.md](valley/orchard.md#budgets)), projects ≈ 14 + 1 confetti while it flies ([projects.md](valley/projects.md)), atmosphere ≤ 30 + post.
 * One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 * Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the
   top view (`npm run bench`; 5–7 ms today, max ≈ 7.2 ms in `crowd40` snow at the hub), CPU frame (`cpu`) ≲ 8 ms with

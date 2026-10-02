@@ -31,6 +31,8 @@ import { FRIEND_IDS, friendDef, heartsOf } from './friends.ts';
 import type { WalletData } from './wallet.ts';
 import type { StampsData, Motif } from './stamps.ts';
 import type { GrottoData } from './grotto.ts';
+import type { ProjectsData } from './projects.ts';
+import { PROJECTS } from './projects.ts';
 import { JOURNAL } from './grotto.ts';
 import { FESTIVALS } from './calendar.ts';
 import { dayKey } from './almanac.ts';
@@ -74,6 +76,8 @@ export interface GuideWorld {
   toured: { farmhouse?: boolean; forage?: boolean; fish?: boolean };
   /** the notebook's own memory */
   seen: readonly string[];
+  /** the Valley Projects board (model/projects.ts; optional: older callers) */
+  projects?: Readonly<ProjectsData> | null;
 }
 
 export const emptyGuideWorld = (): GuideWorld => ({
@@ -106,13 +110,15 @@ export interface PageDef {
 const seen = (w: GuideWorld, id: SeenId) => w.seen.includes(id);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const earned = (w: GuideWorld, id: string) => w.stamps?.earned[id] !== undefined;
-const n = (w: GuideWorld) => w.stamps?.n ?? { ship: 0, answered: 0, photo: 0, late: 0, row: 0, eight: 0, snowman: 0 };
+const n = (w: GuideWorld) => w.stamps?.n ?? { ship: 0, answered: 0, photo: 0, late: 0, row: 0, rowM: 0, eight: 0, snowman: 0 };
 const forageKinds = (w: GuideWorld) => FORAGE.filter((d) => w.collection?.found[d.id]).length;
 const forageCount = (w: GuideWorld) => FORAGE.reduce((a, d) => a + (w.collection?.found[d.id]?.n ?? 0), 0);
 const fishCount = (w: GuideWorld) => FISHES.reduce((a, d) => a + (d.junk ? 0 : w.collection?.found[d.id]?.n ?? 0), 0);
 const sightCount = (w: GuideWorld) => SIGHTINGS.filter((d) => w.collection?.seen?.[d.id]).length;
 const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
 const NOOK_COUNT = 8, CAIRN = 7;
+/** the hillside orchard's finds (model/orchard.ts): any one finds its page */
+const ORCHARD_FINDS = ['apple', 'pear', 'plum', 'cherry', 'honey'];
 
 const P = (o: PageDef): PageDef => Object.freeze(o);
 
@@ -174,7 +180,7 @@ export const PAGES: readonly PageDef[] = Object.freeze([
     hint: 'Something bobs against the dock pilings, spring to autumn, waiting for someone with an afternoon to spare…',
     when: { label: 'spring to autumn', now: (w) => w.season !== 'winter' },
     found: (w) => n(w).row > 0 || seen(w, 'rowboat'),
-    notes: (w) => [n(w).row ? `${plural(n(w).row, 'outing')} on the pond` : 'not out on the water yet'],
+    notes: (w) => (n(w).row || n(w).rowM ? [`${km(n(w).rowM ?? 0)} rowed on the pond`, ...(n(w).row ? [plural(n(w).row, 'outing')] : [])] : ['not out on the water yet']),
     rumour: 'The little rowboat is tied at the dock, just begging to be taken out. The fish in the middle are bigger, they say.',
   }),
   P({
@@ -194,6 +200,20 @@ export const PAGES: readonly PageDef[] = Object.freeze([
     found: (w) => n(w).snowman > 0 || seen(w, 'snowball'),
     notes: (w) => [n(w).snowman ? `${plural(n(w).snowman, 'snow friend')} built` : 'no snow friend finished yet'],
     rumour: 'Snow\'s good for more than shovelling, you know. Roll a ball, then another…',
+  }),
+  P({
+    id: 'orchard', chapter: 'seasons', title: 'The hillside orchard', motif: 'apple',
+    how: 'Through the gate on the east foothills: look at a fruit tree and press {use} to shake it. Cherries and plums ripen in summer, apples, pears and the last plums in autumn; what falls goes into your basket. {use} on a hive takes its honey every few days, and three apples or pears make cider at the press.',
+    hint: 'Up against the eastern hills there\'s a walled garden that hums all summer. Blossom first, then something sweeter…',
+    when: { label: 'fruit in summer and autumn, honey spring to autumn', now: (w) => w.season === 'summer' || w.season === 'autumn' },
+    found: (w) => ORCHARD_FINDS.some((id) => w.collection?.found[id]),
+    notes: (w) => {
+      const f = (id: string) => w.collection?.found[id]?.n ?? 0;
+      const fruit = f('apple') + f('pear') + f('plum') + f('cherry');
+      const kinds = ['apple', 'pear', 'plum', 'cherry'].filter((id) => f(id)).length;
+      return [`${plural(fruit, 'fruit', 'fruit')} picked (${kinds} of 4 kinds)`, f('honey') ? `${plural(f('honey'), 'jar')} of honey` : 'no honey yet'];
+    },
+    rumour: 'Have you been up to the orchard on the east slope? Give a ripe tree a good shake and see what drops.',
   }),
   P({
     id: 'festival', chapter: 'seasons', title: 'Festivals', motif: 'blossom',
@@ -253,6 +273,20 @@ export const PAGES: readonly PageDef[] = Object.freeze([
     notes: () => [],
     rumour: 'Have you read the Gazette? G, or the noticeboard. I\'m in it. Page two.',
     by: ['villager:posy', 'villager:marigold', 'villager:nimbus'],
+  }),
+  P({
+    id: 'projects', chapter: 'village', title: 'Valley projects', motif: 'house',
+    how: 'The Mayor\'s board on the west side of the square ({use} to read it) plans six restorations: bits from your purse, finds from foraging and fishing, a friend\'s blessing, and real work from your farmers (commits shipped, tests passed, blocked agents unblocked). Fill a plan and walk over to see the place made new.',
+    hint: 'Half the valley is waiting to be mended: a dark path, a broken bridge, a halt nobody stops at. Someone has pinned up a plan…',
+    found: (w) => Object.values(w.projects?.p ?? {}).some((q) => q && (q.done || q.bits || Object.keys(q.items).length)),
+    notes: (w) => {
+      const p = w.projects?.p ?? {};
+      const done = PROJECTS.filter((d) => p[d.id]?.done).length;
+      const next = PROJECTS.find((d) => !p[d.id]?.done);
+      return [`${done} of ${PROJECTS.length} places restored`, ...(next ? [`next up: ${next.name}`] : ['every place mended. The valley thanks you!'])];
+    },
+    rumour: 'Have you seen the projects board on the square? The Mayor wants the old footbridge mended, and the lantern path lit again.',
+    by: ['villager:marigold', 'villager:bram', 'villager:fern'],
   }),
 
   // ---- Exploring
@@ -363,12 +397,12 @@ export function guideView(w: GuideWorld, known: readonly string[] = []): GuideVi
 // ---------------------------------------------------------------------------------------------
 // Nudges (one-time tips for something right in front of you; texts in model/onboarding.ts HINTS)
 
-export type NudgeId = 'boat' | 'skate' | 'snow' | 'barn' | 'campfire' | 'trail' | 'pet' | 'notebook';
+export type NudgeId = 'boat' | 'skate' | 'snow' | 'barn' | 'campfire' | 'trail' | 'pet' | 'orchard' | 'notebook';
 /** how far (m) the player stands from the things a nudge points at, and whether they're outside */
-export interface Near { outdoors: boolean; dock: number; pond: number; barn: number; campfire: number; trailhead: number; basket: number }
-export const NEAR_FAR: Near = Object.freeze({ outdoors: true, dock: 1e9, pond: 1e9, barn: 1e9, campfire: 1e9, trailhead: 1e9, basket: 1e9 });
+export interface Near { outdoors: boolean; dock: number; pond: number; barn: number; campfire: number; trailhead: number; basket: number; /** the hillside orchard's gate (optional: older callers) */ orchard?: number }
+export const NEAR_FAR: Near = Object.freeze({ outdoors: true, dock: 1e9, pond: 1e9, barn: 1e9, campfire: 1e9, trailhead: 1e9, basket: 1e9, orchard: 1e9 });
 /** the pond's radius (world/map.ts POND.r) is added by the caller: `pond` is the distance from its edge */
-export const NUDGE_R = Object.freeze({ dock: 14, pond: 7, barn: 13, campfire: 26, trailhead: 12, basket: 8 });
+export const NUDGE_R = Object.freeze({ dock: 14, pond: 7, barn: 13, campfire: 26, trailhead: 12, basket: 8, orchard: 12 });
 /** pages found before the notebook itself gets a nudge */
 export const NOTEBOOK_AFTER = 3;
 
@@ -385,6 +419,7 @@ export function nudgesFor(w: GuideWorld, near: Near): NudgeId[] {
   if (!f('gathering') && w.gathering === 'campfire' && near.campfire < NUDGE_R.campfire) out.push('campfire');
   if (!f('summit') && near.trailhead < NUDGE_R.trailhead) out.push('trail');
   if (!f('pet') && near.basket < NUDGE_R.basket) out.push('pet');
+  if (!f('orchard') && (w.season === 'summer' || w.season === 'autumn') && (near.orchard ?? 1e9) < NUDGE_R.orchard) out.push('orchard');
   if (!seen(w, 'notebook') && PAGES.filter((p) => isFound(p, w)).length >= NOTEBOOK_AFTER) out.push('notebook');
   return out;
 }
@@ -437,6 +472,8 @@ export const FEATURES: readonly Feature[] = Object.freeze([
   { ver: 5, title: 'Git in the fields', line: 'every field shows its branch and uncommitted work at a glance.' },
   { ver: 5, page: 'grotto', title: 'A rumour', line: 'the waterfall has been sounding strangely hollow lately. Make of that what you will.' },
   { ver: 6, title: 'This very notebook', line: 'every pastime in the valley, how to do it, and hints for the ones you haven\'t found ({notebook}).' },
+  { ver: 7, page: 'projects', title: 'Valley projects', line: 'the Mayor\'s board on the square: mend the footbridge, light the lantern path, raise a glasshouse and more, together.' },
+  { ver: 7, page: 'orchard', title: 'The hillside orchard', line: 'fruit trees, beehives and a cider press behind a stone wall on the east foothills. Shake what\'s ripe!' },
 ] as Feature[]);
 export const LATEST = Math.max(...FEATURES.map((f) => f.ver));
 /**

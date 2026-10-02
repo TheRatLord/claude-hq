@@ -12,3 +12,5 @@ import './yard/assets.ts';
 import './interior/assets.ts';
 import './seasons/assets.ts';
 import './grotto/assets.ts';
+import './orchard/assets.ts';
+import './projects/assets.ts';

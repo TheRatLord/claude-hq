@@ -12,9 +12,10 @@ export const PROTOCOL_VERSION = 1;
 /**
  * Additive revision inside PROTOCOL_VERSION (sent as `hello.revision`; never gates a connection). Bump it when optional
  * fields are added, so tools and recordings can tell what a server could send. 2: Entity.git, Entity.usage, commit
- * event `detail.msg`. 3: Entity.vendor (which agent CLI: shared/vendors.ts), `zoo` demo scenario.
+ * event `detail.msg`. 3: Entity.vendor (which agent CLI: shared/vendors.ts), `zoo` demo scenario. 4: `git.diff` (a read-only
+ * diffstat + one file's patch of a pane's repo between two commits or a commit and the working tree: the harvest recap).
  */
-export const PROTOCOL_REVISION = 3;
+export const PROTOCOL_REVISION = 4;
 export const WS_PATH = '/ws';
 
 // ---------------------------------------------------------------------------------------------
@@ -128,6 +129,7 @@ export const R2S = Object.freeze({
   SETTINGS_SET: 'settings.set',
   WORLD_GET: 'world.get',
   TIMELINE_GET: 'timeline.get',
+  GIT_DIFF: 'git.diff',
   NOTE_SET: 'note.set',
   DEMO_FORCE: 'demo.force',
   DEMO_SCENARIO: 'demo.scenario',
@@ -161,6 +163,7 @@ export const ACTION_CLASS: Readonly<Record<ClientMsgType, ActionClass>> = Object
   'settings.set': 'always',
   'world.get': 'always',
   'timeline.get': 'always',
+  'git.diff': 'always', // read-only: git diff --numstat / one file's patch in the pane's own repo (rev 4)
   'note.set': 'always',
   'herdr.focus': 'explicit',
   'agent.prompt': 'interact',
@@ -210,6 +213,8 @@ export const LIMITS = Object.freeze({
   bufferedLow: 256 * 1024,
   entityCoalesceMs: 50,
   timelineMax: 2000,
+  diffFilesMax: 300, // git.diff: files listed (the rest summed into `more`)
+  diffPatchMax: 48 * 1024, // git.diff: one file's patch, bytes (cut at a line, `truncated`)
 });
 
 /** The subset sent to renderers in `hello.limits`. */
@@ -371,6 +376,31 @@ export interface GitInfo {
  * not be read (a huge file), so the numbers are a lower bound.
  */
 export interface Usage { day: string; tokens: number; output: number; cost: number | null; partial: boolean }
+/** (rev 4, `git.diff`) one changed file: lines added / removed (null for a binary file or an untracked one not counted). */
+export interface DiffFile {
+  path: string;
+  /** A added · M modified · D deleted · R renamed (from `from`) · C copied · T type change · ? untracked */
+  status: string;
+  from?: string;
+  added: number | null;
+  removed: number | null;
+}
+/**
+ * (rev 4) `git.diff {id, from?, to?, path?}` → `reply {ok, diff}`: the pane's repo between `from` (default HEAD) and
+ * `to` (a commit) or, without `to`, the working tree (untracked files listed too). `path` adds that one file's patch.
+ * Read-only (no index refresh, no external diff / textconv drivers).
+ */
+export interface DiffResult {
+  root: string;
+  from: string;
+  to: string | null;
+  files: DiffFile[];
+  added: number;
+  removed: number;
+  /** files beyond LIMITS.diffFilesMax (counted in added / removed) */
+  more: number;
+  patch?: { path: string; text: string; truncated: boolean } | null;
+}
 export interface Ack { at: number; by: 'hq' }
 /** Sticky note, `Entity.note`. */
 export interface Note { text: string; at: number }
@@ -571,6 +601,8 @@ export interface ClientPayloads {
   'settings.set': { patch: Partial<Settings> };
   'world.get': Record<never, never>;
   'timeline.get': { since: number };
+  /** rev 4: diffstat of the pane's repo (`from` default HEAD; no `to` = the working tree); `path` = also that file's patch */
+  'git.diff': { id: string; from?: string; to?: string; path?: string };
   'note.set': { id: string; text: string | null };
   'demo.force': { id: string; patch: Record<string, unknown> };
   'demo.scenario': { name: string; seed?: number };
@@ -842,6 +874,7 @@ export const VALIDATE: Readonly<{ [K in keyof ClientPayloads]: Readonly<Record<k
   'settings.set': { patch: R.obj(LIMITS.settingsPatchMax, SETTINGS_KEYS) },
   'world.get': {},
   'timeline.get': { since: R.int(0, Number.MAX_SAFE_INTEGER) },
+  'git.diff': { id, from: opt(R.str(40, { min: 4, re: /^[0-9a-f]{4,40}$/ })), to: opt(R.str(40, { min: 4, re: /^[0-9a-f]{4,40}$/ })), path: opt(R.str(LIMITS.cwdMax, { min: 1, re: /^[^\u0000-\u001f]+$/ })) },
   'note.set': { id, text: R.nullable(R.str(LIMITS.noteMax * 4)) }, // ≤ 280 chars checked below
   'demo.force': { id, patch: R.obj(LIMITS.textMax) },
   'demo.scenario': { name: R.str(LIMITS.labelMax, { min: 1, re: /^[A-Za-z0-9_-]+$/ }), seed: R.int(0, 0xffff_ffff, true) },

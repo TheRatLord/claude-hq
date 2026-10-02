@@ -10,6 +10,7 @@
  *  - **soft washes** are hints, never exact spots: forage areas, wildlife habitats (paw tile + when)
  */
 import { POND, STRUCTURES, YARD, type StructureId, type XZ } from '../world/map.ts';
+import { ORCHARD_BOUND as ORCHARD_PIN } from '../world/orchard.ts';
 
 export type Glyph =
   | 'store' | 'mail' | 'yard' | 'fish' | 'nook' | 'heart' | 'festival' | 'paw' | 'leaf' | 'peak' | 'door' | 'bridge' | 'boot'
@@ -215,7 +216,7 @@ const NOOK_LINES: Partial<Record<StructureId, [Glyph, string, string]>> = {
   picnic: ['picnic', 'Picnic spot', 'Gingham blanket and parasol in the south meadow'],
   lookout: ['lookout', 'Stargazers\' knoll', 'Telescope deck; favoured at night'],
   hotspring: ['hotspring', 'Hot spring', 'A warm foot-bath on the river meadow'],
-  orchard: ['orchard', 'Orchard & apiary', 'Fruit trees, beehives and a honey honesty stand'],
+  orchard: ['orchard', 'Honey stand', 'Old wild fruit trees, bee skeps and a honesty stand'],
   stones: ['stones', 'Standing stones', 'The runes glow cyan after dark'],
   haymeadow: ['haymeadow', 'Hay meadow', 'Round bales and a hay wagon'],
   swingtree: ['swingtree', 'Swing tree', 'A rope swing; E gives it a push'],
@@ -226,6 +227,8 @@ export const PLACES: readonly PlaceDef[] = [
   { id: 'place:yard', glyph: 'yard', color: PIN_COLOR.yard, name: 'Your yard', line: 'Decor from the General store stands here', x: (YARD.x0 + YARD.x1) / 2, z: (YARD.z0 + YARD.z1) / 2, label: true },
   { id: 'place:door', glyph: 'door', color: PIN_COLOR.door, name: 'Farmhouse', line: 'E at the door: go inside (hearth, Almanac, Collections shelf)', x: at('farmhouse').x, z: at('farmhouse').z + 5.6 },
   ...Object.entries(NOOK_LINES).map(([id, [glyph, name, line]]) => ({ id: `place:${id}`, glyph, color: PIN_COLOR.nook, name, line, ...at(id as StructureId) })),
+  // the hillside orchard & apiary (world/orchard.ts, scene/orchard)
+  { id: 'place:hillorchard', glyph: 'orchard', color: PIN_COLOR.leaf, name: 'Hillside orchard', line: 'Shake ripe trees, collect honey, press cider', x: ORCHARD_PIN.x, z: ORCHARD_PIN.z, label: true },
   { id: 'place:waterfall', glyph: 'waterfall', color: PIN_COLOR.fish, name: 'Waterfall', line: 'Where the river begins', ...at('waterfall') },
 ];
 /** Fishing spots: the dock, the pond's beach, the river by the bridge and the upper reach. */

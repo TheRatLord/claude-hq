@@ -47,22 +47,22 @@ const FD = (o: FriendDef): FriendDef => Object.freeze(o);
 /** The cast as the model knows it (scene/villagers/cast.ts has the looks and routines; the ids match). */
 export const FRIENDS: readonly FriendDef[] = Object.freeze([
   FD({ id: 'villager:posy', name: 'Posy', short: 'Posy', title: 'Postmaster', color: '#3d9fa8', dark: '#2b7d86', glyph: '✉',
-    loves: ['violet', 'berries', 'shell'], likes: ['mapleleaf', 'holly', 'feather', 'boot', 'bluegill'], dislikes: ['eel', 'catfish'],
+    loves: ['violet', 'berries', 'shell'], likes: ['mapleleaf', 'holly', 'feather', 'boot', 'bluegill', 'cherry'], dislikes: ['eel', 'catfish'],
     decor: 'postbox', keepsake: 'keep-posy' }),
   FD({ id: 'villager:bram', name: 'Bram', short: 'Bram', title: 'Shipping clerk', color: '#e6c547', dark: '#bf9e2c', glyph: '▣',
-    loves: ['salmon', 'pike', 'carp', 'stormbass'], likes: ['trout', 'perch', 'catfish', 'holly', 'eel'], dislikes: ['minnow', 'violet'],
+    loves: ['salmon', 'pike', 'carp', 'stormbass'], likes: ['trout', 'perch', 'catfish', 'holly', 'eel', 'cider'], dislikes: ['minnow', 'violet'],
     decor: 'crates', keepsake: 'keep-bram' }),
   FD({ id: 'villager:hazel', name: 'Hazel', short: 'Hazel', title: 'Miller', color: '#d9c08a', dark: '#b39a66', glyph: '✣',
-    loves: ['hazelnut', 'acorn', 'chanterelle'], likes: ['berries', 'wildleek', 'morel', 'perch'], dislikes: ['boot', 'eel', 'pinecone'],
+    loves: ['hazelnut', 'acorn', 'chanterelle', 'honey'], likes: ['berries', 'wildleek', 'morel', 'perch', 'apple', 'pear'], dislikes: ['boot', 'eel', 'pinecone'],
     decor: 'millstone', keepsake: 'keep-hazel' }),
   FD({ id: 'villager:marigold', name: 'Mayor Marigold', short: 'Marigold', title: 'Mayor', color: '#9b5a8c', dark: '#7a4470', glyph: '★',
-    loves: ['koi', 'chanterelle', 'mapleleaf', 'char'], likes: ['hazelnut', 'holly', 'carp', 'trout', 'salmon'], dislikes: ['boot', 'minnow', 'skipstone'],
+    loves: ['koi', 'chanterelle', 'mapleleaf', 'char'], likes: ['hazelnut', 'holly', 'carp', 'trout', 'salmon', 'cider', 'pear'], dislikes: ['boot', 'minnow', 'skipstone'],
     decor: 'prizepumpkin', keepsake: 'keep-marigold' }),
   FD({ id: 'villager:fern', name: 'Fern', short: 'Fern', title: 'Ranger', color: '#5d8f45', dark: '#46702f', glyph: '⌖',
-    loves: ['feather', 'pinecone', 'morel', 'trout'], likes: ['acorn', 'wildleek', 'skipstone', 'mapleleaf', 'holly'], dislikes: ['koi', 'boot'],
+    loves: ['feather', 'pinecone', 'morel', 'trout'], likes: ['acorn', 'wildleek', 'skipstone', 'mapleleaf', 'holly', 'plum'], dislikes: ['koi', 'boot'],
     decor: 'tent', keepsake: 'keep-fern' }),
   FD({ id: 'villager:nimbus', name: 'Nimbus', short: 'Nimbus', title: 'Weather-watcher', color: '#6fb7e0', dark: '#4d93bd', glyph: '☂',
-    loves: ['crystal', 'bottle', 'stormbass', 'char'], likes: ['pinecone', 'feather', 'shell', 'eel'], dislikes: ['wildleek', 'morel'],
+    loves: ['crystal', 'bottle', 'stormbass', 'char'], likes: ['pinecone', 'feather', 'shell', 'eel', 'honey'], dislikes: ['wildleek', 'morel'],
     decor: 'vane', keepsake: 'keep-nimbus' }),
 ] as FriendDef[]);
 const BY_ID = new Map<string, FriendDef>(FRIENDS.map((f) => [f.id, f]));
@@ -145,7 +145,7 @@ export type AgentGoal = 'answer' | 'ship' | 'tests' | 'finished';
 export type VisitPlace = 'stones' | 'lookout' | 'swingtree' | 'orchard' | 'hotspring' | 'haymeadow' | 'waterfall';
 
 export const PLACE_NAME: Readonly<Record<VisitPlace, string>> = Object.freeze({
-  stones: 'the standing stones', lookout: 'the stargazers\' knoll', swingtree: 'the swing tree', orchard: 'the orchard',
+  stones: 'the standing stones', lookout: 'the stargazers\' knoll', swingtree: 'the swing tree', orchard: 'the honey stand',
   hotspring: 'the hot spring', haymeadow: 'the hay meadow', waterfall: 'the waterfall',
 });
 const GOAL: Readonly<Record<AgentGoal, { event: ValleyEventKind; text: string }>> = Object.freeze({

@@ -63,9 +63,11 @@ function sleeve(side: 1 | -1): THREE.BufferGeometry {
     { p: [0, -0.002, -0.006], r: [0.047, 0.041] },
     { p: [0, -0.003, 0.026], r: [0.051, 0.045] },
     { p: [0, -0.006, 0.048], r: [0.046, 0.04] },
-    { p: [s * 0.025, -0.06, 0.12], r: [0.05, 0.045] },
-    { p: [s * 0.07, -0.17, 0.2], r: [0.054, 0.048] },
-    { p: [s * 0.12, -0.31, 0.28], r: [0.057, 0.051] },
+    // past the cuff it bends down steeply and slims toward the elbow: the forearm is nearer the camera than the paw, so
+    // when a reach (grab, pat, the raised lantern) levels the arm, a straight, flared sleeve filled a third of the view
+    { p: [s * 0.022, -0.065, 0.11], r: [0.048, 0.043] },
+    { p: [s * 0.055, -0.18, 0.17], r: [0.046, 0.041] },
+    { p: [s * 0.09, -0.33, 0.22], r: [0.043, 0.038] },
   ], {
     sides: 12, sub: 2, caps: ['flat', 'open'],
     // the ribbed cuff (alternate shades around), a mustard stripe up the arm, sage knit

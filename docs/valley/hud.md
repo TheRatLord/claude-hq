@@ -7,7 +7,7 @@ HUD layout zones and z-order, layer classes, the drawer, keys and HUD performanc
 Key sources: `hud/hud.ts` (keys, layer classes, `__hud`), `hud/pause.ts` (Settings), `model/prefs.ts` + `prefs.ts`
 (browser-local prefs; `prefs.test.ts`), `hud/anchors.ts` + `anchors.css` (overlay), `hud/anchor.ts`
 (pure maths: `placeRect`; `anchor.test.ts`), `hud/prompt.ts` (interaction tag), `hud/needs.ts` (needs-you strip),
-`hud/mailbox.ts`, `hud/roster.ts` (the ledger), `hud/cards.ts` (farmer card), `hud/drawer.ts` (terminal drawer),
+`hud/mailbox.ts`, `hud/roster.ts` (the ledger), `hud/cards.ts` (farmer card), `hud/recap.ts` (harvest recaps: [recap.md](recap.md)), `hud/drawer.ts` (terminal drawer),
 `hud/toasts.ts`, `hud/status.ts`, `hud/notify.ts`, `hud/pause.ts`, `hud/format.ts` (`shortName`, `altName`,
 `askOrder`, `nextAfter`, `rosterFilterHit`; `format.test.ts`), `hud/ctx.ts` (prefs), `hud/hud.css`,
 `scene/farmers/labels.ts`, `model/types.ts` (`FarmerView.tag`), `browser-tests/valley.spec.ts`, `browser-tests/settings.spec.ts`. Paths are relative to
@@ -229,7 +229,7 @@ nothing in the HUD reads layout per frame except the map canvas, which redraws o
 
 ## Dev handle (`window.__hud`)
 
-`open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card noticeboard stats almanac collection shop friends pause
+`open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card recap noticeboard stats almanac collection shop friends pause
 drawer welcome pet gazette album guide`), `close()`,
 `current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `prefs(patch?)`, `tour`
 ([onboarding.md](onboarding.md)). Full dev API: [tools.md](tools.md#dev-api).

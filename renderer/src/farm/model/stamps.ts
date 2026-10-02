@@ -43,6 +43,8 @@ export const MOTIFS = Object.freeze([
   'blossom', 'lantern', 'cake', 'pumpkin', 'jack', 'tree', 'firework', 'snowflake', 'leaf',
   'fence', 'lamp', 'gnome', 'portrait', 'house',
   'boat', 'skates', 'snowman', 'egg', 'cave', 'paw',
+  // the hillside orchard (Fern's notebook)
+  'apple',
 ] as const);
 export type Motif = (typeof MOTIFS)[number];
 
@@ -94,7 +96,8 @@ export interface StampsData {
   /** earned stamps: when (ms) */
   earned: Record<string, number>;
   /** lifetime counters nobody else keeps: commits shipped, asks answered, photos taken, late-night commits */
-  n: { ship: number; answered: number; photo: number; late: number; row: number; eight: number; snowman: number };
+  /** lifetime counters; `rowM` = whole metres rowed in the rowboat (all outings; `row` counts the outings) */
+  n: { ship: number; answered: number; photo: number; late: number; row: number; rowM: number; eight: number; snowman: number };
   /** fields seen: id → [first seen, last seen] ms (pruned a few days after a field is gone) */
   plots: Record<string, [number, number]>;
   /** nooks visited, festivals attended, seasons spent in the valley */
@@ -105,7 +108,7 @@ export interface StampsData {
   trophies: number;
 }
 
-export const emptyStamps = (): StampsData => ({ v: 1, earned: {}, n: { ship: 0, answered: 0, photo: 0, late: 0, row: 0, eight: 0, snowman: 0 }, plots: {}, nooks: [], fests: [], seasons: [], trophies: 0 });
+export const emptyStamps = (): StampsData => ({ v: 1, earned: {}, n: { ship: 0, answered: 0, photo: 0, late: 0, row: 0, rowM: 0, eight: 0, snowman: 0 }, plots: {}, nooks: [], fests: [], seasons: [], trophies: 0 });
 
 /** progress toward a stamp: have / need (shown under an unearned stamp) */
 export interface Progress { have: number; need: number }
@@ -333,7 +336,7 @@ export function parseStamps(raw: unknown): StampsData | null {
   const d = emptyStamps();
   if (o.earned && typeof o.earned === 'object') for (const [id, at] of Object.entries(o.earned as Record<string, unknown>)) if (BY_ID.has(id) && ints(at)) d.earned[id] = ints(at);
   const n = (o.n && typeof o.n === 'object' ? o.n : {}) as Record<string, unknown>;
-  d.n = { ship: ints(n.ship), answered: ints(n.answered), photo: ints(n.photo), late: ints(n.late), row: ints(n.row), eight: ints(n.eight), snowman: ints(n.snowman) };
+  d.n = { ship: ints(n.ship), answered: ints(n.answered), photo: ints(n.photo), late: ints(n.late), row: ints(n.row), rowM: Math.min(1e8, ints(n.rowM)), eight: ints(n.eight), snowman: ints(n.snowman) };
   if (o.plots && typeof o.plots === 'object') {
     for (const [id, v] of Object.entries(o.plots as Record<string, unknown>)) {
       if (Array.isArray(v) && v.length === 2 && ints(v[0]) && ints(v[1])) d.plots[id] = [ints(v[0]), ints(v[1])];
@@ -459,6 +462,8 @@ export interface StampsService {
   check(w: StampWorld): Earned[];
   /** a valley happening the book counts (commits, answers, photos) */
   event(kind: StampEvent, o: { demo: boolean; hour: number }): void;
+  /** add metres rowed in the rowboat (the seasons' boat flushes them as you row and when you step out) */
+  rowed(metres: number): void;
   onEarn(fn: (e: Earned) => void): () => void;
   /** dev: ink a stamp now (with its reward, toast and sound) */
   devAward(id: string): Earned | null;
@@ -522,6 +527,12 @@ export function createStamps(store: StampsStore | undefined, ports: StampsPorts 
       if (!countEvent(data, kind, o)) return;
       save();
       if (last) this.check({ ...last, now: now() });
+    },
+    rowed(metres) {
+      const m = Math.floor(metres);
+      if (!(m > 0) || !Number.isFinite(m)) return;
+      data.n.rowM = Math.min(1e8, data.n.rowM + m);
+      save();
     },
     onEarn(fn) { fns.add(fn); return () => fns.delete(fn); },
     devAward(id) {

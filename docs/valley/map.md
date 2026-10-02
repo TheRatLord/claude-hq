@@ -35,7 +35,7 @@ the furniture), the player arrow + view cone, then the cached furniture: compass
 * circles = farmers (status colour, gold pulsing ring = needs you);
 * houses = villagers; crosses = scarecrows;
 * rounded **tiles** = places (store, mailbox + unread count, your yard, the farmhouse door, nooks, fishing spots with
-  what bites now, trail stops from `POIS`: trailhead / bench / rope bridge / summit);
+  what bites now, trail stops from `POIS`: trailhead / bench / rope bridge / summit, the *Hillside orchard* ([orchard.md](orchard.md)));
 * **hearts** = today's requests (on the villager, or on the place to visit; gold + pulsing when ready);
 * the **rosette** = the festival centrepiece (`festivals.where().center`).
 

@@ -11,6 +11,7 @@
  *   npm run audit:placement -- --only hub-dressing           items whose key contains this
  *   npm run audit:placement -- --shots allowed               sheets for allowlisted findings too (review them)
  *   npm run audit:placement -- --strict                      exit 1 when anything is not allowlisted
+ *   npm run audit:placement -- --restored                    the Valley Projects' places restored, not ruined
  *   npm run audit:placement -- --sitters                     also seat a rest-pose Clawd and Codex on every leisure-nook
  *                                                           seat and report farmer × prop / farmer × farmer overlaps
  *
@@ -38,6 +39,8 @@ const top = Number(opt('--top', '25'));
 /** default: one sheet per finding class (worst first); --all-sheets: then the remaining findings by score */
 const perClass = !argv.includes('--all-sheets');
 const only = opt('--only', '');
+/** the Valley Projects (scene/projects): audit the six places restored (default: as they are, i.e. ruined) */
+const restored = argv.includes('--restored');
 const shotAllowed = opt('--shots', '') === 'allowed';
 const sitters = argv.includes('--sitters');
 const allowFile = path.resolve(REPO, opt('--allow', 'scripts/placement-allow.json'));
@@ -100,6 +103,7 @@ async function main(): Promise<void> {
           // a furnished yard behind the farmhouse (scene/yard: every decor piece on its slot gets audited too)
           (window as unknown as { __valley: { furnish?(): number } }).__valley.furnish?.();
         });
+        if (restored) await page.evaluate(() => (window as unknown as { __valley: { projects?: { complete(id: string, seen?: boolean): boolean } } }).__valley.projects?.complete('all', true));
         await page.waitForTimeout(7000); // tilling fences drop in, harvest carts arrive, crops settle
         await page.evaluate(() => (window as unknown as V).__valley.timeScale(0));
         const t0 = Date.now();
@@ -143,7 +147,9 @@ async function main(): Promise<void> {
   const all = sortFindings([...merged.values()]);
   const open = all.filter((f) => !f.allowed);
   const byCheck = Object.fromEntries(CHECKS.map((c) => [c, { total: all.filter((f) => f.check === c).length, open: open.filter((f) => f.check === c).length }]));
-  const unusedAllow = allow.filter((e) => !all.some((f) => allowedBy(f, [e])));
+  // `sitters/…` entries can only match in a --sitters run (the posed bodies exist only then): don't call them stale otherwise
+  const sitterEntry = (e: { a: string; b?: string }) => e.a.startsWith('sitters/') || !!e.b?.startsWith('sitters/');
+  const unusedAllow = allow.filter((e) => (sitters || !sitterEntry(e)) && !all.some((f) => allowedBy(f, [e])));
   const report = {
     generatedAt: new Date().toISOString(), runs, allowlist: path.relative(REPO, allowFile),
     totals: { findings: all.length, open: open.length, allowed: all.length - open.length, byCheck },

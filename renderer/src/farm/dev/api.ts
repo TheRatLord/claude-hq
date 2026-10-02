@@ -42,16 +42,23 @@
  *   __valley.timeline(id?, 'seed'|'clear') a farmer's day (model/timeline.ts): timeline() → every farmer's summary, timeline(id) → the day,
  *                                         its summary and key moments; 'seed' (demo only; id or '*') replaces it with a plausible
  *                                         morning (demoDay), 'clear' empties it
+ *   __valley.recaps(id?, 'seed')          harvest recaps (model/recap.ts): recaps() → per farmer the count + newest headline, recaps(id)
+ *                                         → that farmer's recaps (newest first); 'seed' (demo only; id or '*') adds a seeded history
  *   __valley.boat(cmd?, a?)  skate(cmd?, a?)  snowman(cmd?, a?)   seasonal pastimes (scene/seasons): boat('in' | 'row' secs | 'turn' |
  *                                         'spin' | 'middle' | 'out'); skate('on' | 'eight' | 'glide' secs | 'off') (winter: the pond frozen);
  *                                         snowman('build' pieces? | 'roll' r? | 'place' | 'reset') (winter with lying snow); no cmd = the state
  *   __valley.grotto(where?)               the secret grotto behind the waterfall (scene/grotto): grotto('ledge' | 'curtain' | 'mouth') stands you
  *                                         outside; grotto('inside' | 'pool' | 'camp' | 'paintings' | 'chest' | 'cave' | 'mouth-in' …) in the cave;
  *                                         grotto('reset') forgets it; grotto() → { discovered, inside, data }
+ *   __valley.orchard(cmd?, a?)            the hillside orchard & apiary (scene/orchard): orchard() → trees (kind, phase, fruit left), hives,
+ *                                         bees, totals; 'gate' | 'tree' i | 'hives' | 'press' | 'top' stand you there; 'shake' i shakes tree i
+ *                                         (standing you at it first), 'honey' i, 'press' (cider from the basket), 'refill', 'reset'
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *                                         'barn' / 'barn:VIEW' (door aisle stalls loft hens panel bench …: scene/interior/barnLayout.ts) for the barn
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
+ *   __valley.projects()                   the Valley Projects (model/projects.ts, dev/projects.ts): projects() lists them; .complete(id | 'all',
+ *                                         seen?), .unveil(id), .go(id | 'board'), .open(id?), .reset(id?), .work(kind, n?)
  *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
  *   __valley.auditShow(keys, focus, view) highlight items + frame the free camera on a finding; auditClear()
  */
@@ -60,6 +67,7 @@ import type { Engine } from '../scene/engine.ts';
 import type { Controller } from '../player/controller.ts';
 import type { Valley } from '../model/valley.ts';
 import { demoDay, keyMoments, summarize } from '../model/timeline.ts';
+import { demoRecaps, recapHeadline, recapLine } from '../model/recap.ts';
 import type { Season, WeatherKind } from '../model/types.ts';
 import type { FarmerLocator, IndoorSpace, StructureSpots, VillagersService } from '../scene/context.ts';
 import type { ForageDebug } from '../scene/forage/forage.ts';
@@ -69,6 +77,7 @@ import type { WildId } from '../scene/life/wild.ts';
 import type { WalletService } from '../model/wallet.ts';
 import type { FriendsService } from '../model/friends.ts';
 import type { StampsService } from '../model/stamps.ts';
+import { projectsDev } from './projects.ts';
 import type { Newsroom } from '../newsroom.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
@@ -77,6 +86,8 @@ import type { GrottoHandle } from '../scene/grotto/grotto.ts';
 import { gatherViewpoint } from '../scene/gather/gather.ts';
 import type { CampfireSeg, GatherKind } from '../model/gatherings.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
+import { ORCHARD_SITE, orchardToWorld } from '../world/orchard.ts';
+import type { OrchardHandle } from '../scene/orchard/orchard.ts';
 import type { StructureId } from '../world/map.ts';
 
 export const POSES: Record<string, [number, number, number, number]> = {
@@ -104,6 +115,11 @@ export const POSES: Record<string, [number, number, number, number]> = {
   // ahead on the left (pose=grotto[:view] stands you in the cave itself)
   falls: [-19.6, -99.5, 0.42, 0.2],
   curtain: [-28.6, -109.3, -1.05, 0.04],
+  // the hillside orchard (world/orchard.ts): from the footpath outside the gate, looking up the alley between the rows
+  orchard: (() => {
+    const a = orchardToWorld(1.2, ORCHARD_SITE.front + 6.5), b = orchardToWorld(0, 0);
+    return [a.x, a.z, Math.atan2(-(b.x - a.x), -(b.z - a.z)), 0.06] as [number, number, number, number];
+  })(),
 };
 
 export interface DevDeps {
@@ -338,6 +354,18 @@ export function installDevApi(d: DevDeps): void {
       const fd = tv.farmers.get(id);
       return fd ? JSON.parse(JSON.stringify({ day: fd, summary: summarize(fd), moments: keyMoments(fd) })) : null;
     },
+    /** harvest recaps: read one farmer's / everyone's, or (demo) seed a history */
+    recaps(id?: string, step?: 'seed') {
+      const rv = valley.state.recaps;
+      if (step === 'seed') {
+        if (!valley.state.demo) return 'seed is for the demo valley';
+        const ids = !id || id === '*' ? [...valley.state.farmers.keys()] : [id];
+        for (const x of ids) { const f = valley.state.farmers.get(x); if (f) for (const r of demoRecaps({ ...f, git: f.git ?? null }, Date.now())) valley.recaps.put(r); }
+        return ids.length;
+      }
+      if (!id) return [...(rv?.farmers ?? new Map()).entries()].map(([fid, list]) => ({ id: fid, n: list.length, headline: list[0] ? recapHeadline(list[0]) : null, line: list[0] ? recapLine(list[0]) : null }));
+      return JSON.parse(JSON.stringify(rv?.farmers.get(id) ?? []));
+    },
     /** set the almanac's prosperity (no save): crossing a rank pops its upgrade in and sets off a level-up */
     almanac: (points: number) => valley.setAlmanac(points),
     /** a shooting star where the camera looks */
@@ -381,6 +409,19 @@ export function installDevApi(d: DevDeps): void {
     /** snowmen (winter, lying snow): snowman('build', pieces?) a whole one in front of you, snowman('roll', r?) start rolling a
      *  ball, snowman('place') set it down, snowman('reset') melt them all; snowman() → the state */
     snowman: (cmd?: string, a?: number) => (ctx.services.get('seasons') as SeasonsService | undefined)?.snowman(cmd, a) ?? null,
+    /** the hillside orchard (scene/orchard): orchard() → state; 'gate' | 'tree' i | 'hives' | 'press' | 'top' stand you there;
+     *  'shake' i shakes tree i (after standing you at it); 'honey' i; 'press'; 'refill' (every tree full, every hive ready); 'reset' */
+    orchard(cmd?: string, a?: number) {
+      const o = ctx.services.get('orchard') as OrchardHandle | undefined;
+      if (!o) return null;
+      if (!cmd) return { trees: o.trees(), hives: o.hives(), bees: o.bees(), inAir: o.inAir(), data: o.data() };
+      if (cmd === 'shake') { o.go('tree', a ?? 0); return o.shake(a ?? 0); }
+      if (cmd === 'honey') { o.go('hives'); return o.honey(a ?? 0); }
+      if (cmd === 'press') { o.go('press'); return o.press(); }
+      if (cmd === 'refill') { o.refill(); return true; }
+      if (cmd === 'reset') { o.reset(); return true; }
+      return o.go(cmd, a);
+    },
     /** the secret grotto (scene/grotto): grotto('curtain') behind the falls, grotto('pool') in the cave, grotto('reset'), grotto() → state */
     grotto(where?: string) {
       const g = ctx.services.get('grotto') as GrottoHandle | undefined;
@@ -460,6 +501,8 @@ export function installDevApi(d: DevDeps): void {
         issues: nr.issues().map((r) => ({ no: r.no, from: r.facts.from, to: r.facts.to, at: r.at })), due: nr.paper.due(),
       };
     },
+    /** the Valley Projects: projects() lists them; projects.complete(id), .unveil(id), .go(id), .open(id), .reset(id), .work(kind, n) */
+    projects: projectsDev(ctx),
     stamp(id: string) { const st = ctx.services.get('stamps') as StampsService | undefined; const e = st?.devAward(id); return e ? { id: e.def.id, count: e.count, bits: e.bits, trophy: e.trophy?.decor ?? null } : null; },
     /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
     buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },

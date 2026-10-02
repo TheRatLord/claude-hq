@@ -40,7 +40,7 @@ test('guide: an empty world has nothing found, and nothing throws', () => {
 
 test('guide: pages are found off the other services (no copies), progress reads from them too', () => {
   const st = emptyStamps();
-  st.n.row = 3; st.n.photo = 2; st.fests = ['harvest']; st.nooks = ['pergola', 'stones']; st.earned.summit = T0;
+  st.n.row = 3; st.n.rowM = 1480; st.n.photo = 2; st.fests = ['harvest']; st.nooks = ['pergola', 'stones']; st.earned.summit = T0;
   const col = emptyCollection();
   col.found.morel = { n: 4, first: '2026-10-01' };
   col.found.trout = { n: 2, first: '2026-10-01', best: 41 };
@@ -56,6 +56,7 @@ test('guide: pages are found off the other services (no copies), progress reads 
   for (const id of ['forage', 'fish', 'photo', 'rowboat', 'festival', 'gifts', 'summit', 'nooks', 'barn', 'pet', 'grotto']) assert.ok(ids.includes(id), id);
   for (const id of ['skate', 'snowman', 'farmhouse', 'lantern', 'gazette', 'requests']) assert.ok(!ids.includes(id), id);
   const notes = (id: string) => guideView(w).pages.find((p) => p.def.id === id)!.notes.join(' | ');
+  assert.match(notes('rowboat'), /1\.5 km rowed on the pond/);
   assert.match(notes('rowboat'), /3 outings/);
   assert.match(notes('barn'), /fed 12 times/);
   assert.match(notes('barn'), /9 eggs · 2 pails/);
@@ -202,4 +203,18 @@ test('guide: parseGuide is tolerant', () => {
   assert.deepEqual(d.known, ['barn']);
   assert.equal(d.news, 0);
   assert.equal(d.letter, null);
+});
+
+test('guide: the Valley Projects page is found by giving to the board, and counts the restored places', () => {
+  const p = pageDef('projects')!;
+  assert.equal(p.chapter, 'village');
+  assert.ok(MOTIFS.includes(p.motif));
+  assert.equal(p.found(W()), false);
+  assert.equal(p.found(W({ projects: { v: 1, p: {}, picked: '', total: { bits: 0, items: 0 } } })), false);
+  const some = { v: 1 as const, p: { lanterns: { bits: 20, items: {}, work: {}, done: 0, unveiled: 0 } }, picked: '', total: { bits: 20, items: 0 } };
+  assert.equal(p.found(W({ projects: some })), true);
+  assert.deepEqual(p.notes(W({ projects: some })), ['0 of 6 places restored', 'next up: the lantern path']);
+  const done = { ...some, p: { lanterns: { ...some.p.lanterns, done: 1 } } };
+  assert.equal(p.notes(W({ projects: done }))[0], '1 of 6 places restored');
+  assert.ok(FEATURES.some((f) => f.page === 'projects'));
 });

@@ -179,14 +179,15 @@ export function photoWallSlots(): WallFrame[] {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The Collections shelf: 3 display rows × 6, forage in book order then the junk from the river (boot, bottle).
+// The Collections shelf: 3 display rows of 6 or more (SHELF_COLS), forage in book order then the junk from the river (boot, bottle).
 // Real fish swim in the tank instead; the biggest catch is mounted over the fire.
 
 export const SHELF_ROWS = [0.78, 1.26, 1.74] as const;   // board tops above the floor
-export const SHELF_COLS = 6;
 export interface ShelfSlot { id: string; row: number; col: number; /** local x (room frame), height above the floor */ x: number; y: number; z: number }
 export const SHELF_IDS: readonly string[] = Object.freeze(CATALOG.filter((d) => d.kind === 'forage' || d.junk).map((d) => d.id));
 export const TANK_IDS: readonly string[] = Object.freeze(CATALOG.filter((d) => d.kind === 'fish' && !d.junk).map((d) => d.id));
+/** at least 6 a row, more (narrower) when the book outgrows 3 × 6 (the orchard's finds took it to 22) */
+export const SHELF_COLS = Math.max(6, Math.ceil(SHELF_IDS.length / SHELF_ROWS.length));
 
 export function shelfSlots(): ShelfSlot[] {
   const pitch = (FURN.shelf.w - 0.2) / SHELF_COLS;

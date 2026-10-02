@@ -13,8 +13,9 @@ import { mulberry32 } from '../../../../shared/identity.ts';
 
 export type CollectKind = 'forage' | 'fish';
 /** where a forageable grows: open meadow, under / beside trees, the water's edge, the foot of the cliffs, or only in the
- *  secret grotto behind the waterfall (scene/grotto: never in the day's valley batch) */
-export type Habitat = 'meadow' | 'wood' | 'shore' | 'cliff' | 'grotto';
+ *  secret grotto behind the waterfall (scene/grotto) or the hillside orchard's trees and hives (scene/orchard): those
+ *  two are never in the day's valley batch */
+export type Habitat = 'meadow' | 'wood' | 'shore' | 'cliff' | 'grotto' | 'orchard';
 /** 'cave': the still pool in the grotto behind the waterfall (scene/grotto) */
 export type WaterKind = 'pond' | 'river' | 'cave';
 /** when a fish bites: any time, daylight only, dark only, around dawn and dusk */
@@ -86,6 +87,17 @@ export const CATALOG: readonly CollectDef[] = Object.freeze([
     'A clear quartz point from the foot of the cliffs. The standing stones hum when you carry one past.', true),
   F('glowcap', 'Glow-cap', ALL, 'grotto', 1, '#7ff0c8',
     'A little mushroom that glows sea-green in the dark, found only in the grotto behind the falls. Hold one up and the bats lean in to read by it.', true),
+  // the hillside orchard (scene/orchard, model/orchard.ts): shaken down from its trees in season, and its hives' honey
+  F('cherry', 'Cherries', ['summer'], 'orchard', 3, '#c8243a',
+    'Always in pairs, like they planned it. Posy hooks a pair over each ear and calls it the summer fashion.'),
+  F('plum', 'Plum', ['summer', 'autumn'], 'orchard', 3, '#6a3a8a',
+    'Dusty purple with a bloom that rubs off on your thumb. Fern eats them on the walk home and blames the wasps.'),
+  F('apple', 'Apple', ['autumn'], 'orchard', 4, '#d8402e',
+    'Crisp, a little lopsided and better for it. The old trees on the hillside were planted by whoever built the first wall.'),
+  F('pear', 'Pear', ['autumn'], 'orchard', 3, '#c8c454',
+    'Speckled gold and soft by the stalk. There is exactly one perfect afternoon to eat a pear, and this is it.'),
+  F('honey', 'Wildflower honey', ['spring', 'summer', 'autumn'], 'orchard', 1, '#e8a422',
+    'A jar of the hillside hives\' best, cloudy with clover and orchard blossom. Hazel will trade almost anything for it.'),
 
   FISH('minnow', 'Minnow', { seasons: ALL, water: ['pond', 'river'], time: 'any', weather: 'any', weight: 5, cm: [4, 9], color: '#a9b8b8', look: ['#8fa3a6', '#e8eee8', '#c7d2cc'],
     blurb: 'Small, silver and in a tremendous hurry. Everybody\'s first catch.' }),
@@ -184,6 +196,9 @@ export const PRODUCE: readonly ForageDef[] = Object.freeze([
     'Still warm from the nest box. The hens pretend not to have noticed you taking it.'),
   F('milk', 'Pail of milk', ALL, 'meadow', 2, '#f6f2e8',
     'Creamy and fresh from Daisy. Hazel trades a loaf for a pail, and the cats follow you home.'),
+  // pressed at the hillside orchard's honey house from three apples or pears (model/orchard.ts `pressPlan`)
+  F('cider', 'Bottle of cider', ALL, 'orchard', 1, '#e8b04a',
+    'Pressed in the honey house from the hillside apples. Cloudy, sharp and gone by Founders\' Day.'),
 ]);
 const BY_ID = new Map([...CATALOG, ...PRODUCE].map((d) => [d.id, d]));
 export const collectDef = (id: string): CollectDef | undefined => BY_ID.get(id);
@@ -218,8 +233,8 @@ export interface ForageSpawn {
   seed: number;
 }
 
-/** what can turn up in the valley today (the grotto's own finds never join the day's batch) */
-export const forageFor = (season: Season): ForageDef[] => FORAGE.filter((d) => d.seasons.includes(season) && d.habitat !== 'grotto');
+/** what can turn up in the valley today (the grotto's and the orchard's own finds never join the day's batch) */
+export const forageFor = (season: Season): ForageDef[] => FORAGE.filter((d) => d.seasons.includes(season) && d.habitat !== 'grotto' && d.habitat !== 'orchard');
 
 /** Today's forageables: 8–12 of the season's kinds, every kind at least once, deterministic per date + season. */
 export function forageDay(day: string, season: Season): ForageSpawn[] {
@@ -452,7 +467,7 @@ export function collectionView(data: CollectionData, season: Season, nowMs: numb
 export function whereText(d: CollectDef): string {
   const seasons = d.seasons.length === 4 ? 'all year' : d.seasons.join(' & ');
   if (d.kind === 'forage') {
-    const where = { meadow: 'in the meadows', wood: 'under the trees', shore: 'along the water\'s edge', cliff: 'at the foot of the cliffs', grotto: 'somewhere secret, where the river begins' }[d.habitat];
+    const where = { meadow: 'in the meadows', wood: 'under the trees', shore: 'along the water\'s edge', cliff: 'at the foot of the cliffs', grotto: 'somewhere secret, where the river begins', orchard: d.id === 'honey' ? 'from the hives in the hillside orchard' : 'shaken from the hillside orchard\'s trees' }[d.habitat];
     return `${where}, ${seasons}`;
   }
   const water = d.water.includes('cave') ? 'a still pool, somewhere very dark' : d.water.length === 2 ? 'pond or river' : `the ${d.water[0]}`;
@@ -478,6 +493,8 @@ export interface CollectionService {
   catch(id: string, cm: number): FindResult | null;
   /** a picked forageable (once per spawn per day) */
   pick(spawn: ForageSpawn): FindResult | null;
+  /** something gathered that has its own daily rules (the orchard's fruit and honey: model/orchard.ts) */
+  gather(id: string): FindResult | null;
   picked(day: string): ReadonlySet<string>;
   onFind(fn: (r: FindResult) => void): () => void;
   /** a wild visitor seen (counted once a day; null when already seen today) */
@@ -508,6 +525,7 @@ export function createCollection(store: CollectionStore | undefined, now: () => 
     view: (season) => collectionView(data, season, now()),
     catch: (id, cm) => after(recordFind(data, id, now(), cm)),
     pick: (spawn) => after(pickForage(data, spawn, now())),
+    gather: (id) => after(recordFind(data, id, now())),
     picked: (day) => pickedOn(data, day),
     onFind(fn) { fns.add(fn); return () => fns.delete(fn); },
     sight(id) {

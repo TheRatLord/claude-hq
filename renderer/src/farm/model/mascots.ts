@@ -120,8 +120,8 @@ export const ART: Readonly<Record<ArtId, MascotArt>> = Object.freeze({
   aider: {
     u: 0.068,
     front: [
-      '.......r.r......',
-      '......rrrrr.....',
+      '.......rr.......',
+      '.......rr.......',
       '.....######.....',
       '....########....',
       '...##########...',
@@ -141,10 +141,13 @@ export const ART: Readonly<Record<ArtId, MascotArt>> = Object.freeze({
     pal: { r: 0xe0453a, w: 0xfbf7ea, k: 0xf2b134, y: 0xf3d54e, K: 0x3a2f2a, t: 0x3b7dd8, T: 0xe0453a },
     colors: { body: 0x4fb04a, dark: 0x8c8f99, glyph: 0x1a1a1a },
     depth: [6, 10],
-    rowDepth: [2, 4, null],
+    // the crest is a slim two-cell tuft swept back a little: it has to fit inside every hat's crown (straw, cap) so the
+    // hat sits on the head with the tuft poking out of its top, not swallowed by a crest as wide as the brim
+    rowDepth: [2, 2, null],
+    rowZ: [-1],
     gait: 'waddle', eyes: 'dot', glyphCell: 0.42,
     scarf: { row: 13, gap: 2.5 },
-    hat: { s: 0.72, dz: 0.5, row: 2 },
+    hat: { s: 0.9, dz: 0.5, row: 2 },
     extras: [
       [8, 8.4, 0.9, 3.2, 2.6, 2.2, 'k', 0, 'front'], // the beak, out front…
       [8, 9.9, 1.3, 2.0, 1.4, 1.4, 'K', 0, 'front'], // …hooked down to a dark tip
@@ -335,9 +338,10 @@ export const ART: Readonly<Record<ArtId, MascotArt>> = Object.freeze({
     pal: { w: 0xf3f0ff, q: 0xf3f0ff },
     colors: { body: 0x6b52e8, dark: 0x2e2366, glyph: 0x161038 },
     depth: [6, 12],
+    rowDepth: [4, 4, null],   // the ears are tabs, not ridges the whole depth of the head: the hat between them shows
     gait: 'hop', eyes: 'dot', glyphCell: 0.45,
     scarf: { row: 11, gap: 3 },
-    hat: { s: 0.68, row: 2 },
+    hat: { s: 0.85, row: 2 },   // nestled between the ears: big enough that the brim tucks under them and the crown shows
     wobble: 0.06,
   },
   // A pilot's helmet: big goggles, little ear cups, the helmet is the whole body.

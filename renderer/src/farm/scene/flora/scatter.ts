@@ -277,7 +277,9 @@ export function scatter(): Scatter {
       addTree(rhg() < 0.6 ? 'oak' : 'round', x, z, 0.75 + rhg() * 0.3, rhg);
       if (out.trees.oak.length + out.trees.round.length > n) { sinceTree = 0; return; }
     }
-    if (!spaced(x, z, 2.2) || bushAt.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + 0.8)) return;
+    // (a bush must clear the hedge's whole length, not just its middle: it runs ~1.5 m each way along the track)
+    const offHedge = (q: XZ) => { const t = Math.max(-1.5, Math.min(1.5, (q.x - x) * dx + (q.z - z) * dz)); return Math.hypot(q.x - x - dx * t, q.z - z - dz * t); };
+    if (!spaced(x, z, 2.2) || bushAt.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + 0.8 || offHedge(q) < q.r + 0.6)) return;
     // a hedge is ~3.8 m long at scale 1: neighbours in a row overlap a little (step 2.6 m) so a run reads as one
     // continuous hedge, not a dotted line, from above
     if (out.bushes.hedge.some((q) => Math.hypot(q.x - x, q.z - z) < 2.4)) return;
@@ -410,8 +412,9 @@ export function scatter(): Scatter {
       const s = 0.35 + rr() * 0.6 + forest * 0.5, yaw = rr() * 6.28, sy = 0.8 + rr() * 0.5, fp = footprint(px, pz, 0.8 * s);
       if (fp.spread < 0.5 * s * sy && spaced(px, pz, 1.2) && !slopeRises(px, pz, 1.1 * s, fp.min + 0.45 * s * sy)) out.rocks.push({ x: px, y: Math.min(h - 0.1, fp.min + 0.05), z: pz, s, yaw, sy });
     } else if (roll < 0.1 + forest * 0.12 && slopeAt(px, pz) < 0.3 && c > 2.5) {
-      const s = 0.8 + rr() * 0.4, yaw = rr() * 6.28, fp = footprint(px, pz, 1.1 * s);
-      if (fp.spread < 0.2 && spaced(px, pz, 1.8)) out.logs.push({ x: px, y: fp.min - 0.03, z: pz, s, yaw });
+      const s = 0.8 + rr() * 0.4, yaw = rr() * 6.28, fp = footprint(px, pz, 1.3 * s); // (out to the log's ends: it is ~2.5 m long)
+      // (a long straight trunk only lies flush on near-level ground: any more and one end hovers or the other sinks)
+      if (fp.spread < 0.08 && spaced(px, pz, 1.8)) out.logs.push({ x: px, y: fp.min - 0.02, z: pz, s, yaw });
     } else if (roll < 0.13 + forest * 0.16) {
       const s = 0.8 + rr() * 0.5, yaw = rr() * 6.28, fp = footprint(px, pz, 0.55 * s);
       if (fp.spread < Math.min(0.22 * s, 0.24) && spaced(px, pz, 1.6)) out.stumps.push({ x: px, y: fp.min - 0.04, z: pz, s, yaw });
@@ -455,6 +458,15 @@ export function scatter(): Scatter {
       out.molehills.push({ x, y: fp.min, z, s, sy: 0.7 + rmh() * 0.4, yaw: rmh() * 6.28 });
     }
   }
+  // ivy curtains side by side along the wall (on one ledge, or the next one up or down) meet edge to edge rather than
+  // hang across each other. A pass at the end, so it never shifts what the seeded passes above place
+  const keep: IvyDrape[] = [];
+  for (const d of out.ivy) {
+    const ox = -d.dx, oz = -d.dz;
+    if (keep.some((q) => Math.abs((q.x - d.x) * ox + (q.z - d.z) * oz) < 4 && Math.abs((q.x - d.x) * -oz + (q.z - d.z) * ox) < (q.w + d.w) * 0.5)) continue;
+    keep.push(d);
+  }
+  out.ivy = keep;
   return out;
 }
 

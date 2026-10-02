@@ -36,7 +36,9 @@ Key sources: `model/jobs.ts`, `model/valley.ts`, `model/types.ts`, `scene/farmer
   vendor without a mascot, an unknown label, an old server's bare `agent`) is the **sprout-bot**: a sage-green tin box
   with a cream screen face and a seedling on its antenna, never a recoloured Clawd. Names in the card, ledger and
   prompt follow the vendor ('Goose', 'OpenCode'; `agentName` in `hud/format.ts`). Gallery `mascot-cast`,
-  `mascot-<id>`; demo `--scenario zoo`.
+  `mascot-<id>`, `mascot-hats` (variant = a mascot, in all four tier hats: every hat must sit on the head, with a crest /
+  spike / antenna poking out of the crown, never through the brim; the parrot's crest is a slim tuft for that reason,
+  Qwen's ears are tabs, not ridges); demo `--scenario zoo`.
 * **Subagents = ducklings** that waddle in a line behind their farmer and go home (to the pond) when done.
 
 ## States and events
@@ -111,7 +113,7 @@ fireside toasting and chatting; reading on a bench; checkers turns with a partne
   favoured at night) by the windmill, and the **Hot spring** foot-bath (steam, stone lanterns, rubber duck) on the
   river meadow behind the barn.
 * Four **countryside nooks** out by the rim (`scene/structures/countryside.ts`), each at the end of its own footpath,
-  give strolls somewhere to go: the **Orchard & apiary** (seasonal fruit trees, beehives with bees on fine days, a honey
+  give strolls somewhere to go: the **Honey stand** (an old wild orchard; the hillside orchard is separate, see orchard.md) (seasonal fruit trees, beehives with bees on fine days, a honey
   honesty stand) to the north-east, the **Standing stones** on the north knoll (runes glow cyan after dark), the
   **Hay meadow** (round bales, a hay wagon; away farmers doze against the bales) to the south-west, and the
   **Swing tree** on the east edge (a rope swing in the wind; E pushes it). Fern's rounds pass the stones and the orchard.

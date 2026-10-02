@@ -3,6 +3,7 @@
  * to act on real sessions. Nothing under farm/scene or farm/hud imports net/ — they get these two objects.
  */
 import { R2S } from '../../../shared/protocol.ts';
+import type { DiffResult } from '../../../shared/protocol.ts';
 import { call, send, store } from '../net/store.ts';
 import type { ValleySource } from './model/valley.ts';
 import type { AgentPort, LinkState } from './model/types.ts';
@@ -33,6 +34,13 @@ export function createAgentPort(openTerminal: (id: string) => void): AgentPort {
     async prompt(id, text) {
       const r = await call({ t: R2S.AGENT_PROMPT, id, text });
       return { ok: r.ok, error: r.error };
+    },
+    async diff(id, q) {
+      // rev 4: an older server does not know `git.diff` (it answers bad_message)
+      if ((store.hello?.revision ?? 0) < 4) return { ok: false, error: 'this HQ server is too old to show diffs (update it)' };
+      const r = await call({ t: R2S.GIT_DIFF, id, ...(q.from ? { from: q.from } : {}), ...(q.to ? { to: q.to } : {}), ...(q.path ? { path: q.path } : {}) });
+      const why = typeof r.why === 'string' ? r.why : undefined;
+      return r.ok && r.diff && typeof r.diff === 'object' ? { ok: true, diff: r.diff as DiffResult } : { ok: false, error: why ?? r.error ?? 'no diff' };
     },
   };
 }

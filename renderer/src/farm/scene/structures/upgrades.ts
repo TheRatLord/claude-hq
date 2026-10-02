@@ -250,7 +250,8 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
     let ci = 0;
     const string = (a: THREE.Vector3, b: THREE.Vector3) => {
       const len = a.distanceTo(b);
-      const pts = sag(a, b, Math.min(1.4, len * 0.07), Math.max(6, Math.round(len / 0.9)));
+      // a shallow droop: the lowest pennant tip (~0.35 m under the string) must clear your eye (1.62 m) and every hat
+      const pts = sag(a, b, Math.min(0.45, len * 0.07), Math.max(6, Math.round(len / 0.9)));
       k.part('bunting', () => {
         for (let i = 0; i < pts.length - 1; i++) k.rod(pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z, 0.012, PAL.cloth, 4);
         for (let i = 1; i < pts.length - 1; i++) {
@@ -261,10 +262,13 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
       });
     };
     const ring = [...plazaLamps].sort((p, q) => Math.atan2(p.x - PLAZA.x, p.z - PLAZA.z) - Math.atan2(q.x - PLAZA.x, q.z - PLAZA.z));
-    for (let i = 0; i < ring.length && ring.length > 1; i++) string(lampHead(ring[i]), lampHead(ring[(i + 1) % ring.length]));
+    // tied off at the lamp finials (like the festival banner's rope), not the lamp heads: high enough overhead that
+    // walking the square under them doesn't fill the top of the view with pennants
+    const finial = (l: THREE.Vector3) => lampHead(l).add(new THREE.Vector3(0, 0.45, 0));
+    for (let i = 0; i < ring.length && ring.length > 1; i++) string(finial(ring[i]), finial(ring[(i + 1) % ring.length]));
     for (const l of ring) {
       const near = roadLamps.filter((r) => r.distanceTo(l) < 16).sort((p, q) => p.distanceTo(l) - q.distanceTo(l))[0];
-      if (near) string(lampHead(l), lampHead(near));
+      if (near) string(finial(l), finial(near));
     }
     const root = new THREE.Group();
     kitInto(k, root);

@@ -19,7 +19,7 @@ const LIFE = { error: 7000, warn: 5500, ask: 5500, other: 4000 } as const;
 
 export interface Toasts { el: HTMLElement; push(t: ToastSpec, bg?: boolean): void; watchLetters(letters: readonly Letter[]): void }
 
-interface Live { node: HTMLElement; group: string; n: number; timer: ReturnType<typeof setTimeout> | undefined; ms: number; gone: boolean; hover: boolean; bg: boolean }
+interface Live { node: HTMLElement; key: string; group: string; n: number; timer: ReturnType<typeof setTimeout> | undefined; ms: number; gone: boolean; hover: boolean; bg: boolean }
 
 export function createToasts(ctx: HudCtx): Toasts {
   const el = h('div.vh-toasts', { 'aria-live': 'polite', 'data-testid': 'toasts' });
@@ -45,13 +45,14 @@ export function createToasts(ctx: HudCtx): Toasts {
   }
   function fill(x: Live, t: ToastSpec): void {
     const lvl = t.level ?? 'info';
-    x.node.className = `vh-toast ${lvl}${t.id ? ' click' : ''}`;
+    x.node.className = `vh-toast ${lvl}${t.id || t.open ? ' click' : ''}`;
     x.node.replaceChildren(
       icon(t.icon ?? (lvl === 'error' || lvl === 'warn' ? ICONS.bell : LETTER_ICON.news)),
       h('div', null, h('div.t', { text: t.text }), t.sub ? h('div.s', { text: t.sub }) : null),
       ...(x.n > 1 ? [h('span.n', { text: `×${x.n}`, title: `${x.n} of these in a row` })] : []));
-    x.node.title = t.id ? 'Open the terminal' : 'Dismiss';
-    x.node.onclick = () => { if (t.id) ctx.openTerminal(t.id); dismiss(x); };
+    x.node.title = t.open ? t.openTitle ?? 'Open' : t.id ? 'Open the terminal' : 'Dismiss';
+    x.node.onclick = () => { if (t.open) t.open(); else if (t.id) ctx.openTerminal(t.id); dismiss(x); };
+    x.key = t.key ?? t.text;
   }
 
   /** `bg`: the world's news (letters), not a reply to something the player did */
@@ -63,6 +64,16 @@ export function createToasts(ctx: HudCtx): Toasts {
     recent.set(key, now);
     if (recent.size > 200) for (const [k, v] of recent) if (now - v > SAME_KEY_MS) recent.delete(k);
     const group = groupOf(t);
+    // a newer form of a toast still showing (the harvest recap of a "finished" toast): swap it in place, no ×n
+    const old = t.replaceKey ? live.find((x) => x.key === t.replaceKey && !x.gone) : undefined;
+    if (old) {
+      old.group = group;
+      old.ms = Math.max(old.ms, lifeOf(t));
+      fill(old, t);
+      old.node.classList.remove('bump'); void old.node.offsetWidth; old.node.classList.add('bump');
+      arm(old);
+      return;
+    }
     const same = live.find((x) => x.group === group && !x.gone);
     if (same) {
       // coalesce: refresh the one on screen (newest text, ×n), bump it to the top, restart its clock
@@ -76,7 +87,7 @@ export function createToasts(ctx: HudCtx): Toasts {
       return;
     }
     const node = h('div.vh-toast', { role: 'status' });
-    const x: Live = { node, group, n: 1, timer: undefined, ms: lifeOf(t), gone: false, hover: false, bg };
+    const x: Live = { node, key, group, n: 1, timer: undefined, ms: lifeOf(t), gone: false, hover: false, bg };
     node.addEventListener('pointerenter', () => { x.hover = true; });
     node.addEventListener('pointerleave', () => { x.hover = false; });
     fill(x, t);
@@ -111,6 +122,8 @@ export function createToasts(ctx: HudCtx): Toasts {
     const covered = ctx.panels.modal && !ctx.panels.current()?.light;
     for (const l of fresh.reverse()) {
       if (l.kind === 'news' || l.kind === 'subagents') continue;
+      // a stretch that ended without a finish event posts its letter with the recap already on it: the harvest toast says it
+      if (l.recap) continue;
       if (covered && l.kind !== 'needs-you' && l.kind !== 'error') continue;
       push({
         text: letterTitle(l), sub: [l.plotLabel, l.body].filter(Boolean).join(' · '), icon: LETTER_ICON[l.kind], level: LEVEL[l.kind] ?? 'info',

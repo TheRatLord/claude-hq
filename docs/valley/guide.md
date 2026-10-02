@@ -64,9 +64,10 @@ over a watercolour wash in the chapter's colour, then cached as a data URL.
 | | wildlife | a field-guide sighting | n / 6 |
 | | sky | the *rainbow* or *meteors* stamp | each ✓ |
 | | photo | stamps `n.photo`, or the album | album / snaps |
-| Seasons | rowboat | stamps `n.row`, or *seen* aboard | outings |
+| Seasons | rowboat | stamps `n.row`, or *seen* aboard | metres rowed (`n.rowM`), outings |
 | | skate | stamps `n.eight`, or *seen* on the ice | figure eights |
 | | snowman | stamps `n.snowman`, or *seen* rolling a ball | snow friends |
+| | orchard | apple / pear / plum / cherry / honey in the Collections book ([orchard.md](orchard.md)) | fruit picked, kinds n / 4, honey jars |
 | | festival | stamps `fests` | n / 7 |
 | Village life | gifts | `friends.total.gifts` | gifts, closest friend ♥ |
 | | requests | `friends.total.requests`, or one asked | done |
@@ -136,6 +137,7 @@ only outdoors, and never for a secret.
 | `campfire` | a campfire gathering on, within 26 m |
 | `trail` | within 12 m of the trailhead |
 | `pet` | no pet, within 8 m of the foundlings' basket |
+| `orchard` | summer or autumn, within 12 m of the hillside orchard's gate |
 | `notebook` | 3+ pages found and the notebook never opened |
 
 `guidebook.ts` calls `onboarding.want(id)` every second while a nudge applies. The texts are the `HINTS` entries with

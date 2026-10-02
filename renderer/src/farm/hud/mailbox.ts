@@ -107,7 +107,7 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     const live = l.kind === 'needs-you' && !l.resolved && !!f?.needsYou;
     const busy = answering.has(l.farmerId);
     node.className = `vh-letter k-${l.kind}${l.read ? ' read' : ' unread'}${l.resolved ? ' resolved' : ''}${open ? ' sel' : ''}${busy ? ' busy' : ''}`;
-    const sig = `${l.title}|${l.body}|${l.read}|${l.resolved}|${open}|${live ? f?.options.map((o) => o.label).join('|') : ''}|${!!f}|${busy}`;
+    const sig = `${l.title}|${l.body}|${l.recap ?? ''}|${l.read}|${l.resolved}|${open}|${live ? f?.options.map((o) => o.label).join('|') : ''}|${!!f}|${busy}`;
     (node.querySelector('.when') as HTMLElement).textContent = s ? ago(l.at, s.now) : '';
     if (node.dataset.sig === sig) return;
     node.dataset.sig = sig;
@@ -126,7 +126,9 @@ export function createMailbox(ctx: HudCtx, mark: { read(l: Letter): void; all():
     }, h('span.num', { text: o.key }), h('span.lab', { text: o.label }))) : []));
     answers.style.display = live && (open || filter === 'needs') ? '' : 'none';
     const acts = node.querySelector('.acts') as HTMLElement;
-    acts.replaceChildren(...(f || s?.helpers.has(l.farmerId) ? [
+    acts.replaceChildren(...(l.recap ? [
+      h('button.vh-btn.small.primary', { type: 'button', 'data-testid': 'letter-recap', onclick: () => { mark.read(l); ctx.panels.open('recap', l.recap); } }, icon(LETTER_ICON.finished), 'View harvest'),
+    ] : []), ...(f || s?.helpers.has(l.farmerId) ? [
       h('button.vh-btn.small.primary', { type: 'button', 'data-testid': 'letter-terminal', onclick: () => { mark.read(l); ctx.openTerminal(l.farmerId); } }, icon(ICONS.terminal), 'Terminal'),
       h('button.vh-btn.small', { type: 'button', onclick: () => { mark.read(l); ctx.travel(l.farmerId); ctx.panels.close(); } }, icon(ICONS.walk), 'Walk there'),
     ] : []), ...(l.farmerId === 'gazette' ? [

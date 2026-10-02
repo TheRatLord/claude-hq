@@ -14,9 +14,12 @@ import { createOnboarding } from './onboarding.ts';
 import { createStamps } from './stamps.ts';
 import { createPetModel } from './pet.ts';
 import { createGrotto } from './grotto.ts';
+import { createOrchard } from './orchard.ts';
 import { createGuide, emptyGuideWorld } from './guide.ts';
 import { createTimeline, demoDay, keyMoments, rollDay, summarize } from './timeline.ts';
 import { composeIssue, createGazette, demoInput, gatherFacts } from './gazette.ts';
+import { createRecaps, demoRecaps, recapDiffQuery, recapHeadline, recapLine } from './recap.ts';
+import { createProjects } from './projects.ts';
 
 const NOW = new Date(2026, 9, 2, 14, 0).getTime();
 const now = () => NOW;
@@ -88,6 +91,28 @@ test('robust: the timeline loads any stored value', () => {
     tl.flush();
     const fd = tl.view.farmers.get('a');
     return { s: summarize(fd), m: keyMoments(fd).length };
+  });
+});
+
+test('robust: the harvest recaps load any stored value', () => {
+  const git = { repo: 'app', branch: 'main', head: 'abc1234', dirty: 1, ahead: 0 };
+  const recaps = demoRecaps({ id: 'a', tag: 'app', name: 'flint', title: 'Fix', git }, NOW);
+  const o = { id: 'a', tag: 'app', name: 'flint', status: 'working' as const, title: 'Fix', said: 'ok', work: { since: NOW - 60_000, added: 3, removed: 1, files: 1 },
+    usage: { day: '2026-10-02', tokens: 10, cost: 0.1 }, todos: [{ content: 'x', status: 'completed' as const }], git, context: 0.2, contextTokens: 10, model: 'Opus' };
+  // a recorder with one open stretch and a history, as saved
+  const live = createRecaps(port(null), { now: NOW });
+  for (const r of recaps) live.put(r);
+  live.observe([{ ...o, status: 'idle' }], NOW); live.observe([o], NOW + 1000); live.event('a', 'commit', NOW + 1500, { msg: 'm', sha: 'abc1234' }); live.flush();
+  const sample = JSON.parse(JSON.stringify(live.data));
+  fuzz('recaps', sample, (raw) => {
+    const rc = createRecaps(port(raw), { now: NOW });
+    rc.observe([o], NOW + 2000);
+    rc.event('a', 'test-pass', NOW + 2500);
+    const out = rc.observe([{ ...o, status: 'idle' }], NOW + 20_000 + 60_000);
+    rc.observe([{ ...o, status: 'idle' }], NOW + 200_000);
+    rc.flush();
+    const list = rc.view.farmers.get('a') ?? [];
+    return { list, out, copy: list.map((r) => [recapLine(r), recapHeadline(r), recapDiffQuery(r)]) };
   });
 });
 
@@ -182,6 +207,17 @@ test('robust: the gazette loads any stored value', () => {
   });
 });
 
+test('robust: the hillside orchard loads any stored value', () => {
+  const st = port(null);
+  const o = createOrchard(st, now);
+  o.shake(0, 'autumn'); o.shake(7, 'autumn'); o.takeHoney(1, 'summer'); o.pressed();
+  fuzz('orchard', st.saved, (raw) => {
+    const s = createOrchard(port(raw), () => NOW + 86_400_000 * 4);
+    s.shake(0, 'autumn'); s.takeHoney(1, 'summer'); s.honeyIn(2, 'spring'); s.fruitLeft(5, 'summer');
+    return s.data();
+  });
+});
+
 test('robust: the grotto loads any stored value', () => {
   const st = port(null);
   const g = createGrotto(st, now);
@@ -201,5 +237,23 @@ test('robust: Fern\'s notebook loads any stored value', () => {
     const s = createGuide(port(raw), { now });
     s.update(emptyGuideWorld()); s.see('skate'); s.update(emptyGuideWorld()); s.read('skate'); s.rumour('villager:fern', 1); s.news({ welcomed: true });
     return { data: s.data(), view: s.view().pages.map((p) => [p.found, p.fresh, p.notes]) };
+  });
+});
+
+test('robust: the Valley Projects board loads any stored value', () => {
+  const purse = { coins: 1000, basket: { trout: 5, morel: 5, boot: 1 } as Record<string, number> };
+  const ports = {
+    spend: (c: number) => { if (c > purse.coins) return false; purse.coins -= c; return true; },
+    take: (id: string, n: number) => { const h = purse.basket[id] ?? 0, g = Math.min(h, n); purse.basket[id] = h - g; return g; },
+    stash: (id: string, n: number) => { purse.basket[id] = (purse.basket[id] ?? 0) + n; },
+  };
+  const st = port(null);
+  const b = createProjects(st, ports, now);
+  b.pay('lanterns', 30); b.give('footbridge', 'fish', 'trout', 2); b.event('ship', false); b.event('unblocked', false); b.devComplete('glasshouse'); b.unveil('glasshouse'); b.pick();
+  fuzz('projects', st.saved, (raw) => {
+    const x = createProjects(port(raw), ports, now);
+    x.pay('lanterns', 5); x.give('glasshouse', 'forage', 'morel'); x.event('celebrate', false); x.check({ friends: null }); x.unveil('lanterns'); x.pick();
+    const v = x.view({ friends: null, coins: purse.coins, basket: purse.basket });
+    return { data: x.data(), done: v.done, entries: v.entries.map((e) => [e.status, e.progress, e.ready]) };
   });
 });

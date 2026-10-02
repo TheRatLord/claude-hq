@@ -92,6 +92,7 @@ export const viewmodelSystem: SystemFactory = (ctx: SceneCtx) => {
   // ---- materials: the viewmodel projection + depth squeeze on top of the toon (and the lantern glass's glow)
   const vmProj = { value: new THREE.Matrix4() };
   const vmDepth = { value: new THREE.Vector4() };
+  const vmFill = { value: new THREE.Vector3() };
   const vmCam = new THREE.PerspectiveCamera(VM_FOV, 16 / 9, 0.01, 10);
   const patch = <M extends THREE.Material>(m: M, part: { value: THREE.Matrix4 }): M => chainShader(m, (sh) => {
     sh.uniforms.vmProj = vmProj; sh.uniforms.vmDepth = vmDepth; sh.uniforms.vmPart = part;
@@ -113,7 +114,14 @@ export const viewmodelSystem: SystemFactory = (ctx: SceneCtx) => {
     // a faint warm fill so the paws still read as yours on a moonless night (the scene's lights do the rest)
     const m = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonRamp(), emissive: 0x1e140e, transparent: true, blending: THREE.NoBlending });
     m.name = 'viewmodel:paw';
-    return patch(m, part);
+    // the held lantern and the night's ambient fill: the toon ramp's facing term leaves the paw's top and the sleeve
+    // (turned away from a lantern hanging below) near black, so add their light as albedo-tinted fill (vmFill)
+    return chainShader(patch(m, part), (sh) => {
+      sh.uniforms.vmFill = vmFill;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 vmFill;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * vmFill;');
+    }, 'viewmodel-fill');
   };
 
   const mkPaw = (side: 1 | -1): Paw => {
@@ -277,7 +285,7 @@ export const viewmodelSystem: SystemFactory = (ctx: SceneCtx) => {
     }
     switch (item) {
       case 'rod': sideP(o, s, 0.165, -0.16, -0.37, -(rodSwing - ROD_TILT), 0.08, -0.1); return;
-      case 'lantern': sideP(o, s, 0.2, -0.01, -0.47, 0.1, 0.4, 0.12); return;
+      case 'lantern': sideP(o, s, 0.2, -0.04, -0.47, 0.3, 0.4, 0.12); return;   // wrist tipped down: the forearm leaves the view low, not across it
       case 'basket': sideP(o, s, 0.19, -0.03, -0.45, 0.1, 0.35, 0.1); return;
       case 'hay': sideP(o, s, 0.13, -0.125, -0.4, 0.35, 0.25, 2.9); return;
       case 'grain': sideP(o, s, 0.15, -0.14, -0.38, 0.15, 0.05, -0.12); return;
@@ -530,6 +538,11 @@ export const viewmodelSystem: SystemFactory = (ctx: SceneCtx) => {
       }
       const wantLight = lanternOn ? L.raise : 0;
       lightK += (wantLight - lightK) * Math.min(1, dt * 5);
+      // fill on the paws: the lantern's warm glow (stronger the darker it is) + a little cool ambient after dusk
+      {
+        const lk = lightK * (0.05 + 0.07 * Math.min(1, night * 1.4)), amb = 0.035 * night;
+        vmFill.value.set(light.color.r * lk + 0.55 * amb, light.color.g * lk + 0.62 * amb, light.color.b * lk + 0.8 * amb);
+      }
       if (lightK > 0.01) {
         v2.set(LANTERN_GLASS.x, LANTERN_GLASS.y, LANTERN_GLASS.z).applyMatrix4(L.part.value).applyMatrix4(L.local);
         toWorldMatched(v2, light.pos);

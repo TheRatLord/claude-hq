@@ -6,10 +6,11 @@
  * Presentation never imports the network, and the model never imports three or the DOM. A ValleySource can be the
  * live store, a recording, or a local fake, so the visuals stay detachable from real sessions.
  */
-import type { Kind, ModelTier, Status, ToolClass } from '../../../../shared/protocol.ts';
+import type { DiffResult, Kind, ModelTier, Status, ToolClass } from '../../../../shared/protocol.ts';
 import type { AlmanacView } from './almanac.ts';
 import type { FestivalView } from './calendar.ts';
 import type { TimelineView } from './timeline.ts';
+import type { RecapView } from './recap.ts';
 import type { PlotRepoView, RepoView, SpendView, TodoItem, ValleySpend } from './signals.ts';
 export type { PlotRepoView, RepoView, SpendView, TodoItem, ValleySpend } from './signals.ts';
 
@@ -206,6 +207,8 @@ export interface Letter {
   read: boolean;
   /** needs-you letters: resolved once the farmer is no longer blocked */
   resolved: boolean;
+  /** finished letters: the harvest recap of that stretch (model/recap.ts `Recap.key`) */
+  recap?: string;
 }
 
 /** System stats, normalised for the landmarks that display them. */
@@ -275,6 +278,8 @@ export const VALLEY_EVENTS = Object.freeze([
   'plot-opened', 'plot-closed',
   // the almanac: the valley reached a new rank (detail: the rank's name)
   'level-up',
+  // a farmer's stretch of work ended in a harvest recap (model/recap.ts; detail: the recap's key)
+  'harvested',
 ] as const);
 export type ValleyEventKind = (typeof VALLEY_EVENTS)[number];
 export interface ValleyEvent { kind: ValleyEventKind; /** farmer / helper / plot id */ id: string; detail?: string }
@@ -301,6 +306,8 @@ export interface ValleyState {
   timeline: TimelineView;
   /** tokens and estimated USD the valley's agents spent today (farmers who went home still count) */
   spend?: ValleySpend;
+  /** each farmer's last few harvest recaps, newest first (model/recap.ts); optional for hand-built states */
+  recaps?: RecapView;
 }
 
 /** What the presentation may ask for. Implemented over the store in main; faked in the gallery and tests. */
@@ -313,4 +320,9 @@ export interface AgentPort {
   ack(id: string): void;
   /** send a new prompt line to an idle agent */
   prompt(id: string, text: string): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * read-only diffstat of the pane's repo (`git.diff`, rev 4): `from` a commit (default HEAD) to `to` (default the
+   * working tree); `path` also returns that file's patch. Optional: fakes and older servers have none.
+   */
+  diff?(id: string, q: { from?: string; to?: string | null; path?: string }): Promise<{ ok: boolean; diff?: DiffResult; error?: string }>;
 }

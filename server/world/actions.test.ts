@@ -273,3 +273,18 @@ test('spawn claude: a new shell that is not ready yet (agent_pane_busy) is retri
   await assert.rejects(R.actions.handle(R.client, { t: 'spawn', workspaceId: 'w1', kind: 'claude' }), { code: 'agent_pane_busy' });
   assert.deepEqual(R.calls.at(-1), ['pane.close', { pane_id: 'w1:p9' }], 'the half-made pane is closed again');
 });
+
+test('git.diff: read-only (allowed on a read-only protocol), in the pane\'s own repo root only; refused without a diff source', async () => {
+  const e = { ...makeEntity(), git: { root: '/repo', branch: 'main', head: 'abc1234', dirty: 0, untracked: 0, ahead: 0, behind: 0, lastCommit: null } };
+  const model = fakeModel({ get: (id) => (id === ID ? e : null), base: () => makeBase() });
+  const seen: unknown[] = [];
+  const diffs = { diff: async (id: string, root: string | null, q: unknown) => { seen.push([id, root, q]); return { root: root ?? '', from: 'abc1234', to: null, files: [], added: 0, removed: 0, more: 0 }; } };
+  const client: ActionClient = { sendJson() {}, watch: [] };
+  const source = { request: async () => { throw new Error('herdr must not be asked'); } };
+  const a = new Actions({ source, model, clock: autoClock(), session: 'hqtest', demo: false, settings: { ...DEFAULT_SETTINGS }, diffs, readOnly: () => true });
+  const r = await a.handle(client, { t: 'git.diff', id: ID, from: 'abc1234', path: 'src/a.ts' } as ClientMsg);
+  assert.deepEqual(seen, [[ID, '/repo', { from: 'abc1234', to: undefined, path: 'src/a.ts' }]]);
+  assert.equal((r.diff as { root: string }).root, '/repo');
+  const none = new Actions({ source, model, clock: autoClock(), session: 'hqtest', demo: false, settings: { ...DEFAULT_SETTINGS } });
+  await assert.rejects(none.handle(client, { t: 'git.diff', id: ID } as ClientMsg), (err: unknown) => errCode(err) === 'not_accepted');
+});

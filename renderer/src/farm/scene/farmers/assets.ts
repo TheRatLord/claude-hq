@@ -180,6 +180,17 @@ defineAsset({
 });
 
 defineAsset({
+  name: 'mascot-hats', group: 'character', variants: ALL,
+  note: 'one mascot (variant) in every tier hat: opus straw · sonnet cap · haiku bandana · beanie; check that each sits on the head and that spikes / crests / antennae poke through cleanly',
+  build: (o) => stage((p) => {
+    const m = (ALL.includes(o.variant as MascotId) ? o.variant : 'aider') as MascotId;
+    (['opus', 'sonnet', 'haiku', null] as const).forEach((tier, i) =>
+      p.add(lookFor(as(m, `hats${i}`, tier ?? (m === 'clawd' ? 'other' : null)), WORKSPACE_COLORS[i % 8]), 'stand', (i - 1.5) * 1.3, 0));
+  }, 4),
+  animate,
+});
+
+defineAsset({
   name: 'mascot-faces', group: 'character', note: 'every expression: Clawd, Codex, Gemini (round eyes) and OpenCode (bars), one row each — eyes blink, the cursor blinks',
   build: () => stage((p) => {
     const rows: MascotId[] = ['clawd', 'codex', 'gemini', 'opencode'];

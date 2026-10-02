@@ -56,7 +56,7 @@ function buildIceGeometry(): THREE.BufferGeometry {
     for (const [x, z] of q) push(x, y, z, 0, ed(x, z), UP);
   }
   // snowbanks drifted round the shore: low lumpy mounds on the waterline
-  const lump = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+  const lump = new THREE.IcosahedronGeometry(1, 1);   // polyhedra are built non-indexed (toNonIndexed() only warned)
   const lp = lump.attributes.position;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), nn = new THREE.Vector3();
   const nm = new THREE.Matrix3();

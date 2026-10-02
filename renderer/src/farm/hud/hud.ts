@@ -31,6 +31,7 @@ import { warmBase } from './mapdraw.ts';
 import { createMailbox, mailOf } from './mailbox.ts';
 import { createRoster } from './roster.ts';
 import { createCard } from './cards.ts';
+import { createRecapPanel, harvestToast } from './recap.ts';
 import { createDrawer } from './drawer.ts';
 import { createNoticeboard, createStats } from './boards.ts';
 import { createAlmanac } from './almanac.ts';
@@ -50,6 +51,8 @@ import { createGazettePanel } from './gazette.ts';
 import { createAlbumPanel } from './album.ts';
 import type { GazetteView } from './gazette.ts';
 import { createGuidePanel, watchGuide } from './guide.ts';
+import { createProjectsPanel, watchProjects } from './projects.ts';
+import type { ProjectsService } from '../model/projects.ts';
 import type { GuideService } from '../model/guide.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
 import type { StampsService } from '../model/stamps.ts';
@@ -197,7 +200,7 @@ export function createHud(d: HudDeps): Hud {
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
   const guidePanel = createGuidePanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createPause(ctx), drawer, tour.panel]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createRecapPanel(ctx), createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createProjectsPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -515,6 +518,7 @@ export function createHud(d: HudDeps): Hud {
       pet: () => panels.open('pet'),
       album: (id) => panels.open('album', id),
       guide: (page) => panels.open('guide', page),
+      projects: (id) => panels.open('projects', id),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
@@ -535,6 +539,7 @@ export function createHud(d: HudDeps): Hud {
           toasts.push({ text: `The valley is now ${/^[aeiou]/i.test(e.detail ?? '') ? 'an' : 'a'} ${e.detail}!`, sub: up ? `New in town: ${up.title.replace(/^The /, "the ")} · H for the almanac` : 'H for the almanac', icon: ICONS.rosette, level: 'good', ms: 9000, key: `level|${e.detail}` });
           ctx.sfx('fanfare');
         }
+        else if (e.kind === 'harvested' && e.detail) harvestToast(ctx, toasts.push, e.detail);
         else if (e.kind === 'plot-closed') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `Harvest time at ${p.label}`, sub: 'the workspace closed', icon: ICONS.sprout }); }
       });
       // a first-ever find for the Collections book
@@ -549,6 +554,8 @@ export function createHud(d: HudDeps): Hud {
       } catch { /* optional */ }
       // a page found in Fern's notebook (model/guide.ts): a toast with its sketch
       try { const g = x.guide?.(); if (g) watchGuide(ctx, g); } catch { /* optional */ }
+      // the Valley Projects board (model/projects.ts): a project completed, a restored place unveiled
+      try { const pj = x.service?.('projects') as ProjectsService | undefined; if (pj) watchProjects(ctx, pj); } catch { /* optional */ }
       // a stamp inked into the stamp book (model/stamps.ts): the stamp itself on the toast, a rubber-stamp thunk
       try {
         let thunkAt = 0;

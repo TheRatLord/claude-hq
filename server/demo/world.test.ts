@@ -460,3 +460,30 @@ test('rev-2 signals: every Claude spends today, repo workspaces carry git, a com
     await close();
   }
 });
+
+test('demo: git.diff answers from the edit log — committed ranges, the working tree, a patch, and seeded recaps', async () => {
+  const { clock, source, close } = setup({ scenario: 'mixed', seed: 2, n: 12 });
+  let ws: string | undefined;
+  for (let t = 0; t < 30 * 60_000 && !ws; t += 5000) {
+    await run(clock, 5000, 1000);
+    ws = [...source.edits].find(([, e]) => e.heads.length >= 2 && e.log.some((x) => x.head === 0))?.[0];
+  }
+  assert.ok(ws, 'a workspace committed edits within 30 simulated minutes');
+  const e = source.edits.get(ws)!;
+  const pane = source.raw.panes.find((p) => p.workspace_id === ws)!.pane_id;
+  const want = new Map<string, number>();
+  for (const x of e.log) if (x.head === 0) want.set(x.file, (want.get(x.file) ?? 0) + x.added);
+  const d = await source.diff(pane, null, { from: e.heads[0], to: e.heads[1] });
+  assert.deepEqual(new Map(d.files.map((f) => [f.path, f.added])), want);
+  assert.equal(d.to, e.heads[1]);
+  assert.equal(d.added, [...want.values()].reduce((a, b) => a + b, 0));
+  const p = await source.diff(pane, null, { from: e.heads[0], to: e.heads[1], path: d.files[0].path });
+  assert.match(p.patch!.text, /^diff --git /);
+  assert.ok(p.patch!.text.split('\n').some((l) => l.startsWith('+')));
+  await assert.rejects(source.diff(pane, null, { from: e.heads[0], path: 'nope.ts' }), /not in this diff/);
+  // a HEAD the log never had (the seeded morning's recaps): a seeded, stable diffstat
+  const s1 = await source.diff(pane, null, { from: 'abcdef1' }), s2 = await source.diff(pane, null, { from: 'abcdef1' });
+  assert.ok(s1.files.length > 0);
+  assert.deepEqual(s1, s2);
+  await close();
+});

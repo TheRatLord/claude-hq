@@ -19,6 +19,8 @@ import { fbm } from './noise.ts';
 import { buildTrail, carveTrail, trailDist, trailLine, TRAIL_WIDTH } from './trail.ts';
 import type { Trail } from './trail.ts';
 import { LEDGE, LEDGE_HW, MOUTH, carveGrotto, ledgeAt } from './grotto.ts';
+import { ORCHARD_ALLEY, ORCHARD_GATE, ORCHARD_SITE, orchardClearance, orchardToWorld } from './orchard.ts';
+import { PROJECT_CLEAR, PROJECT_SITES } from './projects.ts';
 
 export const WORLD = Object.freeze({
   /** half extent of the terrain mesh */
@@ -317,6 +319,18 @@ export const YARD = Object.freeze({ x0: -6.2, x1: 6.2, z0: -32.2, z1: -24.4 });
   for (const q of pads) if (q.top && q !== fh && (c(q).some((k) => rectSdf(k.x, k.z, g) < 0) || c(g).some((k) => rectSdf(k.x, k.z, q) < 0))) q.y = g.y;
   pads.push(g);
 }
+// the hillside orchard's honey house (world/orchard.ts) stands on a little level terrace cut into the slope
+{
+  const O = ORCHARD_SITE, c = orchardToWorld(O.shed.x, O.shed.z);
+  pads.push(padOf(c.x, c.z, O.shed.d + 1.4, O.shed.w + 1.2, O.yaw, 2.6));
+}
+// the Valley Projects' places (world/projects.ts: glasshouse, mill, observatory, train halt) stand on little terraces
+for (const q of PROJECT_SITES) {
+  if (q.pad === null) continue;
+  const p = padOf(q.x, q.z, q.size[0] + 1.6, q.size[1] + 1.6, q.yaw, q.pad);
+  p.top = true;
+  pads.push(p);
+}
 
 export const SITES: readonly Site[] = SITE_XZ.map(([x, z], index) => {
   const yaw = faceTo({ x, z }, HUB);
@@ -536,6 +550,30 @@ export const PATHS: readonly PathLine[] = (() => {
     routeAround(pts, 1.6);
     out.push({ points: pts, width: 1.5 });
   }
+  // the hillside orchard (world/orchard.ts): a footpath from its gate down to the nearest road (heading straight out of
+  // the gate first), and the mown alley up the middle between the rows
+  {
+    const e = ORCHARD_GATE, stub = orchardToWorld(ORCHARD_SITE.gate.x, ORCHARD_SITE.front + 3.6);
+    let best = Infinity, q: XZ = stub;
+    for (const p of out) {
+      if (p.width < 2) continue;   // a road, not another nook's spur
+      for (let i = 0; i + 1 < p.points.length; i++) {
+        const a = p.points[i], b = p.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((stub.x - a.x) * dx + (stub.z - a.z) * dz) / l2));
+        const c = { x: a.x + dx * t, z: a.z + dz * t }, dd = Math.hypot(c.x - stub.x, c.z - stub.z);
+        if (dd < best) { best = dd; q = c; }
+      }
+    }
+    const n = Math.max(2, Math.round(best / 4));
+    const wob = fbm(stub.x * 0.11, stub.z * 0.11) * Math.min(1.6, best * 0.12);
+    const dx = stub.x - q.x, dz = stub.z - q.z, l = Math.hypot(dx, dz) || 1;
+    const pts: XZ[] = [];
+    for (let k = 0; k <= n; k++) { const t = k / n, bow = Math.sin(t * Math.PI) * wob; pts.push({ x: q.x + dx * t - (dz / l) * bow, z: q.z + dz * t + (dx / l) * bow }); }
+    routeAround(pts, 1.6);
+    pts.push({ x: e.x, z: e.z });
+    out.push({ points: pts, width: 1.5 });
+    out.push({ points: ORCHARD_ALLEY.map((p) => ({ x: p.x, z: p.z })), width: ORCHARD_SITE.alley.w });
+  }
   return out;
 })();
 
@@ -567,7 +605,7 @@ export function pathAt(x: number, z: number): number {
   return Math.max(best, 1 - smooth(-1, 2, dh));
 }
 
-/** clearance's rectangles, in its original order: the square, structures, garden, yard, laundry line, fields */
+/** clearance's rectangles, in its original order: the square, structures, garden, yard, laundry line, fields, project sites */
 const CLEAR_RECTS = [
   { x: HUB.x, z: HUB.z + 1, hw: 13, hd: 11, yaw: 0 },
   ...STRUCTURES.map((s) => ({ x: s.x, z: s.z, hw: s.size[0] / 2, hd: s.size[1] / 2, yaw: s.yaw })),
@@ -575,6 +613,8 @@ const CLEAR_RECTS = [
   { x: (YARD.x0 + YARD.x1) / 2, z: (YARD.z0 + YARD.z1) / 2, hw: (YARD.x1 - YARD.x0) / 2, hd: (YARD.z1 - YARD.z0) / 2, yaw: 0 },
   { x: LAUNDRY.x, z: (LAUNDRY.z0 + LAUNDRY.z1) / 2, hw: 1.0, hd: (LAUNDRY.z1 - LAUNDRY.z0) / 2 + 0.5, yaw: 0 },
   ...SITES.map((s) => ({ x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw })),
+  // the Valley Projects' places and their forecourts (world/projects.ts)
+  ...PROJECT_CLEAR,
 ].map((r) => ({ ...r, c: Math.cos(r.yaw), s: Math.sin(r.yaw), diag: Math.hypot(r.hw, r.hd) + 1e-6 }));
 
 /**
@@ -607,6 +647,8 @@ export function clearance(x: number, z: number): number {
   }
   // the grotto's ledge behind the falls
   if (x < -18 && x > -40 && z < -90 && z > -120) d = Math.min(d, distToPolyline(x, z, LEDGE) - LEDGE_HW);
+  // the hillside orchard's wall, trees, hives, bed and honey house (world/orchard.ts; Infinity unless close)
+  if (x > 60) d = Math.min(d, orchardClearance(x, z));
   return d;
 }
 

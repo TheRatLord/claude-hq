@@ -164,6 +164,12 @@ const M: Record<Motif, (g: C2) => void> = {
     g.beginPath(); g.moveTo(0.62, 0.8); g.lineTo(0.72, 0.3); g.lineTo(0.82, 0.8); g.closePath(); g.fill();
     line(g, -1, 0.88, 1, 0.88);
   },
+  // an apple with its leaf, a bee buzzing past (Fern's notebook: the hillside orchard)
+  apple: (g) => {
+    g.beginPath(); g.moveTo(0, -0.38); g.bezierCurveTo(-0.35, -0.62, -0.95, -0.5, -0.88, 0.12); g.bezierCurveTo(-0.82, 0.62, -0.42, 0.95, -0.15, 0.9); g.quadraticCurveTo(0, 0.85, 0.15, 0.9); g.bezierCurveTo(0.42, 0.95, 0.82, 0.62, 0.88, 0.12); g.bezierCurveTo(0.95, -0.5, 0.35, -0.62, 0, -0.38); g.fill();
+    line(g, 0, -0.38, 0.12, -0.82); leaf(g, 0.12, -0.7, 0.62, -0.88);
+    g.save(); g.lineWidth *= 0.7; g.beginPath(); g.ellipse(0.72, -0.72, 0.13, 0.09, 0.3, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.ellipse(0.66, -0.86, 0.08, 0.05, -0.6, 0, Math.PI * 2); g.stroke(); g.restore();
+  },
   // a paw print: a pad and four toes (Fern's notebook: a pet of your own)
   paw: (g) => {
     g.beginPath(); g.ellipse(0, 0.38, 0.46, 0.38, 0, 0, Math.PI * 2); g.fill();

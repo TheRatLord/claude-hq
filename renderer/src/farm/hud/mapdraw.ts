@@ -90,7 +90,7 @@ const KIND_FILL: Record<PlotView['kind'], string> = {
 const LABELS: Partial<Record<StructureId, string>> = {
   farmhouse: 'Farmhouse', barn: 'Barn', silo: 'Silo', windmill: 'Windmill', waterTower: 'Water tower', campfire: 'Campfire',
   bridge: 'Bridge', waterfall: 'Waterfall', pergola: 'Pergola', picnic: 'Picnic spot', lookout: 'Stargazers\' knoll', hotspring: 'Hot spring',
-  orchard: 'Orchard & apiary', stones: 'Standing stones', haymeadow: 'Hay meadow', swingtree: 'Swing tree',
+  orchard: 'Honey stand', stones: 'Standing stones', haymeadow: 'Hay meadow', swingtree: 'Swing tree',
 };
 /** trail points of interest (world POIS kinds) */
 const POI_LOOK: Record<string, [Glyph, string]> = {

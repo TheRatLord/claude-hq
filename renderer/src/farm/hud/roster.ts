@@ -6,7 +6,7 @@
  * Each farmer row carries a mini day strip (timeline.ts) on one shared window, so the agents' days compare at a glance.
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
-import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
+import { farmerFace, ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
 import { agentName, altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, rosterFilterHit, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS, type RosterFilter } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { earliest, stripRange } from '../model/timeline.ts';
@@ -15,6 +15,8 @@ import { branchName, repoBits, spendLine } from './format.ts';
 import { costLabel, tokensLabel } from '../model/signals.ts';
 import './signals.css';
 import { mascotOf } from '../model/mascots.ts';
+import { recapHeadline, recapLine } from '../model/recap.ts';
+import { openRecap } from './recap.ts';
 
 const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
@@ -57,6 +59,7 @@ export function createRoster(ctx: HudCtx): Panel {
     h('span', null, h('kbd.vh-k', { text: 'Shift+Enter' }), 'walk there'),
     h('span', null, h('kbd.vh-k', { text: 'Ctrl+I' }), 'details card'),
     h('span', null, h('kbd.vh-k', { text: 'Ctrl+Enter' }), 'new task'),
+    h('span', null, h('kbd.vh-k', { text: 'R' }), 'last harvest'),
     h('span', null, h('kbd.vh-k', { text: 'Tab' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.top', null, h('div.vh-search', null, input), summary), rowsEl, foot);
 
@@ -83,8 +86,11 @@ export function createRoster(ctx: HudCtx): Panel {
   const task = (id: string) => ctx.panels.open('card', { id, task: canTask(ctx.farmer(id)) });
 
   const rowSig = (r: Row): string => r.kind === 'farmer'
-    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}|${r.f.model}|${spendCell(r.f)}`
+    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}|${r.f.model}|${spendCell(r.f)}|${lastHarvest(r.f.id)?.key ?? ''}`
     : `h|${r.hp.name}|${r.hp.tag}|${r.hp.running}|${r.hp.exit}|${r.hp.label}|${r.hp.activity}|${r.hp.ports.join(',')}`;
+
+  /** the farmer's newest harvest recap (model/recap.ts), if any */
+  const lastHarvest = (id: string) => ctx.state()?.recaps?.farmers.get(id)?.[0] ?? null;
 
   /** the ledger's spend column: '$1.24' (or '2.1M tok' for an unpriced model); '' when nothing today */
   const spendCell = (f: FarmerView): string => (f.spend ? costLabel(f.spend.cost) || `${tokensLabel(f.spend.tokens)} tok` : '');
@@ -95,6 +101,17 @@ export function createRoster(ctx: HudCtx): Panel {
     row.addEventListener('click', () => { select(id, false); });
     row.addEventListener('dblclick', () => open(id));
     return row;
+  }
+
+  /** a little basket: the newest harvest (commits / lines / when); a click opens the recap */
+  function harvestChip(id: string): HTMLElement | null {
+    const r = lastHarvest(id);
+    if (!r) return null;
+    const label = r.commits.length ? `${r.commits.length}↑` : r.lines ? `+${r.lines.added}` : '✓';
+    return h('button.vh-harvest-chip', {
+      type: 'button', 'data-testid': 'roster-harvest', 'aria-label': `Last harvest: ${recapHeadline(r)}`, title: `Last harvest (R): ${recapHeadline(r)}\n${r.title ? `${r.title}\n` : ''}${recapLine(r)}`,
+      onclick: (e: Event) => { e.stopPropagation(); select(id, false); openRecap(ctx, r.key); },
+    }, icon(LETTER_ICON.finished), label);
   }
 
   /** (re)fill a row's cells; called only when its signature changes */
@@ -120,7 +137,7 @@ export function createRoster(ctx: HudCtx): Panel {
         h('div', null, h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status] })),
         stripOf(id),
         job,
-        h('div.since', null, spendCell(f) ? h('span.spend', { title: `Today: ${spendLine(f.spend!)}`, 'data-testid': 'roster-spend' }, spendCell(f)) : null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
+        h('div.since', null, harvestChip(id), spendCell(f) ? h('span.spend', { title: `Today: ${spendLine(f.spend!)}`, 'data-testid': 'roster-spend' }, spendCell(f)) : null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
         acts);
     } else {
       const hp = r.hp;
@@ -180,7 +197,10 @@ export function createRoster(ctx: HudCtx): Panel {
         }
         nodes.push(grp);
       }
-      for (const id of [...rowEls.keys()]) if (!live.has(id)) { rowEls.delete(id); strips.delete(id); }
+      for (const id of [...rowEls.keys()]) if (!live.has(id)) rowEls.delete(id);
+      // strips are pruned on their own: a forced render clears rowEls, and a strip left behind for a farmer who has
+      // gone kept its old row (and that row's whole group) alive through the strip's parent chain
+      for (const id of [...strips.keys()]) if (!live.has(id)) strips.delete(id);
       const away = s.link === 'offline' || s.link === 'herdr-offline' || s.link === 'connecting';
       if (!visible.length && only) nodes.push(h('div.vh-empty', null, icon(ICONS.sprout), `Nobody ${only === 'needs' ? 'needs you' : `is ${only === 'done' ? 'done' : only}`}${q ? ` matching "${q}"` : ''} right now.`,
         h('small', { text: 'Click the chip again to see everyone.' })));
@@ -279,6 +299,7 @@ export function createRoster(ctx: HudCtx): Panel {
       if (sel && !typingIn(e.target) && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.code === 'KeyW') { walk(sel); return true; }
         if (e.code === 'KeyC') { if (ctx.farmer(sel)) card(sel); return true; }
+        if (e.code === 'KeyR') { openRecap(ctx, sel); return true; }
       }
       // Tab closes the ledger while Tab is its key (Settings → Controls); Shift+Tab, or any Tab once the ledger has
       // another key, walks the ledger's controls (hud.ts)

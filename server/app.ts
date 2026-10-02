@@ -19,6 +19,7 @@ import { isRecord, errCode, errMessage } from '../shared/guards.ts';
 import type { Clock, Enricher, HerdrSource, TerminalBackend } from './interfaces.ts';
 import type { HerdrClient } from './herdr/client.ts';
 import type { DemoEnricher } from './demo/world.ts';
+import type { DiffSource } from './enrich/gitDiff.ts';
 import type { Reaper } from './reaper.ts';
 import type { StatsSampler } from './stats/sampler.ts';
 import { WorldModel } from './world/model.ts';
@@ -60,6 +61,8 @@ interface Wiring {
   client?: HerdrClient;
   reaper?: Reaper;
   bindModel?: (m: WorldModel) => void;
+  /** `git.diff` (rev 4): live = enrich/gitDiff.ts, demo = the DemoWorld; replay has none */
+  diffs?: DiffSource;
 }
 
 interface WireCtx { clock: Clock; log: ScopedLogger }
@@ -138,7 +141,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
   const audit = new AuditLog({ dir: stateDir, session: cfg.session, clock, log: log.child('audit') });
   const actions = new Actions({
     source, model, clock, session: cfg.session, isDefault: w.isDefault, demo: !!cfg.demo, settings,
-    demoEnricher: w.demoEnricher ?? null, acks, blocked, screens, timeline, readOnly, audit, notes,
+    demoEnricher: w.demoEnricher ?? null, acks, blocked, screens, timeline, readOnly, audit, notes, diffs: w.diffs ?? null,
     saveSettings: (s) => {
       try {
         saveSettings(cfg.configDir, s);
@@ -252,7 +255,7 @@ async function wireDemo(n: number, cfg: ResolvedConfig, { clock, log }: WireCtx)
   source.paneScroll = (id) => terminals.scrollOffset(id);
   source.paneTouched = (id) => terminals.touched(id);
   return {
-    source, enrichers, terminals, demoEnricher: demo, stateDir: null, readOnly: () => false,
+    source, enrichers, terminals, demoEnricher: demo, stateDir: null, readOnly: () => false, diffs: source,
     herdrInfo: () => ({ connected: source.connected, protocol: null, readOnly: false }),
     bindModel: (m) => {
       model = m;
@@ -300,6 +303,7 @@ async function wireLive(cfg: ResolvedConfig, { clock, log, instanceId, opts }: W
   const { SubagentsEnricher } = await import('./enrich/subagents.ts');
   const { ProcInfoEnricher } = await import('./enrich/procinfo.ts');
   const { GitEnricher } = await import('./enrich/git.ts');
+  const { GitDiffs } = await import('./enrich/gitDiff.ts');
   // ONE default-session verdict (realpath of the session socket AND of a socket override) for every gate
   const isDefault = isDefaultTarget(cfg.session, opts.herdrSocket ?? null);
   if (isDefault && cfg.session !== 'default') log.warn(`herdr session "${cfg.session}" resolves to the DEFAULT socket: treated as the default session (structural actions refused)`);
@@ -324,7 +328,7 @@ async function wireLive(cfg: ResolvedConfig, { clock, log, instanceId, opts }: W
   await source.start(); // first attempt; offline keeps retrying every 2 s
   if (!source.connected) log.warn(`herdr session "${cfg.session}" not reachable yet; retrying`);
   return {
-    source, enrichers, terminals, stateDir, client, reaper, isDefault,
+    source, enrichers, terminals, stateDir, client, reaper, isDefault, diffs: new GitDiffs(),
     readOnly: () => client.readOnly,
     herdrInfo: () => ({ connected: source.connected, protocol: client.protocol, readOnly: client.readOnly }),
   };

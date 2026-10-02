@@ -19,7 +19,7 @@
  * Options: --minutes N (20)  --cycle S (30)  --settle S (4)  --scenarios a,b (mixed,churn,crowd40)  --demo N (12)
  *          --timescale K (server demo clock, 20)  --anim K (__valley.timeScale, 4)  --date-scale K (page Date speed, 1)
  *          --start ISO (page Date start; default now)  --seed N (1)  --actions list|all  --json FILE  --size WxH (1280x720)
- *          --stacks (append a short stack to every console warning / error)
+ *          --stacks (append a short stack to every console warning / error)  --warmup 0 (skip the warm-up pass)
  *          --url URL (an existing backend + its built dist instead of a fresh demo dev server)
  * Actions: scenario panels terminal toasts poses weather inside gather wildlife festival forage pet flap socket hidden
  *          midnight
@@ -42,6 +42,7 @@ const ALL_ACTIONS = ['scenario', 'panels', 'terminal', 'toasts', 'poses', 'weath
 const ACTIONS = new Set(opt('--actions', 'all') === 'all' ? ALL_ACTIONS : opt('--actions', '').split(','));
 const [W, H] = opt('--size', '1280x720').split('x').map(Number);
 const JSON_OUT = opt('--json', '');
+const PANELS = ['map', 'mailbox', 'roster', 'almanac', 'collection', 'noticeboard', 'stats', 'pause', 'friends', 'pet', 'shop'];
 
 /**
  * Page instrumentation (before any page script): an accelerated / jumpable Date, live timer + interval + rAF counts,
@@ -103,7 +104,7 @@ interface Sample {
   heapMB: number; nodes: number; listeners: number; layout: number;
   geometries: number; textures: number; programs: number; objects: number;
   timeouts: number; intervals: number; rafs: number; audio: number;
-  storage: Record<string, number>; storageTotal: number; hudNodes: number; hudTop: Record<string, number>;
+  storage: Record<string, number>; storageTotal: number; hudNodes: number; hudTop: Record<string, number>; sceneTop: Record<string, number>;
   fps: number; frameErrors: number;
 }
 
@@ -137,12 +138,18 @@ async function sample(page: Page, cdp: CDPSession, t0: number): Promise<Sample> 
     const info = w.__valley.ctx.renderer.info;
     let objects = 0;
     w.__valley.ctx.scene.traverse(() => { objects++; });
+    // the scene's biggest top-level subtrees (to name what an object spike or leak is made of)
+    const sceneTop: Record<string, number> = {};
+    for (const c of (w.__valley.ctx.scene as unknown as { children: { name: string; type: string; traverse(f: () => void): void }[] }).children) {
+      let n = 0; c.traverse(() => { n++; });
+      const k = c.name || c.type; sceneTop[k] = (sceneTop[k] ?? 0) + n;
+    }
     // where the HUD's elements are: the biggest subtrees two levels down (to name a DOM leak)
     const hudTop = () => {
       const out: Record<string, number> = {};
       const walk = (el: Element, depth: number, pre: string) => {
         for (const c of el.children) {
-          const name = `${pre}${c.tagName.toLowerCase()}${c.className && typeof c.className === 'string' ? '.' + c.className.split(' ')[0] : ''}`;
+          const name = `${pre}${c.tagName.toLowerCase()}${c.className && typeof c.className === 'string' ? '.' + c.className.split(' ').slice(0, c.classList.contains('vh-frame') ? 2 : 1).join('.') : ''   /* panels: section.vh-frame.vh-<id> */}`;
           if (depth < 2) walk(c, depth + 1, name + ' > ');
           else out[name] = (out[name] ?? 0) + c.getElementsByTagName('*').length + 1;
         }
@@ -158,7 +165,7 @@ async function sample(page: Page, cdp: CDPSession, t0: number): Promise<Sample> 
       geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length ?? 0, objects,
       timeouts: l.timeouts.size, intervals: l.intervals.size, rafs: l.rafs.size,
       storage, storageTotal: Object.values(storage).reduce((a, b) => a + b, 0),
-      hudNodes: document.getElementById('hud')?.getElementsByTagName('*').length ?? 0, hudTop: hudTop(), fps: Math.round(perf.fps), frameErrors: perf.frameErrors,
+      hudNodes: document.getElementById('hud')?.getElementsByTagName('*').length ?? 0, hudTop: hudTop(), sceneTop: Object.fromEntries(Object.entries(sceneTop).sort((a, b) => b[1] - a[1]).slice(0, 10)), fps: Math.round(perf.fps), frameErrors: perf.frameErrors,
     };
   });
   return { t: (Date.now() - t0) / 1000, audio: audio.live, heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), nodes: m.Nodes, listeners: m.JSEventListeners, layout: m.LayoutObjects, ...p };
@@ -181,17 +188,59 @@ async function baseline(page: Page): Promise<void> {
     v.setWeather(null); v.setSeason(null); v.setHour(10); v.cam(null); v.pose('hub');
     await v.scenario(${JSON.stringify(SCENARIOS[0])}, 1);
   })()`);
+  // …and wait for the scene to get there: a scenario swap, a room or a festival's dressing takes a while to come
+  // down, and a sample taken mid-way (hundreds of objects, +20 MB of heap) read as a spike the fit called growth.
+  // The big one: the previous scenario's fields dissolve over 3.2 s of game time (scene/plots/field.ts close()) with
+  // every mesh still in the scene until the end, so the count is flat *while* they go: 3 equal reads 2 s apart (6 s,
+  // enough at the ~7 fps a loaded GPU gives) rather than 1 s apart
+  let last = -1, same = 0;
+  for (let i = 0; i < 15 && same < 2; i++) {
+    const n = await ev(page, '(() => { let n = 0; __valley.ctx.scene.traverse(() => { n++; }); return n; })()') as number;
+    same = n === last ? same + 1 : 0;
+    last = n;
+    await page.waitForTimeout(2000);
+  }
 }
 
 async function churn(page: Page, seconds: number, log: (s: string) => void): Promise<void> {
   const end = Date.now() + seconds * 1000;
-  const v = (s: string) => ev(page, s);
   while (Date.now() < end) {
     const a = pick([...ACTIONS]);
+    await act(page, a);
+    log(a);
+  }
+}
+
+/**
+ * Warm-up before the first sample: everything the HUD and scene build lazily on first use (each panel's DOM, sized by
+ * the scenario it last rendered; rooms, gatherings, festival dressing, wildlife, the pet…) gets built once up front.
+ * Without it the 20-minute run kept meeting panels for the first time in its second half (the soak opens one random
+ * panel per action), and those one-off builds were fitted as growth. Every panel under every scenario, then every
+ * action twice; `--warmup 0` skips it.
+ */
+async function warmUp(page: Page): Promise<void> {
+  const v = (s: string) => ev(page, s);
+  if (ACTIONS.has('panels')) for (const sc of SCENARIOS) {
+    await v(`__valley.scenario(${JSON.stringify(sc)}, 1)`);
+    await page.waitForTimeout(800);
+    for (const p of PANELS) {
+      await v(`window.__hud.open(${JSON.stringify(p)}, ${p === 'shop' ? "{ tab: 'buy', at: 'store' }" : 'undefined'})`);
+      await page.waitForTimeout(300);
+    }
+    await v(`(() => { const ids = Object.keys(__valley.state().farmers); if (ids[0]) window.__hud.open('card', ids[0]); })()`);
+    await page.waitForTimeout(300);
+    await v('window.__hud.close()');
+  }
+  for (let pass = 0; pass < 2; pass++) for (const a of ACTIONS) if (a !== 'midnight') await act(page, a);
+}
+
+async function act(page: Page, a: string): Promise<void> {
+  const v = (s: string) => ev(page, s);
+  {
     switch (a) {
       case 'scenario': await v(`__valley.scenario(${JSON.stringify(pick(SCENARIOS))}, ${1 + Math.floor(rng() * 5)})`); break;
       case 'panels': {
-        const panel = pick(['map', 'mailbox', 'roster', 'almanac', 'collection', 'noticeboard', 'stats', 'pause', 'friends', 'pet', 'shop']);
+        const panel = pick(PANELS);
         await v(`window.__hud.open(${JSON.stringify(panel)}, ${panel === 'shop' ? "{ tab: 'buy', at: 'store' }" : 'undefined'})`);
         await page.waitForTimeout(400 + rng() * 800);
         // a farmer card now and then
@@ -225,7 +274,6 @@ async function churn(page: Page, seconds: number, log: (s: string) => void): Pro
       case 'midnight': await v(`(() => { const d = new Date(__soak.now()); const m = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0).getTime(); __soak.jump(m - d.getTime() - 8000); })()`); await page.waitForTimeout(10_000); break;
     }
     await page.waitForTimeout(150 + rng() * 400);
-    log(a);
     lastAction = a;
   }
 }
@@ -261,6 +309,7 @@ async function main(): Promise<void> {
     await page.goto(u.toString());
     await page.waitForFunction(() => (window as unknown as { __valley?: V }).__valley?.ready === true, null, { timeout: 60_000 });
     await ev(page, 'window.__hud?.dismissHint(); __valley.ctx.services.get("audio")?._debug?.unlock?.()');
+    if (opt('--warmup', '1') !== '0') { await warmUp(page); lastAction = 'warm-up'; }
     const t0 = Date.now();
     const end = t0 + MINUTES * 60_000;
     await baseline(page);

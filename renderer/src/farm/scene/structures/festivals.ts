@@ -125,8 +125,8 @@ export function paperLantern(K: Kits, t: Xf, color: number, s = 1): void {
 }
 
 /** a sagging string from a to b (world / kit space); `each` decorates the points between */
-function sagged(K: Kits, a: THREE.Vector3, b: THREE.Vector3, step: number, each: (p: THREE.Vector3, i: number, yaw: number) => void, wire: number = PAL.ink, slack = 0.07): void {
-  const len = a.distanceTo(b), n = Math.max(4, Math.round(len / step)), droop = Math.min(1.0, len * slack);
+function sagged(K: Kits, a: THREE.Vector3, b: THREE.Vector3, step: number, each: (p: THREE.Vector3, i: number, yaw: number) => void, wire: number = PAL.ink, slack = 0.07, maxDroop = 1.0): void {
+  const len = a.distanceTo(b), n = Math.max(4, Math.round(len / step)), droop = Math.min(maxDroop, len * slack);
   const pts: THREE.Vector3[] = [];
   for (let i = 0; i <= n; i++) { const u = i / n; pts.push(new THREE.Vector3().lerpVectors(a, b, u).add(new THREE.Vector3(0, -droop * 4 * u * (1 - u), 0))); }
   for (let i = 0; i < n; i++) K.s.rod(pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z, 0.012, wire, 4);
@@ -627,10 +627,13 @@ export function createFestivals(ctx: SceneCtx, host: FestivalsHost): Festivals {
       return null;
     };
     /** a string from lamp a to lamp b, ending at the posts (a little below the heads) */
+    // the droop stops 2.25 m above the lower post's foot: what hangs off the string (pennants, garlands, bulbs) then
+    // clears your eye (1.62 m) and every farmer's hat instead of filling the view as you walk the square
     const lampString = (a: THREE.Vector3, b: THREE.Vector3, y: number, step: number, each: (p: THREE.Vector3, i: number, yaw: number) => void, name: string, slack = 0.07) => {
       const d = new THREE.Vector3(b.x - a.x, 0, b.z - a.z).normalize().multiplyScalar(0.075);
       const A = new THREE.Vector3(a.x + d.x, a.y + y, a.z + d.z), B = new THREE.Vector3(b.x - d.x, b.y + y, b.z - d.z);
-      part(K, name, () => sagged(K, A, B, step, each, PAL.ink, slack));
+      const maxDroop = Math.max(0.12, Math.min(A.y, B.y) - Math.min(a.y, b.y) - 2.25);
+      part(K, name, () => sagged(K, A, B, step, each, PAL.ink, slack, maxDroop));
     };
     /** plaza ring lamp pairs, then each ring lamp out to its nearest road lamp */
     let skip: [THREE.Vector3, THREE.Vector3] | null = null; // the banner's rope takes that span
@@ -695,13 +698,13 @@ export function createFestivals(ctx: SceneCtx, host: FestivalsHost): Festivals {
     }
 
     // ---- strings between the lamps ----
-    if (deco.has('garlands')) for (const [p, q] of lampPairs()) lampString(p, q, 2.45, 0.32, (pt, i) => garlandBit(K, pt, i), 'hung-garland');
-    if (deco.has('bunting')) for (const [p, q] of lampPairs()) lampString(p, q, 2.4, 0.55, (pt, i, yaw) => pennant(K, pt, i, yaw), 'hung-pennants');
+    if (deco.has('garlands')) for (const [p, q] of lampPairs()) lampString(p, q, 2.65, 0.32, (pt, i) => garlandBit(K, pt, i), 'hung-garland');
+    if (deco.has('bunting')) for (const [p, q] of lampPairs()) lampString(p, q, 2.65, 0.55, (pt, i, yaw) => pennant(K, pt, i, yaw), 'hung-pennants');
     if (deco.has('stringLights')) {
       const cols = id === 'newyear' ? [0xffe27a, 0xfff3c4, 0x9cc8ff, 0xffd0f0] : [0xff5a4a, 0x7be07a, 0xffd23a, 0x6aa8ff, 0xff9ad0];
       let n = 0;
       for (const [p, q] of lampPairs()) {
-        lampString(p, q, 2.5, 0.42, (pt, i) => { K.s.box(0.025, 0.05, 0.025, PAL.ink, { x: pt.x, y: pt.y - 0.03, z: pt.z }); K.p.ball(0.055, cols[(i + n) % cols.length], { x: pt.x, y: pt.y - 0.1, z: pt.z, s: [1, 1.3, 1] }); }, 'hung-lights');
+        lampString(p, q, 2.65, 0.42, (pt, i) => { K.s.box(0.025, 0.05, 0.025, PAL.ink, { x: pt.x, y: pt.y - 0.03, z: pt.z }); K.p.ball(0.055, cols[(i + n) % cols.length], { x: pt.x, y: pt.y - 0.1, z: pt.z, s: [1, 1.3, 1] }); }, 'hung-lights');
         if (n++ % 2 === 0) emit((p.x + q.x) / 2, (p.y + q.y) / 2 + 2.0, (p.z + q.z) / 2, new THREE.Color(1, 0.75, 0.5), 0.3, 5, 0.05);
       }
     }

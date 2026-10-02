@@ -7,6 +7,7 @@
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high (beats Settings), ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  *             ?timeline=0 (demo: no seeded morning on the farmers' day timelines, model/timeline.ts)
+ *             ?recaps=0 (demo: no seeded harvest recaps earlier today, model/recap.ts)
  *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior), ?pose=barn-inside[:VIEW] (the barn), ?pose=grotto[:VIEW] (the cave behind the falls)
  *             ?album=memory (the photo album in memory only, not IndexedDB)
  *             ?welcome=1 (open the first-run welcome tour, fresh; automated browsers skip it otherwise) | ?welcome=0 (never)
@@ -20,6 +21,7 @@ import { createPlatform } from '../ui/platform.ts';
 import { createValley } from './model/valley.ts';
 import { demoAlmanac } from './model/almanac.ts';
 import { demoDay } from './model/timeline.ts';
+import { demoRecaps } from './model/recap.ts';
 import { createCollection } from './model/collection.ts';
 import { createWallet } from './model/wallet.ts';
 import { createFriends, friendDef } from './model/friends.ts';
@@ -31,6 +33,7 @@ import { createAlbumStore } from './albumstore.ts';
 import { installStampBook, watchPhotos } from './stampbook.ts';
 import { installNewsroom } from './newsroom.ts';
 import { installGuide } from './guidebook.ts';
+import { installProjectBoard } from './projectboard.ts';
 import { localJson } from './storage.ts';
 import { createPrefsStore } from './prefs.ts';
 import { ACTIONS, effectiveFpsCap, keyLabel, reducedMotion } from './model/prefs.ts';
@@ -73,17 +76,22 @@ const hudNet: HudNet = {
 const ALMANAC_KEY = 'claude-valley.almanac.v1';
 /** each farmer's day timeline (model/timeline.ts): today only, per browser profile; the demo seeds a morning in memory */
 const TIMELINE_KEY = 'claude-valley.timeline.v1';
+/** harvest recaps (model/recap.ts): each farmer's last few stretches of work, per browser profile; the demo seeds some in memory */
+const RECAPS_KEY = 'claude-valley.recaps.v1';
 const valley = createValley(storeSource, {
   almanac: localJson(ALMANAC_KEY),
   timeline: localJson(TIMELINE_KEY),
+  recaps: localJson(RECAPS_KEY),
 });
-addEventListener('pagehide', () => valley.timeline.flush());
+addEventListener('pagehide', () => { valley.timeline.flush(); valley.recaps.flush(); });
 store.on('hello', (h) => {
   if (!h.demo) return;
   let mem: unknown = demoAlmanac(Date.now(), params.get('almanac') ? Number(params.get('almanac')) : undefined);
   valley.useAlmanac({ load: () => mem, save: (d) => { mem = d; } });
   let tmem: unknown = null;
   valley.useTimeline({ load: () => tmem, save: (d) => { tmem = d; } }, params.get('timeline') === '0' ? null : demoDay);
+  let rmem: unknown = null;
+  valley.useRecaps({ load: () => rmem, save: (d) => { rmem = d; } }, params.get('recaps') === '0' ? null : demoRecaps);
 });
 const hour = params.get('hour');
 if (hour !== null && hour !== '') valley.setSky({ hour: Number(hour) });
@@ -183,6 +191,10 @@ collection.onFind((r) => onboarding.signal(r.def.kind === 'fish' ? 'fish' : 'for
 // off every service above; browser-local; stamps pay a few bits and bring yard trophies at 10 / 25 / all
 const stamps = installStampBook({ engine, controller, valley, collection, wallet, friends, ready: () => store.hello !== null });
 engine.ctx.services.set('stamps', stamps);
+// the Valley Projects (model/projects.ts, wired in projectboard.ts; scene/projects shows the places, hud/projects.ts the
+// board's panel): the town's restoration arc, paid for in bits, finds, friendship and real agent work; browser-local
+const projects = installProjectBoard({ valley, wallet, friends, ready: () => store.hello !== null });
+engine.ctx.services.set('projects', projects);
 // The Valley Gazette (model/gazette.ts, wired in newsroom.ts; hud/gazette.ts prints it): the weekly edition in the
 // mailbox every Monday morning, the morning edition on the noticeboard / G; browser-local, the demo's in memory
 const gazette = installNewsroom({ valley, collection, friends, stamps, demo: () => (store.hello ? !!store.hello.demo : null) });

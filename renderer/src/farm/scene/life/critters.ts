@@ -374,6 +374,7 @@ export function createCritters(ctx: SceneCtx, fx: Fx): Critters {
   let nextJump = 2;
   function updateKoi(dt: number, time: number) {
     if (Math.hypot(player.x - POND.x, player.z - POND.z) > 60) return;
+    const iced = ((ctx.services.get('seasons') as { ice?: () => number } | undefined)?.ice?.() ?? 0) > 0.2;
     for (const k of kois) {
       // lazy wandering turns; stay in deep water; scatter from someone at the edge
       const cx = POND.x - k.x, cz = POND.z - k.z, cd = Math.hypot(cx, cz);
@@ -390,7 +391,7 @@ export function createCritters(ctx: SceneCtx, fx: Fx): Critters {
       k.x += Math.sin(k.yaw) * k.speed * dt; k.z += Math.cos(k.yaw) * k.speed * dt;
       // now and then one rises and kisses the surface (a little ring at its mouth)
       k.kiss -= dt;
-      if (k.kiss <= 0) { k.kiss = 8 + rng() * 14; k.up = 1; }
+      if (k.kiss <= 0) { k.kiss = 8 + rng() * 14; k.up = iced ? 0 : 1; }   // no rising to kiss a frozen surface
       if (k.up > 0) {
         const pu = k.up;
         k.up = Math.max(0, k.up - dt / 2.2);
@@ -414,7 +415,9 @@ export function createCritters(ctx: SceneCtx, fx: Fx): Critters {
       const dp = Math.hypot(player.x - POND.x, player.z - POND.z);
       const rd = nearestRiver(player.x, player.z, riv);
       let ok = false;
-      if (j && dp < 70 && (rd > 45 || rng() < 0.6)) {
+      // never out of a frozen pond (scene/seasons' ice): the river still runs
+      const pondIced = ((ctx.services.get('seasons') as { ice?: () => number } | undefined)?.ice?.() ?? 0) > 0.2;
+      if (j && dp < 70 && !pondIced && (rd > 45 || rng() < 0.6)) {
         const a = rng() * TAU, r = Math.sqrt(rng()) * POND.r * 0.7;
         j.x0 = POND.x + Math.cos(a) * r; j.z0 = POND.z + Math.sin(a) * r; ok = true;
       } else if (j && rd < 55) {

@@ -17,6 +17,8 @@ export interface Shared {
   say(text: string, ms?: number, who?: string): void;
   /** count a stamp-book happening ('row', 'eight', 'snowman') */
   stamp(kind: 'row' | 'eight' | 'snowman'): void;
+  /** add whole metres rowed to the stamp book's lifetime count (the notebook's rowboat page) */
+  rowed(metres: number): void;
   controller(): Controller | undefined;
   /** in the farmhouse? */
   indoors(): boolean;
@@ -32,6 +34,9 @@ export function createShared(ctx: SceneCtx, ice: () => number): Shared {
     say(text, ms = 3600, who = 'Seasons') { ctx.ui.say(text, ms, { who }); },
     stamp(kind) {
       try { (ctx.services.get('stamps') as StampsService | undefined)?.event(kind, { demo: ctx.valley.demo, hour: ctx.valley.sky.hour }); } catch (e) { console.warn('[seasons] stamp failed', e); }
+    },
+    rowed(metres) {
+      try { (ctx.services.get('stamps') as StampsService | undefined)?.rowed(metres); } catch (e) { console.warn('[seasons] rowed failed', e); }
     },
     controller: () => ctx.services.get('controller') as Controller | undefined,
     indoors: () => !!(ctx.services.get('indoors') as IndoorSpace | undefined)?.active,

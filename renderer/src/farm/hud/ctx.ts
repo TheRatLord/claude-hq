@@ -14,7 +14,7 @@ import { PREFS_KEY } from '../prefs.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'recap' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide' | 'projects';
 
 export interface Panel {
   id: PanelId;
@@ -58,6 +58,11 @@ export interface ToastSpec {
   /** coalescing group: a toast of the same group already on screen is updated in place (×n) instead of stacking;
    *  defaults to the key's first `|` segment (e.g. `commit|…`, `ans|…`), else the text */
   group?: string;
+  /** a toast with this key still on screen is replaced in place (no ×n): a harvest recap upgrading its "finished" toast */
+  replaceKey?: string;
+  /** click action (instead of opening the farmer's terminal) and its tooltip */
+  open?: () => void;
+  openTitle?: string;
 }
 
 /**

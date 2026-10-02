@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ENTRY, FURN, INSIDE_VIEWS, PHOTO_WALL, ROOM, photoWallSlots, SHELF_IDS, SOLIDS, TANK_IDS, WINDOWS, biggestCatch, clockHands, clockText, onFloor, pushOut, shelfSlots } from './layout.ts';
+import { ENTRY, FURN, INSIDE_VIEWS, PHOTO_WALL, ROOM, photoWallSlots, SHELF_IDS, SHELF_ROWS, SOLIDS, TANK_IDS, WINDOWS, biggestCatch, clockHands, clockText, onFloor, pushOut, shelfSlots } from './layout.ts';
 import { CATALOG } from '../../model/collection.ts';
 
 const R = 0.35;
@@ -62,6 +62,7 @@ test('the shelf has one slot per forageable and per junk catch; fish go to the t
   assert.equal(slots.length, SHELF_IDS.length);
   assert.equal(new Set(slots.map((s) => `${s.row}:${s.col}`)).size, slots.length);
   for (const s of slots) assert.ok(Math.abs(s.x - FURN.shelf.x) < FURN.shelf.w / 2);
+  for (const s of slots) assert.ok(Number.isFinite(s.y) && SHELF_ROWS.includes(s.y as (typeof SHELF_ROWS)[number]), `${s.id} sits on a board`);
   assert.equal(SHELF_IDS.length + TANK_IDS.length, CATALOG.length);
   assert.ok(SHELF_IDS.includes('boot') && TANK_IDS.includes('carp') && !TANK_IDS.includes('bottle'));
 });

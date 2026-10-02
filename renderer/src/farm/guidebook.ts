@@ -29,8 +29,10 @@ import type { GatherService } from './scene/gather/gather.ts';
 import type { TrailService } from './scene/trail/trail.ts';
 import type { GrottoHandle } from './scene/grotto/grotto.ts';
 import type { SeasonsService } from './scene/seasons/seasons.ts';
+import type { ProjectsService } from './model/projects.ts';
 import { POND, TRAIL, structure } from './world/map.ts';
 import { localJson } from './storage.ts';
+import { ORCHARD_GATE } from './world/orchard.ts';
 
 export const GUIDE_KEY = 'claude-valley.guide.v1';
 
@@ -82,6 +84,7 @@ export function installGuide(d: GuideDeps): GuideHandle {
       pet: pd?.pet ? { name: pd.pet.name, ...pd.total } : null,
       stones: (svc.get('trail') as TrailService | undefined)?.stones() ?? 0,
       photos: d.photos(), toured: onboarding.data().pastimes, seen: [],
+      projects: (svc.get('projects') as ProjectsService | undefined)?.data() ?? null,
     };
   };
 
@@ -108,6 +111,7 @@ export function installGuide(d: GuideDeps): GuideHandle {
     return {
       outdoors: true, dock: dist(dock.x, dock.z), pond: Math.max(0, dist(POND.x, POND.z) - POND.r), barn: dist(barn.x, barn.z),
       campfire: dist(fire.x, fire.z), trailhead: dist(head.x, head.z), basket: dist(basket.x, basket.z),
+      orchard: dist(ORCHARD_GATE.x, ORCHARD_GATE.z),
     };
   };
 

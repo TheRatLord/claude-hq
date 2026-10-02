@@ -75,7 +75,7 @@ test('notebook: O opens it, empty pages hint, the rowboat page is found by climb
   expect((await guide(page)).nudges).not.toContain('boat');
   await page.evaluate(() => (window as unknown as W).__valley.boat('out'));
   // and the Collections book: finds found the foraging and fishing pages
-  await page.evaluate(() => (window as unknown as W).__valley.collect(20));
+  await page.evaluate(() => (window as unknown as W).__valley.collect(25));
   await expect.poll(async () => (await guide(page)).pages.filter((p) => ['forage', 'fish'].includes(p.id) && p.found).length, { timeout: 10_000 }).toBe(2);
 
   // the found page: the how-to with key caps, when, progress; a "new" mark until read

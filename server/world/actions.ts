@@ -2,14 +2,14 @@
  * Actions & safety gate: gate by ACTION_CLASS, then `source.request(...)`. Never knows live vs demo.
  * Handles every non-`term.*` renderer→server message after ws.ts validated it and checked the entity id.
  *
- *   always      screen.watch settings.set world.get done.ack agent.explain timeline.get note.set   (HQ-local / read-only)
+ *   always      screen.watch settings.set world.get done.ack agent.explain timeline.get note.set git.diff   (HQ-local / read-only)
  *   explicit    herdr.focus (button only)
  *   interact    agent.prompt agent.answer agent.keys
  *   structural  spawn pane.close — demo or a named, non-default herdr session only; NEVER the default session (there is no
  *               flag or setting that enables it there; a named session resolving to the default socket counts as default)
  * herdr/client.ts enforces its own method allowlist independently: a bug in either alone cannot mutate the
  * default session. Read-only herdr protocol → every class but `always` is refused with `readonly_protocol`.
- * `timeline.get` is served by timeline.ts; `note.set` by notes.ts.
+ * `timeline.get` is served by timeline.ts; `note.set` by notes.ts; `git.diff` by enrich/gitDiff.ts (live) or the demo world.
  */
 import { ACTION_CLASS, ERR, S2R, DEFAULT_SETTINGS } from '../../shared/protocol.ts';
 import type { ActionClass, ClientMsg, ClientMsgOf, ClientMsgType, EventKind, Prompt, ServerMsg, Settings } from '../../shared/protocol.ts';
@@ -22,6 +22,7 @@ import type { NotesEnricher } from './notes.ts';
 import type { Base, WorldModel } from './model.ts';
 import type { Screens } from './screens.ts';
 import type { Timeline } from './timeline.ts';
+import type { DiffSource } from '../enrich/gitDiff.ts';
 
 /** A connected renderer as far as actions are concerned (WsHub's client object). */
 export interface ActionClient {
@@ -60,6 +61,8 @@ export interface ActionsOptions {
   /** spawn's first prompt is audited here (ws.ts audits the spawn itself) */
   audit?: ActionAudit | null;
   notes?: Pick<NotesEnricher, 'set'> | null;
+  /** `git.diff` (rev 4): enrich/gitDiff.ts live, the DemoWorld in --demo; absent (replay) → refused */
+  diffs?: DiffSource | null;
   readOnly?: () => boolean;
 }
 
@@ -122,6 +125,7 @@ export class Actions {
   saveSettings: (s: Settings) => void;
   audit: ActionAudit | null;
   notes: Pick<NotesEnricher, 'set'> | null;
+  diffs: DiffSource | null;
   readOnly: () => boolean;
   /** paneId → the answer in flight (send + acceptance poll) */
   answering: Map<string, Promise<ActionResult>>;
@@ -142,6 +146,7 @@ export class Actions {
     this.saveSettings = o.saveSettings ?? (() => {});
     this.audit = o.audit ?? null;
     this.notes = o.notes ?? null;
+    this.diffs = o.diffs ?? null;
     this.readOnly = o.readOnly ?? (() => false);
     this.answering = new Map();
   }
@@ -198,6 +203,12 @@ export class Actions {
       case 'note.set':
         if (!this.notes) throw actionError(ERR.NOT_ACCEPTED, 'notes not wired');
         return this.notes.set(msg.id, msg.text);
+      case 'git.diff': {
+        // read-only, in the pane's own repo only (the root the git enricher found for its cwd; never a client path)
+        if (!this.diffs) throw actionError(ERR.NOT_ACCEPTED, 'diffs are not available here');
+        const root = this.model.get(msg.id)?.git?.root ?? null;
+        return { diff: await this.diffs.diff(msg.id, root, { from: msg.from, to: msg.to, path: msg.path }) };
+      }
       case 'herdr.focus':
         await req('pane.focus', { pane_id: msg.id });
         return {};
