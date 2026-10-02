@@ -157,6 +157,6 @@ export function beaconMaterial(): THREE.ShaderMaterial {
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true,
   });
 }

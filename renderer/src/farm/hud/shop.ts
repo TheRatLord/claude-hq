@@ -80,6 +80,7 @@ export function decorIcon(id: string, style = 0): string {
     case 'tent': return S(`<path d="M2.5 20L12 4.5 21.5 20z" fill="#b8a46a" ${ol}/><path d="M12 4.5L9 20h6z" fill="#5a4a2a" ${ol}/><path d="M12 4.5v-2" stroke="${INK}" stroke-width="1.4"/><path d="M12 2.5l3 1-3 1" fill="#d9453b"/>`);
     case 'vane': return S(`<path d="M12 9v12M8 21h8" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/><path d="M4 12h16M12 12" stroke="${INK}" stroke-width="1"/><path d="M8 7c1-3 4-4 6-3l2 2-1 2H9z" fill="#f2c230" ${ol}/><path d="M3 6h3l-1.5 1.8L6 9.5H3z" fill="#f2c230" ${ol}/><text x="3.2" y="15.5" font-size="4" font-weight="800" fill="${INK}">W</text><text x="17.5" y="15.5" font-size="4" font-weight="800" fill="${INK}">E</text>`);
   }
+  if (id === 'welcome') return S(`<path d="M5 22V3" stroke="#8a5a32" stroke-width="2.2" stroke-linecap="round"/><path d="M5 4h14" stroke="#6e4a2a" stroke-width="1.6"/><rect x="7" y="6" width="13" height="9" rx="1" fill="#f6e8c8" ${ol}/><rect x="9.5" y="8" width="8" height="5.4" fill="#3d9fa8" ${ol}/><path d="M9.5 8l4 3 4-3" fill="none" stroke="#f6e8c8" stroke-width="1"/><circle cx="13.5" cy="11.2" r=".9" fill="#d9453b"/><rect x="9" y="18" width="12" height="4" fill="#cf9c63" ${ol}/><circle cx="11.5" cy="17.4" r="1.4" fill="#e0704a"/><circle cx="15" cy="17" r="1.4" fill="#f2c230"/><circle cx="18.5" cy="17.4" r="1.4" fill="#d06aa0"/>`);
   if (id.startsWith('keep-')) {
     const pal: Record<string, [string, string]> = { posy: ['#3d9fa8', '#2f3f6e'], bram: ['#e6c547', '#6fcf92'], hazel: ['#d9c08a', '#f1ece0'], marigold: ['#9b5a8c', '#2a2530'], fern: ['#5d8f45', '#b89a62'], nimbus: ['#6fb7e0', '#f2c230'] };
     const [body, hat] = pal[id.slice(5)] ?? [c, c];
@@ -167,7 +168,7 @@ export function createShopPanel(ctx: HudCtx): Panel {
     if (e.locked === 'max') return `you have all ${e.def.max}`;
     if (e.locked === 'rank') return `stocked once the valley is a ${RANKS[e.def.rank ?? 0]?.name ?? 'bigger town'}`;
     if (e.locked === 'friend') return `${friendDef(e.def.friend?.id ?? '')?.short ?? 'a villager'}'s own piece: stocked once you're friends (${e.def.friend?.hearts ?? 6} ♥)`;
-    if (e.locked === 'keepsake') return 'a keepsake: given, never sold';
+    if (e.locked === 'keepsake') return e.def.gift ? 'a present: given, never sold' : 'a keepsake: given, never sold';
     if (e.def.friend) return `${friendDef(e.def.friend.id)?.short ?? 'a friend'}'s own piece, for friends only`;
     if (e.locked === 'season') return `${(e.def.seasons ?? []).join(' & ')} stock · back next ${e.def.seasons?.[0] ?? 'season'}`;
     return season && e.def.seasons ? `${season} stock: only this season` : '';

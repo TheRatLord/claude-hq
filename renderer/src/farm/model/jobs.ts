@@ -6,7 +6,7 @@
  * between poses, so the visible job is a time-weighted vote over a sliding window, with a minimum dwell and
  * hysteresis. Attention states (ask, done) cut through quickly because they matter to the player.
  */
-import type { Entity } from '../../../../shared/protocol.ts';
+import type { Entity, ToolClass } from '../../../../shared/protocol.ts';
 import type { Job } from './types.ts';
 
 /** Instantaneous job for an agent entity (not smoothed). */
@@ -20,7 +20,12 @@ export function rawJob(e: Pick<Entity, 'status' | 'activity' | 'prompt' | 'subag
   }
   const a = e.activity;
   if (!a) return 'plan'; // working with no tool = thinking / generating
-  switch (a.cls) {
+  return clsJob(a.cls);
+}
+
+/** The farm job a tool class shows as (for a working agent). */
+export function clsJob(cls: ToolClass | null): Job {
+  switch (cls) {
     case 'edit': case 'write': return 'plant';
     case 'read': case 'search': return 'inspect';
     case 'test': return 'water';
@@ -35,6 +40,18 @@ export function rawJob(e: Pick<Entity, 'status' | 'activity' | 'prompt' | 'subag
     case null: return 'plan';
   }
   return 'build';
+}
+
+/**
+ * The tool flavour of the visible job: which tool class inside the job's family the farmer is showing (a read vs a
+ * grep inside 'inspect', a web fetch vs an MCP call inside 'fetch'). Sticky: the latest class that belongs to the
+ * visible job wins; a class from another family (tool churn the smoother hid) keeps the previous flavour; a job
+ * change with nothing matching yet clears it. The scene adds its own dwell so the flavour never flickers.
+ */
+export function stickyTool(job: Job, cls: ToolClass | null | undefined, prev: ToolClass | null): ToolClass | null {
+  if (cls && clsJob(cls) === job) return cls;
+  if (prev && clsJob(prev) === job) return prev;
+  return null;
 }
 
 /** Jobs that pre-empt the vote: they commit after `FAST_S` of holding. */

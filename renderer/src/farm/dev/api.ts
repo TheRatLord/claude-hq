@@ -118,9 +118,42 @@ export function installDevApi(d: DevDeps): void {
       const t = locate(id);
       if (!t) throw new Error(`nothing called ${id}`);
       const from = t.face ?? { x: t.x + dist, z: t.z };
-      const dx = from.x - t.x, dz = from.z - t.z, l = Math.hypot(dx, dz) || 1;
-      const px = t.x + (dx / l) * dist, pz = t.z + (dz / l) * dist;
-      api.teleport(px, pz, Math.atan2(-(t.x - px), -(t.z - pz)), -0.18);
+      const base = Math.atan2(from.x - t.x, from.z - t.z);
+      // the thing to aim at, if it is an interactable: approach from the preferred side, or the nearest angle from which
+      // the crosshair picks it (and not a mailbox or a sign standing in line: the same scoring as scene/engine.ts pick)
+      const target = [...ctx.interact.all()].find((i) => i.id === id || i.id === `villager:${id}`);
+      const tp = new THREE.Vector3(), q = new THREE.Vector3(), fwd = new THREE.Vector3();
+      const stand = (a: number): void => {
+        const px = t.x + Math.sin(a) * dist, pz = t.z + Math.cos(a) * dist;
+        api.teleport(px, pz, Math.atan2(-(t.x - px), -(t.z - pz)), -0.18);
+        if (!target) return;
+        target.pos(tp);
+        const e = ctx.player.eye, dx = tp.x - e.x, dy = tp.y - e.y, dz = tp.z - e.z;
+        api.teleport(px, pz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
+      };
+      const picks = (): boolean => {
+        if (!target) return true;
+        ctx.camera.updateMatrixWorld();
+        ctx.camera.getWorldDirection(fwd);
+        let best: unknown = null, bestScore = Infinity;
+        for (const i of ctx.interact.all()) {
+          if (i.enabled && !i.enabled()) continue;
+          i.pos(q);
+          q.sub(ctx.player.eye);
+          const d = q.length(), reach = i.reach ?? 3.2;
+          if (d > reach + 0.6) continue;
+          const cos = q.divideScalar(d || 1).dot(fwd);
+          if (cos < (d < 1.5 ? 0.55 : 0.8)) continue;
+          const score = (1 - cos) * 6 + d / reach;
+          if (score < bestScore) { bestScore = score; best = i; }
+        }
+        return best === target;
+      };
+      for (let k = 0; k <= 12; k++) {
+        stand(base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6));
+        if (picks()) return;
+      }
+      stand(base);
     },
     setHour: (h: number | null) => valley.setSky({ hour: h }),
     setWeather: (w: WeatherKind | null, intensity?: number) => valley.setSky({ weather: w, intensity: intensity ?? null }),

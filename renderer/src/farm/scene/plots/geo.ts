@@ -133,6 +133,60 @@ export function jitter(g: THREE.BufferGeometry, k = 0.05, seed = 7): THREE.Buffe
   return g;
 }
 
+/**
+ * For double-sided materials: drop the explicit back faces (a triangle whose vertices another, later triangle repeats
+ * in reverse winding; `leaf` cards carry them for front-side materials). A DoubleSide material already draws both
+ * sides of the remaining one with the normal flipped toward the viewer, so the image is the same (the later twin is
+ * the one kept: it is the one that won the depth tie before) at half the triangles. Non-indexed only; recorded parts
+ * (`scene/parts.ts`) are remapped. Memoised per input geometry.
+ */
+const singles = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+export function singleSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const hit = singles.get(g);
+  if (hit) return hit;
+  let out = g;
+  const pos = g.attributes.position;
+  if (!g.index && pos && pos.count % 3 === 0) {
+    const nTri = pos.count / 3;
+    const q = (i: number) => `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+    const seen = new Map<string, number>();
+    const drop = new Uint8Array(nTri);
+    let dropped = 0;
+    for (let t = 0; t < nTri; t++) {
+      const a = q(t * 3), b = q(t * 3 + 1), c = q(t * 3 + 2);
+      // reversed twin of an earlier triangle: (a, c, b) up to rotation
+      const twin = [`${a}|${c}|${b}`, `${c}|${b}|${a}`, `${b}|${a}|${c}`].map((k) => seen.get(k)).find((x) => x !== undefined);
+      if (twin !== undefined && !drop[twin]) { drop[twin] = 1; dropped++; seen.delete(`${q(twin * 3)}|${q(twin * 3 + 1)}|${q(twin * 3 + 2)}`); continue; }
+      seen.set(`${a}|${b}|${c}`, t);
+    }
+    if (dropped) {
+      out = new THREE.BufferGeometry();
+      const keep = (nTri - dropped) * 3;
+      for (const [name, attr] of Object.entries(g.attributes)) {
+        const src = attr.array as THREE.TypedArray;
+        const w = attr.itemSize, dst = new (src.constructor as new (n: number) => THREE.TypedArray)(keep * w);
+        let o = 0;
+        for (let t = 0; t < nTri; t++) {
+          if (drop[t]) continue;
+          for (let k = t * 3 * w; k < (t + 1) * 3 * w; k++) dst[o++] = src[k];
+        }
+        out.setAttribute(name, new THREE.BufferAttribute(dst, w, (attr as THREE.BufferAttribute).normalized));
+      }
+      // remap recorded part ranges (elements = vertices here)
+      const before = new Uint32Array(nTri + 1);
+      for (let t = 0; t < nTri; t++) before[t + 1] = before[t] + (drop[t] ? 0 : 3);
+      const parts = (g.userData?.parts as { name: string; start: number; count: number }[] | undefined)
+        ?.map((p) => ({ name: p.name, start: before[p.start / 3], count: before[(p.start + p.count) / 3] - before[p.start / 3] }))
+        .filter((p) => p.count > 0);
+      out.userData = { ...g.userData, ...(parts ? { parts } : {}) };
+      out.computeBoundingSphere();
+      out.computeBoundingBox();
+    }
+  }
+  singles.set(g, out);
+  return out;
+}
+
 /** Deterministic RNG for a key. */
 export const rng = (key: string) => mulberry32(hash32(key));
 

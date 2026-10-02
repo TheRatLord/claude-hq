@@ -53,7 +53,7 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
   const meshes = new Map<string, THREE.InstancedMesh>();
   const removers: (() => void)[] = [];
 
-  const glintMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.1, 1.5), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide, fog: false });
+  const glintMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.1, 1.5), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide, forceSinglePass: true, fog: false });
   const glint = new THREE.InstancedMesh(glintGeometry(), glintMat, GLINTS + BURST);
   glint.name = 'forage:glint';
   glint.frustumCulled = false;

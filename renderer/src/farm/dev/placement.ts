@@ -545,6 +545,8 @@ export function audit(ctx: SceneCtx, state: ValleyState, opts: AuditOpts = {}): 
   const o = { floatTol: opts.floatTol ?? 0.04, overhangTol: opts.overhangTol ?? 0.2, sinkTol: opts.sinkTol ?? 0.12, minContact: opts.minContact ?? 0.06, touch: opts.touch ?? 0.03 };
   clearHighlight(ctx);
   geoCache.clear();
+  // view-culled instance sets (the plots meadow) put every instance back for this audit (the next frame re-culls)
+  ctx.scene.traverse((x) => { (x.userData.uncull as (() => void) | undefined)?.(); });
   buildTerrain(ctx.scene);
   sitterRoot?.removeFromParent();
   const sitters = sitterRoot = opts.sitters ? placeSitters(ctx, opts.sitters) : null;

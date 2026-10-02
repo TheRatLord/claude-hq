@@ -327,7 +327,8 @@ export function createAnchors(focused: () => Interactable | null, all: () => Ite
     HUD.n = 0;
     if (!hudRoot) return;
     const add = (e: Element) => {
-      if (mo && !observed.has(e)) { observed.add(e); mo.observe(e, MO_OPTS); }
+      // children of a "children" obstacle change size on their own too (hover / CSS-only states): watch their boxes
+      if (mo && !observed.has(e)) { observed.add(e); mo.observe(e, MO_OPTS); ro?.observe(e); }
       const r = e.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
       const cs = getComputedStyle(e);

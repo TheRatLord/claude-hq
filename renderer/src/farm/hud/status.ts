@@ -1,6 +1,6 @@
 /**
- * Top-left status sign (clock, season + date, weather, link state, farmer counts), the friendly offline banner,
- * and the document-title badge. Driven from the HUD's slow timer so the title updates in hidden tabs.
+ * Top-left status sign (clock, season + date, weather, link state, farmer counts, the rank and coin chips), the
+ * friendly offline banner, and the document-title badge. Kept to three short rows: it is always on screen. Driven from the HUD's slow timer so the title updates in hidden tabs.
  */
 import { SEASON_ICON, WEATHER_ICON, ICONS, icon } from './icons.ts';
 import { clock, LINK_LABEL, SEASON_LABEL, WEATHER_LABEL } from './format.ts';
@@ -22,7 +22,11 @@ export function createStatus(ctx: HudCtx): StatusCorner {
   const counts = h('div.vh-counts');
   const rank = rankChip(ctx);
   const purse = coinChip(ctx);
-  const face = h('div.vh-paper.face', null, wx, h('div', null, time, h('div.date', null, seasonIco, date), h('div.meta', null, link, counts), rank.el, purse.el));
+  // three tight rows: the clock with the date beside it; link + counts; the rank and coin chips side by side
+  const face = h('div.vh-paper.face', null, wx, h('div.main', null,
+    h('div.l1', null, time, h('div.date', null, seasonIco, date)),
+    h('div.meta', null, link, counts),
+    h('div.chips', null, rank.el, purse.el)));
   const el = h('div.vh-status.vh-wood', { role: 'status', 'aria-label': 'Clock and connection' }, face);
   el.addEventListener('click', () => ctx.panels.open('noticeboard'));
   el.title = 'Open the noticeboard';
@@ -48,7 +52,8 @@ export function createStatus(ctx: HudCtx): StatusCorner {
     const wk = sky.weather.kind === 'clear' && night ? 'night' : sky.weather.kind;
     if (wk !== sigWx) { sigWx = wk; wx.innerHTML = WEATHER_ICON[wk]; wx.title = `${WEATHER_LABEL[sky.weather.kind]}${night ? ' night' : ''}`; }
     if (sky.season !== sigSeason) { sigSeason = sky.season; seasonIco.innerHTML = SEASON_ICON[sky.season]; }
-    date.textContent = `${SEASON_LABEL[sky.season]} · ${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+    const dt = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+    if (date.textContent !== dt) { date.textContent = dt; date.parentElement!.title = `${SEASON_LABEL[sky.season]} · ${dt}`; }
     const cls = s.link === 'live' && s.demo ? 'demo' : s.link;
     link.className = `vh-link ${cls}`;
     link.textContent = s.link === 'live' && s.demo ? 'Demo valley' : LINK_LABEL[s.link];
@@ -57,12 +62,13 @@ export function createStatus(ctx: HudCtx): StatusCorner {
     const sig = `${need}|${work}|${done}|${s.farmers.size}|${s.link}`;
     if (counts.dataset.sig !== sig) {
       counts.dataset.sig = sig;
+      // who needs you is the chip right under the sign (needs.ts): the sign keeps to working / done
       counts.replaceChildren(
-      ...(need ? [h('span.need', null, h('b', { text: String(need) }), need === 1 ? ' needs you' : ' need you')] : []),
       ...(work ? [h('span', null, h('b', { text: String(work) }), ' working')] : []),
       ...(done ? [h('span', null, h('b', { text: String(done) }), ' done')] : []),
       ...(!work && !done && !need ? [h('span', { text: s.farmers.size ? 'all quiet' : s.link === 'live' ? 'no farmers yet' : 'waiting for herdr' })] : []),
       );
+      counts.title = `${need} need${need === 1 ? 's' : ''} you · ${work} working · ${done} done`;
     }
     // banner
     const off = s.link === 'offline' || s.link === 'herdr-offline';

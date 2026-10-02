@@ -16,7 +16,7 @@
  * Options: --url URL (existing backend + its built dist; default: a fresh demo dev server)  --out DIR (default scratch/shots)  --size 1600x900  --scenario mixed  --seed 1  --demo 12  --wait 2500
  *          --timescale K  --video (also record a short webm per shot, wait = its length)
  * Flipbook: frames=N every=MS [clip=x;y;w;h] tiles N frames into one contact sheet (quote the spec).
- * Shot keys: frames every clip name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time pitch zoom log almanac festival
+ * Shot keys: frames every clip name pose hour weather season quality goto cam wait eval hint hud panel term gallery variant grid night param turn time pitch zoom log almanac festival welcome
  * Quote specs containing ';' (cam=…) for the shell: --shot 'name=top,cam=0;120;100;0;-0.9'
  */
 import fs from 'node:fs';
@@ -39,7 +39,7 @@ const video = argv.includes('--video');
 
 async function shootValley(page: Page, base: URL, s: Record<string, string>): Promise<void> {
   const u = new URL(base);
-  for (const k of ['pose', 'hour', 'weather', 'season', 'quality', 'timescale', 'almanac', 'festival']) if (s[k]) u.searchParams.set(k, s[k]);
+  for (const k of ['pose', 'hour', 'weather', 'season', 'quality', 'timescale', 'almanac', 'festival', 'welcome']) if (s[k]) u.searchParams.set(k, s[k]);
   await page.goto(u.toString());
   await page.waitForFunction(() => (window as unknown as { __valley?: { ready: boolean } }).__valley?.ready === true, null, { timeout: 30_000 });
   if (s.goto) await page.evaluate((id) => (window as unknown as { __valley: { goTo(id: string): void } }).__valley.goTo(id), s.goto);

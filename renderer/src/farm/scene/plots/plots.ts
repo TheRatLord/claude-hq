@@ -161,7 +161,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
         return true;
       });
       for (let i = 0; i < SITES.length; i++) meadow.setCover(i, covers[i]);
-      meadow.update(f.dt, batches, atlas, season, f.time);
+      meadow.update(f.dt, batches, atlas, season, f.time, ctx.camera);
       fx.update(f.dt);
       batches.end();
     },

@@ -8,8 +8,9 @@ export interface RendererHandle {
   dispose(): void;
 }
 
-export function createRenderer(canvas: HTMLCanvasElement, { renderScale = 1 }: { renderScale?: number } = {}): RendererHandle {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: false, alpha: false, depth: true, powerPreference: 'high-performance' });
+/** `antialias: false` when the canvas only receives a full-screen post pass (MSAA there costs bandwidth, buys nothing). */
+export function createRenderer(canvas: HTMLCanvasElement, { renderScale = 1, antialias = true }: { renderScale?: number; antialias?: boolean } = {}): RendererHandle {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias, stencil: false, alpha: false, depth: true, powerPreference: 'high-performance' });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;

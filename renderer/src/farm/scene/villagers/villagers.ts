@@ -73,6 +73,8 @@ interface Folk {
   greeted: boolean; greetUntil: number; greetCool: number; callAt: number; waveW: number;
   lookX: number; lookY: number; lookTw: number;
   talkUntil: number; talks: number;
+  /** the player walked up and is looking at them: they pause (and turn to you) until this time; since when (-1: not) */
+  heldUntil: number; heldSince: number;
   line: string; lineUntil: number; bubbleA: number; nameA: number; sayKey: string;
   hatV: number; hatX: number; hatW: number; topY: number;
   /** wedged-walker detection (the farmers' trick): last progress point and time, sidestep count */
@@ -172,7 +174,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       gait: { cyc: k * 3, w: 0, jog: 0, turn: 0, speed: 0, heavy: false, bounce: v.bounce }, lastYaw: 0, glyphs: newGlyphs(),
       prop: null, propS: 0, y: 0, yGround: 0, hx: 1e9, hz: 0, react: null, emote: null, emoteUntil: 0,
       blinkAt: 1 + k * 3, blinkT: 99, greeted: false, greetUntil: 0, greetCool: 0, callAt: 6 + k * 6, waveW: 0,
-      lookX: 0, lookY: 0, lookTw: 0, talkUntil: 0, talks: 0, line: '', lineUntil: 0, bubbleA: 0, nameA: 0, sayKey: `${v.id}:say`,
+      lookX: 0, lookY: 0, lookTw: 0, talkUntil: 0, talks: 0, heldUntil: 0, heldSince: -1, line: '', lineUntil: 0, bubbleA: 0, nameA: 0, sayKey: `${v.id}:say`,
       hatV: 0, hatX: 0, hatW: 0, topY: 1e9, stuckX: 0, stuckZ: 0, stuckT: 0, stuckN: 0,
       pos: new THREE.Vector3(), head: new THREE.Vector3(), hand: new THREE.Vector3(),
       light, lightOff: lights ? lights.add(light) : () => {},
@@ -361,6 +363,9 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // ---------------------------------------------------------------------------------------------------------------
   const target = { key: '', x: 0, z: 0, yaw: 0, gait: 'walk' as 'walk' | 'jog' | 'amble' };
+  const lookDir = new THREE.Vector3();
+  /** the longest a villager pauses for you while you stand looking at them (s) */
+  const HOLD_S = 12;
 
   function plan(f: Folk): void {
     const s = sky();
@@ -413,6 +418,20 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     const px = ctx.player.pos.x, pz = ctx.player.pos.z;
     const pdx = px - mv.x, pdz = pz - mv.z, pd = Math.hypot(pdx, pdz), toPlayer = Math.atan2(pdx, pdz);
     const talking = time < f.talkUntil;
+    // walked up to and looked at: they pause for you, so E finds them where you are looking (a short grace once you look
+    // away, so a glance at the HUD doesn't send them off). A while at most (HOLD_S): then they carry on with their day,
+    // and only pause again once you have looked away. Never when the weather sends them for shelter.
+    let looked = false;
+    if (pd < 4.2 && pd > 1e-3 && !f.inside && f.where !== 'shelter') {
+      ctx.camera.getWorldDirection(lookDir);
+      const fl = Math.hypot(lookDir.x, lookDir.z) || 1;
+      looked = (-pdx * lookDir.x - pdz * lookDir.z) / (pd * fl) > 0.8;
+    }
+    if (looked) {
+      if (f.heldSince < 0) f.heldSince = time;
+      if (time - f.heldSince < HOLD_S) f.heldUntil = time + 2;
+    } else if (time > f.heldUntil) f.heldSince = -1;
+    const held = time < f.heldUntil;
     // the postmaster waves you over while a letter needs you
     const call = f.v.role === 'postmaster' && pd > 5 && pd < 30 && !talking && settled && ctx.valley.farmers.size > 0 && time > f.callAt;
     if (call) {
@@ -443,9 +462,9 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!er && f.viaDone) { target.key = at; target.x = f.spot.x; target.z = f.spot.z; target.yaw = f.spot.yaw; }
     target.gait = f.place.amble && !er ? 'amble' : 'walk';
     const walking0 = !mv.arrived;
-    if (!walking0 && (talking || greeting || beckon)) target.yaw = toPlayer;
-    // stop and talk when spoken to
-    if (talking) { target.key = mv.key; target.x = mv.x; target.z = mv.z; }
+    if (!walking0 && (talking || greeting || beckon || held)) target.yaw = toPlayer;
+    // stop and talk when spoken to; stand still while you walk up and look at them
+    if (talking || held) { target.key = mv.key; target.x = mv.x; target.z = mv.z; }
     const moved = moveStep(mv, target, dt, routeFn);
     const walking = !mv.arrived;
     if (walking && Math.hypot(mv.goal.x - mv.x, mv.goal.z - mv.z) > 1.5) ctx.colliders.resolve(mv, 0.3);

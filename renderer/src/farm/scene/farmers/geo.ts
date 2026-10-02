@@ -165,6 +165,42 @@ function propVox(p: Prop, g: number): Vox {
       for (const [x, z] of [[-0.065, -0.035], [0.065, -0.035], [-0.065, 0.095], [0.065, 0.095]] as const) B(x, -0.165, z, 0.018, 0.15, 0.018, METAL_D);
       B(0, -0.25, 0.03, 0.15, 0.03, 0.15, METAL_D);
       break;
+    case 'sack': {
+      // a burlap seed sack hanging from its tied neck: open top, seeds (produce colour) showing
+      const BUR = 0xc9a46a, BUR_D = 0x9c7a46;
+      B(0, -0.03, 0.05, 0.05, 0.06, 0.05, BUR_D); // gathered neck in the nub
+      B(0, -0.2, 0.06, 0.26, 0.24, 0.2, BUR);
+      B(0, -0.31, 0.06, 0.28, 0.06, 0.22, BUR_D); // bottom seam
+      B(0, -0.075, 0.06, 0.22, 0.03, 0.16, BUR_D); // rolled rim
+      B(0, -0.07, 0.06, 0.17, 0.02, 0.11, 0xffffff, 1); // seeds in the mouth
+      B(-0.04, -0.055, 0.04, 0.05, 0.03, 0.05, 0xffffff, 1);
+      B(0.05, -0.055, 0.08, 0.04, 0.03, 0.04, 0xffffff, 1);
+      B(-0.06, -0.2, 0.162, 0.06, 0.06, 0.012, 0x6e8a3a); // a stitched patch
+      break;
+    }
+    case 'pigeon': case 'pigeonup': case 'pigeondown': {
+      // a carrier pigeon standing on the nub (feet at y 0, facing +z), a letter in its beak
+      const G = 0xa9b2c2, G_D = 0x7d8798, NECK = 0x6fa58f, WHITE = 0xf4f2ee;
+      B(0, 0.1, -0.01, 0.12, 0.11, 0.19, G); // body
+      B(0, 0.07, 0.03, 0.1, 0.06, 0.1, WHITE); // pale breast
+      B(0, 0.08, -0.13, 0.08, 0.03, 0.09, G_D); // tail
+      B(0, 0.19, 0.07, 0.085, 0.08, 0.085, G); // head
+      B(0, 0.15, 0.065, 0.095, 0.035, 0.095, NECK); // iridescent neck band
+      for (const x of [-0.044, 0.044]) B(x, 0.205, 0.095, 0.006, 0.02, 0.02, 0x1d1a18); // eyes
+      B(0, 0.18, 0.125, 0.03, 0.022, 0.035, 0xe7a23a); // beak
+      B(0, 0.175, 0.16, 0.11, 0.07, 0.01, 0xf8f0dc); // the letter
+      B(0.02, 0.175, 0.166, 0.03, 0.03, 0.006, 0xd9453b); // its seal
+      for (const x of [-0.03, 0.03]) B(x, 0.02, 0.0, 0.02, 0.04, 0.02, 0xd06a5a); // legs
+      if (p === 'pigeon') for (const x of [-0.066, 0.066]) B(x, 0.11, -0.03, 0.02, 0.08, 0.15, G_D); // folded wings
+      else {
+        const up = p === 'pigeonup';
+        for (const sx of [-1, 1]) {
+          B(sx * 0.12, up ? 0.19 : 0.08, -0.01, 0.13, 0.025, 0.13, G_D);
+          B(sx * 0.215, up ? 0.26 : 0.04, -0.02, 0.09, 0.02, 0.1, WHITE);
+        }
+      }
+      break;
+    }
   }
   return v;
 }

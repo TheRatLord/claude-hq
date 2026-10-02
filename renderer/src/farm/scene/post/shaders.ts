@@ -131,9 +131,12 @@ varying vec2 vUv;
 
 float linZ(float d) { return uNear * uFar / (uFar - d * (uFar - uNear)); }
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+// value noise from a 256² lattice texture (hash12 per texel, bilinear + smoothstep remap): one fetch instead of four
+// hashes, same look (the cloud shadows and the mist-bank march call it per pixel / per step)
+uniform sampler2D tNoise;
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+  return texture2D(tNoise, (i + f + 0.5) * (1.0 / 256.0)).r;
 }
 vec3 neutral(vec3 color) {
   const float startCompression = 0.8 - 0.04;
@@ -236,12 +239,15 @@ void main() {
     if (uCamPos.y > top) t0 = rd.y < -1e-4 ? (top - uCamPos.y) / rd.y : t1;
     if (rd.y > 1e-4) t1 = min(t1, max(0.0, (top - uCamPos.y) / rd.y));
     if (t1 > t0) {
+      // up to 14 samples; short segments (ground a few metres away) need far fewer: about one per 6 m, at least 6
       const int N = 14;
+      int steps = int(clamp(ceil((t1 - t0) / 6.0), 6.0, float(N)));
       float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
       float tau = 0.0, prev = t0;
       for (int i = 0; i < N; i++) {
+        if (i >= steps) break;
         // samples bunch up near the eye (quadratic), where the layers are seen at their thinnest
-        float u = (float(i) + jit) / float(N);
+        float u = (float(i) + jit) / float(steps);
         float t = t0 + (t1 - t0) * u * u;
         float ds = t - prev; prev = t;
         vec3 p = uCamPos + rd * t;

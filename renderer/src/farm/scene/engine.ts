@@ -115,7 +115,9 @@ function createColliders(): Colliders {
 }
 
 export function createEngine(o: EngineOpts): Engine {
-  const { renderer, resize } = createRenderer(o.canvas);
+  // the scene renders into the post chain's own target (scene/post): the canvas only gets the final full-screen pass, so
+  // a multisampled default framebuffer would be pure cost (the 'post' service is always registered)
+  const { renderer, resize } = createRenderer(o.canvas, { antialias: false });
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   const scene = new THREE.Scene();

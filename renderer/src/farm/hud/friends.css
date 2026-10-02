@@ -64,22 +64,28 @@
 .vh-fr-grid .unl .dc { width: 22px; height: 22px; }
 .vh-fr-grid .unl .dc svg { width: 100%; height: 100%; }
 
-/* the request tracker: under the dock buttons, right-aligned, compact */
-.vh-quests { pointer-events: auto; width: 248px; border-radius: 12px; padding: 6px 7px 7px; background: rgba(255,246,224,.93); border: 2px solid var(--wood-deep); box-shadow: 0 3px 0 rgba(0,0,0,.18); font: 12px/1.25 var(--round); color: var(--ink); }
+/* request tracker: a one-line chip under the dock; opens on hover / focus, or .open (pinned with a click / Q, or peeking
+   for a few seconds when a request turns ready). The rows stay in the DOM either way (friends.ts createQuests). */
+.vh-quests { pointer-events: auto; width: auto; max-width: 248px; border-radius: 999px; padding: 2px 4px 2px 7px; background: rgba(255,246,224,.93); border: 2px solid var(--wood-deep); box-shadow: 0 3px 0 rgba(0,0,0,.18); font: 12px/1.25 var(--round); color: var(--ink); }
 .vh-quests[hidden] { display: none; }
-.vh-quests .bar { display: flex; align-items: center; gap: 4px; }
+.vh-quests.open, .vh-quests:hover, .vh-quests:focus-within { width: 248px; border-radius: 12px; padding: 5px 6px 6px 7px; }
+.vh-quests .bar { display: flex; align-items: center; gap: 3px; }
 .vh-quests button { all: unset; box-sizing: border-box; cursor: pointer; }
-.vh-quests .head { flex: 1; display: flex; align-items: center; gap: 5px; font: 800 13px/1 var(--round); padding: 2px 2px; border-radius: 6px; }
-.vh-quests .head .vh-ico { width: 16px; height: 16px; }
-.vh-quests .head .n { margin-left: auto; font-size: 11.5px; color: var(--ink-soft); }
-.vh-quests .head .chev { width: 12px; text-align: center; color: var(--ink-soft); }
-.vh-quests .open { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; }
-.vh-quests .open .vh-ico { width: 17px; height: 17px; }
+.vh-quests .head { flex: 1; display: flex; align-items: center; gap: 4px; font: 800 12px/1 var(--round); padding: 2px 2px; border-radius: 6px; white-space: nowrap; }
+.vh-quests .head .vh-ico { width: 15px; height: 15px; }
+.vh-quests .head .n { font-variant-numeric: tabular-nums; }
+.vh-quests .head .l { color: var(--ink-soft); font-weight: 700; }
+.vh-quests .head .flag { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 10.5px; color: #fff; background: var(--gold); }
+.vh-quests .head .flag[hidden] { display: none; }
+.vh-quests .head .chev { width: 12px; margin-left: auto; text-align: center; color: var(--ink-soft); }
+.vh-quests .book { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; }
+.vh-quests .book .vh-ico { width: 15px; height: 15px; }
 .vh-quests button:hover { background: rgba(122,82,49,.12); }
 .vh-quests button:focus-visible { outline: 2px solid var(--gold); }
 .vh-quests.alert { border-color: var(--gold); }
 .vh-quests.alert .head .vh-ico { animation: vh-q-beat 1.4s ease-in-out infinite; }
 @keyframes vh-q-beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.2); } 30% { transform: scale(1); } }
+.vh-quests:not(.open):not(:hover):not(:focus-within) .list { display: none; }
 .vh-quests .list { list-style: none; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .vh-quests .q { display: grid; grid-template-columns: 22px 1fr auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; padding: 4px 5px; border-radius: 8px; background: rgba(255,255,255,.55); cursor: pointer; }
 .vh-quests .q:hover { background: #fff; }

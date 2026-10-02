@@ -7,7 +7,7 @@
  * Every pose runs through per-channel springs (overshoot, no pops), and secondary motion rides on top: the hat and
  * the held prop lag behind the body, the body top shears on starts and stops, Codex's lobes wobble on landings.
  *
- * Draw calls: the whole crowd is 8 instanced meshes (+ shadow pass), ducklings 5, emotes 1, particles 1, beacons 1,
+ * Draw calls: the whole crowd is 8 instanced meshes (+ shadow pass), ducklings 5, emotes 1, particles 1, beacons 1, work traces 2,
  * and a few pooled label sprites — independent of the number of farmers.
  */
 import * as THREE from 'three';
@@ -22,7 +22,7 @@ import { Crowd } from './rig.ts';
 import type { DrawIn, DrawOut } from './rig.ts';
 import { lookFor } from './look.ts';
 import type { Look } from './look.ts';
-import { ACT_INFO, CH, SEAT_H, actPose, cycleLength, faceGlyphs, gait, holdOf, newGlyphs, newPose, newSprings, springSnap, springStep } from './pose.ts';
+import { ACT_INFO, CH, PIGEON, SEAT_H, actPose, cycleLength, faceGlyphs, gait, holdOf, newGlyphs, newPose, newSprings, springSnap, springStep } from './pose.ts';
 import type { Act, Face, GaitState, GlyphState, Pose, Prop, Springs } from './pose.ts';
 import { buildSeats, newMind, pickSeat, plan, propOf } from './brain.ts';
 import type { BuiltSpot, Intent, Mind, Seat, World } from './brain.ts';
@@ -38,6 +38,10 @@ import { Beacons, Billboards, Particles } from './fx.ts';
 import { EMOTE } from './atlas.ts';
 import type { EmoteName } from './atlas.ts';
 import { Labels } from './labels.ts';
+import { Traces, TRACE_MAX, newTraceRow, plantedStakes, pushSprout, tracePos } from './traces.ts';
+import type { TraceRow } from './traces.ts';
+import { workSpot } from '../../world/spots.ts';
+import type { ToolClass } from '../../../../../shared/protocol.ts';
 
 export const PRODUCE: Readonly<Record<PlotKind, number>> = {
   wheat: PAL.wheat, pumpkins: PAL.pumpkin, cabbages: PAL.cabbage, sunflowers: PAL.sunflower, orchard: PAL.apple, vineyard: PAL.grape,
@@ -47,6 +51,10 @@ export const PRODUCE: Readonly<Record<PlotKind, number>> = {
 export const JOB_VERB: Readonly<Record<Job, string>> = {
   plant: 'planting', inspect: 'inspecting', water: 'watering', build: 'building', haul: 'hauling', fetch: 'fetching', plan: 'planning',
   talk: 'chatting', delegate: 'directing ducklings', rest: 'tidying up', ask: 'needs you', done: 'all done', idle: 'taking a break', away: 'napping',
+};
+/** the nameplate verb when the job's tool flavour says more than the job (FarmerView.tool) */
+export const TOOL_VERB: Readonly<Partial<Record<ToolClass, string>>> = {
+  search: 'rummaging', read: 'inspecting', web: 'pigeon post', net: 'pigeon post', think: 'pondering', todo: 'planning',
 };
 
 /** leisure acts that float a little emote now and then: [emote, period s, only after dark] */
@@ -111,6 +119,10 @@ interface Actor {
   born: number;
   /** wedged-walker detection: where it last made progress, when, and how often it has sidestepped */
   stuckX: number; stuckZ: number; stuckT: number; stuckN: number;
+  /** the day's work traces at the work spot (seed stakes, test sprouts) */
+  tr: TraceRow;
+  /** carrier pigeon beat last seen (−1 none, 0 flying in, 1 perched, 2 flown off) */
+  pigeonStage: number;
 }
 
 const tmpV = new THREE.Vector3(), tmpA = new THREE.Vector3();
@@ -149,9 +161,10 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const beacons = new Beacons(32);
   const labels = new Labels(ctx);
   const ducks = new Ducks(200);
+  const traces = new Traces();
   const root = new THREE.Group();
   root.name = 'farmers-root';
-  root.add(crowd.group, ducks.group, bills.mesh, parts.points, beacons.mesh);
+  root.add(crowd.group, ducks.group, bills.mesh, parts.points, beacons.mesh, traces.group);
   ctx.scene.add(root);
 
   const roads = buildRoads(PATHS, { x: 0, z: -1, hw: 12, hd: 10 });
@@ -320,7 +333,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       glanceUntil: 0, callAt: 0, nameA: 0, bubbleA: 0, sayKey: `${f.id}:say`, saidIn: null, saidOut: '', vanish: 0, trail: newTrail(0, 0), ducks: [], quackAt: time + 5 + k * 10,
       pos: new THREE.Vector3(), head: new THREE.Vector3(), hand: new THREE.Vector3(), eyes: new THREE.Vector3(),
       top0: new THREE.Vector3(1e9, 0, 0), vel0: new THREE.Vector3(), hat: spring2(), shear: spring2(), plag: spring2(), wob: 0, wobPh: k * 10,
-      unreg: () => {}, lastPropK: 0, k, born: time, stuckX: 0, stuckZ: 0, stuckT: time, stuckN: 0,
+      unreg: () => {}, lastPropK: 0, k, born: time, stuckX: 0, stuckZ: 0, stuckT: time, stuckN: 0, tr: newTraceRow(), pigeonStage: -1,
     };
     const start = walkIn ? exit : null;
     if (start) { a.mv = newMover(start.x, start.z, Math.PI); }
@@ -371,7 +384,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     a.react = { act, face, until: time + dur, emote, emoteUntil: time + emoteDur };
   };
 
-  function burst(x: number, y: number, z: number, n: number, kind: 'confetti' | 'dust' | 'soil' | 'sparkle' | 'shell' | 'splash' | 'chips') {
+  function burst(x: number, y: number, z: number, n: number, kind: 'confetti' | 'dust' | 'soil' | 'sparkle' | 'shell' | 'splash' | 'chips' | 'seeds' | 'feather' | 'leaf', color = 0) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, r = Math.random();
       switch (kind) {
@@ -382,7 +395,59 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         case 'sparkle': parts.emit(x + (Math.random() - 0.5) * 0.6, y + Math.random() * 0.4, z + (Math.random() - 0.5) * 0.6, 0, 0.5 + r, 0, 0.8 + r * 0.6, 0.06, 0xfff2a0, 0); break;
         case 'shell': parts.emit(x, y + 0.12, z, Math.cos(a) * 0.8, 1.4 + r, Math.sin(a) * 0.8, 0.8, 0.05, 0xf6f1e6, 7); break;
         case 'splash': parts.emit(x, y, z, Math.cos(a) * 0.5, 1 + r, Math.sin(a) * 0.5, 0.6, 0.05, 0x9fd8ff, 7); break;
+        // `color` = the throw direction's colour for seeds (the field's produce)
+        case 'seeds': parts.emit(x, y, z, fwd.x * -1.1 + Math.cos(a) * 0.35 * r, 1.6 + r * 0.9, fwd.z * -1.1 + Math.sin(a) * 0.35 * r, 0.6, 0.045, i % 3 ? color : 0xc9a46a, 8); break;
+        case 'feather': parts.emit(x + Math.cos(a) * 0.1, y, z + Math.sin(a) * 0.1, Math.cos(a) * 0.5 * r, 0.3 + r * 0.4, Math.sin(a) * 0.5 * r, 1.2 + r * 0.6, 0.06, i % 2 ? 0xf4f2ee : 0xa9b2c2, 0.6); break;
+        case 'leaf': parts.emit(x + (Math.random() - 0.5) * 0.15, y, z + (Math.random() - 0.5) * 0.15, Math.cos(a) * 0.4, 0.9 + r * 0.6, Math.sin(a) * 0.4, 0.6, 0.05, color || 0x6cc25a, 5); break;
       }
+    }
+  }
+
+  // ---- work traces ---------------------------------------------------------------------------------------------
+  const tp = { x: 0, z: 0 };
+  /** (re)anchor a farmer's trace row on its work spot; false while its field is not known */
+  function anchorTraces(a: Actor): boolean {
+    const r = a.tr, f = a.view;
+    if (r.ok && r.plot === f.plotId && r.spot === f.spot) return true;
+    const plot = ctx.valley.plots.get(f.plotId);
+    const site = plot ? SITES[plot.site] : undefined;
+    if (!site) { r.ok = false; return false; }
+    const w = workSpot(site, f.spot);
+    r.x = w.x; r.z = w.z; r.yaw = w.yaw; r.plot = f.plotId; r.spot = f.spot; r.ok = true;
+    for (let i = 0; i < TRACE_MAX; i++) {
+      tracePos(r, -1, i, tp); r.ys[i] = ground(tp.x, tp.z);
+      tracePos(r, 1, i, tp); r.ys[TRACE_MAX + i] = ground(tp.x, tp.z);
+    }
+    return true;
+  }
+  /** a test run / error leaves a sprout in the row: green for a pass, wilted for a fail */
+  function sproutTrace(a: Actor, wilted: boolean) {
+    pushSprout(a.tr, wilted, time);
+    if (!anchorTraces(a)) return;
+    const i = a.tr.sprouts - 1;
+    tracePos(a.tr, 1, i, tp);
+    burst(tp.x, a.tr.ys[TRACE_MAX + i] + 0.1, tp.z, wilted ? 5 : 8, wilted ? 'dust' : 'leaf', wilted ? 0x9a7244 : 0);
+  }
+  const popScale = (t0: number) => easeOutBack(clamp((time - t0) / 0.45, 0, 1));
+  function drawTraces(a: Actor, cam: THREE.Vector3) {
+    if (a.mind.leaving !== null || !anchorTraces(a)) return;
+    const r = a.tr;
+    const n = plantedStakes(r, a.view.work?.files ?? 0);
+    if (n > r.stakes) {
+      for (let i = r.stakes; i < n; i++) {
+        r.stakeT[i] = time;
+        if (Math.hypot(cam.x - r.x, cam.z - r.z) < 30) { tracePos(r, -1, i, tp); burst(tp.x, r.ys[i] + 0.05, tp.z, 5, 'soil'); }
+      }
+    }
+    r.stakes = n;
+    if (Math.abs(cam.x - r.x) + Math.abs(cam.z - r.z) > 110) return;
+    for (let i = 0; i < r.stakes; i++) {
+      tracePos(r, -1, i, tp);
+      traces.stake(tp.x, r.ys[i], tp.z, r.yaw + Math.PI + (i % 3 - 1) * 0.12, popScale(r.stakeT[i]));
+    }
+    for (let i = 0; i < r.sprouts; i++) {
+      tracePos(r, 1, i, tp);
+      traces.sprout(tp.x, r.ys[TRACE_MAX + i], tp.z, r.yaw + Math.PI + i * 0.9, popScale(r.sproutT[i]), r.wilt[i] === 1, Math.sin(time * 1.7 + i * 1.3 + a.k * 5) * 0.08);
     }
   }
 
@@ -391,9 +456,9 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     switch (e.kind) {
       case 'arrived': if (!a) arrivals.add(e.id); break;
       case 'left': if (a && a.mind.leaving === null) a.mind.leaving = time; break;
-      case 'celebrate': if (a) { reactTo(a, 'cheer', 'sparkle', 2.4, 'heart', 3); burst(a.pos.x, a.pos.y + 1.3, a.pos.z, 36, 'confetti'); audio()?.play('chime-pass', { pos: a.pos, volume: 0.6 }); } break;
+      case 'celebrate': if (a) { reactTo(a, 'cheer', 'sparkle', 2.4, 'heart', 3); burst(a.pos.x, a.pos.y + 1.3, a.pos.z, 36, 'confetti'); audio()?.play('chime-pass', { pos: a.pos, volume: 0.6 }); sproutTrace(a, false); } break;
       case 'finished': if (a) { reactTo(a, 'cheer', 'proud', 2, 'star', 3); burst(a.pos.x, a.pos.y + 1.3, a.pos.z, 12, 'sparkle'); } break;
-      case 'oops': if (a) { reactTo(a, 'oops', 'oops', 1.5, 'sweat', 3); burst(a.pos.x, a.pos.y + 0.1, a.pos.z, 10, 'dust'); a.propS = 0; audio()?.play('oops', { pos: a.pos, volume: 0.7 }); } break;
+      case 'oops': if (a) { reactTo(a, 'oops', 'oops', 1.5, 'sweat', 3); burst(a.pos.x, a.pos.y + 0.1, a.pos.z, 10, 'dust'); a.propS = 0; audio()?.play('oops', { pos: a.pos, volume: 0.7 }); sproutTrace(a, true); } break;
       case 'struggle': if (a) reactTo(a, 'scratch', 'stuck', 2.6, 'question', 3); break;
       case 'compact': if (a) reactTo(a, 'stretch', 'yawn', 3.4, null); break;
       case 'ship': if (a && !a.mind.errand && !['ask', 'done', 'away', 'idle'].includes(a.view.job)) a.mind.errand = { kind: 'haul', leg: 0, t: time, dest: 'bin', once: true }; break;
@@ -532,6 +597,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     actPose(act, time, a.k, a.look.tempo / 1.9, a.tgt, local, a.look.body);
     springStep(a.spr, a.tgt, dt, a.out);
     const o = a.out;
+    // the pigeon's flight path and wing beat are exact, not sprung (a sprung flight would start at the nub)
+    if (act === 'pigeon') { o[CH.prop] = a.tgt[CH.prop]; o[CH.pY] = a.tgt[CH.pY]; }
     gait(o, a.look.body, g, !!ACT_INFO[act].carryWalk);
     // wave overlay (greeting, done farmers when you pass)
     const waveT = greeting || (f.job === 'done' && pd < 6 && f.unseenDone) ? 1 : 0;
@@ -630,6 +697,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     d.prop = a.prop; d.hold = holdFor(a);
     const intended = a.prop === (a.mv.arrived ? a.intent.prop : a.intent.walkProp);
     d.propScale = intended ? easeOutBack(a.propS) : a.propS * a.propS;
+    // tools read from across the valley: props grow a little with distance (≈ +60 % at 45 m)
+    d.propScale *= 1 + clamp((camPos.distanceTo(a.pos) - 14) / 30, 0, 1) * 0.6;
     d.produce = a.produce;
     d.hatLag.x = clamp(a.hat.z, -0.5, 0.5); d.hatLag.z = clamp(a.hat.x, -0.5, 0.5); d.hatLag.y = clamp(a.hat.y, -0.02, 0.08);
     d.propLag.x = clamp(a.plag.x, -0.7, 0.7); d.propLag.z = clamp(a.plag.z, -0.5, 0.5);
@@ -682,7 +751,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       bills.push(hp.x + 0.15 + c * 0.3, hp.y + 0.1 + c * 0.5, hp.z, 0.4 + c * 0.2, EMOTE.zzz, far * Math.sin(c * Math.PI), 1);
     } else if (a.mv.arrived && a.act === 'plan') {
       const bulb = frac(t / 9) > 0.78;
-      bills.push(hp.x + side * 0.45, top + 0.1 + Math.sin(t * 1.3) * 0.03, hp.z + sideZ * 0.45, 0.5, bulb ? EMOTE.bulb : EMOTE.thought, far, bulb ? 1.5 : 1);
+      const cloud = a.mind.tool === 'todo' ? EMOTE.list : EMOTE.gears;
+      bills.push(hp.x + side * 0.45, top + 0.1 + Math.sin(t * 1.3) * 0.03, hp.z + sideZ * 0.45, 0.5, bulb ? EMOTE.bulb : cloud, far, bulb ? 1.5 : 1);
     } else if (a.mv.arrived && LEISURE_EMOTE[a.act]) {
       // leisure loops: a star at the telescope after dark, a thought over the board, a hum in the hot spring…
       const [emote, every, night] = LEISURE_EMOTE[a.act]!;
@@ -723,7 +793,22 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       else burst(tx, h.y + 0.05, tz, 5, 'chips');
       if (d < 16) audio()?.play(a.act === 'hammer' ? 'hammer' : 'hoe', { pos: a.pos, volume: 0.35 });
     }
+    // rummaging: a handful of seeds over the shoulder at the top of each fling
+    if (a.act === 'rummage' && a.mv.arrived && d < 30 && a.lastPropK < 0.7 && pk >= 0.7) {
+      fwd.set(Math.sin(a.mv.yaw), 0, Math.cos(a.mv.yaw));
+      burst(a.hand.x, a.hand.y + 0.05, a.hand.z, 7, 'seeds', a.produce);
+    }
     a.lastPropK = pk;
+    // carrier pigeon: feathers and a soft pop when it lands on the nub, the letter rustles as it takes off
+    if (a.act === 'pigeon' && a.mv.arrived) {
+      const local = time - a.actSince;
+      const stage = local < PIGEON.in ? 0 : local < PIGEON.perch ? 1 : 2;
+      if (stage !== a.pigeonStage && a.pigeonStage >= 0 && d < 35) {
+        burst(a.hand.x, a.hand.y + 0.15, a.hand.z, stage === 1 ? 5 : 8, 'feather');
+        if (d < 18) audio()?.play(stage === 1 ? 'pop' : 'letter-open', { pos: a.pos, volume: 0.35, pitch: stage === 1 ? 1.5 : 1 });
+      }
+      a.pigeonStage = stage;
+    } else a.pigeonStage = -1;
     // landing puffs for big hops
     if (a.act === 'ask' || a.act === 'cheer') {
       const land = a.tgt[CH.sq] < -0.12 && a.out[CH.bob] < 0.02;
@@ -732,7 +817,9 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   }
 
   // --------------------------------------------------------------------------------------------------------------
-  const locator: FarmerLocator & { debug(id: string): unknown; sit(id: string, kind: string, secs?: number): number } = {
+  const locator: FarmerLocator & { debug(id: string): unknown; sit(id: string, kind: string, secs?: number): number; react(id: string, kind: ValleyEvent['kind']): void } = {
+    /** dev (shots): play a valley event on a farmer as if it had happened ('celebrate' = a green test run, 'oops', 'ship'…) */
+    react(id, kind) { events.push({ kind, id }); },
     /** dev (shots): put an idle farmer on the nearest free seat of `kind` ('checkers', 'blanket', 'soak', 'telescope'…) for `secs` */
     sit(id, kind, secs = 600) {
       const a = actors.get(id);
@@ -751,7 +838,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     debug(id) {
       const a = actors.get(id);
       if (!a) return null;
-      return { job: a.view.job, act: a.act, beat: a.mind.beatAct, trip: a.mind.trip ? `${a.mind.trip.kind}:${a.mind.trip.i}` : null, seat: a.mind.seat >= 0 ? seats[a.mind.seat]?.kind : null, body: a.look.body, intent: { key: a.intent.key, act: a.intent.act, x: a.intent.x, z: a.intent.z }, x: a.mv.x, z: a.mv.z, arrived: a.mv.arrived, path: a.mv.path.length, prop: a.prop, react: a.react?.act ?? null, errand: a.mind.errand };
+      return { job: a.view.job, act: a.act, beat: a.mind.beatAct, trip: a.mind.trip ? `${a.mind.trip.kind}:${a.mind.trip.i}` : null, seat: a.mind.seat >= 0 ? seats[a.mind.seat]?.kind : null, body: a.look.body, intent: { key: a.intent.key, act: a.intent.act, x: a.intent.x, z: a.intent.z }, x: a.mv.x, z: a.mv.z, yaw: a.mv.yaw, arrived: a.mv.arrived, path: a.mv.path.length, prop: a.prop, react: a.react?.act ?? null, errand: a.mind.errand };
     },
   };
   ctx.services.set('farmers', locator);
@@ -791,13 +878,17 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         if (a.mind.leaving !== null && a.intent?.vanish && a.mv.arrived) a.vanish += dt;
         if (a.mind.arriving && a.mv.arrived && a.mv.key !== 'exit') a.mind.arriving = false;
       }
+      ctx.camera.getWorldPosition(camPos);
       crowd.ensure(order.length);
       crowd.begin();
+      traces.begin();
       for (const a of order) {
         if (a.vanish > 0.5) { for (const d of a.ducks) { d.home = { x: a.mv.x, z: a.mv.z }; d.fade = Math.min(d.fade, 0.4); leftovers.push(d); } remove(a); continue; }
         writeActor(a, dt);
+        drawTraces(a, camPos);
       }
       crowd.end();
+      traces.end();
 
       // ducklings
       ducks.begin();
@@ -835,7 +926,6 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       ducks.end();
 
       // fx + labels
-      ctx.camera.getWorldPosition(camPos);
       ctx.camera.getWorldDirection(camDir);
       bills.begin();
       beacons.begin(time);
@@ -855,7 +945,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (let i = 0; i < _near.length && i < (ctx.debug.labels ? 8 : 4); i++) {
         const { a } = _near[i];
         const f = a.view;
-        const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}` : JOB_VERB[f.job];
+        const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}${f.tool ? ` · ${f.tool}` : ''}` : (a.mind.job === f.job && a.mind.tool && TOOL_VERB[a.mind.tool]) || JOB_VERB[f.job];
         const sub = f.detail && !f.needsYou && f.job !== 'idle' && f.job !== 'away' ? `${verb} · ${f.detail}` : verb;
         tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
         labels.show(a.id, a.id, 'name', f.tag, sub, tmpV, a.nameA);
@@ -900,6 +990,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (const a of [...actors.values()]) remove(a);
       ctx.scene.remove(root);
       crowd.dispose();
+      traces.dispose();
       if (ctx.services.get('farmers') === locator) ctx.services.delete('farmers');
     },
   };

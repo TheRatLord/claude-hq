@@ -24,7 +24,7 @@ export function createLightning(ctx: SceneCtx): Lightning {
   attr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('position', attr);
   geo.setDrawRange(0, 0);
-  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 5, 7), fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 5, 7), fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   mesh.visible = false;

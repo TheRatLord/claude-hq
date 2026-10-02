@@ -256,7 +256,7 @@ export function buildBeams(): Beams {
   const mat = new THREE.ShaderMaterial({
     vertexShader: BEAM_VERT.replace('uniform float uLen;', 'uniform float uLen;\nattribute float aWin;\nuniform float uWinK[3];\nvarying float vK;').replace('vT = aCorner.z;', 'vT = aCorner.z;\nvK = uWinK[int(aWin)];'),
     fragmentShader: BEAM_FRAG.replace('varying float vT;', 'varying float vT;\nvarying float vK;').replace('uColor * uK *', 'uColor * uK * vK *'),
-    uniforms: u, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    uniforms: u, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, fog: false,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'interior:beams';

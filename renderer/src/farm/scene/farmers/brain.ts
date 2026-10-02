@@ -7,6 +7,7 @@
  * Pure: no three, no clock (times are passed in seconds). The system feeds `arrived` back from the mover.
  */
 import type { FarmerView, Job, PlotKind } from '../../model/types.ts';
+import type { ToolClass } from '../../../../../shared/protocol.ts';
 import type { Site, XZ } from '../../world/map.ts';
 import { askSpot, benchSpot, doneSpot, workSpot } from '../../world/spots.ts';
 import { siteToWorld } from '../../world/map.ts';
@@ -69,9 +70,17 @@ export interface Mind {
   beatAct: Act | null;
   /** idle: a short outing between seats (stroll, mailbox, own field, petting, visiting a friend) */
   trip: Trip | null;
+  /** the job's tool flavour on show (FarmerView.tool, held for TOOL_DWELL_S so tool churn never flickers the act) */
+  tool: ToolClass | null;
+  toolT: number;
 }
 
-export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false, beat: -1, beatUntil: 0, beatAct: null, trip: null });
+/** A shown tool flavour stays at least this long before a newer one replaces it (same job). */
+export const TOOL_DWELL_S = 8;
+/** Web / network fetches arrive by carrier pigeon at the work spot; MCP and the rest walk to the mailbox / well. */
+export const pigeonPost = (tool: ToolClass | null): boolean => tool === 'web' || tool === 'net';
+
+export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false, beat: -1, beatUntil: 0, beatAct: null, trip: null, tool: null, toolT: -1e9 });
 
 export interface World {
   site: Site | null;
@@ -113,7 +122,7 @@ const at = (p: XZ & { yaw: number }, dist: number): XZ & { yaw: number } => {
 };
 
 /** Acts that cycle in place for a work job (time-sliced, so the farmer keeps doing varied things at one spot). */
-function workAct(job: Job, kind: PlotKind | null, t: number, k: number): Act {
+export function workAct(job: Job, kind: PlotKind | null, t: number, k: number, tool: ToolClass | null = null): Act {
   const c = (period: number) => ((t + k * 97) % period);
   switch (job) {
     case 'plant': {
@@ -121,7 +130,10 @@ function workAct(job: Job, kind: PlotKind | null, t: number, k: number): Act {
       if (kind === 'chickens' || kind === 'pigs' || kind === 'bees') return 'feed';
       return c(24) < 15 ? 'plant' : 'hoe';
     }
-    case 'inspect': return c(18) < 11 ? 'inspect' : 'almanac';
+    // reading: the magnifier over the crop, then the seed almanac; searching: rummage through the seed sack
+    case 'inspect': return tool === 'search' ? (c(20) < 14 ? 'rummage' : 'inspect') : c(18) < 11 ? 'inspect' : 'almanac';
+    // web fetch: a carrier pigeon brings the page, then read the letter it carried
+    case 'fetch': return c(13) < 8 ? 'pigeon' : 'read';
     case 'water': return 'water';
     case 'build': return c(21) < 13 ? 'hammer' : 'saw';
     case 'talk': return 'talk';
@@ -134,6 +146,7 @@ function workAct(job: Job, kind: PlotKind | null, t: number, k: number): Act {
 const PROP_OF: Partial<Record<Act, Prop>> = {
   plant: 'trowel', hoe: 'hoe', feed: 'basket', brush: 'brush', inspect: 'magnifier', almanac: 'book', water: 'can', hammer: 'hammer',
   saw: 'saw', carry: 'crate', read: 'letter', plan: 'notebook', sweep: 'broom', done: 'basket', fish: 'rod', bindle: 'bindle',
+  rummage: 'sack', pigeon: 'pigeon',
 };
 export const propOf = (a: Act): Prop | null => PROP_OF[a] ?? null;
 
@@ -159,7 +172,9 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
     if (!(m.errand?.once && m.errand.leg < 2 && !urgent)) m.errand = null;
     m.job = f.job;
     m.jobT = t;
-  }
+    m.tool = f.tool ?? null;
+    m.toolT = t;
+  } else if ((f.tool ?? null) !== m.tool && t - m.toolT >= TOOL_DWELL_S) { m.tool = f.tool ?? null; m.toolT = t; }
   const site = w.site;
   const work = site ? workSpot(site, f.spot) : HUB_SPOT(w, f.spot);
   const walkBindle = m.arriving ? 'bindle' : null;
@@ -170,7 +185,7 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
 
   // errands
   if (!m.errand && m.job === 'haul') m.errand = { kind: 'haul', leg: 0, t, dest: 'bin', once: false };
-  if (!m.errand && m.job === 'fetch') {
+  if (!m.errand && m.job === 'fetch' && !pigeonPost(m.tool)) {
     m.n++;
     m.errand = { kind: 'fetch', leg: 0, t, dest: (m.n + Math.floor(m.k * 10)) % 2 ? 'mailbox' : 'well', once: false };
   }
@@ -299,10 +314,13 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
       if (s.y !== undefined) i.seatY = s.y;
       return i;
     }
-    case 'haul': case 'fetch':
+    case 'haul':
       return base('work', work, 'stand');
+    case 'fetch':
+      if (!pigeonPost(m.tool)) return base('work', work, 'stand');
+      return base('work', work, workAct('fetch', w.plotKind, t - m.jobT, m.k, m.tool));
     default: {
-      const act = workAct(m.job, w.plotKind, t - m.jobT, m.k);
+      const act = workAct(m.job, w.plotKind, t - m.jobT, m.k, m.tool);
       return base('work', work, act);
     }
   }

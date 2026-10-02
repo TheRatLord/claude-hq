@@ -1,0 +1,97 @@
+/* The first-run welcome (hud/onboarding.ts): Posy's letter, the tour checklist and one-time tips. Self-contained:
+   the checklist corner is bottom-left (right of the needs-you strip while it is open) and is a data-hud-obstacle. */
+
+/* ---------- the welcome letter (panel 'welcome') ---------- */
+.vh-welcome { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(600px, calc(100vw - 40px - var(--lw, 0px))); margin-left: calc(var(--lw, 0px) / 2);
+  max-height: calc(100vh - 40px); }
+.vh-welcome .sheet { position: relative; overflow: auto; padding: 22px 28px 20px; border-radius: 6px; color: var(--ink);
+  background: repeating-linear-gradient(transparent 0 27px, rgba(63,149,216,.11) 27px 28px), linear-gradient(#fffaf0, #f6e8c8);
+  border: 2px solid var(--wood-dark); box-shadow: var(--shadow), inset 0 0 0 6px rgba(255,255,255,.35); }
+/* the airmail edge along the top */
+.vh-welcome .sheet::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 7px; border-radius: 4px 4px 0 0;
+  background: repeating-linear-gradient(-45deg, #d0584a 0 10px, #fffaf0 10px 18px, #3d9fa8 18px 28px, #fffaf0 28px 36px); }
+.vh-welcome .top { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.vh-welcome .stamp { width: 58px; height: 58px; flex: none; padding: 4px; background: #fff; transform: rotate(-4deg);
+  border: 2px dashed #b8a27a; border-radius: 4px; box-shadow: 0 2px 0 rgba(0,0,0,.12); }
+.vh-welcome .stamp svg { width: 100%; height: 100%; display: block; }
+.vh-welcome .from { display: flex; flex-direction: column; }
+.vh-welcome .from .l { font: 800 12px/1.2 var(--round); letter-spacing: .08em; text-transform: uppercase; color: #3d9fa8; }
+.vh-welcome .from .w { font: italic 600 14px/1.3 var(--serif); color: var(--ink-soft); }
+.vh-welcome h2 { margin: 6px 0 8px; font: 700 26px/1.15 var(--serif); }
+.vh-welcome p { margin: 0 0 10px; font-weight: 600; line-height: 1.5; }
+.vh-welcome p b { font-weight: 800; }
+.vh-welcome p b.gold { color: #fff; background: var(--gold); border-radius: 50%; display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 14px; }
+.vh-welcome .vh-k { vertical-align: 1px; }
+.vh-welcome .sign { font: italic 600 16px/1.3 var(--serif); color: var(--ink-soft); text-align: right; margin-top: 4px; }
+.vh-welcome .btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+.vh-welcome .btns .vh-btn { pointer-events: auto; }
+
+/* ---------- the corner: tip + checklist ---------- */
+.vh-onbwrap { position: absolute; left: 14px; bottom: 14px; width: 276px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 39; }
+.vh-onbwrap[hidden] { display: none; }
+.vh-layer.has-needs .vh-onbwrap { left: calc(14px + var(--lw, 0px)); bottom: 52px; }
+.vh-layer.modal .vh-onbwrap { display: none; }
+.vh-onbwrap button { all: unset; box-sizing: border-box; cursor: pointer; }
+.vh-onbwrap button:focus-visible { outline: 2px solid var(--gold); }
+
+.vh-onb { pointer-events: auto; border-radius: 12px; padding: 6px 7px 7px; background: rgba(255,246,224,.94); border: 2px solid var(--wood-deep);
+  box-shadow: 0 3px 0 rgba(0,0,0,.18); font: 12.5px/1.25 var(--round); color: var(--ink); }
+.vh-onb[hidden] { display: none; }
+.vh-onb .bar { display: flex; align-items: center; gap: 4px; }
+.vh-onb .head { flex: 1; display: flex; align-items: center; gap: 5px; font: 800 13px/1 var(--round); padding: 2px; border-radius: 6px; }
+.vh-onb .head .vh-ico { width: 16px; height: 16px; }
+.vh-onb .head .n { margin-left: auto; font-size: 11.5px; color: var(--ink-soft); }
+.vh-onb .head .chev { width: 12px; text-align: center; color: var(--ink-soft); }
+.vh-onb .x { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--ink-soft); }
+.vh-onb .x .vh-ico { width: 12px; height: 12px; }
+.vh-onb button:hover { background: rgba(122,82,49,.12); }
+.vh-onb .list { list-style: none; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.vh-onb.folded .list { display: none; }
+.vh-onb .step { display: grid; grid-template-columns: 18px 1fr auto; column-gap: 6px; align-items: center; padding: 3px 5px; border-radius: 8px; }
+.vh-onb .step .tick { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #b8a27a; display: grid; place-items: center; font: 900 11px/1 var(--round); color: #fff; background: #fff; }
+.vh-onb .step .t { font-weight: 700; }
+.vh-onb .step .keys { display: inline-flex; gap: 2px; }
+.vh-onb .step .vh-k { min-width: 18px; height: 18px; font-size: 10.5px; padding: 0 4px; border-bottom-width: 2px; }
+.vh-onb .step .how, .vh-onb .step .chips { display: none; grid-column: 2 / 4; }
+.vh-onb .step.cur { background: #ffefc0; box-shadow: inset 0 0 0 2px var(--gold); }
+.vh-onb .step.cur .tick { border-color: var(--gold); position: relative; }
+/* a soft ring that breathes around the current tick: transform + opacity only (composited; an animated box-shadow
+   repaints the layer over the WebGL canvas every frame) */
+.vh-onb .step.cur .tick::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--gold); opacity: 0;
+  animation: vh-onb-beat 1.8s ease-out infinite; will-change: transform, opacity; }
+.vh-onb .step.cur .how { display: block; margin-top: 2px; font-size: 11.5px; color: #7a4a1a; font-weight: 600; }
+.vh-onb .step.extra { margin-top: 4px; border-top: 1.5px dashed rgba(122,82,49,.25); border-radius: 0 0 8px 8px; padding-top: 5px; }
+.vh-onb .step.extra .t { font-weight: 600; font-style: italic; }
+.vh-onb .step.extra .chips, .vh-onb .step.extra.cur .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.vh-onb .chip { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(122,82,49,.1); color: var(--ink-soft); }
+.vh-onb .chip.on { background: var(--leaf); color: #fff; }
+.vh-onb .chip.on::before { content: "✓ "; }
+.vh-onb .step.done .tick { background: var(--leaf); border-color: var(--leaf-dark); }
+.vh-onb .step.done .t { color: var(--ink-faint); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.vh-onb .step.done .keys { opacity: .45; }
+.vh-onb .step.skipped .tick { background: #c8b89a; border-color: #a8987a; }
+.vh-onb .step.skipped .t { color: var(--ink-faint); }
+.vh-onb .step.just .tick { animation: vh-onb-tick .6s ease-out; }
+.vh-onb .step.just { animation: vh-onb-flash 1.1s ease-out; }
+@keyframes vh-onb-beat { 0% { transform: scale(.7); opacity: .8; } 100% { transform: scale(1.25); opacity: 0; } }
+@keyframes vh-onb-tick { 0% { transform: scale(.4); } 60% { transform: scale(1.35); } 100% { transform: none; } }
+@keyframes vh-onb-flash { 0% { background: #d6f2c4; } 100% { background: transparent; } }
+
+/* a one-time tip */
+.vh-onbtip { pointer-events: auto; display: flex; gap: 8px; align-items: flex-start; padding: 8px 8px 8px 9px; border-radius: 12px;
+  background: #fffaf0; border: 2px solid #3d9fa8; box-shadow: 0 4px 14px rgba(30,15,5,.35); font: 12.5px/1.3 var(--round); color: var(--ink); }
+.vh-onbtip[hidden] { display: none; }
+.vh-onbtip.pop { animation: vh-pop .3s ease-out; }
+.vh-onbtip .ic { width: 30px; height: 30px; flex: none; }
+.vh-onbtip .ic svg { width: 100%; height: 100%; display: block; }
+.vh-onbtip .body { flex: 1; min-width: 0; }
+.vh-onbtip .t { font-weight: 800; font-size: 13.5px; }
+.vh-onbtip .s { color: var(--ink-soft); font-weight: 600; margin-top: 2px; }
+.vh-onbtip .side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.vh-onbtip .x { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--ink-soft); }
+.vh-onbtip .x .vh-ico { width: 12px; height: 12px; }
+.vh-onbtip .off { font-size: 10.5px; font-weight: 700; color: var(--ink-faint); padding: 1px 4px; border-radius: 5px; white-space: nowrap; }
+.vh-onbtip button:hover { background: rgba(61,159,168,.14); }
+
+.vh-layer.reduced .vh-onb .step.cur .tick::after, .vh-layer.reduced .vh-onb .step.just, .vh-layer.reduced .vh-onb .step.just .tick, .vh-layer.reduced .vh-onbtip.pop { animation: none; }
+@media (max-height: 760px) { .vh-onb .step.cur .how { font-size: 11px; } .vh-onb .step { padding: 2px 5px; } }

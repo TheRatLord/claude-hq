@@ -52,6 +52,8 @@ export interface DecorDef {
   friend?: { id: string; hearts: number };
   /** a gift (a 10-heart keepsake): never on the shelves */
   keepsake?: boolean;
+  /** a one-off present (the first-run welcome, model/onboarding.ts): never on the shelves, never sold */
+  gift?: boolean;
 }
 
 const D = (id: string, name: string, price: number, max: number, color: string, blurb: string, o: Partial<DecorDef> = {}): DecorDef =>
@@ -104,6 +106,9 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
   ...([['posy', 'Posy', '#3d9fa8'], ['bram', 'Bram', '#e6c547'], ['hazel', 'Hazel', '#d9c08a'], ['marigold', 'Mayor Marigold', '#9b5a8c'], ['fern', 'Fern', '#5d8f45'], ['nimbus', 'Nimbus', '#6fb7e0']] as const)
     .map(([id, name, color]) => D(`keep-${id}`, `Portrait of ${name}`, 500, 1, color, `A keepsake from ${name}, painted on a little easel: a best friend's face to keep your yard company.`,
       { keepsake: true, friend: { id: `villager:${id}`, hearts: 10 } })),
+  // the first-run welcome's present (model/onboarding.ts WELCOME_DECOR)
+  D('welcome', 'Welcome sign', 60, 1, '#3d9fa8', 'Posy\'s hand-painted welcome: a little teal envelope on a post, with a box of flowers. Every new farm gets one; nobody can buy one.',
+    { gift: true }),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));
@@ -120,7 +125,7 @@ export type Locked = 'rank' | 'season' | 'max' | 'friend' | 'keepsake' | null;
 /** Why a decor item can't be bought right now (null = in stock). `hearts` = a villager's hearts (model/friends.ts). */
 export function lockOf(d: DecorDef, o: { rank: number; season: Season; owned: number; hearts?: (id: string) => number }): Locked {
   if (o.owned >= d.max) return 'max';
-  if (d.keepsake) return 'keepsake';
+  if (d.keepsake || d.gift) return 'keepsake';
   if (d.friend && (o.hearts?.(d.friend.id) ?? 0) < d.friend.hearts) return 'friend';
   if (d.rank !== undefined && o.rank < d.rank) return 'rank';
   if (d.seasons && !d.seasons.includes(o.season)) return 'season';

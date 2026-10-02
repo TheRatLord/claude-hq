@@ -7,6 +7,7 @@ import type { Settings as WireSettings } from '../../../../shared/protocol.ts';
 import { ICONS, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { notifyPermission, requestNotify } from './notify.ts';
+import { replayWelcome } from './onboarding.ts';
 
 type Tab = 'menu' | 'settings' | 'controls';
 
@@ -43,7 +44,8 @@ export function createPause(ctx: HudCtx): Panel {
       big('Noticeboard', ICONS.board, 'B', () => ctx.panels.open('noticeboard')),
       big('Almanac (system stats)', ICONS.stats, '', () => ctx.panels.open('stats')),
       big('Settings', ICONS.gear, '', () => setTab('settings')),
-      big('Controls', ICONS.keyboard, '?', () => setTab('controls')));
+      big('Controls', ICONS.keyboard, '?', () => setTab('controls')),
+      ctx.b?.onboarding ? big('Replay the welcome', ICONS.mail, '', () => replayWelcome(ctx)) : null);
   }
 
   /** who the Terminals entry opens: whoever needs you first, else anyone (the drawer's list switches) */
@@ -69,7 +71,7 @@ export function createPause(ctx: HudCtx): Panel {
       return h('label.vh-set', null, h('span', { text: label }), inp);
     };
     const flag = <K extends keyof WireSettings>(label: string, k: K) => check(label, () => !!S.get(k), (v) => S.set({ [k]: v } as Partial<WireSettings>));
-    const pref = (label: string, k: 'minimap' | 'toasts' | 'compactStrip') => check(label, () => ctx.prefs[k], (v) => { ctx.prefs[k] = v; ctx.savePrefs(); ctx.kick(); });
+    const pref = (label: string, k: 'minimap' | 'toasts' | 'compactStrip' | 'needsDoze') => check(label, () => ctx.prefs[k], (v) => { ctx.prefs[k] = v; ctx.savePrefs(); ctx.kick(); });
     const vol = (v: number) => `${Math.round(v * 100)}%`;
     const quality = h('select', { 'aria-label': 'Graphics quality' }, ...(['auto', 'low', 'medium', 'high', 'photo'] as const).map((q) => h('option', { value: q, text: q[0].toUpperCase() + q.slice(1) })));
     quality.value = S.get('quality');
@@ -89,7 +91,9 @@ export function createPause(ctx: HudCtx): Panel {
       h('label.vh-set', null, h('span', { text: 'Graphics quality' }), quality),
       range('Field of view', 'fov', 55, 75, 1, (v) => `${v}°`),
       flag('Head bob', 'headBob'), flag('Reduced motion', 'reducedMotion'),
+      tipsRow(),
       pref('Corner minimap (N)', 'minimap'), pref('Pop-up toasts', 'toasts'), pref('Fold the needs-you list (Alt+0)', 'compactStrip'),
+      pref('Tuck an unanswered ask away to its chip after a while', 'needsDoze'),
       h('h4', { text: 'Terminal' }),
       range('Text size', 'termFontPx', 8, 32, 1, (v) => `${v}px`),
       h('label.vh-set', null, h('span', { text: 'Leader key (close / open)' }), leader),
@@ -98,6 +102,16 @@ export function createPause(ctx: HudCtx): Panel {
       flag('Ask before Ctrl+C while watching', 'peekCtrlCConfirm'), flag('Release control after 10 idle minutes', 'idleDemotion'),
     );
     return wrap;
+  }
+
+  /** one-time valley tips (model/onboarding.ts; stored with the welcome tour, browser-local) */
+  function tipsRow(): Node {
+    const svc = (() => { try { return ctx.b?.onboarding?.() ?? null; } catch { return null; } })();
+    if (!svc) return document.createTextNode('');
+    const inp = h('input', { type: 'checkbox', 'aria-label': 'Valley tips', 'data-testid': 'set-tips' });
+    inp.checked = !svc.data().hints.off;
+    inp.addEventListener('change', () => svc.setHintsOff(!inp.checked));
+    return h('label.vh-set', null, h('span', { text: 'Valley tips (one-time hints)' }), inp);
   }
 
   /** opt-in desktop notifications (browser-local pref; asks the browser for permission when switched on) */
@@ -135,7 +149,7 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['M'], 'map (click a farmer → terminal)'), ...row(['N'], 'toggle minimap'),
       head('Your agents'),
       ...row(['Tab'], 'farm ledger: everyone at a glance'), ...row(['J'], 'mailbox (Needs you first)'),
-      ...row(['Alt+1…9'], "the Nth needs-you farmer's terminal"), ...row(['Alt+0'], 'fold / unfold the needs-you list'),
+      ...row(['Alt+1…9'], "the Nth needs-you farmer's terminal"), ...row(['Alt+0'], 'show / fold the needs-you list'),
       ...row([leader], 'open / close the terminal drawer'), ...row(['Ctrl+PgUp', 'PgDn'], 'previous / next terminal'),
       head('In the mailbox'),
       ...row(['1…9'], 'answer the selected ask (then the next is selected)'), ...row(['↑', '↓'], 'next / previous letter'),
@@ -149,7 +163,7 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['type'], 'in a terminal: take control'), ...row(['Esc'], 'close (in a terminal: only while watching)'),
       head('The valley'),
       ...row(['B'], 'noticeboard'), ...row(['H'], 'valley almanac'),
-      ...row(['K'], 'collections book'), ...row(['I'], 'your basket & the shop'),
+      ...row(['K'], 'collections book'), ...row(['Q'], "today's requests: keep open / tuck away"), ...row(['I'], 'your basket & the shop'),
       ...row(['F'], 'facing a villager: give a gift from your basket (1…9 picks)'),
       ...row(['P'], 'photo mode (fly, [ ] time, Enter saves a PNG)'),
       ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'));

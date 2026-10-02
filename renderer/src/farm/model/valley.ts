@@ -3,10 +3,10 @@
  * The valley model: reduces a ValleySource (entities, workspaces, stats, events) to a ValleyState the presentation
  * reads. Pure and clock-injected: node tests drive it with plain objects, the game drives it from the store.
  */
-import type { Entity, EventMsg, Stats, Workspace } from '../../../../shared/protocol.ts';
+import type { Entity, EventMsg, Stats, ToolClass, Workspace } from '../../../../shared/protocol.ts';
 import { hash32 } from '../../../../shared/identity.ts';
 import { SITES } from '../world/map.ts';
-import { createJobSmoother, rawJob, JOB_BUSY, shortDetail } from './jobs.ts';
+import { createJobSmoother, rawJob, stickyTool, JOB_BUSY, shortDetail } from './jobs.ts';
 import type { JobSmoother } from './jobs.ts';
 import { skyAt } from './sky.ts';
 import type { SkyOverrides } from './sky.ts';
@@ -38,7 +38,7 @@ const LETTERS_MAX = 80;
 const HISTORY = 120;
 
 interface PlotRec { view: PlotView; seen: boolean; growthLines: number }
-interface FarmerRec { smoother: JobSmoother; since: number }
+interface FarmerRec { smoother: JobSmoother; since: number; tool: ToolClass | null }
 
 export interface Valley {
   readonly state: ValleyState;
@@ -204,8 +204,9 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     const raw = rawJob(e);
     let rec = farmerRecs.get(e.id);
     const t = now / 1000;
-    if (!rec) { rec = { smoother: createJobSmoother(raw, t), since: now }; farmerRecs.set(e.id, rec); }
+    if (!rec) { rec = { smoother: createJobSmoother(raw, t), since: now, tool: null }; farmerRecs.set(e.id, rec); }
     const job: Job = rec.smoother.step(raw, t);
+    rec.tool = e.status === 'working' ? stickyTool(job, e.activity?.cls, rec.tool) : null;
     const struggle = (e.struggle?.level ?? 0) as 0 | 1 | 2 | 3;
     const needsYou = e.status === 'blocked';
     const unseenDone = e.status === 'done' && !e.ack;
@@ -221,7 +222,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     const ctxMax = e.modelTier === 'haiku' ? 200_000 : 200_000;
     return {
       id: e.id, name: e.name, project: projectName(e), tag: projectName(e), kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
-      status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw,
+      status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw, tool: rec.tool,
       detail: needsYou ? shortDetail(e.prompt?.subject?.arg ?? e.prompt?.question ?? e.activity?.detail) : shortDetail(e.activity?.detail),
       title: e.title, needsYou, unseenDone, struggle, mood,
       busy: Math.min(1, JOB_BUSY[job] + struggle * 0.05),

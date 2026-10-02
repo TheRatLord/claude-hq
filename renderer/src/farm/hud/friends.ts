@@ -5,9 +5,11 @@
  *                   today's chat / gift, their request, and the tastes you've learned. Opened on a villager (F with
  *                   something in your basket: `UiPort.friends({ give })`) it leads with the gift picker: your basket,
  *                   each item tagged with what you know they think of it (1–9 or a click gives it).
- *   Request tracker a compact, foldable list of today's requests under the dock (top right): progress, "tell Hazel"
- *                   when one is ready (with a toast), ✓ when delivered. Click a row for the panel; it steps away while
- *                   a big panel is up and is HUD furniture (`data-hud-obstacle`) so bubbles keep clear of it.
+ *   Request tracker a one-line chip under the dock (top right: "♥ 0/3 requests", a gold "!" while one is ready) that
+ *                   opens into today's requests on hover / focus / click / Q: progress, "tell Hazel" when one is ready
+ *                   (with a toast; it peeks open for a few seconds then), ✓ when delivered. A click on the chip pins it
+ *                   open (pref `valley.hud.quests` = 'open'); a row opens the panel. It steps away while a big panel is
+ *                   up and is HUD furniture (`data-hud-obstacle`) so bubbles keep clear of it.
  *   Toasts          hearts gained, milestones (a letter, new lines, their decor in the store, a recipe, a keepsake),
  *                   requests delivered.
  */
@@ -170,20 +172,34 @@ export function createFriendsPanel(ctx: HudCtx): Panel {
 const FOLD_KEY = 'valley.hud.quests';
 
 /** The request tracker under the dock, and the friendship toasts. */
-export function createQuests(ctx: HudCtx): { el: HTMLElement; refresh(): void } {
-  let folded = false;
-  try { folded = localStorage.getItem(FOLD_KEY) === '1'; } catch { /* storage blocked */ }
+export function createQuests(ctx: HudCtx): { el: HTMLElement; refresh(): void; toggle(): boolean } {
+  // collapsed to the chip unless pinned open (a click / Q) or peeking (a request just turned ready)
+  let pinned = false, peekUntil = 0;
+  try { pinned = localStorage.getItem(FOLD_KEY) === 'open'; } catch { /* storage blocked */ }
   const n = h('span.n');
-  const chev = h('span.chev', { text: '▾' });
-  const headBtn = h('button.head', { type: 'button', title: 'Today\'s requests (click to fold)', 'data-testid': 'quests-head' }, icon(HEART_ICON), h('span.l', { text: 'Requests' }), n, chev);
-  const openBtn = h('button.open', { type: 'button', title: 'Friends: hearts, tastes and requests', 'aria-label': 'Open friends' }, icon(ICONS.book));
+  const lab = h('span.l', { text: 'requests' });
+  const flag = h('span.flag', { text: '!' });
+  const chev = h('span.chev', { text: '▸' });
+  const headBtn = h('button.head', { type: 'button', 'data-testid': 'quests-head', 'aria-expanded': 'false' }, icon(HEART_ICON), n, lab, flag, chev);
+  const openBtn = h('button.book', { type: 'button', title: 'Friends: hearts, tastes and requests', 'aria-label': 'Open friends' }, icon(ICONS.book));
   const list = h('ol.list');
   const el = h('div.vh-quests', { 'data-testid': 'quests' }, h('div.bar', null, headBtn, openBtn), list);
-  headBtn.addEventListener('click', (e) => { e.stopPropagation(); folded = !folded; try { localStorage.setItem(FOLD_KEY, folded ? '1' : '0'); } catch { /* blocked */ } ctx.sfx('ui-click'); sig = ''; refresh(); });
+  const setPinned = (v: boolean) => {
+    pinned = v; peekUntil = 0;
+    try { localStorage.setItem(FOLD_KEY, v ? 'open' : 'chip'); } catch { /* blocked */ }
+    ctx.sfx('ui-click'); sig = ''; refresh();
+  };
+  headBtn.addEventListener('click', (e) => { e.stopPropagation(); setPinned(!pinned); });
   openBtn.addEventListener('click', (e) => { e.stopPropagation(); ctx.panels.open('friends'); });
   let bound: FriendsService | null = null, sig = '';
   const ready = new Map<string, boolean>();
   let primed = false;
+  let peekTimer: ReturnType<typeof setTimeout> | undefined;
+  const peek = (ms: number) => {
+    peekUntil = Date.now() + ms; sig = '';
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(() => { sig = ''; refresh(); }, ms + 50);
+  };
 
   const onChange = (c: FriendsChange) => {
     const f = 'who' in c ? friendDef(c.who) : c.kind === 'delivered' ? friendDef(c.req.who) : null;
@@ -225,21 +241,35 @@ export function createQuests(ctx: HudCtx): { el: HTMLElement; refresh(): void } 
     for (const q of qs) {
       const was = ready.get(q.req.id);
       const now = q.ready && !q.done;
-      if (primed && now && was === false) ctx.toast({ text: `Request ready: ${q.text}`, sub: `talk to ${q.friend.short} to hand it over`, icon: SCROLL_ICON, level: 'good', key: `ready|${q.req.id}`, ms: 6000 });
+      if (primed && now && was === false) {
+        ctx.toast({ text: `Request ready: ${q.text}`, sub: `talk to ${q.friend.short} to hand it over`, icon: SCROLL_ICON, level: 'good', key: `ready|${q.req.id}`, ms: 5000 });
+        peek(10_000);
+      }
       ready.set(q.req.id, now);
     }
     primed = true;
-    const nsig = `${folded}|${qs.map((q) => `${q.req.id}:${q.have}:${q.ready}:${q.done}:${q.next}`).join()}`;
+    const open = pinned || Date.now() < peekUntil;
+    const nsig = `${open}|${qs.map((q) => `${q.req.id}:${q.have}:${q.ready}:${q.done}:${q.next}`).join()}`;
     if (nsig === sig) return;
     sig = nsig;
     el.hidden = !qs.length;
     const done = qs.filter((q) => q.done).length;
+    const nReady = qs.filter((q) => q.ready && !q.done).length;
     n.textContent = `${done}/${qs.length}`;
-    el.classList.toggle('folded', folded);
-    el.classList.toggle('alert', qs.some((q) => q.ready));
-    chev.textContent = folded ? '▸' : '▾';
-    headBtn.title = folded ? 'Today\'s requests (click to unfold)' : 'Today\'s requests (click to fold)';
-    list.replaceChildren(...(folded ? [] : qs.map(row)));
+    // rows stay in the DOM (hover / focus opens them with CSS alone); .open = pinned or peeking
+    el.classList.toggle('open', open);
+    el.classList.toggle('alert', nReady > 0);
+    flag.hidden = !nReady;
+    chev.textContent = open ? '▾' : '▸';
+    headBtn.setAttribute('aria-expanded', String(open));
+    headBtn.title = `Today's requests: ${done} of ${qs.length} done${nReady ? `, ${nReady} ready to hand over` : ''} · ${pinned ? 'click (Q) to tuck away' : 'click (Q) to keep open'}`;
+    list.replaceChildren(...qs.map(row));
   }
-  return { el, refresh };
+  /** Q: pin open / tuck away (false when there is nothing to show) */
+  function toggle(): boolean {
+    if (el.hidden) return false;
+    setPinned(!(pinned || Date.now() < peekUntil));
+    return true;
+  }
+  return { el, refresh, toggle };
 }

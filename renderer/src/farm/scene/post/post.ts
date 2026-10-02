@@ -18,6 +18,25 @@ import { WORLD } from '../../world/map.ts';
 
 const LEVELS = 5;
 
+/** 256² value-noise lattice (the GLSL hash12 at each integer point), wrapped: `vnoise` in the composite samples it */
+function noiseTexture(): THREE.DataTexture {
+  const N = 256, data = new Uint8Array(N * N);
+  const fr = (x: number) => x - Math.floor(x);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    let x = fr(i * 0.1031), y = fr(j * 0.1031), z = fr(i * 0.1031);
+    const d = x * (y + 33.33) + y * (z + 33.33) + z * (x + 33.33);
+    x += d; y += d; z += d;
+    data[j * N + i] = Math.round(fr((x + y) * z) * 255);
+  }
+  const t = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = t.minFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  t.name = 'post-noise';
+  return t;
+}
+
 export const postSystem: SystemFactory = (ctx) => {
   const { renderer, scene, camera } = ctx;
   const a = atmoOf(ctx);
@@ -59,7 +78,7 @@ export const postSystem: SystemFactory = (ctx) => {
     uBloom: { value: 0.6 }, uExposure: { value: 1 }, uSaturation: { value: 1 }, uContrast: { value: 1 }, uVignette: { value: 0.2 },
     uFlash: { value: 0 }, uNight: { value: 0 }, uUseBloom: { value: useBloom ? 1 : 0 },
     uGain: { value: new THREE.Color(1, 1, 1) }, uShadowTint: { value: new THREE.Color(0, 0, 0) },
-    tGround: { value: groundTexture() }, tRays: { value: raysRT.texture }, uBanks: { value: 0 }, uWater: { value: WORLD.water },
+    tGround: { value: groundTexture() }, tNoise: { value: noiseTexture() }, tRays: { value: raysRT.texture }, uBanks: { value: 0 }, uWater: { value: WORLD.water },
     uGroundHalf: { value: GROUND_HALF }, uRays: { value: 0 }, uBankDrift: { value: new THREE.Vector2() },
     uBankColor: { value: new THREE.Color() }, uRaysColor: { value: new THREE.Color() },
   };
@@ -193,6 +212,7 @@ export const postSystem: SystemFactory = (ctx) => {
       renderer.info.autoReset = true;
       for (const t of [sceneRT, ldrRT, raysRT, ...down, ...up]) t.dispose();
       depth.dispose();
+      cu.tNoise.value.dispose();
       for (const m of [prefilter, downM, upM, composite, fxaa, raysM]) m.dispose();
       tri.dispose();
     },

@@ -7,6 +7,7 @@
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior)
+ *             ?welcome=1 (open the first-run welcome tour, fresh; automated browsers skip it otherwise) | ?welcome=0 (never)
  */
 import './hud/base.css';
 import { R2S } from '../../../shared/protocol.ts';
@@ -20,6 +21,7 @@ import { createCollection } from './model/collection.ts';
 import { createWallet } from './model/wallet.ts';
 import { createFriends, friendDef } from './model/friends.ts';
 import type { FriendLetter } from './model/friends.ts';
+import { createOnboarding, shouldWelcome, tipsAllowed, parseOnboarding, emptyOnboarding } from './model/onboarding.ts';
 import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
 import { storeSource, createAgentPort } from './source.ts';
@@ -124,11 +126,29 @@ friends.onChange((c) => { if (c.kind === 'milestone' && c.letter) postFriendLett
 collection.onFind((r) => { if (r.def.kind === 'fish' && !r.def.junk) friends.caught(r.def.id, valley.state.sky.hour); });
 valley.on((e) => friends.event(e.kind));
 engine.ctx.services.set('friends', friends);
+// the first-run welcome tour + one-time tips (model/onboarding.ts; hud/onboarding.ts shows it): browser-local. Real
+// people get it on their first visit; tests / shots (navigator.webdriver) only with ?welcome=1
+const ONBOARDING_KEY = 'claude-valley.onboarding.v1';
+const loadOnboarding = () => { try { const raw = localStorage.getItem(ONBOARDING_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } };
+const welcomeParam = params.get('welcome');
+const automated = !!navigator.webdriver;
+const onboarding = createOnboarding({ load: loadOnboarding, save: (d) => localStorage.setItem(ONBOARDING_KEY, JSON.stringify(d)) }, {
+  autostart: shouldWelcome(parseOnboarding(loadOnboarding()) ?? emptyOnboarding(), { param: welcomeParam, automated }),
+  tips: tipsAllowed({ param: welcomeParam, automated }),
+  pay: (c, why) => wallet.reward(c, why),
+  gift: (id) => { wallet.gift(id); },
+  post: (l) => valley.post({ ...l, fromName: friendDef(l.from)?.name ?? 'Posy' }),
+});
+if (onboarding.data().letter) { const l = onboarding.data().letter!; valley.post({ ...l, fromName: friendDef(l.from)?.name ?? 'Posy' }); }
+collection.onFind((r) => onboarding.signal(r.def.kind === 'fish' ? 'fish' : 'forage'));
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
 let queued = false;
-const tick = () => { queued = false; valley.tick(); engine.ctx.valley = valley.state; };
+const tick = () => {
+  queued = false; valley.tick(); engine.ctx.valley = valley.state;
+  if (onboarding.data().active && (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.active) onboarding.signal('farmhouse');
+};
 const soon = () => { if (!queued) { queued = true; setTimeout(tick, 60); } };
 for (const t of ['world', 'entity', 'gone', 'workspaces', 'stats', 'conn', 'herdr'] as const) store.on(t, soon);
 setInterval(tick, 250);
@@ -162,6 +182,7 @@ hud.bind({
   collection: () => collection,
   wallet: () => wallet,
   friends: () => friends,
+  onboarding: () => onboarding,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
 });
 engine.onFrame((f) => hud.update(f));
@@ -187,11 +208,21 @@ if (pose) {
 }
 
 engine.start();
-// ready: world received and a few frames drawn (the screenshot tool waits on this)
+// ready: world received and a few frames drawn (the screenshot tool and the browser tests wait on this). The frames
+// matter: systems fill in on their first updates (today's forageables, …) and the first frames compile every shader,
+// which takes seconds under software rendering. A hidden tab draws no frames: give up waiting for them after 20 s.
+let drawn = 0;
+const stopCounting = engine.onFrame(() => { drawn++; });
+const startedAt = performance.now();
+let worldAt = 0;
 const readyCheck = setInterval(() => {
-  if (store.hello && valley.state.farmers.size + valley.state.plots.size > 0 || store.conn.state === 'open' && store.entities.size === 0 && store.hello) {
-    clearInterval(readyCheck);
+  if (!worldAt && (store.hello && valley.state.farmers.size + valley.state.plots.size > 0 || store.conn.state === 'open' && store.entities.size === 0 && store.hello)) {
+    worldAt = drawn + 1;
     tick();
+  }
+  if (worldAt && (drawn >= worldAt + 3 || performance.now() - startedAt > 20_000)) {
+    clearInterval(readyCheck);
+    stopCounting();
     setTimeout(() => { (window as unknown as { __valley: { ready: boolean } }).__valley.ready = true; }, 400);
   }
 }, 100);

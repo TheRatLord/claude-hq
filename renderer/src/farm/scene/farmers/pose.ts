@@ -33,6 +33,10 @@ export const PROPS = [
   'hoe', 'trowel', 'can', 'crate', 'basket', 'rod', 'notebook', 'magnifier', 'hammer', 'saw', 'letter', 'bindle', 'broom', 'brush', 'book',
   // villagers' night lantern (no act owns it; scene/villagers hands it over after dark)
   'lantern',
+  // search: a burlap seed sack to rummage in; web fetch: a carrier pigeon perched on the nub
+  'sack', 'pigeon',
+  // geometry-only variants (the rig swaps them in while the pigeon flies: wings up / down); no act holds them
+  'pigeonup', 'pigeondown',
 ] as const;
 export type Prop = (typeof PROPS)[number];
 export type Hold = 'L' | 'R' | 'both' | 'over';
@@ -48,6 +52,8 @@ export const ACTS = [
   'wave', 'cheer', 'scratch', 'oops', 'bindle', 'sitground', 'sit',
   // leisure loops at the nooks
   'reel', 'catch', 'toast', 'sitread', 'sitchat', 'picnic', 'stargaze', 'telescope', 'checkers', 'ponder', 'soak', 'gaze',
+  // work flavours: search = rummage in the seed sack; web fetch = a carrier pigeon flies in to the raised nub
+  'rummage', 'pigeon',
 ] as const;
 export type Act = (typeof ACTS)[number];
 
@@ -115,7 +121,18 @@ export const ACT_INFO: Readonly<Record<Act, ActInfo>> = {
   ponder: { prop: null, face: 'neutral', grounded: true },
   soak: { prop: null, face: 'happy', grounded: true },
   gaze: { prop: null, face: 'happy' },
+  rummage: { prop: 'sack', hold: 'L', face: 'focused' },
+  pigeon: { prop: 'pigeon', hold: 'R', face: 'happy' },
 };
+
+/** Carrier pigeon timing (s, on the act's local clock): flies in, perches, flies off. `pigeonFly` is 1 far … 0 perched. */
+export const PIGEON = { in: 1.8, perch: 3.6, out: 5.4 } as const;
+export function pigeonFly(local: number): number {
+  if (local < PIGEON.in) { const u = 1 - local / PIGEON.in; return u * u; }
+  if (local < PIGEON.perch) return 0;
+  const u = Math.min(1, (local - PIGEON.perch) / (PIGEON.out - PIGEON.perch));
+  return u < 1 ? u * u : 1;
+}
 
 /** Default hold for a prop when the act does not say. */
 export const holdOf = (act: Act): Hold => ACT_INFO[act].hold ?? 'R';
@@ -232,6 +249,40 @@ export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, 
       o[CH.aLy] = 0.2; o[CH.aLz] = -0.35 + hmm * 0.5;
       o[CH.twist] = sweep * 0.16; o[CH.roll] = hmm * 0.18;
       o[CH.eyeX] = sweep * 0.6; o[CH.eyeY] = -0.25;
+      break;
+    }
+    case 'rummage': {
+      // search: the seed sack hangs from the left nub, the right nub dives in and stirs, the eyes peer in; every couple
+      // of seconds it pops out and flings a handful over the shoulder (not this one!); now and then a "found it" hop
+      const ph = fract(T * 0.42);
+      const dig = 1 - bump(ph, 0.62, 0.92), fling = bump(ph, 0.66, 0.86);
+      const stir = S(T * 7.5) * dig;
+      const found = win(T / 9 + k * 2, 0.07, 0.02);
+      o[CH.drop] = 0.22 * dig; o[CH.lean] = 0.42 * dig - 0.12 * fling;
+      o[CH.aLy] = 1.0; o[CH.aLz] = -0.25; o[CH.aLe] = 0.1;
+      o[CH.aRy] = mix(1.05 + stir * 0.12, -0.2, fling); o[CH.aRz] = mix(-0.42 + C(T * 7.5) * 0.1 * dig, 1.35, fling); o[CH.aRe] = 0.15 + fling * 0.25;
+      o[CH.twist] = 0.18 * dig + stir * 0.05 - fling * 0.25; o[CH.roll] = stir * 0.04;
+      o[CH.eyeY] = mix(-0.55, 0.3, fling); o[CH.eyeX] = mix(0.35 + stir * 0.2, -0.6, fling);
+      o[CH.prop] = fling;
+      o[CH.bob] = found * 0.08; o[CH.sq] += found * 0.08 - dig * 0.02; o[CH.eyeS] = found * 0.3;
+      legs(o, 0.1 * dig, 0.1 * dig, -0.05, -0.05);
+      break;
+    }
+    case 'pigeon': {
+      // web fetch: nub held up as a perch, eyes on the sky; the pigeon lands (a little dip under it), the farmer leans
+      // in to it, it flies off and the nub waves it away. Runs on the act's own clock (`local`), like a one-shot.
+      const fly = pigeonFly(local);
+      const perched = sstep(PIGEON.in - 0.2, PIGEON.in + 0.2, local) * (1 - sstep(PIGEON.perch - 0.2, PIGEON.perch + 0.2, local));
+      const away = sstep(PIGEON.out - 0.4, PIGEON.out, local);
+      const landDip = bump(local, PIGEON.in - 0.05, PIGEON.in + 0.35);
+      o[CH.aRy] = mix(0.75, 0.4 + S(T * 9) * 0.3, away); o[CH.aRz] = mix(1.05 - landDip * 0.25, 1.1 + S(T * 9 + 1) * 0.25, away); o[CH.aRe] = 0.35;
+      o[CH.aLy] = 0.2; o[CH.aLz] = -0.1 + perched * 0.3;
+      o[CH.lean] = mix(-0.16, 0.05, perched); o[CH.twist] = perched * 0.22;
+      o[CH.sq] -= landDip * 0.05;
+      o[CH.eyeY] = mix(mix(0.3, 0.8, fly), 0.3, perched); o[CH.eyeX] = mix(-0.2 + fly * 0.4, -0.6, perched); o[CH.eyeS] = landDip * 0.25;
+      o[CH.bob] = perched * Math.abs(S(T * 3)) * 0.015;
+      // pY = the wing beat while flying (the rig swaps wings-up / wings-down frames on its sign; no rotation)
+      o[CH.prop] = fly; o[CH.pP] = 0; o[CH.pY] = S(local * 40) * Math.min(1, fly * 6) * 0.4;
       break;
     }
     case 'almanac': {

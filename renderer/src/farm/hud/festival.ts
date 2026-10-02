@@ -1,6 +1,7 @@
 /**
  * Festivals in the HUD (model/calendar.ts): the greeting toast the first time the valley is seen during a festival
- * (per page load and festival), and the icon the noticeboard's poster uses.
+ * (once per real day and festival, remembered in localStorage `valley.hud.greeted`, so reloads stay quiet), and the
+ * icon the noticeboard's poster uses.
  */
 import type { FestivalId } from '../model/calendar.ts';
 import { dayText, inDaysText } from '../model/calendar.ts';
@@ -13,19 +14,32 @@ export const FESTIVAL_ICON: Readonly<Record<FestivalId, string>> = {
   hallowtide: ICONS.lantern, starlight: SEASON_ICON.winter, newyear: ICONS.rosette,
 };
 
-/** call on every HUD tick: greets once per festival (and once for one starting within 3 days) */
+const GREETED_KEY = 'valley.hud.greeted';
+
+/** call on every HUD tick: greets once per festival and day (and once for one starting within 3 days) */
 export function festivalGreeter(push: (t: ToastSpec) => void): (s: ValleyState) => void {
   const greeted = new Set<string>();
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+  // remembered per day: `${day}|${what}` entries from today only
+  const seen = (what: string): boolean => {
+    const k = `${today()}|${what}`;
+    if (greeted.has(k)) return true;
+    greeted.add(k);
+    try {
+      const prev = (JSON.parse(localStorage.getItem(GREETED_KEY) ?? '[]') as string[]).filter((x) => x.startsWith(`${today()}|`));
+      if (prev.includes(k)) return true;
+      localStorage.setItem(GREETED_KEY, JSON.stringify([...prev, k]));
+    } catch { /* storage blocked: once per load */ }
+    return false;
+  };
   return (s) => {
     if (s.link === 'connecting') return;
     const f = s.sky.festival;
     const a = f?.active;
-    if (a && !greeted.has(a.id)) {
-      greeted.add(a.id);
-      push({ text: `Happy ${a.name}!`, sub: `${a.blurb} · ${dayText(a)}`, icon: FESTIVAL_ICON[a.id], level: 'good', ms: 9000, key: `festival|${a.id}` });
-    } else if (!a && f?.next && f.next.inDays <= 3 && !greeted.has(`soon|${f.next.id}`)) {
-      greeted.add(`soon|${f.next.id}`);
-      push({ text: `The ${f.next.name} is ${inDaysText(f.next.inDays)}`, sub: f.next.blurb, icon: FESTIVAL_ICON[f.next.id], level: 'info', ms: 7000, key: `festival-soon|${f.next.id}` });
+    if (a && !seen(a.id)) {
+      push({ text: `Happy ${a.name}!`, sub: `${a.blurb} · ${dayText(a)}`, icon: FESTIVAL_ICON[a.id], level: 'good', ms: 6500, key: `festival|${a.id}` });
+    } else if (!a && f?.next && f.next.inDays <= 3 && !seen(`soon|${f.next.id}`)) {
+      push({ text: `The ${f.next.name} is ${inDaysText(f.next.inDays)}`, sub: f.next.blurb, icon: FESTIVAL_ICON[f.next.id], level: 'info', ms: 5500, key: `festival-soon|${f.next.id}` });
     }
   };
 }

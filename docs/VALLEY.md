@@ -45,6 +45,21 @@ the lead.
 * **Commit** = carries a crate to the shipping bin by the farmhouse. **Tests pass** = little celebration.
   **Test fail / error** = drops the watering can, "oops" puff, dusts off.
 * **Struggle** = sweat drops, crows circling the field, head scratching.
+* **Jobs = what you see the farmer doing** (`model/jobs.ts` `clsJob`, smoothed; `FarmerView.tool` = the tool flavour
+  inside the visible job, `stickyTool`, held ≥ 8 s by the brain so churn never flickers; `scene/farmers/brain.ts`
+  `workAct`). Edit/write: trowel and hoe in the rows (feed / brush in animal pens). Read: magnifier over the crop, then
+  the seed almanac. **Search**: rummages in a burlap seed sack and flings handfuls over the shoulder. Test: the watering
+  can along the row. Bash / build: hammer and saw. Git: a crate to the shipping bin. **Web / net fetch**: a carrier
+  pigeon flies in to the raised nub with a letter, perches, flies off, then the farmer reads the letter (MCP and the
+  rest still walk to the mailbox / well). Think: on the hay bale with a notebook under a thought cloud of turning cogs
+  (a checklist cloud for todo), a light bulb now and then. Subagents: whistling to the ducklings. Compact: stretch and
+  sweep. The nameplate verb follows the flavour (rummaging, pigeon post, pondering). Props grow a little with distance
+  (≈ +60 % at 45 m) so tools read across the valley.
+* **Work leaves traces in the field** (`scene/farmers/traces.ts`, 2 instanced draws): at each farmer's work spot a row
+  of **seed stakes** (one per file planted since the valley loaded, banked across tasks, max 6) on its right, and a row
+  of **sprouts** on its left, one per test run / error: green and perky for a pass, wilted brown for a fail (newest 6).
+  A busy field bristles; a quiet one is bare. Gallery `field-traces`; dev `__valley.ctx.services.get('farmers').react(id,
+  'celebrate' | 'oops')`.
 * **Idle = leisure.** An idle farmer (no job for 4 s) picks a seat weighted by its `likes`, the hour and distance,
   and runs a varied activity loop there (`scene/farmers/idle.ts`, pure + `idle.test.ts`): fishing casts, reels and
   sometimes lands a catch; fireside toasting and chatting; reading on a bench; checkers turns with a partner. Four
@@ -81,6 +96,9 @@ the lead.
   everyone indoors, the ranger to the barn. At social places they wander off to chat with an idle farmer or pet
   Biscuit / Mochi (`pets.hold` / `pets.pet`). After dark they carry a hand lantern (prop `lantern`) that is a real
   `LightEmitter`. They greet you like farmers do and walk the farmers' roads with the farmers' motion / gait / pose code.
+  Walk up to one (< 4.2 m) and look at them and they pause and turn to you (`heldUntil`: a 2 s grace after you look
+  away, 12 s at most, never on the way to shelter), so E finds who you walked up to. `__valley.goTo(id)` picks the
+  nearest approach angle from which the crosshair takes the target (not a mailbox standing in line).
   Contracts (`scene/context.ts`): interactable kind `'villager'`, optional `Interactable.hint()` (the prompt's second
   line), optional `UiPort.roster()`, service `'villagers'` → `VillagerPin[]` (the HUD gets them as `HudBindings.villagers`).
   Gallery: `villagers` (variants `post walk wave night back`).
@@ -206,8 +224,10 @@ the lead.
   a finished task = `finished`). Talking to them the first time says the request (instead of opening their shortcut);
   when it's done (toast "Request ready") E on them hands it over: bits (`WalletService.reward`) + hearts, a thank-you
   line, a heart emote. Unfinished requests lapse at midnight. The **tracker** (`data-testid="quests"`) sits under the
-  dock (top right, a `data-hud-obstacle="children"` child of the dock), folds to its header (pref `valley.hud.quests`),
-  hides under big panels, rows open the Friends panel; the noticeboard pins a Requests note; the prompt's hint line shows
+  dock (top right, a `data-hud-obstacle="children"` child of the dock) as a one-line chip (`♥ 0/3 requests`, a gold `!`
+  while one is ready); hover / focus opens it, a click or **Q** keeps it open (pref `valley.hud.quests` = `open`), and
+  it peeks open for 10 s when a request turns ready; it hides under big panels, rows open the Friends panel; the
+  noticeboard pins a Requests note; the prompt's hint line shows
   `♥ n` and "has a request" / "request ready!". **Milestones:** 2 ♥ a letter, 4 ♥ warmer lines (`closeLine`), 6 ♥ their
   own decor piece in the General store (`DecorDef.friend`: Posy's pillar box, Bram's crate stack, Hazel's millstone
   table, the Mayor's prize pumpkin, Fern's pup tent, Nimbus's weather vane), 8 ♥ a recipe letter, 10 ♥ a keepsake portrait
@@ -243,7 +263,7 @@ the lead.
   the pumpkin, vote for a scarecrow, dance round the maypole, light a wish lantern, trick-or-treat, hang an ornament,
   blow out the candles, raise a glass); a live change pops the new set in. ≤ 9 draw calls (3 merged meshes + banner +
   swarms). Villagers talk about it on alternate chats and mention the next one within 14 days (`lines.ts`), the
-  noticeboard pins a poster, and a toast greets you once per load (`hud/festival.ts`). Force one on any date with
+  noticeboard pins a poster, and a toast greets you once per real day (`hud/festival.ts`, not on every reload). Force one on any date with
   `?festival=ID` / `__valley.festival(id)` (the season follows unless `?season=` is set); service `festivals`
   (`where()`: piece positions for shots). Gallery: `festival` (variant per id).
 
@@ -362,19 +382,83 @@ the lead.
     clicking opens that terminal (several asks: the mailbox). `__hud.notify()` shows the last copy and the icon badge.
   * *Every key.* `?` opens the pause menu's Controls tab from anywhere outside a terminal: grouped (getting around,
     agents, mailbox, ledger, card & terminal, the valley). Add new keys there and to the hints bar's budget sparingly.
+* **First-run welcome + tips** (pure + tested `model/onboarding.ts`, HUD `hud/onboarding.ts` + `onboarding.css`, panel
+  `welcome`, service wired in `main.ts`, persisted per profile in `claude-valley.onboarding.v1`). On a profile's first
+  visit **Posy the postmaster** hands you a letter (airmail-edged, her stamp): agents are farmers, fields are workspaces,
+  a golden ! needs you, every terminal is a key away. *Let's go* (Enter / Esc) starts the tour, *Skip the tour* doesn't;
+  then she says hello over by the mailbox. The tour is a small foldable / closable checklist bottom-left (right of the
+  needs-you strip while it is open; `data-hud-obstacle="children"`; hidden under any panel), ticked by **real signals,
+  never by duplicated logic**: look around + take a stroll (the player's own yaw / feet at 4 Hz, teleports and panels
+  ignored), say hello to a villager (hud.ts's E / F on a `villager`), open a terminal (the `drawer` panel opening, from
+  F, the dock, the map, anywhere), answer someone who needs you (`ctx.answer` succeeding; **skipped** when it comes up
+  and nobody needs you, a later answer still ticks it), the map (M) and the ledger (Tab) panels, and *when you have a
+  moment: a pastime* (any of: a find from `collection.onFind` → pick something up / cast a line, or `indoors.active` →
+  the farmhouse; each lights a chip). Steps tick in any order; the current one shows its how-to. Finishing pays
+  **50 bits**, gives the **Welcome sign** (`welcome`, `DecorDef.gift`: never stocked, never sold) straight into the yard
+  and posts Posy's "Welcome home" letter (re-posted on load) — once per profile, a replay pays nothing. **Replay the
+  welcome** is in the pause menu. **Tips** (`HINTS`): one-time hints in the same corner, queued by the world (a farmer
+  needs you → "Alt+1 answers from anywhere"; rain → "fish bite better in the rain"; night; the first find in your
+  basket → sell to Bram / gift), at most one per 4 min, the first 45 s after the welcome closes, never during the tour,
+  a panel / terminal, typing or photo mode; × dismisses, *Tips off* or Settings → *Valley tips* turns them off.
+  **Automation:** `navigator.webdriver` (Playwright tests, `npm run shoot`) skips the welcome and the tips unless the URL
+  has `?welcome=1` (forces a fresh tour); `?welcome=0` never shows it. Dev: `__hud.tour.tip(id)`, `.signal(s)`,
+  `.data()`; shots: `npm run shoot -- --shot name=w,pose=hub,welcome=1` (the letter), add
+  `eval=setTimeout(()=>document.querySelector('[data-testid=welcome-go]').click(),1800)` for the checklist.
 * **Names:** compact spots (needs-you cards, map pins and the side lists, ledger rows, the drawer's list and header,
   the farmer card's title) use `shortName()` = the in-world `tag`; the full herdr name goes on a secondary line or a
   tooltip via `altName()` (`hud/format.ts`, tested). Map pins carry one glyph (`pinGlyph()`: the tag's suffix).
-* **Layout:** top-left the status sign (clock, link, *needs / working / done* counts) over the needs-you strip; top-right
-  the minimap over the dock (mail, map, ledger, terminals, menu; z above the backdrop); bottom-right the toasts over the
-  key-hints bar (whose first item is the "Click: look around" reminder while the mouse is free). The needs-you strip is
-  a count chip (click or Alt+0 folds it; the fold is a HUD pref) and the asks newest-first: one open card with the answer
-  buttons, the rest one-line rows (click / Enter opens one; the green button opens its terminal).
+* **HUD layout: calm by default, informative on demand.** The world is the point; furniture keeps to fixed zones at the
+  edges that never overlap at 1280×720, 1366×768, 1600×900 or 1920×1080 (check `mixed`, `queue`, `crowd40`, with panels
+  open and closed and toasts flowing; `__hud.toast({ text, sub, level, key })` pushes one). Sizes come from two tokens on
+  `.vh-layer`: `--gut` (12 px; 10 px under 820 px tall) and `--left-w` (300 px; 288 px ≤ 1440 wide; 272 px ≤ 900 wide).
+
+  ```
+  [☀ 16:00  Thu 1 Oct      ]                                              ( minimap )
+  [● Demo valley 5 working 2 done]                                   [J][M][Tab][⌃`][Esc]
+  [(🏵 Harvest Town ▬) (🪙 0)]                                        (♥ 0/3 requests ▸ 📖)
+  (🔔 1 farmer needs you ▾)
+  [ open ask: 2-line question ]
+  [ 1 Yes                     ]
+  [ 2 Yes, and don't ask a…   ]                                     [ toast ×2 ]
+  [ Terminal ][ Walk there    ]                                     [ toast    ]
+  [ row ] [ row ]     (onboarding checklist / tips)      Click look around · M map · … · ? all keys
+  ```
+  * **Top-left column** (`.vh-left`, `--left-w` wide). The **status sign** in three short rows: the clock with the date
+    and season icon (the season's name in the tooltip); the link pill and *working / done* counts (who needs you is the
+    chip right below, so the sign doesn't repeat it); the **rank chip** (rosette, name, a tiny bar; opens the Almanac)
+    and the **coin chip** (opens your pockets) side by side. Under it the **needs-you strip**: a count chip, then the
+    asks newest first: one open **compact card** (name + Alt+N; the question clamped to two lines, all of it in the
+    tooltip and on keyboard focus inside the card; one single-line button per answer, the full label in the tooltip and
+    on keyboard focus; Terminal + Walk there). **Nothing in the card reflows on hover or mouse focus**: growing text
+    would push the answers under a pointer on its way to one (a wrong answer, or a lost click); the new-ask ring is a
+    transform / opacity pseudo-element, never the card's or a button's own box and the rest as one-line rows (click / Enter opens one; the green button opens its
+    terminal). The chip folds the list (click or Alt+0; pref `compactStrip`). **Dozing:** after 25 s of walking about
+    (pointer locked, no panel: `.roam`) without a new ask the list tucks itself behind the chip, which keeps a slow gold
+    pulse (a ring on `::after`); it never tucks while the pointer is free (you just arrived, paused, or have a panel up),
+    and freeing the pointer, a new ask, the chip or Alt+0 brings it back (pref `needsDoze`, Settings → *Tuck an
+    unanswered ask away*). Keyboard flows never depend on what is shown: Alt+1…9, J then 1–9 / Enter work while dozing
+    or folded.
+  * **Top-right column** (`.vh-dock`): the minimap (160 px; 136 px on short screens), the dock buttons (mail, map,
+    ledger, terminals, menu), then the request tracker chip.
+  * **Bottom-right:** the key-hints bar (E / F live on the interaction tag instead; the bar dims while you walk about
+    with the pointer locked: `.vh-layer.roam`) and above it the **toasts**: at most two (one under a big panel), 4 s by
+    default (asks and warnings 5.5 s, errors 7 s), hovering holds one, and the same kind **coalesces** in place with a
+    `×n` count instead of stacking (`ToastSpec.group`, else the key's first `|` segment: `commit|…`, `ans|…`, `ready|…`).
+    Background toasts (letters, server toasts, festival greetings: `push(t, true)`) never push off a confirmation of
+    something you just did; they squeeze in beside it (one over the limit for its few seconds).
+  * **Bottom-left:** the onboarding checklist and one-time tips (`hud/onboarding.ts`; right of the strip while it is open).
+  * **Top-centre:** only the offline banner (it docks bottom-left under a big panel).
+  * **z-order** (tokens in `hud.css :root`): anchored world tags 5 · interaction tag 6 · hints 20 · panel backdrop 30 ·
+    left column 40 · dock 41 · welcome card 45 · panels 50 · terminal dim 54 / drawer 55 · toasts 60 · banner 70. The
+    left column sits above the backdrop so asks stay clickable beside any panel.
+  * Every zone is HUD furniture for the anchored bubbles (`data-hud-obstacle`: the sign, the strip's children, the
+    dock's children, hints, the toasts' children, banner, drawer); children of a `children` obstacle are size-watched
+    too, so CSS-only changes (the tracker opening on hover) re-measure.
 * **Layer classes** (on `.vh-layer`, set by `hud.ts` / `needs.ts`; style against them instead of measuring): `modal` (any
-  panel), `covered` (a big panel, not the side card: hints hide, toasts shrink to two compact ones and only asks /
-  errors pop, the offline banner docks bottom-left), `side` (the side card is open: toasts stand to its left, off its
-  buttons), `has-needs` (the strip is unfolded: centred panels shift right by
-  `--lw` so the strip stays clickable beside them; the mailbox sits between the strip and the dock).
+  panel), `covered` (a big panel, not the side card: hints hide, toasts drop to one compact one and only asks / errors
+  pop, the offline banner docks bottom-left, the tracker hides), `side` (the side card is open: toasts stand to its left,
+  off its buttons), `has-needs` (the strip is unfolded and awake: centred panels shift right by `--lw` so the strip stays
+  clickable beside them; the mailbox sits between the strip and the dock), `roam` (pointer locked, no panel open).
 * **Empty and offline states:** every list says what is going on and what to do (no farmers yet → open a herdr
   workspace; herdr offline → it comes back on its own); never an empty frame.
 * **Drawer:** bottom-anchored; drag the grip on its top edge (or ↑/↓ on the focused grip) to resize, double-click to
@@ -454,7 +538,32 @@ the lead.
 
 60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), interior ≤ 40 (only while inside),
 atmosphere ≤ 30 + post. One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
-Check `__valley.perf()` → `calls`, `tris`, `systemMs`.
+Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the
+top view (`npm run bench`; ≈ 7–8 ms today), CPU frame (`cpu`) ≲ 8 ms with `crowd40`.
+
+### Benchmark (`npm run bench`)
+
+`scripts/bench.ts` drives the real GPU (same Chromium flags as `shoot`) through `mixed` and `crowd40` × day (10:00
+clear) / night (22:00 clear) / rain (14:00) × 7 poses (`hub square river pond east top inside`; `top` = free camera
+`0;90;70;0;-0.95`) and prints one row each: `gpu` (whole frame, `EXT_disjoint_timer_query_webgl2`, median of reps),
+split into `scene` (incl. the shadow map), `shadow` (scene with shadow updates on − off) and `post` (bloom, rays,
+composite, FXAA); `cpu` (frame loop EMA: hooks + systems + submit), `sys` (sum of systems), `submit` (JS/driver time
+of the render call), `calls` / `shCls` (shadow pass share) / `tris`, and the top three systems.
+
+```sh
+npm run bench                                                   # everything (~6 min)
+npm run bench -- --scenario mixed --cond night --pose hub,top    # a slice
+npm run bench -- --json scratch/bench/a.json --shots             # keep numbers + a PNG per row (scratch/bench/)
+npm run bench -- --quality low --eval "__valley.atmo({mist:1})"  # A/B a setting
+```
+
+The machine is shared (agents shooting): check `uptime`, compare medians of A and B run alternately, and trust the GPU
+columns over `cpu` when the load is high (timer queries still include time-slicing with other GPU clients). Per-pose
+costs worth knowing: mist banks ≈ 0.3 ms (night / dawn), wet surfaces ≈ 0.7 ms (any toon pixel while `wet` > 0; dry
+costs nothing), god rays ≈ 0.1 ms, shadow map ≈ 0.5 ms, post ≈ 1.2 ms. Rules of thumb: a `DoubleSide` material does
+not need explicit back faces (`plots/geo.ts` `singleSided`); a valley-wide `InstancedMesh` cannot be frustum-culled
+by three, so pack only what is in view (`plots/meadow.ts`); transparent `DoubleSide` materials take
+`forceSinglePass: true` when additive (else three draws them twice and re-resolves the program each frame).
 
 ## Verify your work (do this constantly)
 
@@ -462,6 +571,7 @@ Check `__valley.perf()` → `calls`, `tris`, `systemMs`.
 npm run typecheck                                   # all projects
 node --test "renderer/src/farm/**/*.test.ts"        # model + layer rules (+ your pure tests)
 npm run shoot -- --shot name=a,pose=hub,hour=10     # screenshots on the real GPU → scratch/shots/a.png, prints errors + perf
+npm run bench -- --scenario mixed --pose hub,top      # GPU / CPU ms, calls, tris per pose (see Budgets → Benchmark)
 npm run shoot -- --shot name=n,pose=square,hour=22,weather=rain
 npm run shoot -- --shot name=f,goto=d1:p2           # stand in front of a farmer / plot / structure id
 npm run shoot -- --shot 'name=top,cam=0;90;70;0;-0.95'  # free camera x;y;z;yaw;pitch (quote: ';')
@@ -488,6 +598,8 @@ npm run shoot -- --shot "name=fa,goto=villager:fern,hour=10,eval=setTimeout(()=>
 npm run shoot -- --shot "name=fg,pose=hub,eval=__valley.hearts('posy',7);__valley.gift('hazel','boot');__valley.ctx.services.get('wallet').stash('koi',2);__hud.open('friends',{give:'villager:marigold'})"  # Friends panel + gift picker
 npm run shoot -- --shot "name=fd,goto=villager:hazel,hour=10,eval=__valley.requests('ready');setTimeout(()=>dispatchEvent(new KeyboardEvent('keydown',{code:'KeyE'})),1200)"  # hand a request over
 npm run shoot -- --shot "name=fs,hour=22,eval=__valley.requests('2026-10-06');__valley.goTo('stones')"   # a visit request (stones after dark) turning ready
+npm run shoot -- --shot name=w,pose=hub,hour=10,welcome=1,wait=3000   # the first-run welcome letter (Posy)
+npm run shoot -- --shot "name=wl,pose=hub,welcome=1,eval=setTimeout(()=>{document.querySelector('[data-testid=welcome-go]').click();__hud.tour.signal('map')},1800)"  # the tour checklist
 npm run shoot -- --shot name=i,pose=inside,hour=10          # farmhouse interior (inside:hearth|shelf|desk|bed|tank|window|sun|room)
 npm run shoot -- --shot "name=ir,pose=inside:hearth,hour=21,weather=rain,eval=__valley.collect(28)"  # night, rain on the glass, full shelf
 npm run mapviz                                      # top-down map PNG, no browser

@@ -64,7 +64,7 @@ export interface DrawOut {
 /** Hanging props keep level with gravity instead of following the body's lean. */
 /** Villagers' role hats read from across the square: a size up on the tier hats. */
 const ROLE_HAT_SCALE = 1.4;
-const HANGS: ReadonlySet<Prop> = new Set(['can', 'basket', 'lantern']);
+const HANGS: ReadonlySet<Prop> = new Set(['can', 'basket', 'lantern', 'sack', 'pigeon']);
 
 const _root = new THREE.Matrix4(), _L = new THREE.Matrix4(), _Br = new THREE.Matrix4(), _Bs = new THREE.Matrix4(), _W = new THREE.Matrix4();
 const _m = new THREE.Matrix4(), _t = new THREE.Matrix4(), _arm = new THREE.Matrix4();
@@ -279,13 +279,18 @@ export class Crowd {
         const tip = d.hold === 'L' ? _tipL : _tipR;
         if (HANGS.has(d.prop)) _rq.setFromAxisAngle(_v2.set(0, 1, 0), o[CH.twist]);
         else _rq.copy(_bq);
-        _e.set(o[CH.pP] + d.propLag.x, o[CH.pY], d.propLag.z, 'YXZ');
+        const bird = d.prop === 'pigeon';
+        _e.set(bird ? 0 : o[CH.pP] + d.propLag.x, bird ? Math.PI : o[CH.pY], bird ? 0 : d.propLag.z, 'YXZ'); // the pigeon faces its farmer
         _rq.multiply(_q2.setFromEuler(_e));
         _m.compose(tip, _rq, _s.set(ps, ps, ps));
         out.hand.copy(tip).applyMatrix4(_root);
+        // the carrier pigeon flies in / off along a high arc from ahead and to the left (o.prop: 1 far … 0 perched)
+        const fly = bird ? o[CH.prop] : 0;
+        if (fly > 0.001) _m.premultiply(T(fly * 1.6, fly * 3.2 + Math.sin(fly * Math.PI) * 0.6, fly * 5.5));
       }
       _W.multiplyMatrices(_root, _m);
-      this.put('prop', _W, this.produce, WHITE, col.scarf, PROP_GROUP(d.prop));
+      const flying = d.prop === 'pigeon' && o[CH.prop] > 0.001;
+      this.put('prop', _W, this.produce, WHITE, col.scarf, PROP_GROUP(flying ? (o[CH.pY] >= 0 ? 'pigeonup' : 'pigeondown') : d.prop));
     } else {
       out.hand.copy(_tipR).applyMatrix4(_root);
     }

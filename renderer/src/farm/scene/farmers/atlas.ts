@@ -13,6 +13,8 @@ export const EMOTE = {
   halo: 14, puff: 15, egg: 16,
   /** villagers: the postmaster's envelope, the miller's wheat, the clerk's crate tick */
   mail: 17,
+  /** thinking: a thought cloud with turning cogs; planning a todo list: a cloud with a checklist */
+  gears: 18, list: 19,
 } as const;
 export type EmoteName = keyof typeof EMOTE;
 
@@ -119,6 +121,39 @@ function drawEmote(g: CanvasRenderingContext2D, name: EmoteName) {
       outlined(() => { g.beginPath(); g.roundRect(18, 34, 92, 62, 8); }, '#fff6e0', '#5a3a10', 10);
       g.strokeStyle = '#5a3a10'; g.lineWidth = 7; g.beginPath(); g.moveTo(22, 40); g.lineTo(64, 72); g.lineTo(106, 40); g.stroke();
       g.fillStyle = '#d9453b'; g.beginPath(); g.arc(64, 72, 10, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'gears':
+    case 'list': {
+      outlined(() => { g.beginPath(); g.arc(40, 56, 26, 0, Math.PI * 2); g.arc(68, 44, 30, 0, Math.PI * 2); g.arc(94, 58, 24, 0, Math.PI * 2); g.arc(64, 72, 26, 0, Math.PI * 2); }, '#ffffff', '#4a4a5a', 7);
+      outlined(() => { g.beginPath(); g.arc(30, 100, 9, 0, Math.PI * 2); }, '#ffffff', '#4a4a5a', 6);
+      outlined(() => { g.beginPath(); g.arc(18, 118, 5, 0, Math.PI * 2); }, '#ffffff', '#4a4a5a', 5);
+      if (name === 'gears') {
+        const cog = (x: number, y: number, r: number, teeth: number, fill: string) => {
+          outlined(() => {
+            g.beginPath();
+            for (let i = 0; i < teeth * 2; i++) {
+              const a0 = (i / (teeth * 2)) * Math.PI * 2, a1 = ((i + 1) / (teeth * 2)) * Math.PI * 2, rr = i % 2 ? r * 0.74 : r;
+              g.arc(x, y, rr, a0, a1);
+            }
+            g.closePath();
+          }, fill, '#3a3a48', 5);
+          g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x, y, r * 0.3, 0, Math.PI * 2); g.fill();
+        };
+        cog(52, 60, 20, 8, '#f2a33a');
+        cog(80, 50, 14, 6, '#8fb8d8');
+      } else {
+        g.fillStyle = '#f8f0dc'; g.strokeStyle = '#4a4a5a'; g.lineWidth = 4;
+        g.beginPath(); g.roundRect(46, 30, 40, 50, 4); g.fill(); g.stroke();
+        for (let i = 0; i < 3; i++) {
+          const y = 42 + i * 13;
+          g.strokeStyle = i < 2 ? '#3f9a3f' : '#9a9aa8'; g.lineWidth = 4;
+          g.beginPath();
+          if (i < 2) { g.moveTo(51, y); g.lineTo(55, y + 4); g.lineTo(61, y - 4); } else g.rect(51, y - 4, 8, 8);
+          g.stroke();
+          g.strokeStyle = '#9a9aa8'; g.beginPath(); g.moveTo(65, y); g.lineTo(80, y); g.stroke();
+        }
+      }
       break;
     }
     case 'egg': {

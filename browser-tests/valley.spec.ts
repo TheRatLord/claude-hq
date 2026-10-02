@@ -21,6 +21,7 @@ async function openValley(page: Page, origin: string, token: string): Promise<st
 test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 test('the valley HUD reaches every terminal: ledger, map click, needs-you answers', async ({ page, demoServer }) => {
+  test.slow(); // software rendering: ~45 steps, each waiting on ~0.5 s frames
   const errors = await openValley(page, demoServer.origin, demoServer.token);
   const hud = page.getByTestId('hud');
   await expect(hud).toBeVisible();
@@ -111,6 +112,7 @@ test('the terminal drawer keeps Escape for the agent while in control', async ({
 });
 
 test('every terminal is reachable by keyboard: map list, mailbox answers, the menu', async ({ page, demoServer }) => {
+  test.slow(); // software rendering: ~45 steps, each waiting on ~0.5 s frames
   const errors = await openValley(page, demoServer.origin, demoServer.token);
   await expect(page.getByTestId('link-state')).toHaveText(/demo valley|live/i);
   await expect(page.getByTestId('need-card').first()).toBeVisible();
@@ -406,5 +408,116 @@ test('the farmhouse: E on the door walks in, the room has its own interactables,
   await expect.poll(() => v((x) => x.focused()?.id ?? '')).toBe('interior:door');
   await page.keyboard.press('KeyE');
   await expect.poll(active, { timeout: 15_000 }).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('first-run welcome (?welcome=1): Posy\'s letter, a checklist ticked by real actions, the reward, replay from the menu', async ({ page, demoServer }) => {
+  test.setTimeout(600_000); // software rendering, a long flow
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  // automated browsers never see the welcome unless the page asks for it
+  await page.goto(`${demoServer.origin}/?t=${demoServer.token}&quality=low&welcome=1`);
+  await page.waitForFunction(() => window.__valley?.ready === true, null, { timeout: 30_000 });
+  type W = { coins(): number; data(): { pieces: { id: string }[] } };
+  type V = { villager(id: string): { inside: boolean } | null; goTo(id: string): void; focused(): { id: string } | null; setHour(h: number): void; setWeather(w: string): void;
+    inside(view: string | false): boolean; ctx: { player: { yaw: number; pos: { x: number; z: number } }; services: Map<string, unknown> } };
+  const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
+  const step = (id: string) => page.locator(`[data-testid="onboarding"] [data-step="${id}"]`);
+
+  // --- the letter, then the checklist ---
+  const letter = page.getByTestId('panel-welcome');
+  await expect(letter).toBeVisible({ timeout: 15_000 });
+  await expect(letter).toContainText('farmer');
+  await page.getByTestId('welcome-go').click();
+  await expect(letter).toBeHidden();
+  const list = page.getByTestId('onboarding');
+  await expect(list).toBeVisible();
+  await expect(list).toContainText('0/8');
+  await expect(step('look')).toHaveClass(/cur/);
+  await v((x) => { x.setHour(10); x.setWeather('clear'); });
+
+  // --- look around (the camera turns) and walk (the player's own feet) ---
+  // turn and step a little at a time from inside the page (the HUD samples the player at 4 Hz on a timer, not per frame)
+  await v((x) => new Promise<void>((done) => { let i = 0; const t = setInterval(() => { x.ctx.player.yaw += 0.35; if (++i >= 8) { clearInterval(t); done(); } }, 280); }));
+  await expect(step('look')).toHaveClass(/done/, { timeout: 20_000 });
+  await v((x) => new Promise<void>((done) => { let i = 0; const t = setInterval(() => { x.ctx.player.pos.x += 0.7; if (++i >= 12) { clearInterval(t); done(); } }, 280); }));
+  await expect(step('walk')).toHaveClass(/done/, { timeout: 20_000 });
+
+  // --- talk to a villager (E on Posy) ---
+  await expect.poll(() => v((x) => x.villager('villager:posy')?.inside), { timeout: 30_000 }).toBe(false);
+  // stand in front of her once, then wait for the crosshair to find her (frames are slow in software rendering)
+  await v((x) => x.goTo('villager:posy'));
+  await expect.poll(() => v((x) => x.focused()?.id ?? ''), { timeout: 60_000 }).toBe('villager:posy');
+  await page.keyboard.press('KeyE');
+  await expect(step('talk')).toHaveClass(/done/, { timeout: 20_000 });
+  await page.waitForTimeout(1500); // her shortcut opens a beat later
+  await page.evaluate(() => (window as unknown as { __hud: { close(): void } }).__hud.close());
+
+  // --- a terminal from the dock, then an answer from the needs-you strip ---
+  await page.keyboard.press('Control+Backquote');
+  await expect(page.getByTestId('drawer')).toBeVisible();
+  await page.keyboard.press('Control+Backquote');
+  await expect(page.getByTestId('drawer')).toBeHidden();
+  await expect(step('terminal')).toHaveClass(/done/, { timeout: 20_000 });
+  // answer from the mailbox's Needs you tab (1 answers the selected ask)
+  await page.keyboard.press('j');
+  await expect(page.getByTestId('mail-tab-needs')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('1');
+  await expect(page.getByTestId('toasts')).toContainText(/Answered/i);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-mailbox')).toBeHidden();
+  await expect(step('answer')).toHaveClass(/done/, { timeout: 20_000 });
+
+  // --- the map and the ledger (keys) ---
+  await page.keyboard.press('m');
+  await expect(page.getByTestId('panel-map')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-map')).toBeHidden();
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('panel-roster')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-roster')).toBeHidden();
+  await expect(step('map')).toHaveClass(/done/, { timeout: 20_000 });
+  await expect(step('ledger')).toHaveClass(/done/, { timeout: 20_000 });
+  await expect(list).toContainText('7/8');
+
+  // --- a pastime: step into the farmhouse; the last tick pays bits, a welcome sign for the yard and Posy's letter ---
+  const before = await v((x) => (x.ctx.services.get('wallet') as W).coins());
+  await v((x) => x.inside('door'));
+  await expect(list).toBeHidden({ timeout: 10_000 });
+  await v((x) => x.inside(false));
+  await expect(page.getByTestId('toasts')).toContainText(/Welcome tour complete/);
+  // (+50 for the tour; real agent work may pay a few bits meanwhile)
+  expect(await v((x) => (x.ctx.services.get('wallet') as W).coins())).toBeGreaterThanOrEqual(before + 50);
+  expect(await v((x) => (x.ctx.services.get('wallet') as W).data().pieces.some((p) => p.id === 'welcome'))).toBe(true);
+  await page.keyboard.press('j');
+  await expect(page.getByTestId('panel-mailbox')).toBeVisible();
+  await page.getByTestId('mail-tab-all').click();
+  await expect(page.getByTestId('letters')).toContainText('Welcome home');
+  await page.keyboard.press('Escape');
+
+  // --- replay from the pause menu; skipping closes it without a checklist ---
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-pause')).toBeVisible();
+  await page.getByTestId('pause-replay').click();
+  await expect(letter).toBeVisible();
+  await page.getByTestId('welcome-skip').click();
+  await expect(letter).toBeHidden();
+  await expect(list).toBeHidden();
+  // a tip shows in the same corner and is dismissable
+  // (held for a few minutes: frames crawl in software rendering and tips fade on their own after 16 s)
+  await page.evaluate(() => (window as unknown as { __hud: { tour: { tip(id: string, ms?: number): boolean } } }).__hud.tour.tip('rain', 300_000));
+  await expect(page.getByTestId('onb-tip')).toContainText('Fish bite better in the rain');
+  await page.getByTestId('onb-tip-close').dispatchEvent('click');
+  await expect(page.getByTestId('onb-tip')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('the welcome stays out of automated runs without ?welcome=1', async ({ page, demoServer }) => {
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  await page.waitForTimeout(2500);
+  await expect(page.getByTestId('panel-welcome')).toBeHidden();
+  await expect(page.getByTestId('onboarding')).toBeHidden();
+  expect(await page.evaluate(() => (window as unknown as { __hud: { current(): string | null } }).__hud.current())).toBeNull();
   expect(errors).toEqual([]);
 });

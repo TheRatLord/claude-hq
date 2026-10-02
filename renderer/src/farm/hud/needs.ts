@@ -1,9 +1,14 @@
 /**
  * The needs-you strip (top left, under the status sign): a count chip, then every farmer blocked on a prompt, newest
- * on top. One card is open (the newest, or the one you clicked) with the question, one button per answer, Terminal
- * and Walk there; the others are one-line rows that open on click / Enter. The chip folds the list away (Alt+0).
+ * on top. One card is open (the newest, or the one you clicked) with the question (two lines; the full text on hover /
+ * focus), one compact button per answer (one line each, the full label on hover / focus), Terminal and Walk there; the
+ * others are one-line rows that open on click / Enter. The chip folds the list away (Alt+0, pref `compactStrip`).
+ * Calm by default: after DOZE_MS of walking about (pointer locked, no panel: `.vh-layer.roam`) without a new ask the
+ * list tucks itself away behind the chip, which keeps pulsing (pref `needsDoze`). Whenever the pointer is free (you just
+ * arrived, a panel is open, you pressed Esc) you are looking at the HUD: it never tucks then, and freeing the pointer, a
+ * new ask, the chip or Alt+0 brings it back.
  * Sits above the modal backdrop so it stays clickable while a panel is open (centred panels make room for it).
- * Alt+1…9 opens the terminal of the Nth farmer from anywhere.
+ * Alt+1…9 opens the terminal of the Nth farmer from anywhere (dozing or not).
  */
 import type { FarmerView } from '../model/types.ts';
 import { farmerFace, ICONS, icon } from './icons.ts';
@@ -12,8 +17,16 @@ import { h, syncList, type HudCtx } from './ctx.ts';
 
 /** rows beyond this go behind "+N more" (they are all in the mailbox's Needs you tab) */
 const MAX = 9;
+/** an ask that has stayed unanswered this long while you walk about (pointer locked) tucks away behind the pulsing chip */
+export const DOZE_MS = 25_000;
 
-export interface NeedsStrip { el: HTMLElement; refresh(): void; list(): FarmerView[]; toggle(): void }
+export interface NeedsStrip {
+  el: HTMLElement; refresh(): void; list(): FarmerView[];
+  /** Alt+0 / the chip: wakes a dozing list, else folds / unfolds it (the `compactStrip` pref) */
+  toggle(): void;
+  /** the player is looking at the HUD (the pointer is free, a panel is open, a key went to an ask): keep / bring it up */
+  attend(): void;
+}
 
 export function createNeeds(ctx: HudCtx): NeedsStrip {
   const count = h('span');
@@ -25,6 +38,12 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
   const busy = new Set<string>();
   let current: FarmerView[] = [];
   let active: string | null = null;
+  // attention: the last time somebody could look (new ask, a free pointer, hover, focus, a panel); dozing = tucked
+  let attnAt = performance.now(), hovered = false, dozing = false;
+  const known = new Set<string>();
+  el.addEventListener('pointerenter', () => { hovered = true; attnAt = performance.now(); });
+  el.addEventListener('pointerleave', () => { hovered = false; attnAt = performance.now(); });
+  el.addEventListener('focusin', () => { attnAt = performance.now(); });
 
   const select = (id: string) => {
     active = id;
@@ -72,22 +91,28 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     hot.title = 'Open this terminal from anywhere';
     const q = card.querySelector('.q') as HTMLElement;
     q.textContent = f.question || 'Waiting for your answer';
-    q.title = open ? '' : q.textContent;
+    q.title = q.textContent;
     const opts = card.querySelector('.opts') as HTMLElement;
     opts.replaceChildren(...(open ? f.options.map((o) => h('button.vh-btn.gold.answer', {
       type: 'button', title: o.label, 'data-testid': 'need-answer',
       onclick: async () => {
         if (busy.has(f.id)) return;
-        busy.add(f.id); refresh();
-        try { await ctx.answer(f.id, o.key, o.label); } finally { busy.delete(f.id); refresh(); }
+        busy.add(f.id); attnAt = performance.now(); refresh();
+        try { await ctx.answer(f.id, o.key, o.label); } finally { busy.delete(f.id); attnAt = performance.now(); refresh(); }
       },
     }, h('span.num', { text: o.key }), h('span.lab', { text: o.label }))) : []));
   };
 
   function toggle(): void {
+    if (dozing) { attend(); return; }
     ctx.prefs.compactStrip = !ctx.prefs.compactStrip;
     ctx.savePrefs();
+    attnAt = performance.now();
     refresh();
+  }
+  function attend(): void {
+    attnAt = performance.now();
+    if (dozing) refresh();
   }
 
   function refresh(): void {
@@ -95,13 +120,24 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     // newest first: the ask that just arrived is the one you are most likely looking for
     const list = s ? [...s.farmers.values()].filter((f) => f.needsYou).sort((a, b) => askOrder({ since: a.jobSince, id: a.id }, { since: b.jobSince, id: b.id })) : [];
     current = list;
-    const folded = ctx.prefs.compactStrip;
+    // a new ask is news: wake up for it
+    for (const f of list) if (!known.has(f.id)) { known.add(f.id); attnAt = performance.now(); }
+    if (known.size > list.length) for (const id of known) if (!list.some((f) => f.id === id)) known.delete(id);
+    const userFolded = ctx.prefs.compactStrip;
+    // only while walking about (pointer locked, no panel) does the clock run: with the pointer free the HUD is what you
+    // are looking at (you just arrived, paused, or have a panel up), so the asks stay put where you can click them
+    const now = performance.now();
+    if (!ctx.layer.classList.contains('roam') || hovered || el.contains(document.activeElement) || busy.size) attnAt = now;
+    dozing = !userFolded && ctx.prefs.needsDoze !== false && list.length > 0 && now - attnAt > DOZE_MS;
+    const folded = userFolded || dozing;
     el.style.display = list.length ? '' : 'none';
     el.classList.toggle('folded', folded);
+    el.classList.toggle('dozing', dozing);
     ctx.layer.classList.toggle('has-needs', list.length > 0 && !folded);
     count.textContent = list.length === 1 ? '1 farmer needs you' : `${list.length} farmers need you`;
     caret.textContent = folded ? '▸' : '▾';
-    title.title = folded ? 'Show who needs you (Alt+0)' : 'Fold this list away (Alt+0)';
+    title.title = dozing ? 'Show who needs you (Alt+0) · Alt+1 opens the newest terminal, J answers from the mailbox'
+      : folded ? 'Show who needs you (Alt+0)' : 'Fold this list away (Alt+0)';
     title.setAttribute('aria-expanded', String(!folded));
     if (!list.some((f) => f.id === active)) active = list[0]?.id ?? null;
     const shown = folded ? [] : list.slice(0, MAX);
@@ -112,5 +148,5 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     more.textContent = `+${rest} more waiting · open the mailbox`;
   }
   refresh();
-  return { el, refresh, list: () => current, toggle };
+  return { el, refresh, list: () => current, toggle, attend };
 }

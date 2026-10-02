@@ -6,7 +6,7 @@
  * Presentation never imports the network, and the model never imports three or the DOM. A ValleySource can be the
  * live store, a recording, or a local fake, so the visuals stay detachable from real sessions.
  */
-import type { Kind, ModelTier, Status } from '../../../../shared/protocol.ts';
+import type { Kind, ModelTier, Status, ToolClass } from '../../../../shared/protocol.ts';
 import type { AlmanacView } from './almanac.ts';
 import type { FestivalView } from './calendar.ts';
 
@@ -67,6 +67,11 @@ export interface FarmerView {
   jobSince: number;
   /** the raw, unsmoothed job this instant (debug overlay only) */
   rawJob: Job;
+  /**
+   * tool flavour of the visible job (`stickyTool` in jobs.ts): read vs search inside 'inspect', web vs mcp inside
+   * 'fetch', bash vs build inside 'build', think vs todo inside 'plan'; null when none applies. Scene-side variety only.
+   */
+  tool?: ToolClass | null;
   /** short subject of the current work: a file name, a command, a question */
   detail: string;
   /** task title (what they are working on) */

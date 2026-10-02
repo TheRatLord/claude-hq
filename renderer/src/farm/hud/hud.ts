@@ -42,6 +42,8 @@ import type { FriendsService } from '../model/friends.ts';
 import { UPGRADES } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
 import { createNotifier } from './notify.ts';
+import { createOnboarding } from './onboarding.ts';
+import type { OnboardingService } from '../model/onboarding.ts';
 
 export interface HudBindings {
   valley: () => ValleyState;
@@ -71,6 +73,8 @@ export interface HudBindings {
   yard?(): YardPort | undefined;
   /** optional: friendship with the villagers + their daily requests (model/friends.ts) */
   friends?(): FriendsService;
+  /** optional: the first-run welcome tour + one-time tips (model/onboarding.ts, hud/onboarding.ts) */
+  onboarding?(): OnboardingService;
 }
 
 export interface Hud {
@@ -115,6 +119,7 @@ export function createHud(d: HudDeps): Hud {
       const name = ctx.nameOf(id);
       const r = await b.agents.answer(id, key).catch((e: unknown) => ({ ok: false, error: String(e) }));
       if (r.ok) {
+        tour.signal('answer');
         ctx.sfx('ui-click');
         toasts.push({ text: `Answered ${name}`, sub: label, level: 'good', icon: ICONS.check, key: `ans|${id}|${key}|${Date.now()}` });
         if (label && TELL_RE.test(label)) openTerminal(id);
@@ -138,10 +143,11 @@ export function createHud(d: HudDeps): Hud {
   const safeFocus = () => { try { return b?.interact.focused() ?? null; } catch { return null; } };
   const toasts = createToasts(ctx);
   const notifier = createNotifier(ctx);
-  const greetFestival = festivalGreeter((t) => toasts.push(t));
+  const greetFestival = festivalGreeter((t) => toasts.push(t, true));
   const minimap = createMinimap(ctx);
   const quests = createQuests(ctx);
   const hint = createHint();
+  const tour = createOnboarding(ctx, (t, ms, o) => anchors.say(t, ms, o));
   // the free-mouse reminder is the first item of the key-hints bar (one bar at the bottom, not two)
   const freehint = h('span.vh-freehint', null, h('kbd.vh-k', { text: 'Click' }), 'look around');
 
@@ -161,7 +167,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPause(ctx), drawer]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -193,11 +199,11 @@ export function createHud(d: HudDeps): Hud {
   };
   syncLeader();
 
-  layer.append(anchors.el, prompt.cross, prompt.el, dock, hints, hint, backdrop, h('div.vh-left', null, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner);
+  layer.append(anchors.el, prompt.cross, prompt.el, dock, hints, hint, backdrop, h('div.vh-left', null, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner, tour.el);
   // fixed HUD furniture the anchored bubbles / interaction tag keep clear of (anchors.ts measures them on change only;
   // "children" = each visible child, so the gaps in a column or a toast stack stay usable)
   for (const [el, how] of [[status.el, ''], [needs.el, 'children'], [dock, 'children'], [hints, ''], [hint, ''],
-    [toasts.el, 'children'], [status.banner, ''], [drawer.el, '']] as const) el.dataset.hudObstacle = how;
+    [toasts.el, 'children'], [status.banner, ''], [drawer.el, ''], [tour.el, 'children']] as const) el.dataset.hudObstacle = how;
   anchors.watch(layer);
 
   // ---- terminal opener ----
@@ -275,11 +281,12 @@ export function createHud(d: HudDeps): Hud {
     // ? (Shift+/ on most layouts): every key, grouped (the pause menu's Controls tab)
     if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
     switch (e.code) {
-      case 'KeyE': { const f = prompt.focused(); if (f) { handled(e); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
+      case 'KeyE': { const f = prompt.focused(); if (f) { handled(e); if (f.kind === 'villager') tour.signal('talk'); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
       case 'KeyF': {
         const f = prompt.focused();
         if (!f) return;
         handled(e);
+        if (f.kind === 'villager') tour.signal('talk');
         try { if (f.alt) f.alt.use(); else if (f.kind === 'farmer' || f.kind === 'helper') openTerminal(f.id); } catch (err) { console.warn('[hud] alt.use() threw', err); }
         return;
       }
@@ -289,6 +296,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyH': handled(e); panels.open('almanac'); return;
       case 'KeyK': handled(e); panels.open('collection'); return;
       case 'KeyI': handled(e); panels.open('shop', { tab: 'sell', at: 'pocket' }); return;
+      case 'KeyQ': if (quests.toggle()) handled(e); return;
       case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Tab': handled(e); panels.open('roster'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
@@ -312,6 +320,12 @@ export function createHud(d: HudDeps): Hud {
     layer.classList.toggle('covered', panels.modal && !panels.current()?.light);
     // a side card is up (right edge): toasts step left of it so they never sit on its buttons
     layer.classList.toggle('side', panels.modal && !!panels.current()?.light);
+    // walking about (pointer locked, no panel): the key-hints bar steps back (hud.css .vh-layer.roam)
+    layer.classList.toggle('roam', locked && !panels.modal);
+    // otherwise the player is looking at the HUD (a panel, or a free pointer): the needs-you list wakes up right away
+    // (needs.ts only dozes while roaming)
+    if (!layer.classList.contains('roam')) needs.attend();
+    tour.panelChanged(panels.current()?.id ?? null);
     const idle = !locked && !panels.modal;
     hint.classList.toggle('show', idle && !prefs.hinted && !!b);
     freehint.classList.toggle('show', idle && prefs.hinted && !!b);
@@ -347,6 +361,7 @@ export function createHud(d: HudDeps): Hud {
     stats.sample();
     minimap.refresh();
     quests.refresh();
+    tour.refresh();
     if (!pointerDown) drawer.tick();
     const cur = panels.current();
     if (cur && cur.id !== 'drawer' && !pointerDown) { try { cur.refresh?.(); } catch (e) { console.error('[hud] panel refresh', e); } }
@@ -355,7 +370,7 @@ export function createHud(d: HudDeps): Hud {
   setInterval(tick, 250);
 
   // ---- network toasts, settings ----
-  d.net.onToast((level, text) => toasts.push({ text, level: level === 'info' ? 'info' : level }));
+  d.net.onToast((level, text) => toasts.push({ text, level: level === 'info' ? 'info' : level }, true));
   const motion = () => layer.classList.toggle('reduced', !!d.settings.get('reducedMotion'));
   d.settings.onChange((c) => { if ('reducedMotion' in c) motion(); if ('leaderKey' in c) syncLeader(); });
   motion();
@@ -372,8 +387,12 @@ export function createHud(d: HudDeps): Hud {
     dismissHint: () => { prefs.hinted = true; savePrefs(prefs); overlays(); },
     /** map hit targets in canvas css px (browser tests click farmers by these) */
     mapHits: () => mapPanel.hits().map((x) => ({ ...x })),
+    /** push a toast (layout checks: `__hud.toast({ text, sub, level, key })`) */
+    toast: (t: ToastSpec) => toasts.push(t),
     /** the last desktop notification's copy and the tab icon's badge ('n3', 'd', '') */
     notify: () => notifier.debug(),
+    /** the welcome tour (hud/onboarding.ts): tip(id), signal(s), data() */
+    tour: tour.dev,
   };
 
   return {

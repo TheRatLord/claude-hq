@@ -23,6 +23,7 @@ import { Ducks, HATCH } from './ducks.ts';
 import type { Duck } from './ducks.ts';
 import { newTrail } from './trail.ts';
 import { Billboards } from './fx.ts';
+import { TRACE_MAX, Traces, tracePos } from './traces.ts';
 import { WORKSPACE_COLORS, PAL } from '../toon.ts';
 import { JOBS } from '../../model/types.ts';
 import type { FarmerView, Job } from '../../model/types.ts';
@@ -274,5 +275,20 @@ defineAsset({
     frame.position.y = 1;
     g.add(frame);
     return g;
+  },
+});
+
+defineAsset({
+  name: 'field-traces', group: 'fx', note: 'work traces at a work spot: seed stakes (files planted, right) and test sprouts (green pass / wilted fail, left)',
+  build: () => {
+    const t = new Traces(TRACE_MAX * 2);
+    const r = { x: 0, z: 0, yaw: 0 }, o = { x: 0, z: 0 };
+    t.begin();
+    for (let i = 0; i < TRACE_MAX; i++) {
+      tracePos(r, -1, i, o); t.stake(o.x, 0, o.z, Math.PI + (i % 3 - 1) * 0.12, 1);
+      tracePos(r, 1, i, o); t.sprout(o.x, 0, o.z, Math.PI + i * 0.9, 1, i === 2 || i === 4, 0);
+    }
+    t.end();
+    return t.group;
   },
 });

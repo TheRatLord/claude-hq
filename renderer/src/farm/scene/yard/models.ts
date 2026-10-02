@@ -25,6 +25,8 @@ export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   scarecrow: 0.4, pumpkin: 0.35, snowman: 0.45, sapling: 0.5, parasol: 0.8, lamppost: 0.25, lights: 0.95, topiary: 0.55, goldgnome: 0.45,
   // the villagers' pieces (model/friends.ts, 6 hearts) and their keepsake portraits (10 hearts)
   postbox: 0.3, crates: 0.6, millstone: 0.6, prizepumpkin: 0.6, tent: 0.85, vane: 0.3,
+  // the first-run welcome's present (model/onboarding.ts)
+  welcome: 0.35,
   'keep-posy': 0.4, 'keep-bram': 0.4, 'keep-hazel': 0.4, 'keep-marigold': 0.4, 'keep-fern': 0.4, 'keep-nimbus': 0.4,
 });
 
@@ -365,6 +367,31 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
       k.ball(0.06, 0xf2c230, { x: 0.12, y: 1.98, s: [1, 1, 0.6] });
       k.cone(0.07, 0.16, 0xf2c230, { x: -0.16, y: 1.96, rz: 0.5, s: [1, 1, 0.4] }, 4);
       k.box(0.03, 0.05, 0.02, PAL.red, { x: 0.13, y: 2.05 });
+      break;
+    }
+    case 'welcome': {
+      // Posy's welcome sign: a post with a hanging board painted with a teal envelope, a flower box at its foot
+      const TEAL = 0x3d9fa8, CREAM = 0xf6e8c8;
+      k.surf(['planks', { scale: 0.6 }], () => k.box(0.1, 1.35, 0.1, PAL.wood, { x: -0.32, y: 0.675 }));
+      k.box(0.62, 0.06, 0.08, PAL.woodDark, { x: -0.04, y: 1.3 });
+      for (const x of [-0.24, 0.16]) k.box(0.015, 0.14, 0.015, PAL.metalDark, { x, y: 1.2 });
+      k.surf(['planks', { axis: 'x', scale: 0.5 }], () => k.box(0.58, 0.36, 0.05, CREAM, { x: -0.04, y: 0.95 }));
+      k.box(0.62, 0.04, 0.06, PAL.woodDark, { x: -0.04, y: 1.13 });
+      k.box(0.62, 0.04, 0.06, PAL.woodDark, { x: -0.04, y: 0.77 });
+      // the envelope, a hair proud of the board on both faces
+      for (const z of [-1, 1]) {
+        k.box(0.3, 0.2, 0.01, TEAL, { x: -0.04, y: 0.94, z: z * 0.03 });
+        for (const s of [-1, 1]) k.box(0.18, 0.025, 0.01, CREAM, { x: -0.04 + s * 0.07, y: 0.98, z: z * 0.036, rz: s * -0.55 });
+        k.ball(0.03, PAL.red, { x: -0.04, y: 0.93, z: z * 0.04, s: [1, 1, 0.4] });
+      }
+      // a flower box at the foot of the post
+      k.surf(['planks', { scale: 0.6 }], () => k.box(0.5, 0.18, 0.26, PAL.woodLight, { x: 0.05, y: 0.09, z: 0.1 }));
+      k.box(0.46, 0.03, 0.22, PAL.soil, { x: 0.05, y: 0.18, z: 0.1 });
+      for (let i = 0; i < 5; i++) {
+        const x = -0.13 + i * 0.09;
+        k.ball(0.07, i % 2 ? PAL.leaf : PAL.leafDark, { x, y: 0.23, z: 0.1, s: [1, 0.8, 1] });
+        k.ball(0.04, fl[i % fl.length], { x, y: 0.3, z: 0.12 + (i % 2) * 0.03 });
+      }
       break;
     }
     default: if (id.startsWith('keep-')) keepsake(k, id.slice(5));

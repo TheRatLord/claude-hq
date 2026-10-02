@@ -11,7 +11,7 @@ import { shortName } from './format.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome';
 
 export interface Panel {
   id: PanelId;
@@ -52,6 +52,9 @@ export interface ToastSpec {
   ms?: number;
   /** rate-limit key (defaults to text) */
   key?: string;
+  /** coalescing group: a toast of the same group already on screen is updated in place (×n) instead of stacking;
+   *  defaults to the key's first `|` segment (e.g. `commit|…`, `ans|…`), else the text */
+  group?: string;
 }
 
 /** Browser-local HUD preferences (not server settings). Every access is guarded: storage may be unavailable. */
@@ -65,10 +68,12 @@ export interface Prefs {
   drawerH: number;
   /** opt-in desktop notifications (needs you / finished) while the window is in the background (notify.ts) */
   notify: boolean;
+  /** the open needs-you card tucks itself away to the (pulsing) chip after a while without attention (needs.ts) */
+  needsDoze: boolean;
 }
 const PREFS_KEY = 'valley.hud.prefs';
 export function loadPrefs(): Prefs {
-  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false };
+  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true };
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (raw) return { ...def, ...(JSON.parse(raw) as Partial<Prefs>) };

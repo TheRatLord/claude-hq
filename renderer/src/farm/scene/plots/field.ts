@@ -20,7 +20,7 @@ import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial, propMater
 import type { CropUniforms } from './materials.ts';
 import { cropLayout, decorClump, SUN_STEM } from './crops.ts';
 import type { Clear, CropLayout, Slot } from './crops.ts';
-import { bounce, clamp01, damp, lerp, merge, rng, smooth01 } from './geo.ts';
+import { bounce, clamp01, damp, lerp, merge, rng, singleSided, smooth01 } from './geo.ts';
 import { partName } from '../parts.ts';
 import {
   cart, cartHeap, clod, crate, exitRibbon, fenceRibbon, fenceSegment, flag, gatePosts, hiveGeo, kindProps, lanternCore, LANTERN, penTile, scarecrow,
@@ -276,7 +276,7 @@ export class Field {
     this.layout.parts.forEach((part, i) => {
       const u = cropUniforms(part.bend);
       if (part.growth === 'decor') { this.cropMeshes.push(null); this.cropU.push(u); return; }
-      const mesh = new THREE.InstancedMesh(part.geo(season), cropMaterial(u, { side: THREE.DoubleSide }), Math.max(1, counts[i]));
+      const mesh = new THREE.InstancedMesh(singleSided(part.geo(season)), cropMaterial(u, { side: THREE.DoubleSide }), Math.max(1, counts[i]));
       mesh.count = counts[i];
       mesh.castShadow = part.shadow;
       mesh.receiveShadow = true;
@@ -612,12 +612,12 @@ export class Field {
       lantern: B.get('lantern', () => ({ geo: lanternCore(), mat: warmEmitter(new THREE.MeshBasicMaterial({ color: 0xffffff })), cap: 48 })),
       ribbon: B.get('exitribbon', () => ({ geo: exitRibbon(), mat: toon(0xffffff), cap: 48 })),
       sprinkler: B.get('sprinkler', () => ({ geo: sprinkler(), mat: lit, cap: 24 })),
-      weed: B.get('weed', () => ({ geo: weed(), mat: env.weedMat, cap: 900 })),
+      weed: B.get('weed', () => ({ geo: singleSided(weed()), mat: env.weedMat, cap: 900 })),
       fence: B.get(`fence:${this.season}`, () => ({ geo: fenceSegment(this.season), mat: lit, cap: 1000, shadow: true })),
       fenceRibbon: B.get('fenceribbon', () => ({ geo: fenceRibbon(), mat: lit, cap: 1000 })),
       clod: B.get(`clod:${this.season}`, () => ({ geo: clod(this.season), mat: lit, cap: 3200 })),
       tile: B.get('pentile', () => ({ geo: penTile(), mat: lit, cap: 2400 })),
-      decor: B.get(`decor:${this.season}`, () => ({ geo: decorClump(this.season), mat: env.weedMat, cap: 7000 })),
+      decor: B.get(`decor:${this.season}`, () => ({ geo: singleSided(decorClump(this.season)), mat: env.weedMat, cap: 7000 })),
     };
   }
 
