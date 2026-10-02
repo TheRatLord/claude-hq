@@ -198,9 +198,9 @@ export interface ShopEntry {
 /** what the shelves depend on: the Almanac rank, the season, and (optional) villagers' hearts (model/friends.ts) */
 export interface ShopCtx { rank: number; season: Season; hearts?: (id: string) => number }
 
-/** The store's shelves right now: every item with its price and whether you can have it (keepsakes and gifts are never stocked). */
+/** The store's shelves right now: every item with its price and whether you can have it (keepsakes, gifts and the merchant's pieces are never stocked). */
 export function shopView(d: WalletData, o: ShopCtx): ShopEntry[] {
-  return DECOR.filter((def) => !def.keepsake && !def.gift).map((def) => {
+  return DECOR.filter((def) => !def.keepsake && !def.gift && !def.visitor).map((def) => {
     const owned = ownedOf(d, def.id);
     const price = priceOf(def, owned);
     return {

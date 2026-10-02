@@ -52,7 +52,11 @@ import { createAlbumPanel } from './album.ts';
 import type { GazetteView } from './gazette.ts';
 import { createGuidePanel, watchGuide } from './guide.ts';
 import { createProjectsPanel, watchProjects } from './projects.ts';
+import { createPalette, type PaletteBack } from './palette.ts';
+import { FOCUS_LABEL, focusQueue, nextFocus, type FocusItem } from '../model/ops.ts';
 import type { ProjectsService } from '../model/projects.ts';
+import { createVisitorsPanel, watchVisitors } from './visitors.ts';
+import type { VisitorsService } from '../model/visitors.ts';
 import type { GuideService } from '../model/guide.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
 import type { StampsService } from '../model/stamps.ts';
@@ -200,7 +204,11 @@ export function createHud(d: HudDeps): Hud {
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
   const guidePanel = createGuidePanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createRecapPanel(ctx), createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createProjectsPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
+  const toggleMinimap = () => { prefs.minimap = !prefs.minimap; store.save(); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); };
+  // the command palette (Ctrl/⌘+K) and the focus queue (Alt+N): docs/valley/ops.md
+  const palette = createPalette(ctx, { next: () => focusNext(), minimap: toggleMinimap });
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createRecapPanel(ctx), createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createProjectsPanel(ctx), createVisitorsPanel(ctx), createPause(ctx), drawer, tour.panel, palette]) panels.register(p);
+  drawer.onNext = { run: () => focusNext(), peek: () => focusPeek().next };
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -233,6 +241,7 @@ export function createHud(d: HudDeps): Hud {
     h('span', null, kc('map'), 'map'), h('span', null, kc('ledger'), 'ledger'),
     h('span', null, kc('mail'), 'mail'),
     h('span', null, leaderKbd, 'terminals'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'),
+    h('span', null, h('kbd.vh-k', { text: d.platform.mac ? '⌘K' : 'Ctrl+K' }), 'find'),
     h('span', null, h('kbd.vh-k', { text: '?' }), 'all keys'));
   const syncLeader = () => {
     const spec = d.settings.get('leaderKey') || 'Ctrl+`';
@@ -286,6 +295,44 @@ export function createHud(d: HudDeps): Hud {
     return f?.id ?? null;
   }
 
+  // ---- the focus queue (model/ops.ts): Alt+N, the drawer's Next button, the palette ----
+  /** ids stepped through this round, so a still-open ask you just looked at does not bounce you back to it */
+  let visited: string[] = [];
+  /** the focus toast on screen: the next step replaces it in place instead of stacking (or counting ×n) */
+  let focusKey = '';
+  const focusToast = (t: ToastSpec) => { const key = `focus|${Date.now()}`; toasts.push({ ...t, key, replaceKey: focusKey || undefined }); focusKey = key; };
+  /** the queue now and who Alt+N would open (prunes `visited` to the queue and counts the open terminal as seen) */
+  function focusPeek(): { q: FocusItem[]; next: FocusItem | null } {
+    const s = ctx.state();
+    if (!s) return { q: [], next: null };
+    const q = focusQueue(s.farmers.values());
+    visited = visited.filter((id) => q.some((x) => x.id === id));
+    const here = panels.isOpen('drawer') ? drawer.lastId() : null;
+    if (here && !visited.includes(here)) visited.push(here);
+    return { q, next: nextFocus(q, here, visited) };
+  }
+  function focusNext(): void {
+    if (!ctx.state()) return;
+    const { q, next: n } = focusPeek();
+    if (!n) {
+      focusToast({ text: q.length ? 'Nobody else needs you' : 'All caught up', sub: q.length ? 'this is the only one waiting' : 'no asks, nobody stuck, every finish reviewed', level: 'good', icon: ICONS.check });
+      return;
+    }
+    if (visited.includes(n.id)) visited = [];
+    visited.push(n.id);
+    const left = q.filter((x) => x.id !== n.id).length;
+    openTerminal(n.id);
+    focusToast({ text: `${ctx.nameOf(n.id)} · ${FOCUS_LABEL[n.why]}`, sub: left ? `${left} more after this · Alt+N for the next` : 'the last one in the queue', level: n.why === 'ask' ? 'ask' : 'info', icon: ICONS.bell, id: n.id });
+  }
+  /** where the palette's Esc goes back to */
+  function paletteBack(): PaletteBack {
+    const cur = panels.current();
+    if (!cur) return null;
+    if (cur.id === 'drawer') { const id = drawer.lastId(); return id ? { terminal: id } : null; }
+    if (cur.id === 'palette') return palette.back();
+    return { panel: cur.id };
+  }
+
   // ---- keyboard ----
   let leaderSpec = '', leader = parseCombo('Ctrl+`');
   const leaderMatch = (e: KeyboardEvent) => {
@@ -321,6 +368,18 @@ export function createHud(d: HudDeps): Hud {
       toggleTerminal();
       return;
     }
+    // Ctrl+K (⌘K on a Mac): the command palette, from anywhere; in a terminal you control, Ctrl+K is the agent's (kill
+    // line) and only ⌘K opens it. Pressed again (or Esc) it goes back to where you were.
+    if (e.code === 'KeyK' && !e.altKey && !e.shiftKey && (d.platform.mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) {
+      if (cur?.id === 'drawer' && drawer.controlling() && !d.platform.mac) { /* the terminal's */ } else {
+        handled(e);
+        if (cur?.id === 'palette') palette.dismiss();
+        else panels.open('palette', paletteBack());
+        return;
+      }
+    }
+    // Alt+N: the next agent in the focus queue (asks, struggling, unreviewed finishes), from anywhere, terminals included
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyN') { handled(e); focusNext(); return; }
     if (cur?.id === 'drawer') { if (cur.key?.(e)) handled(e); return; }
     // Alt+0 folds / unfolds the needs-you list; Alt+1…9: the Nth needs-you farmer's terminal, from anywhere
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'Digit0') { handled(e); needs.toggle(); return; }
@@ -385,7 +444,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyL': handled(e); panels.open('album'); return;
       case 'KeyI': handled(e); panels.open('shop', { tab: 'sell', at: 'pocket' }); return;
       case 'KeyQ': if (quests.toggle()) handled(e); return;
-      case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; store.save(); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
+      case 'KeyN': handled(e); toggleMinimap(); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
     }
   }, true);
@@ -519,6 +578,7 @@ export function createHud(d: HudDeps): Hud {
       album: (id) => panels.open('album', id),
       guide: (page) => panels.open('guide', page),
       projects: (id) => panels.open('projects', id),
+      visitors: (who) => panels.open('visitors', who),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
@@ -556,6 +616,8 @@ export function createHud(d: HudDeps): Hud {
       try { const g = x.guide?.(); if (g) watchGuide(ctx, g); } catch { /* optional */ }
       // the Valley Projects board (model/projects.ts): a project completed, a restored place unveiled
       try { const pj = x.service?.('projects') as ProjectsService | undefined; if (pj) watchProjects(ctx, pj); } catch { /* optional */ }
+      // visitors (model/visitors.ts): an arrival, a purchase and where it landed, a parcel off the train
+      try { const vs = x.service?.('visitors') as VisitorsService | undefined; if (vs) watchVisitors(ctx, vs); } catch { /* optional */ }
       // a stamp inked into the stamp book (model/stamps.ts): the stamp itself on the toast, a rubber-stamp thunk
       try {
         let thunkAt = 0;

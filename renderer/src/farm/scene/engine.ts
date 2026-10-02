@@ -191,7 +191,7 @@ export function createEngine(o: EngineOpts): Engine {
   const lighting: Lighting = {
     sunDir: new THREE.Vector3(0.4, 0.8, 0.3).normalize(), sunColor: new THREE.Color(0xfff1d6), sunIntensity: 2.2,
     skyColor: new THREE.Color(0x9fd3ff), groundColor: new THREE.Color(0x7a8a4a), fogColor: new THREE.Color(0xcfe6f0),
-    fogNear: 60, fogFar: 320, night: 0, wet: 0, wind: { x: 1, z: 0.3 },
+    fogNear: 60, fogFar: 320, skyZenith: new THREE.Color(0x3f8ee6), skyHorizon: new THREE.Color(0xbfe3f7), night: 0, wet: 0, wind: { x: 1, z: 0.3 },
   };
   const systems: System[] = [];
   const frameHooks = new Set<(f: FrameInfo) => void>();

@@ -1,0 +1,22 @@
+/* the command palette (hud/palette.ts; docs/valley/ops.md): top-centre, above the strip, over any panel */
+.vh-palette { left: var(--lw, 0px); right: 0; margin: 0 auto; top: 9vh; width: min(680px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 12vh - 24px)); padding: 10px; }
+.vh-palette.open { animation: vh-pop .14s ease-out; }
+.vh-pal-paper { padding: 12px 12px 8px; display: flex; flex-direction: column; min-height: 0; }
+.vh-pal-list { flex: 1; min-height: 0; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.vh-pal-g { margin: 6px 4px 2px; font: 700 12px/1.2 var(--round); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+.vh-pal-row { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 9px; border: 2px solid transparent; cursor: pointer; min-height: 38px; }
+.vh-pal-row.sel { background: rgba(240, 167, 44, .2); border-color: var(--gold); }
+.vh-pal-row .face { width: 28px; height: 28px; flex: none; display: grid; place-items: center; }
+.vh-pal-row .face svg { width: 100%; height: 100%; }
+.vh-pal-row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.vh-pal-row .lb { font-weight: 800; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vh-pal-row small { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vh-pal-row .vh-pill { flex: none; font-size: 11.5px; }
+.vh-pal-row > kbd { flex: none; }
+.vh-pal-count { margin-left: auto; font-weight: 600; }
+.vh-layer.hc .vh-pal-row.sel { background: #fff; border-color: #000; outline: 3px solid var(--gold); }
+.vh-layer.reduced .vh-palette.open { animation: none; }
+
+/* the drawer's focus-queue button (hud/drawer.ts) */
+.vh-dhead .ctl .vh-next .n { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 9px; background: var(--berry); color: #fff; font-size: 11px; text-align: center; }
+.vh-dhead .ctl .vh-next[data-n="0"] .n { display: none; }

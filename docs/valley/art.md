@@ -27,10 +27,50 @@ relative to `renderer/src/farm/`.
   untagged parts before merging) and draw with `surfaceMaterial({ vertexColors: true })` or `withSurfaces(material)`.
   It modulates the vertex/palette colour (seasons keep working), is object-space (no swimming), anti-aliased and
   fades with distance. Gallery: `surfaces` (variants per family / per surface, `compare` = off | on).
-* **Palette:** warm, saturated, a little dusty. Greens lean yellow; shadows lean blue-purple (the post/grade does
-  this). Night is deep blue with warm lamp pools.
+* **Palette:** warm, saturated, a little dusty. Greens lean yellow; shadows lean blue-purple (the sky fill and the
+  post/grade do this; see *Light and air* below). Night is deep blue with warm lamp pools.
 * **Outlines + post:** a dark warm outline on silhouettes (post pass), soft bloom on emissives (lamps, "!" markers,
   fireflies), colour grade per time of day, gentle vignette. Keep emissive intensities > 1 only for things meant to glow.
+
+## Light and air (the painting at every hour)
+
+Atmosphere package (`scene/sky/palette.ts`, `scene/sky/sky.ts`, `scene/post/`), plus the water's reflections
+(`scene/terrain/water.ts`, `skyline.ts`). The rule: **warm light, cool shade, and distance turns to air.**
+
+* **Time-of-day keys** (`palette.ts`, anchored to the real sunrise / sunset). Blue hour (before dawn, after dusk) is a
+  cool *blue* with warm windows and a peach / ember band low on the sun's side, never a lavender wash over everything;
+  golden hour pairs a gold key with a cool blue-violet sky fill (`hemiSky`) and split-tone (`shade`), so cast shadows go
+  violet against the gold instead of brown; night keeps a little more contrast (`contrast` 1.1) so moonlit faces part
+  from shade. Tune hues there, not in post.
+* **Aerial perspective** (composite, `post/shaders.ts`): distance haze `1 − exp(−(d − 35) / 240)` × `uHaze` (0.58 by
+  day, ×0.6 at night and *darker*: far land sinks into the night, it never lifts into a grey veil), times the mean air
+  density along the ray (scale height 110 m above the water: the overview and the lookout see the floor crisply,
+  a level look across the valley still fades). Haze is directional: warm toward the sun (`fog` → the sun-side
+  `glow`), cool away from it, silver toward the moon after dark (`uHazeWarm` / `uHazeDir`); far land also loses half
+  its saturation as it fades. The valley mist takes the same directional colour. The horizon ring
+  (`terrain/horizon.ts`) is tinted from the fog colour and inherits all of it.
+* **Contact shadows** (composite, `AO_TAPS`): 8 depth taps on high, 4 on medium, compiled out on low. Each pixel's
+  plane is extrapolated in raw depth from the outline's four neighbours (raw depth is affine on any plane), so open
+  ground and grazing walls never self-occlude; only geometry within ~2 m in front of the plane darkens (props on the
+  cobbles, posts in the turf, wall feet), toward a cool tint built from the grade's shadow colour, faded out past 35–60 m
+  and softened at night and in fog. Cobble seams (< 9 cm) don't count.
+* **Water reflections** (`terrain/skyline.ts` + the water shader): the valley's skyline is baked once (256 azimuths
+  around the centre: distance and height of the highest-looking terrain point, ~20k `heightAt`, ~20 ms) into a 256×1 texture.
+  Each water pixel casts its rippled reflected ray, meets that ring (two lookups) and compares slopes: below the skyline
+  it mirrors the rim (dark foothill woods low down, rock strata with lighter turf ledges, snow on the far peaks and in
+  winter, a little haze), above it the dome's own zenith→horizon gradient (`lighting.skyZenith` / `skyHorizon`).
+  The painted far-bank band, sun sparkles and the moon path stay on top. No extra pass or draw call.
+* **Cost** (780M, 1600×900, `npm run bench`, 42 rows, 2026-10-02 under load ≈ 20): `post` 1.29 → 1.46 ms mean
+  (contact shadows + haze; low compiles the taps out), whole-frame GPU 5.97 → 6.06 ms mean, no draw calls, the
+  skyline bake ≈ 20 ms at load.
+* Check the look on a grid, not one shot: poses `hub`, `top` (`cam=0;90;70;0;-0.95`), `pond`, `summit`, `orchard`,
+  `plots` × hours 6 / 9 / 13 / 18 / 20 / 23 (`--out DIR`, `hud=0`), plus rain / snow / fog; tile them with ffmpeg
+  `xstack` to compare before / after.
+
+```sh
+npm run shoot -- --out scratch/light/x --shot "name=hub-h18,pose=hub,hour=18,weather=clear,hud=0" \
+  --shot "name=top-h23,cam=0;90;70;0;-0.95,hour=23,weather=clear,hud=0" --shot "name=dock,pose=dock,hour=17.5,hud=0"
+```
 * **Seasons** follow the real month (`ctx.valley.sky.season`): spring blossoms, summer lush, autumn orange/red trees
   (and deep gold, never pale lemon: lemon washes out to khaki under the moon's grade) and pumpkins, winter snow caps and bare trees. Assets take `season` in their build options.
 * **Everything alive sways/breathes:** wind service uniforms for foliage; idle squash-and-stretch; nothing freezes.

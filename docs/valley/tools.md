@@ -68,7 +68,7 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
   empty offline zoo` (`zoo`: one pane per mascot vendor, an unknown label and a shell; [lore.md](lore.md#who-farms-here)).
 * **URL parameters** (`main.ts`): `t` (server token), `pose`, `hour`, `weather`, `season`, `festival=ID`
   ([festivals.md](festivals.md)), `almanac=POINTS` (demo; [almanac.md](almanac.md)), `quality=low|medium|high` (`low`
-  compiles the wet / snow surfaces out and skips god rays; [weather.md](weather.md); beats Settings → Graphics → quality), `timescale=K`, `welcome=1|0`
+  compiles the wet / snow surfaces and the contact shadows out and skips god rays; `medium` halves the contact-shadow taps; [weather.md](weather.md); beats Settings → Graphics → quality), `timescale=K`, `welcome=1|0`
   ([onboarding.md](onboarding.md)). The gallery (`/gallery/`, `dev/gallery.ts`) takes `asset variant season night param
   grid time turn pitch zoom`.
 
@@ -201,10 +201,13 @@ panels closed), settles, forces a GC (CDP) and samples. Before the first sample 
 under every scenario and runs every action twice (`--warmup 0` skips it): panels, rooms, gatherings and festival
 dressing are built lazily on first use, and without it those one-off builds landed in the run's second half and were
 fitted as growth. The baseline waits for the scene's object count to hold for 3 reads 2 s apart before sampling
-(dressing that comes down over a few seconds of game time otherwise reads as a spike). `hudTop` names each panel
-(`section.vh-frame.vh-<id>`); `sceneTop` (in the JSON) names the scene's biggest top-level subtrees, so an object spike
-says what it is made of. A few samples still catch `plots` at +300–500 objects (date-driven field stages after
-`hidden` / `midnight` clock jumps); they come and go and are not growth.
+(dressing that comes down over a few seconds of game time otherwise reads as a spike), and only once every plot in
+the state is a live one: the fields of the scenario just left stand still in their harvest stage for a few seconds
+before they dissolve, and samples taken then caught `plots` at +300–500 objects (+10–20 MB of heap). The warm-up also
+visits every pose, farmhouse viewpoint, gathering and festival and uploads every texture the scene holds at each stop
+(`renderer.initTexture`): three uploads a texture the first time it is drawn, so a plaque or room seen for the first
+time late in the run read as texture growth. The page clock is always the soak's own (`hidden` and `midnight` really
+move it; before, a jump without `--start` / `--date-scale` did nothing).
 
 | metric | from |
 |---|---|
@@ -229,7 +232,9 @@ npm run soak -- --json scratch/soak/a.json --stacks             # keep every sam
 ```
 
 Options: `--minutes --cycle --settle --scenarios --demo --timescale` (the demo server clock, default 20×) `--anim`
-(`__valley.timeScale`) `--date-scale --start --seed --actions --json --size --stacks --url`. The page's `Date` is
+(`__valley.timeScale`) `--date-scale --start --seed --actions --json --size --stacks --tex --url`. `--tex` lists, under
+each sample row, the textures uploaded (+) or disposed (−) since the last one with where each was made (one per GPU
+texture: clones that share a source count once). The page's `Date` is
 replaced by an accelerated / jumpable clock (`__soak.jump(ms)`, `__soak.setScale(k)`); timers and frames stay real.
 Runs on the working tree: when other agents' edits are half-done, run it from a copy (`git archive HEAD | tar -x -C
 scratch/snap`, symlink `node_modules`, copy your files over).
@@ -242,13 +247,15 @@ holder (that is how the ledger's day-strip map was found: a strip kept for a dep
 row's whole group). Fixed since: `hud/roster.ts` prunes `strips` by the live rows itself (a forced render cleared
 `rowEls` first, so strips of farmers who left were never dropped; ~2.5k nodes per scenario reseed). Last round (fixed): every toast was kept alive by the anchored bubbles' obstacle set (`hud/anchors.ts`
 prunes it now), a duplicate `visibilitychange` started a second rAF chain (`core/loop.ts`), and a season change leaked
-the town upgrades' geometry (`structures/upgrades.ts` dispose).
+the town upgrades' geometry (`structures/upgrades.ts` dispose). Round 11 (fixed): the upgrades' statue plaque texture was never
+disposed (one per season / festival rebuild: `structures/upgrades.ts` dispose), and the surface library kept a WeakRef
+per surface material ever made (~2k a minute while fields churn: `surface/material.ts` prunes dead ones).
 
 ## Browser tests (`npm run test:browser`)
 
 Playwright (`playwright.config.ts`, specs in `browser-tests/`: `valley.spec.ts` (terminal routes and the power-user
 loop, see [hud.md](hud.md#every-terminal-is-a-menu-away)), `trail.spec.ts` (the valley viewer), `stamps.spec.ts` (the stamp
-book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `album.spec.ts` (photo mode's looks, frames, timer, say cheese, the album panel, the photo wall; saves the framed exports to its output folder, [album.md](album.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
+book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `album.spec.ts` (photo mode's looks, frames, timer, say cheese, the album panel, the photo wall; saves the framed exports to its output folder, [album.md](album.md)), `ops.spec.ts` (the command palette and the focus queue, [ops.md](ops.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
 with the page open, a tab hidden for hours, a dropped socket under a terminal, long / unicode / emoji names, status
 flapping: all with a clean console), `settings.spec.ts` (Settings round-trips, rebinding, reduced motion, keyboard
 navigation, captions; [hud.md](hud.md#settings-pause-menu--settings-hudpausets)), `workbench.spec.ts`;

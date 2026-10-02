@@ -23,6 +23,7 @@ import { weatherSystem } from './weather/weather.ts';
 import { interiorSystem } from './interior/interior.ts';
 import { grottoSystem } from './grotto/grotto.ts';
 import { projectsSystem } from './projects/projects.ts';
+import { visitorsSystem } from './visitors/visitors.ts';
 import { seasonsSystem } from './seasons/seasons.ts';
 import { viewmodelSystem } from './viewmodel/viewmodel.ts';
 import { audioSystem } from '../audio/audio.ts';
@@ -52,6 +53,8 @@ export const SYSTEMS: readonly SystemFactory[] = [
   grottoSystem,
   // the Valley Projects: the board on the square and the six places it restores (wraps 'walkSurface' after trail)
   projectsSystem,
+  // visitors: the travelling merchant's cart, the wandering painter, the parcel post off the train (model/visitors.ts)
+  visitorsSystem,
   // the first-person paws: after everything that moves the camera or claims an item this frame
   viewmodelSystem,
   audioSystem,

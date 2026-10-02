@@ -111,8 +111,7 @@ test('harvest recaps: ledger chip, the postcard + diff by keyboard, the card sec
   expect(fresh.lines?.added).toBe(42);
   const toast = page.getByTestId('toasts').locator('.vh-toast', { hasText: '+42 −3' });
   await expect(toast).toBeVisible();
-  // (a synthetic click: in headless Chromium the canvas can sit over the toast corner right after a panel closed)
-  await toast.dispatchEvent('click');
+  await toast.click();
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('recap-said')).toHaveText('All tidy now: the recap card is wired.');
   await expect(panel.getByTestId('recap-headline')).toHaveText(/Changes ready to review|Made changes/);

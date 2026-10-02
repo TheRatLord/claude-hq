@@ -9,7 +9,8 @@
  *     timeline's weekly roll-up (active time per farmer and field, asks and how long they waited), the sky's real
  *     3-hour weather blocks (a recap, and since they are deterministic, a true forecast), the festival calendar, the
  *     stamp book and the Gazette's own little journal of the player's week (`GzNote`: gifts, requests, hearts, catches,
- *     first finds). The result, `WeekFacts`, is small plain data.
+ *     first finds, a Valley Project finished or unveiled) and, for the board's teaser, what the projects board
+ *     still needs (`boardNeed`). The result, `WeekFacts`, is small plain data.
  *  2. **compose** (`composeIssue`): facts → a page (headlines, stories, gossip, classifieds, the Mayor's editorial),
  *     with templated copy seeded per issue so every week reads fresh, and only ever stating the facts.
  *  3. **keep** (`createGazette`): the journal and the last `ISSUES_KEPT` weekly issues as facts (recomposed on reading),
@@ -28,6 +29,9 @@ import { friendDef } from './friends.ts';
 import type { Tier } from './friends.ts';
 import { collectDef } from './collection.ts';
 import { stampDef } from './stamps.ts';
+import { GROUP_NAME, WORK_NAME, isProjectId, needMet, projectDef } from './projects.ts';
+import type { ProjectsView } from './projects.ts';
+import { nextVisit, whenText } from './visitors.ts';
 import type { Season, WeatherKind } from './types.ts';
 
 // ---------------------------------------------------------------------------------------------
@@ -69,7 +73,9 @@ export type GzNote =
   | { k: 'request'; at: number; who: string }
   | { k: 'hearts'; at: number; who: string; n: number }
   | { k: 'catch'; at: number; item: string; cm: number }
-  | { k: 'find'; at: number; item: string };
+  | { k: 'find'; at: number; item: string }
+  /** a Valley Project (model/projects.ts): every need met (`done`), or the restored place first seen (`unveiled`) */
+  | { k: 'project'; at: number; id: string; ev: 'done' | 'unveiled' };
 export type GzNoteKind = GzNote['k'];
 
 export const NOTES_MAX = 120;
@@ -92,6 +98,7 @@ export function parseNote(raw: unknown): GzNote | null {
     case 'hearts': { const who = word(o.who); return who && finite(o.n) ? { k: 'hearts', at, who, n: Math.max(0, Math.min(10, Math.round(o.n))) } : null; }
     case 'catch': { const item = word(o.item); return item && finite(o.cm) ? { k: 'catch', at, item, cm: Math.max(0, Math.min(999, Math.round(o.cm))) } : null; }
     case 'find': { const item = word(o.item); return item ? { k: 'find', at, item } : null; }
+    case 'project': return isProjectId(o.id) && (o.ev === 'done' || o.ev === 'unveiled') ? { k: 'project', at, id: o.id, ev: o.ev } : null;
     default: return null;
   }
 }
@@ -146,6 +153,10 @@ export interface WeekFacts {
   fish: { item: string; cm: number } | null;
   catches: number;
   finds: string[];
+  /** Valley Projects finished / unveiled in the covered days (one entry per project, unveiled wins), oldest first */
+  projects: { id: string; ev: 'done' | 'unveiled'; at: number }[];
+  /** the projects board's teaser: the open plan nearest done and what it still wants (short phrases) */
+  board: { id: string; needs: string[] } | null;
 }
 
 export interface GazetteInput {
@@ -160,6 +171,29 @@ export interface GazetteInput {
   stamps?: Readonly<Record<string, number>>;
   notes: readonly GzNote[];
   demo?: boolean;
+  /** the projects board as it stands (`boardNeed` of its view) */
+  board?: WeekFacts['board'];
+}
+
+/**
+ * The projects board's teaser: the open plan nearest done (board order breaks ties; one that is already complete and
+ * only waits for its check is skipped) and up to three of its unmet needs, as the paper prints them: "85 more bits",
+ * "2 more fish", "5 more commits shipped", "Bram's blessing (3 ♥)".
+ */
+export function boardNeed(v: Pick<ProjectsView, 'entries'> | null | undefined): WeekFacts['board'] {
+  const open = (v?.entries ?? []).filter((e) => e.status === 'open' && !e.ready);
+  if (!open.length) return null;
+  const e = open.reduce((a, b) => (b.progress > a.progress ? b : a));
+  const needs = e.needs.filter((n) => !needMet(n)).map((n) => {
+    const left = n.need - n.have;
+    switch (n.kind) {
+      case 'bits': return `${left} more bit${left === 1 ? '' : 's'}`;
+      case 'item': return `${left} more ${GROUP_NAME[n.group][left === 1 ? 0 : 1]}`;
+      case 'work': return `${left} more ${WORK_NAME[n.work][left === 1 ? 0 : 1]}`;
+      case 'hearts': return `${friendDef(n.who)?.short ?? 'a friend'}'s blessing (${n.need} \u2665)`;
+    }
+  });
+  return { id: e.def.id, needs: needs.slice(0, 3) };
 }
 
 /** The days an edition covers: the weekly the Monday-to-Sunday week before `date`'s, the morning edition the last seven days. */
@@ -192,7 +226,7 @@ export function dayWeather(date: string): { weather: WeatherKind; wet: number } 
 /** the field (project) of an in-world tag: 'infra·onyx' → 'infra' (twins share a field) */
 export const fieldOf = (tag: string): string => tag.split('·')[0] || tag;
 
-const NOTE_RANK: Readonly<Record<GzNoteKind, number>> = { hearts: 5, gift: 4, request: 3, find: 2, catch: 1 };
+const NOTE_RANK: Readonly<Record<GzNoteKind, number>> = { project: 6, hearts: 5, gift: 4, request: 3, find: 2, catch: 1 };
 
 export function gatherFacts(inp: GazetteInput): WeekFacts {
   const date = dayKey(inp.now);
@@ -257,7 +291,7 @@ export function gatherFacts(inp: GazetteInput): WeekFacts {
   const fish = real.sort((a, b) => b.cm - a.cm)[0];
   const finds = [...new Set(notes.filter((n) => n.k === 'find').map((n) => (n as { item: string }).item))].filter((id) => collectDef(id));
   const inked = Object.entries(inp.stamps ?? {}).filter(([id, at]) => finite(at) && stampDef(id) && inRange(dayKey(at), from, to)).sort((a, b) => b[1] - a[1]);
-  const gossip = notes.filter((n) => n.k !== 'catch' && n.k !== 'find' && friendDef(n.who))
+  const gossip = notes.filter((n) => (n.k === 'gift' || n.k === 'request' || n.k === 'hearts') && friendDef(n.who))
     .sort((a, b) => NOTE_RANK[b.k] - NOTE_RANK[a.k] || b.at - a.at);
   // ---- the calendar, the forecast
   const fv = festivalAt(noonOf(date));
@@ -283,7 +317,20 @@ export function gatherFacts(inp: GazetteInput): WeekFacts {
     fish: fish ? { item: fish.item, cm: fish.cm } : null,
     catches: catches.length,
     finds,
+    projects: projectNews(notes),
+    board: inp.board && projectDef(inp.board.id) ? { id: inp.board.id, needs: inp.board.needs.slice(0, 3) } : null,
   };
+}
+
+/** the projects finished / unveiled in the journal: one entry each (an unveiling wins over the finish), oldest first */
+function projectNews(notes: readonly GzNote[]): WeekFacts['projects'] {
+  const by = new Map<string, WeekFacts['projects'][number]>();
+  for (const n of notes) {
+    if (n.k !== 'project') continue;
+    const was = by.get(n.id);
+    if (!was || (n.ev === 'unveiled' && was.ev === 'done')) by.set(n.id, { id: n.id, ev: n.ev, at: n.at });
+  }
+  return [...by.values()].sort((a, b) => a.at - b.at);
 }
 
 /** Tolerant parse of stored facts: everything is coerced or defaulted, so a hand-edited archive still composes. */
@@ -303,6 +350,7 @@ export function parseFacts(raw: unknown): WeekFacts | null {
   if (h) for (const k of HARVEST_KINDS) { const c = n(h[k], 0, 99_999); if (c) harvest[k] = Math.round(c); }
   const days: DayFacts[] = (Array.isArray(o.days) ? o.days : []).map((d) => obj(d)).filter((d): d is Record<string, unknown> => !!d && !!key(d.date))
     .slice(0, 15).map((d) => ({ date: d.date as string, points: n(d.points, 0, 1e6), weather: wk(d.weather), wet: n(d.wet, 0, 8) }));
+  const bo = obj(o.board);
   const bd = obj(o.bestDay), nx = obj(o.next), wt = obj(o.wait), fl = obj(o.field), fm = obj(o.farmer), sh = obj(o.shipper), fe = obj(o.festival), up = obj(o.upcoming), st = obj(o.stamp), fi = obj(o.fish);
   const seasons: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
   return {
@@ -324,11 +372,15 @@ export function parseFacts(raw: unknown): WeekFacts | null {
     upcoming: up && typeof up.name === 'string' ? { id: s(up.id, 20), name: s(up.name), blurb: s(up.blurb, 200), inDays: Math.round(n(up.inDays, 1, 999)), start: key(up.start) ?? date } : null,
     season: seasons.includes(o.season as Season) ? o.season as Season : 'spring',
     notes: (Array.isArray(o.notes) ? o.notes : []).map(parseNote).filter((x): x is GzNote => !!x).slice(0, 12),
-    stamp: st && typeof st.id === 'string' && stampDef(st.id) ? { id: st.id, at: n(st.at) } : null,
+    stamp: st && typeof st.id === 'string' && stampDef(st.id) ? { id: st.id, at: n(st.at, 0, 1e14) } : null,
     stamps: Math.round(n(o.stamps, 0, 999)),
     fish: fi && typeof fi.item === 'string' && collectDef(fi.item) ? { item: fi.item, cm: n(fi.cm, 0, 999) } : null,
     catches: Math.round(n(o.catches, 0, 1e5)),
     finds: (Array.isArray(o.finds) ? o.finds : []).filter((x): x is string => typeof x === 'string' && !!collectDef(x)).slice(0, 12),
+    projects: (Array.isArray(o.projects) ? o.projects : []).map((x) => obj(x))
+      .filter((x): x is Record<string, unknown> => !!x && isProjectId(x.id) && (x.ev === 'done' || x.ev === 'unveiled'))
+      .slice(0, 6).map((x) => ({ id: x.id as string, ev: x.ev as 'done' | 'unveiled', at: n(x.at, 0, 1e14) })),
+    board: bo && isProjectId(bo.id) ? { id: bo.id, needs: (Array.isArray(bo.needs) ? bo.needs : []).filter((x): x is string => typeof x === 'string').slice(0, 3).map((x) => x.slice(0, 60)) } : null,
   };
 }
 
@@ -421,6 +473,62 @@ const CLASSIFIEDS: readonly { head: string; text: string }[] = [
   { head: 'Offered', text: 'Free hugs from the scarecrows. Not very warm, but sincere.' },
   { head: 'Notice', text: 'Please do not feed the ducklings after midnight. They get ideas.' },
 ];
+
+/** Valley Projects: headlines for a restored place, and what its champion told the paper */
+const PROJECT_HEAD: Readonly<Record<string, readonly string[]>> = {
+  lanterns: ['The Lantern Path Glows Again', 'Lanterns Lit on the Stones\' Path', 'Light Returns to the Standing Stones'],
+  footbridge: ['Footbridge Mended at Last', 'West Bank a Short Stroll Again', 'New Planks Over the River'],
+  glasshouse: ['Glasshouse Glazed and Planted', 'Violets Under Glass', 'The Glasshouse Is Finished'],
+  millwheel: ['The Mill Wheel Turns Again', 'Millrace Sings Once More', 'River Mill Back in Business'],
+  observatory: ['Observatory Dome Rolls Open', 'Stars Within Reach on the North Slope', 'The Telescope Is Out'],
+  halt: ['Evening Train Whistles at the Halt', 'Train Halt Restored', 'All Aboard: the Halt Reopens'],
+};
+const PROJECT_QUOTE: Readonly<Record<string, string>> = {
+  lanterns: 'I left my own lamp at home last night. On purpose! It felt very daring.',
+  footbridge: 'Crossed it four times before breakfast. Purely for inspection purposes.',
+  glasshouse: 'The violets have the best corner. I may have arranged that.',
+  millwheel: 'Listen to it. That\'s the sound of the valley working properly.',
+  observatory: 'Saturn! Actual Saturn, rings and everything. I\'ve started a logbook.',
+  halt: 'The evening train whistled at us. I have ordered more bunting on the strength of it.',
+};
+/** a place's name in headline case: "The Lantern Path" at the start, "the Lantern Path" mid-line */
+const placeName = (id: string, start = true) => (projectDef(id)?.name ?? id).split(' ')
+  .map((w, i) => ((i === 0 && start) || !['the', 'of', 'over'].includes(w) ? Cap(w) : w)).join(' ');
+const listOf = (xs: readonly string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] ?? '');
+
+/** the Valley Projects story: places restored (unveiled) and finished (waiting to be seen) in the covered days */
+function projectStory(f: WeekFacts, r: R, week: string): Story | null {
+  const shown = f.projects.filter((p) => p.ev === 'unveiled' && projectDef(p.id));
+  const done = f.projects.filter((p) => p.ev === 'done' && projectDef(p.id));
+  if (!shown.length && !done.length) return null;
+  const all = shown.length + done.length;
+  if (shown.length) {
+    const top = projectDef(shown[shown.length - 1].id)!;
+    const who = friendDef(top.who);
+    return {
+      id: 'projects', kicker: 'Valley Projects', art: 'rosette',
+      head: shown.length === 1 ? pick(r, PROJECT_HEAD[top.id] ?? [`${placeName(top.id)} Restored`]) : `${Cap(spell(shown.length))} Places Restored`,
+      deck: shown.length === 1 ? `Unveiled ${weekdayName(dayKey(shown[0].at))}, ${top.where}` : listOf(shown.map((p) => projectDef(p.id)!.name)),
+      body: [
+        top.done,
+        shown.length > 1 ? `${Cap(listOf(shown.slice(0, -1).map((p) => projectDef(p.id)!.name)))} ${shown.length === 2 ? 'was' : 'were'} unveiled ${week} too.` : '',
+        `What it means for the valley: ${top.unlock}.`,
+        who ? `"${PROJECT_QUOTE[top.id] ?? 'Thank you, everyone.'}" said ${who.short}, who championed the plan.` : '',
+        done.length ? `Also finished and waiting to be seen: ${listOf(done.map((p) => projectDef(p.id)!.name))}.` : '',
+      ].filter(Boolean),
+    };
+  }
+  const top = projectDef(done[done.length - 1].id)!;
+  return {
+    id: 'projects', kicker: 'Valley Projects', art: 'rosette',
+    head: all === 1 ? pick(r, [`${placeName(top.id)}: Fully Funded`, `Work Complete on ${placeName(top.id, false)}`, `The Board Ticks Off ${placeName(top.id, false)}`]) : `${Cap(spell(all))} Projects Fully Funded`,
+    deck: 'Unveiling as soon as somebody goes to look',
+    body: [
+      `The projects board has everything it asked for: ${listOf(done.map((p) => projectDef(p.id)!.name))} ${all === 1 ? 'is' : 'are'} finished, paid for in bits, finds and real work from the farmers.`,
+      `Nobody has been to see ${all === 1 ? 'it' : 'them'} yet. The Mayor suggests ${top.where}, and a camera.`,
+    ],
+  };
+}
 
 /** the issue's dice: fixed per edition and covered days, so a page reads the same every time it is opened */
 const seedOf = (f: WeekFacts) => mulberry32(hash32(`gazette|${f.kind}|${f.from}|${f.to}|${f.no}`));
@@ -516,9 +624,13 @@ export function composeIssue(f: WeekFacts): Issue {
   const r = seedOf(f);
   const c = f.harvest;
   const quiet = f.points <= 0;
-  const lead = leadStory(f, r);
+  let lead = leadStory(f, r);
   const stories: Story[] = [];
   const week = f.kind === 'weekly' ? 'this week' : 'these past seven days';
+  // the Valley Projects: a place restored is the player's own big news (it leads a week with no harvest)
+  const proj = projectStory(f, r, week);
+  if (proj && quiet) lead = { ...proj, id: 'lead' };
+  else if (proj) stories.push(proj);
   // farmer of the week
   if (f.farmer) {
     const n = nameOf(f.farmer.name);
@@ -631,6 +743,7 @@ export function composeIssue(f: WeekFacts): Issue {
   if (f.days.every((d) => d.wet === 0)) quotes.push({ text: 'Not a drop all week. I\'ve been reduced to forecasting sunshine. Dreadful.', by: 'Nimbus, weather-watcher' });
   if (f.fish) quotes.push({ text: `A ${f.fish.cm} centimetre ${fishName(f.fish.item).toLowerCase()}? I'd have liked to see that.`, by: 'Bram, shipping clerk' });
   if (f.notes.some((n) => n.k === 'gift' && n.tier === 'love')) { const g = f.notes.find((n) => n.k === 'gift' && n.tier === 'love') as Extract<GzNote, { k: 'gift' }>; quotes.push({ text: `Tell everyone. The ${itemName(g.item)} was perfect.`, by: friendDef(g.who)?.name ?? short(g.who) }); }
+  for (const p of f.projects) if (p.ev === 'unveiled' && PROJECT_QUOTE[p.id]) { const who = friendDef(projectDef(p.id)?.who ?? ''); if (who) quotes.push({ text: PROJECT_QUOTE[p.id], by: who.name }); }
   if (quiet) quotes.push({ text: 'A quiet week is still a week well spent. Mind you, I polished the sundial twice.', by: 'Mayor Marigold' });
   const quote = quotes.length ? pick(r, quotes) : { text: 'The post goes out whatever the weather. That\'s the whole point of post.', by: 'Posy, postmaster' };
   // gossip
@@ -654,6 +767,11 @@ export function composeIssue(f: WeekFacts): Issue {
   // classifieds: a fixed whimsical bank, plus anything the week really turned up
   const cls = shuffle(r, CLASSIFIEDS).slice(0, 3);
   if (f.notes.length === 0 && f.catches && !f.fish) cls.unshift({ head: 'Found', text: 'One old boot, in the river, by you. Returned to the river, also by you.' });
+  const board = f.board && projectDef(f.board.id) && f.board.needs.length ? { def: projectDef(f.board.id)!, needs: f.board.needs } : null;
+  if (board) cls.unshift({ head: 'Wanted', text: `For ${board.def.name}: ${listOf(board.needs)}. Apply at the projects board on the square.` });
+  // the travelling merchant's notice (model/visitors.ts: his calendar is deterministic, so this is never wrong)
+  const cart = nextVisit('merchant', f.date, { halt: false }, 10);
+  if (cart) cls.splice(board ? 1 : 0, 0, { head: 'Curiosities', text: `Barnaby Pell's cart of rare goods is on the square ${whenText(cart)}, 8:30 to 5:30. One of each; no haggling.` });
   if (f.festival || (f.upcoming && f.upcoming.inDays <= 14)) cls.push({ head: 'Notice', text: `Volunteers wanted for the ${(f.festival ?? f.upcoming)!.name}. See the Mayor; bring enthusiasm.` });
   // the Mayor's editorial
   const ed: string[] = [];
@@ -663,6 +781,8 @@ export function composeIssue(f: WeekFacts): Issue {
   if (f.next) ed.push(`The Almanac tells me ${f.next.name} is ${plural(Math.round(f.next.left), 'point')} away. I have already drafted the speech.`);
   if (f.festival) ed.push(`Do come to the square for the ${f.festival.name}. There will be ${f.festival.id === 'harvest' ? 'a pumpkin of unreasonable size' : f.festival.id === 'founders' ? 'cake' : 'things to see'}.`);
   else if (f.upcoming && f.upcoming.inDays <= 21) ed.push(`And mark your calendars: the ${f.upcoming.name} begins ${f.upcoming.inDays === 1 ? 'tomorrow' : `in ${spell(f.upcoming.inDays)} days`}.`);
+  if (f.projects.some((p) => p.ev === 'unveiled')) ed.push(pick(r, ['To everyone who chipped in at the projects board: the valley is the better for it, and so, I think, are we.', 'A ribbon was cut, a speech was made (briefly, I promise), and the valley has one less ruin in it.']));
+  if (board) ed.push(`The projects board has its eye on ${board.def.name} next. It still wants ${listOf(board.needs)}; every bit helps.`);
   ed.push(pick(r, ['Yours in civic pride,', 'Ever at your service,', 'With warm regards from the town hall,']));
   const editorial: Story = { id: 'editorial', kicker: 'From the Mayor\'s desk', head: pick(r, ['A Word from the Town Hall', 'The Mayor Writes', 'Notes from the Mayor\'s Desk']), body: ed, art: 'quill' };
   const dateLine = longDate(f.date);

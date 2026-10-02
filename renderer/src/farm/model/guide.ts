@@ -33,6 +33,8 @@ import type { StampsData, Motif } from './stamps.ts';
 import type { GrottoData } from './grotto.ts';
 import type { ProjectsData } from './projects.ts';
 import { PROJECTS } from './projects.ts';
+import type { VisitorsData } from './visitors.ts';
+import { VISITORS, merchantComes } from './visitors.ts';
 import { JOURNAL } from './grotto.ts';
 import { FESTIVALS } from './calendar.ts';
 import { dayKey } from './almanac.ts';
@@ -78,6 +80,10 @@ export interface GuideWorld {
   seen: readonly string[];
   /** the Valley Projects board (model/projects.ts; optional: older callers) */
   projects?: Readonly<ProjectsData> | null;
+  /** the visitors: who you've met, what you've bought (model/visitors.ts; optional: older callers) */
+  visitors?: Readonly<VisitorsData> | null;
+  /** today's date key (the merchant's days; optional: older callers) */
+  day?: string;
 }
 
 export const emptyGuideWorld = (): GuideWorld => ({
@@ -288,6 +294,25 @@ export const PAGES: readonly PageDef[] = Object.freeze([
     rumour: 'Have you seen the projects board on the square? The Mayor wants the old footbridge mended, and the lantern path lit again.',
     by: ['villager:marigold', 'villager:bram', 'villager:fern'],
   }),
+  P({
+    id: 'visitors', chapter: 'village', title: 'Comings and goings', motif: 'basket',
+    how: 'Barnaby Pell\'s travelling cart comes over the south pass on Wednesdays and Saturdays (and on festival days) and parks east of the square: {use} on him or the cart for rare decor, moonflower seeds, a glimmer lure (rarer fish for the rest of the day) and the odd old map. Odile the painter comes on some fair days; her finished canvas can hang in the farmhouse. Once the halt is restored, Ned brings parcels on the morning train.',
+    hint: 'Twice a week a squeaky wheel comes down from the south pass, and somebody starts shouting about curiosities…',
+    when: { label: 'Wednesdays & Saturdays, 8:30–17:30 (and festival days)', now: (w) => !!w.day && merchantComes(w.day) && w.hour >= 8.5 && w.hour < 17.5 },
+    found: (w) => (w.visitors?.met.length ?? 0) > 0 || (w.visitors?.total.bought ?? 0) > 0,
+    notes: (w) => {
+      const v = w.visitors;
+      if (!v) return [];
+      return [
+        `met: ${v.met.map((id) => VISITORS[id].short).join(', ') || 'nobody yet'}`,
+        ...(v.total.bought ? [`${plural(v.total.bought, 'thing')} bought from visitors`] : []),
+        ...(v.paintings.length ? [`${plural(v.paintings.length, 'painting')} for the farmhouse`] : []),
+        ...(v.posted.length ? [`${plural(v.posted.length, 'parcel')} off the train`] : []),
+      ];
+    },
+    rumour: 'A travelling merchant comes over the south pass on Wednesdays and Saturdays. Rare things, he says. Fair prices, he says. No haggling, he says, a lot.',
+    by: ['villager:bram', 'villager:posy', 'villager:marigold'],
+  }),
 
   // ---- Exploring
   P({
@@ -474,6 +499,7 @@ export const FEATURES: readonly Feature[] = Object.freeze([
   { ver: 6, title: 'This very notebook', line: 'every pastime in the valley, how to do it, and hints for the ones you haven\'t found ({notebook}).' },
   { ver: 7, page: 'projects', title: 'Valley projects', line: 'the Mayor\'s board on the square: mend the footbridge, light the lantern path, raise a glasshouse and more, together.' },
   { ver: 7, page: 'orchard', title: 'The hillside orchard', line: 'fruit trees, beehives and a cider press behind a stone wall on the east foothills. Shake what\'s ripe!' },
+  { ver: 8, page: 'visitors', title: 'Comings and goings', line: 'a travelling merchant\'s cart on Wednesdays and Saturdays, a wandering painter on fair days, and parcels once the halt reopens.' },
 ] as Feature[]);
 export const LATEST = Math.max(...FEATURES.map((f) => f.ver));
 /**

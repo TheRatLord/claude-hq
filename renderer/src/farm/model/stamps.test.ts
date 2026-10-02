@@ -17,7 +17,7 @@ const world = (o: Partial<StampWorld> = {}): StampWorld => ({ ...emptyWorld(T0),
 const ok = (id: string, w: StampWorld, m: StampsData = emptyStamps()) => passes(stampDef(id)!, w, m);
 
 test('stamps: ~40 across every category, unique ids, valley voice, known motifs, some secret', () => {
-  assert.ok(STAMPS.length >= 38 && STAMPS.length <= 48, String(STAMPS.length));
+  assert.ok(STAMPS.length >= 38 && STAMPS.length <= 52, String(STAMPS.length));
   assert.equal(new Set(STAMPS.map((s) => s.id)).size, STAMPS.length);
   for (const c of STAMP_CATS) assert.ok(STAMPS.filter((s) => s.cat === c).length >= 4, c);
   for (const s of STAMPS) {
@@ -60,6 +60,14 @@ test('stamps: work stamps follow counters and the Almanac, never in a demo valle
   assert.equal(ok('green-10', world({ testsToday: 10 })), true);
   assert.equal(ok('five-at-once', world({ working: 4 })), false);
   assert.equal(ok('five-at-once', world({ working: 5 })), true);
+});
+
+test('stamps: the projects board (a place restored, then all six)', () => {
+  assert.equal(ok('first-project', world()), false);
+  assert.equal(ok('first-project', world({ projects: { restored: 1, total: 6 } })), true);
+  assert.deepEqual(progressOf(stampDef('all-projects')!, world({ projects: { restored: 4, total: 6 } }), emptyStamps()), { have: 4, need: 6 });
+  assert.equal(ok('all-projects', world({ projects: { restored: 5, total: 6 } })), false);
+  assert.equal(ok('all-projects', world({ projects: { restored: 6, total: 6 } })), true);
 });
 
 test('stamps: a field that lived a week (first seen is remembered; gone fields are forgotten)', () => {

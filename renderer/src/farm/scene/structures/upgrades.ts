@@ -784,7 +784,14 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
       // collect before hiding: hide() takes each upgrade's root out of the group, and a hidden (not yet earned) upgrade
       // is never in it; either way its geometry must go too, or every season change leaks the whole set on the GPU
       const geos = new Set<THREE.BufferGeometry>();
-      const collect = (o: THREE.Object3D) => { const m = o as THREE.Mesh; if (m.isMesh) geos.add(m.geometry); };
+      // …and the canvas-drawn plaques' textures + materials (the statue's "For every farmer" plaque): one per rebuild
+      const drawn = new Set<THREE.Material>();
+      const collect = (o: THREE.Object3D) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        geos.add(m.geometry);
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) if ((mat as THREE.MeshBasicMaterial).map instanceof THREE.CanvasTexture) drawn.add(mat);
+      };
       group.traverse(collect);
       for (const b of built) b.root.traverse(collect);
       for (const b of built) hide(b);
@@ -793,6 +800,7 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
       if (ctx.services.get('upgrades') === svc) ctx.services.delete('upgrades');
       ctx.scene.remove(group);
       for (const g of geos) g.dispose();
+      for (const m of drawn) { (m as THREE.MeshBasicMaterial).map?.dispose(); m.dispose(); }
       for (const m of glows) m.dispose();
       bulbs.dispose();
     },

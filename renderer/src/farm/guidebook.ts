@@ -30,6 +30,8 @@ import type { TrailService } from './scene/trail/trail.ts';
 import type { GrottoHandle } from './scene/grotto/grotto.ts';
 import type { SeasonsService } from './scene/seasons/seasons.ts';
 import type { ProjectsService } from './model/projects.ts';
+import { dayKey } from './model/almanac.ts';
+import type { VisitorsData } from './model/visitors.ts';
 import { POND, TRAIL, structure } from './world/map.ts';
 import { localJson } from './storage.ts';
 import { ORCHARD_GATE } from './world/orchard.ts';
@@ -85,6 +87,7 @@ export function installGuide(d: GuideDeps): GuideHandle {
       stones: (svc.get('trail') as TrailService | undefined)?.stones() ?? 0,
       photos: d.photos(), toured: onboarding.data().pastimes, seen: [],
       projects: (svc.get('projects') as ProjectsService | undefined)?.data() ?? null,
+      visitors: (svc.get('visitors') as { data(): VisitorsData } | undefined)?.data() ?? null, day: dayKey(Date.now()),
     };
   };
 

@@ -50,7 +50,7 @@ card's title) use `shortName()` = the in-world `tag`; the full herdr name goes o
 
 Ledger (Tab), map (M: click a pin, or ↑/↓ + Enter in the side list, which lists farmers *and* scarecrows), mailbox (J:
 the Needs you tab pre-selects the first ask, 1–9 answers it, Enter opens the terminal), the needs-you strip (Alt+1…9),
-the pause menu's Terminals entry, the dock's terminal button and the leader key (Ctrl+` by default; Settings
+the pause menu's Terminals entry, the dock's terminal button, the command palette (Ctrl+K), the focus queue (Alt+N; [ops.md](ops.md)) and the leader key (Ctrl+` by default; Settings
 `leaderKey`). `browser-tests/valley.spec.ts` checks the ledger, map-click, map-keyboard, mailbox and needs-you paths and
 the power-user loop below: add a flow there when you add one.
 
@@ -137,6 +137,8 @@ toggle), Tab containment, arrow-key tabs, captions and the live region.
 | N | toggle the corner minimap |
 | Alt+1…9 | the n-th needs-you farmer's terminal, from anywhere (outside a terminal) |
 | Alt+0 | fold / unfold (or wake) the needs-you list |
+| Alt+N | the next agent in the focus queue (asks, struggling, unreviewed finishes), from anywhere incl. a terminal ([ops.md](ops.md)) |
+| Ctrl+K (⌘K) | the command palette: any agent (also by what they said), answers, panels, actions; Esc goes back ([ops.md](ops.md)) |
 | Ctrl+` (leader) | terminals |
 | ? | the pause menu's Controls tab |
 | Esc | the pause menu (also on losing pointer lock) |
@@ -188,6 +190,12 @@ under 820 px tall) and `--left-w` (300 px; 288 px ≤ 1440 wide; 272 px ≤ 900 
   `×n` count instead of stacking (`ToastSpec.group`, else the key's first `|` segment: `commit|…`, `ans|…`,
   `ready|…`). Background toasts (letters, server toasts, festival greetings: `push(t, true)`) never push off a
   confirmation of something you just did; they squeeze in beside it (one over the limit for its few seconds).
+* **Clicks on toasts:** a leaving toast (`.out`, fading for 0.4 s) has `pointer-events: none`, so a click meant for the
+  toast sliding into its place never opens the old one. Closing a panel puts the pointer back how it was when the
+  panel opened (`setModal` in main.ts): walking about (locked, or the pause menu that a lost lock opened) re-locks it;
+  a free cursor (a panel opened from the dock, a toast, the hint card, or the keyboard before you ever clicked in)
+  stays free, so the toast that pops up next is clickable. With the pointer locked, clicks go to the canvas by design
+  (that is what the old headless "canvas over the toast" in `recap.spec.ts` was: a re-lock after Escape).
 * **Bottom-left:** the onboarding checklist and one-time tips (`hud/onboarding.ts`; right of the strip while it is
   open).
 * **Top-centre:** only the offline banner (it docks bottom-left under a big panel).
@@ -230,6 +238,6 @@ nothing in the HUD reads layout per frame except the map canvas, which redraws o
 ## Dev handle (`window.__hud`)
 
 `open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card recap noticeboard stats almanac collection shop friends pause
-drawer welcome pet gazette album guide`), `close()`,
+drawer welcome pet gazette album guide projects palette`), `close()`,
 `current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `prefs(patch?)`, `tour`
 ([onboarding.md](onboarding.md)). Full dev API: [tools.md](tools.md#dev-api).

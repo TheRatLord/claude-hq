@@ -54,6 +54,8 @@ export interface DecorDef {
   keepsake?: boolean;
   /** a one-off present (the first-run welcome, model/onboarding.ts): never on the shelves, never sold */
   gift?: boolean;
+  /** sold only by the travelling merchant (model/visitors.ts): never on the General store's shelves */
+  visitor?: boolean;
 }
 
 const D = (id: string, name: string, price: number, max: number, color: string, blurb: string, o: Partial<DecorDef> = {}): DecorDef =>
@@ -119,6 +121,15 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
   // the hidden chest in the grotto behind the waterfall (scene/grotto): one per valley, for whoever is curious enough
   D('geode', 'Grotto geode lamp', 400, 1, '#9a7cf0', 'A split geode on a stump of driftwood, its crystals still glowing faintly. Left in a chest behind the falls by an explorer who signed their journal "R."',
     { gift: true, glow: true }),
+  // rare pieces from Barnaby Pell's travelling cart (model/visitors.ts STOCK): never on the General store's shelves
+  D('starlamp', 'Star-glass lantern', 240, 1, '#6a8ad8', 'A brass lantern glazed in coloured glass, from a lighthouse keeper who retired inland. Lit at dusk.',
+    { visitor: true, glow: true }),
+  D('sundial', 'Brass sundial', 210, 1, '#5f9a7a', 'A green-bronze sundial on a stone column. Accurate to the nearest pleasant afternoon.',
+    { visitor: true }),
+  D('moonflower', 'Moonflowers', 170, 2, '#e8ecff', 'A stone pot of white moonflowers grown from the travelling merchant\'s seeds. They open at dusk and glow all night.',
+    { visitor: true, glow: true }),
+  D('whirligig', 'Whirligig', 150, 1, '#e0574a', 'A painted wind toy on a pole: a little farmer pumping a well, faster the harder it blows.',
+    { visitor: true }),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));
@@ -135,7 +146,7 @@ export type Locked = 'rank' | 'season' | 'max' | 'friend' | 'keepsake' | null;
 /** Why a decor item can't be bought right now (null = in stock). `hearts` = a villager's hearts (model/friends.ts). */
 export function lockOf(d: DecorDef, o: { rank: number; season: Season; owned: number; hearts?: (id: string) => number }): Locked {
   if (o.owned >= d.max) return 'max';
-  if (d.keepsake || d.gift) return 'keepsake';
+  if (d.keepsake || d.gift || d.visitor) return 'keepsake';
   if (d.friend && (o.hearts?.(d.friend.id) ?? 0) < d.friend.hearts) return 'friend';
   if (d.rank !== undefined && o.rank < d.rank) return 'rank';
   if (d.seasons && !d.seasons.includes(o.season)) return 'season';

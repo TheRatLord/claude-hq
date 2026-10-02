@@ -1,6 +1,12 @@
 /* The Valley Projects board (projects.ts): a cork-and-paper plan board. Status is always a glyph + a word (colour-safe). */
-.vh-projects { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(900px, var(--pw)); max-height: calc(100vh - 44px);
-  --pw: calc(100vw - 40px - var(--lw, 0px)); margin-left: calc(var(--lw, 0px) / 2); }
+/* The panel keeps out of the dock's column (minimap + the five dock buttons, top right) as well as the needs-you
+   strip's (--lw): at 1440×1000 a centred 900 px board ran under the mail / map / ledger buttons. --dw = the dock
+   buttons' row + a gutter. Too narrow for both (< 560 px between them) it keeps the strip clear and covers the dock. */
+.vh-projects { --dw: 262px; --av: calc(100vw - 2 * var(--gut) - var(--lw, 0px) - var(--dw));
+  --pw: min(900px, max(var(--av), min(560px, calc(100vw - 2 * var(--gut) - var(--lw, 0px)))));
+  left: max(calc(var(--lw, 0px) + var(--gut)), calc(var(--lw, 0px) + var(--gut) + (var(--av) - var(--pw)) / 2));
+  top: 50%; transform: translateY(-50%); width: var(--pw); max-height: calc(100vh - 44px); }
+@media (max-height: 820px) { .vh-projects { --dw: 240px; } }
 .vh-projects.open { animation: none; }
 .vh-projects .vh-body { display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 120px); overflow: hidden; }
 

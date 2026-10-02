@@ -106,6 +106,11 @@ Status is always a glyph plus a word, never colour alone:
 High contrast (`.vh-layer.hc`) outlines the bars and cards. Focus stays on the same control across re-renders. Narrow
 windows stack the list above the page.
 
+Layout (`projects.css`): the panel sits between the needs-you strip (`--lw`) and the dock's column (`--dw`, the dock
+buttons' row + a gutter), so the mail / map / ledger buttons stay visible and clickable beside it (at 1440×1000 a
+centred 900 px board used to cover them). When less than 560 px is left between the two, it keeps the strip clear and
+covers the dock.
+
 ## The places
 
 Each place is built in its site's local frame (`world/projects.ts`; front = +z, as everywhere). The ruin is built at
@@ -141,8 +146,20 @@ had no good view.
   project is done. Notes say "n of 6 places restored" and the next one up. Rumours come from Marigold, Bram and Fern.
   "What's new" has a ver 7 line. `GuideWorld.projects` is read from the `projects` service in `guidebook.ts`.
 * **Mailbox**: a letter from the champion on completion (`projectLetter`).
-* Not wired (yet): stamps for the first / all projects, a Gazette story, and map pins for the six places
-  (`projectsScene.anchor(id)` is ready for them).
+* **Stamps** ([stamps.md](stamps.md)): *Good as mended* (the first place restored) and *All aboard* (all six), Village
+  category, motifs `mallet` and `bell`. "Restored" = unveiled: `stampbook.ts` counts `unveiled` from the board's data
+  (`StampWorld.projects`) and re-checks right after an unveiling.
+* **The Gazette** ([gazette.md](gazette.md)): `newsroom.ts` notes `complete` / `unveil` in the journal
+  (`GzNote` `project`, `ev: 'done' | 'unveiled'`). A place restored in the covered days is a *Valley Projects* story
+  (the lead in a week with no harvest) with the champion's quote; one finished but not yet seen is a "fully funded"
+  story. The board's teaser (`boardNeed`: the open plan nearest done, up to three unmet needs, e.g. "150 more bits")
+  is a *Wanted* classified and a line in the Mayor's editorial.
+* **The map** ([map.md](map.md)): place tiles for the board, every ruin (grey broken arch; gold once finished and
+  waiting to be seen) and every restored place (terracotta, its own glyph and a label). Positions come from
+  `projectsScene.anchor(id)` (the lantern path's is the middle of its posts), else `world/projects.ts`.
+* **At night** the restored glasshouse's panes use the Kit's glasshouse pane style (`Kit.pane('glasshouse', …)` in
+  `scene/structures/kit.ts`): warm glass with the seedlings, stems and leaves in silhouette on the wall panes and a
+  hanging basket in some roof panes; no room, no curtains.
 
 ## Dev hooks and tests
 

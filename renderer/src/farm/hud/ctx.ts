@@ -14,7 +14,7 @@ import { PREFS_KEY } from '../prefs.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'recap' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide' | 'projects';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'recap' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide' | 'projects' | 'palette' | 'visitors';
 
 export interface Panel {
   id: PanelId;

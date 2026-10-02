@@ -114,7 +114,10 @@ uniform float uInkStrength, uOutlinePx;
 // fog + light
 uniform vec3 uFogColor, uSunDir, uSunColor;
 uniform float uMist, uMistHeight, uHaze;
-uniform vec3 uHazeColor;
+uniform vec3 uHazeColor, uHazeWarm, uHazeDir;
+// contact shadows: AO_TAPS (0 on quality low) depth taps around each pixel, uProjScale = pixels per metre at 1 m
+uniform float uProjScale, uAO;
+uniform vec3 uAOTint;
 // cloud shadows
 uniform float uCloudShadow, uCloudCover;
 uniform vec2 uCloudOffset;
@@ -205,10 +208,52 @@ void main() {
     ink *= 1.0 - smoothstep(55.0, 170.0, z0);
     ink *= uInkStrength;
   }
+#if AO_TAPS > 0
+  // --- contact shadows: what sits in front of this pixel's own plane, within a metre or so, darkens it (props on the
+  // ground, posts in the turf, walls meeting the cobbles). The plane is extrapolated in raw depth (affine on any plane)
+  // from the outline's four neighbours, so open ground and walls seen at a grazing angle never self-occlude.
+  if (uAO > 0.0 && !sky && z0 < 60.0) {
+    vec2 o = uTexel * uOutlinePx;
+    float dl = texture2D(tDepth, uv - vec2(o.x, 0.0)).x, dr = texture2D(tDepth, uv + vec2(o.x, 0.0)).x;
+    float dd = texture2D(tDepth, uv - vec2(0.0, o.y)).x, du = texture2D(tDepth, uv + vec2(0.0, o.y)).x;
+    // one-sided slopes, the gentler side (a silhouette on one side must not tilt the plane)
+    float gx = abs(dr - d0) < abs(d0 - dl) ? dr - d0 : d0 - dl;
+    float gy = abs(du - d0) < abs(d0 - dd) ? du - d0 : d0 - dd;
+    float rpx = clamp(0.75 * uProjScale / z0, 3.0, 48.0);
+    float occ = 0.0;
+    for (int i = 0; i < AO_TAPS; i++) {
+      float fi = float(i);
+      float a = fi * 2.39996 + 0.6;
+      float r = rpx * (0.35 + 0.65 * (fi + 0.5) / float(AO_TAPS));
+      vec2 off = vec2(cos(a), sin(a)) * r;
+      float ds = texture2D(tDepth, uv + off * uTexel).x;
+      float dp = clamp(d0 + (gx * off.x + gy * off.y) / uOutlinePx, 0.0, 1.0);
+      float dz = linZ(dp) - linZ(ds);
+      occ += smoothstep(0.09, 0.35, dz) * (1.0 - smoothstep(0.9, 2.2, dz));
+    }
+    occ = occ / float(AO_TAPS);
+    occ = smoothstep(0.12, 0.7, occ) * (1.0 - smoothstep(35.0, 60.0, z0)) * uAO;
+    // painted, not sooty: a cool tint toward the shadow colour
+    col *= mix(vec3(1.0), uAOTint, occ);
+  }
+#endif
+
   col = mix(col, uInk * (0.35 + 0.65 * dot(col, vec3(0.3, 0.5, 0.2))), ink);
 
-  // --- aerial perspective: far land recedes into a soft sky-tinted haze
-  if (!sky) col = mix(col, uHazeColor, smoothstep(50.0, 360.0, dist) * uHaze);
+  // --- aerial perspective: far land recedes into a soft haze, warmer toward the sun (or silver toward the moon),
+  // cooler away from it, and loses colour as it goes
+  float lightSide = pow(max(dot(rd, uHazeDir), 0.0) * 0.5 + 0.5 * max(dot(rd, uHazeDir), 0.0), 2.0);
+  vec3 hazeC = mix(uHazeColor, uHazeWarm, lightSide);
+  if (!sky) {
+    // the air thins with height (scale height ~110 m above the water): the mean density along the ray, so the
+    // overview and the lookout see the valley floor crisply while a level look across it still fades
+    float y0 = max(uCamPos.y - uWater, 0.0), y1 = max(wp.y - uWater, 0.0);
+    float dy = y1 - y0;
+    float thin = abs(dy) > 0.5 ? 110.0 * (exp(-y0 / 110.0) - exp(-y1 / 110.0)) / dy : exp(-y0 / 110.0);
+    float hk = (1.0 - exp(-max(dist - 35.0, 0.0) / 240.0)) * uHaze * thin;
+    float hl = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(mix(col, vec3(hl), hk * 0.5), hazeC, hk);
+  }
 
   // --- drifting cloud shadows on the ground
   if (uCloudShadow > 0.001 && !sky && dist < 260.0 && wp.y < 80.0) {
@@ -228,7 +273,7 @@ void main() {
     if (abs(ry) <= 1e-3) fogAmt = a * exp(-oy * b) * dist;
     float fogK = 1.0 - exp(-max(fogAmt, 0.0));
     fogK = min(fogK, 0.94);
-    vec3 fc = uFogColor + uSunColor * pow(max(dot(rd, uSunDir), 0.0), 6.0) * 0.35;
+    vec3 fc = mix(uFogColor, hazeC, 0.6) + uSunColor * pow(max(dot(rd, uSunDir), 0.0), 6.0) * 0.35;
     col = mix(col, fc, fogK);
   }
 

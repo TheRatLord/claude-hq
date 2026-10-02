@@ -1,6 +1,6 @@
 # The stamp book
 
-Long-term goals that tie the valley's systems together: 48 stamps, each earned once and for good, inked into a book on
+Long-term goals that tie the valley's systems together: 50 stamps, each earned once and for good, inked into a book on
 the Almanac panel's **Stamps** tab. They read the other systems' state; they never keep a copy of it.
 
 Key sources: `model/stamps.ts` (the book, pure + `stamps.test.ts`: `STAMPS`, `StampWorld`, `observe`, `passes`,
@@ -15,7 +15,7 @@ services, created by `main.ts`), `hud/stamps.ts` + `stamps.css` (canvas-drawn st
 |---|---|
 | **Work** (real agent work) | first crate shipped · 100 commits · a 7-day Almanac streak · 10 green test runs in a day · 50 asks answered · five farmers working at once · a field that lived a full week · *midnight oil* (a commit between midnight and four) |
 | **Pastimes** | first fish · every fish of one season · a 60 cm catch · 10 forage kinds · the whole field guide · a rainbow (held 3 s) · *odd boot* · first row (the rowboat, [seasons.md](seasons.md)) · *pen pal* (the bottle) |
-| **Village** | 2 ♥ with everyone · a 10 ♥ friend · a first request · 20 requests · sat down at a campfire · a bandstand concert (within 30 m, 12 s) · *perfect presents* (a known loved gift for all six) |
+| **Village** | 2 ♥ with everyone · a 10 ♥ friend · a first request · 20 requests · sat down at a campfire · a bandstand concert (within 30 m, 12 s) · a place restored from the projects board · all six restored ([projects.md](projects.md)) · *perfect presents* (a known loved gift for all six) |
 | **Explorer** | the summit lookout · 7 cairn stones · out under a meteor-shower night (clear, dark, 20 s) · every leisure nook · a photo-mode picture · *summit by starlight* · *behind the curtain* (step into the grotto behind the falls, [grotto.md](grotto.md)) |
 | **Seasons & festivals** | one per festival (be within 22 m of its centrepiece while it is on) · first snow · a figure eight on the ice · a snow friend (a dressed snowman) · all four seasons |
 | **Home** | first decor bought · a rank-gated piece · a full yard · the welcome sign · *keepsake* (a 10 ♥ portrait) |
@@ -32,7 +32,7 @@ the valley state (sky hour / season / weather / lying snow / festival, the Alman
 farmers with status `working`, open fields), the Collections / friends / wallet data objects as they are, the trail's
 `stones()`, `gatherings.active()` + `controller.seated` (campfire) or the stage distance (concert), the festivals
 service's `where().center`, `atmosphere.state().rainbow`, `showerOn(dayOfYear)` (scene/sky/meteors.ts), `indoors.active`
-and where the player stands (each nook's footprint + 3 m, the summit deck). `ship` / `unblocked` valley events and photo
+and where the player stands (each nook's footprint + 3 m, the summit deck), and the Valley Projects restored (`projects`: unveiled of six, from the `projects` service; an unveiling re-checks at once). `ship` / `unblocked` valley events and photo
 mode's `onSave` are counted as they happen (`event()`), with the wall-clock hour for midnight oil.
 
 **Persisted** (`claude-valley.stamps.v1`, per browser profile; tolerant `parseStamps`), only what no other service
@@ -53,7 +53,7 @@ week again), and the sets of nooks, festivals and seasons visited. `trophies` = 
 * **Toast** when one is inked: the inked stamp itself as the icon (`stampIconHtml`), the name, bits and blurb;
   `group: 'stamp'` so a burst (a first run with an old Collections book) coalesces ×n. A trophy gets its own toast.
   The `stamp` sfx (a rubber stamp: ink-pad tap, woody thunk, paper slap, the peel) plays at most once per 1.2 s.
-* **The Almanac (H) has two tabs**, *Almanac* and *Stamp book n/43*: click, 1 / 2, or S toggles;
+* **The Almanac (H) has two tabs**, *Almanac* and *Stamp book n/50*: click, 1 / 2, or S toggles;
   `__hud.open('almanac', 'stamps')` (or `{ tab: 'stamps' }`) opens on the book. The page: count, bits earned and the
   three cups, then one grid per category. Inked = the stamp (category shape + ink: work red circle, pastimes blue
   scallop, village rose square, explorer green hexagon, seasons orange oval, home violet house), its own drawing

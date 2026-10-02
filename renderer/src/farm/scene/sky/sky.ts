@@ -239,7 +239,8 @@ export const skySystem: SystemFactory = (ctx) => {
       fog.color.copy(tmpC);
       let near = 45, far = 440;
       near = near * (1 - rn * 0.75 - sn * 0.8 - fg * 0.95) ;
-      far = far * (1 - oc * 0.15 - rn * 0.45 - st * 0.1 - sn * 0.5 - fg * 0.84);
+      // snow thickens the air without whiting out the valley from the lookout (the falling flakes do the rest)
+      far = far * (1 - oc * 0.15 - rn * 0.45 - st * 0.1 - sn * 0.4 - fg * 0.84);
       fog.near = Math.max(0, near);
       fog.far = Math.max(60, far);
 
@@ -309,6 +310,8 @@ export const skySystem: SystemFactory = (ctx) => {
       L.fogColor.copy(fog.color);
       L.fogNear = fog.near;
       L.fogFar = fog.far;
+      L.skyZenith?.copy(mix.zenith);
+      L.skyHorizon?.copy(mix.horizon);
       // lamps come on for gloomy weather too
       L.night = clamp01(Math.max(mix.night, gloom * 0.55 + fg * 0.3));
       L.wet = wet;

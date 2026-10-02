@@ -1,0 +1,67 @@
+- generic [active] [ref=f1e1]:
+  - generic "The valley, first-person view" [ref=f1e2]
+  - generic:
+    - generic:
+      - generic:
+        - status
+      - navigation "Quick panels":
+        - button "Minimap" [ref=f1e3] [cursor=pointer]:
+          - generic [ref=f1e5]: "N"
+        - generic [ref=f1e6]:
+          - button "Mailbox" [ref=f1e7] [cursor=pointer]:
+            - generic [ref=f1e13]: J
+          - button "Map" [ref=f1e14] [cursor=pointer]:
+            - generic [ref=f1e21]: M
+          - button "Farm ledger" [ref=f1e22] [cursor=pointer]:
+            - generic [ref=f1e28]: Tab
+          - button "Terminals" [ref=f1e29] [cursor=pointer]:
+            - generic [ref=f1e34]: "⌃`"
+          - button "Menu" [ref=f1e35] [cursor=pointer]:
+            - generic [ref=f1e40]: Esc
+        - generic [ref=f1e42]:
+          - button "0/1 requests ▸" [ref=f1e43] [cursor=pointer]:
+            - generic [ref=f1e48]: 0/1
+            - generic [ref=f1e49]: requests
+            - generic [ref=f1e50]: ▸
+          - button "Open friends" [ref=f1e51] [cursor=pointer]
+      - note "Key hints":
+        - generic:
+          - generic: Click
+          - text: look around
+        - generic:
+          - generic: M
+          - text: map
+        - generic:
+          - generic: Tab
+          - text: ledger
+        - generic:
+          - generic: J
+          - text: mail
+        - generic:
+          - generic: "Ctrl+`"
+          - text: terminals
+        - generic:
+          - generic: Esc
+          - text: menu
+        - generic:
+          - generic: Ctrl+K
+          - text: find
+        - generic:
+          - generic: "?"
+          - text: all keys
+      - region "Valley status and who needs you":
+        - status "Clock and connection" [ref=f1e57] [cursor=pointer]:
+          - generic [ref=f1e58]:
+            - generic "Cloudy" [ref=f1e59]
+            - generic [ref=f1e63]:
+              - generic [ref=f1e64]:
+                - generic [ref=f1e65]: 09:29
+                - generic "Autumn · Fri 2 Oct" [ref=f1e66]: Fri 2 Oct
+              - generic [ref=f1e71]:
+                - generic [ref=f1e72]: Connecting…
+                - generic "0 need you · 0 working · 0 done" [ref=f1e73]: waiting for herdr
+              - generic [ref=f1e75]:
+                - button "Homestead" [ref=f1e76]
+                - button "60" [ref=f1e85]
+      - text: ▸
+      - alert

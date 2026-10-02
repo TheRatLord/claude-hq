@@ -259,6 +259,8 @@ export function createPause(ctx: HudCtx): Panel {
       ...row([K('ledger')], 'farm ledger: everyone at a glance'), ...row([K('mail')], 'mailbox (Needs you first)'),
       ...row(['Alt+1…9'], "the Nth needs-you farmer's terminal"), ...row(['Alt+0'], 'show / fold the needs-you list'),
       ...row([leader], 'open / close the terminal drawer'), ...row(['Ctrl+PgUp', 'PgDn'], 'previous / next terminal'),
+      ...row([ctx.d.platform.mac ? '⌘K' : 'Ctrl+K'], 'find anything: an agent (by name, field, job, what they said), an answer, a panel'),
+      ...row(['Alt+N'], 'next who needs you: asks, then struggling, then finished work (also in a terminal)'),
       head('In the mailbox'),
       ...row(['1…9'], 'answer the selected ask (then the next is selected)'), ...row(['↑', '↓'], 'next / previous letter'),
       ...row(['Enter'], 'open its terminal'), ...row(['R'], 'mark read (Shift+R: all)'),

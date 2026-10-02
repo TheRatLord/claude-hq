@@ -34,6 +34,7 @@ import { installStampBook, watchPhotos } from './stampbook.ts';
 import { installNewsroom } from './newsroom.ts';
 import { installGuide } from './guidebook.ts';
 import { installProjectBoard } from './projectboard.ts';
+import { installVisitors } from './visitorsboard.ts';
 import { localJson } from './storage.ts';
 import { createPrefsStore } from './prefs.ts';
 import { ACTIONS, effectiveFpsCap, keyLabel, reducedMotion } from './model/prefs.ts';
@@ -195,9 +196,13 @@ engine.ctx.services.set('stamps', stamps);
 // board's panel): the town's restoration arc, paid for in bits, finds, friendship and real agent work; browser-local
 const projects = installProjectBoard({ valley, wallet, friends, ready: () => store.hello !== null });
 engine.ctx.services.set('projects', projects);
+// visitors (model/visitors.ts, wired in visitorsboard.ts; scene/visitors walks them in, hud/visitors.ts sells): the
+// travelling merchant's cart, the wandering painter, the parcel post off the restored halt's train; browser-local
+const visitors = installVisitors({ valley, wallet, projects, grotto: () => engine.ctx.services.get('grotto') as { discovered?(): boolean } | undefined });
+engine.ctx.services.set('visitors', visitors);
 // The Valley Gazette (model/gazette.ts, wired in newsroom.ts; hud/gazette.ts prints it): the weekly edition in the
 // mailbox every Monday morning, the morning edition on the noticeboard / G; browser-local, the demo's in memory
-const gazette = installNewsroom({ valley, collection, friends, stamps, demo: () => (store.hello ? !!store.hello.demo : null) });
+const gazette = installNewsroom({ valley, collection, friends, stamps, projects, demo: () => (store.hello ? !!store.hello.demo : null) });
 engine.ctx.services.set('gazette', gazette);
 // Fern's field notebook (model/guide.ts, wired in guidebook.ts; hud/guide.ts draws it): every activity in the valley,
 // found from the services above (only a small 'seen' set of its own), her nudges (onboarding tips), the villagers'
@@ -223,12 +228,21 @@ const soon = () => { if (!queued) { queued = true; setTimeout(tick, 60); } };
 for (const t of ['world', 'entity', 'gone', 'workspaces', 'stats', 'conn', 'herdr'] as const) store.on(t, soon);
 setInterval(tick, 250);
 
+/** the pointer was locked when the open panel opened (setModal): closing it re-locks */
+let relock = false;
+let unlockedAt = -1e9;
+// (window, capture: before the HUD's own listener opens the pause menu for a lost lock)
+window.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) unlockedAt = performance.now(); }, true);
 hud.bind({
   valley: () => valley.state, onValley: valley.on, agents, interact: engine.ctx.interact,
   setModal(open) {
     engine.ctx.player.frozen = open;
-    if (open && document.pointerLockElement) document.exitPointerLock();
-    if (!open) controller.lockPointer();
+    // closing a panel goes back to how the pointer was: walking about (locked) re-locks it, but a free cursor stays
+    // free (a panel opened from the dock, a toast or the hint card; re-locking would hide the cursor under the HUD
+    // and turn the next click on a toast into a click on the canvas)
+    // (the pause menu opens *because* the lock was just lost: that counts as walking about too)
+    if (open) { relock = !!document.pointerLockElement || performance.now() - unlockedAt < 600; if (document.pointerLockElement) document.exitPointerLock(); }
+    else if (relock) controller.lockPointer();
   },
   travelTo(id) {
     const loc = engine.ctx.services.get('farmers') as FarmerLocator | undefined;

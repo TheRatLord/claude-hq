@@ -6,7 +6,8 @@
  *
  * A DataTexture baked once over the world carries, per texel: water depth (R), distance to the shore (G) and the
  * river flow vector (BA). The shader turns them into depth colour, shoreline foam lines that lap toward the bank,
- * foam rings around mid-stream rocks, flow-mapped ripples that run downstream, sun sparkles, sky reflection,
+ * foam rings around mid-stream rocks, flow-mapped ripples that run downstream, sun sparkles, reflections of the rim
+ * and the sky (the baked skyline, skyline.ts),
  * night darkening and winter ice on the pond.
  */
 import * as THREE from 'three';
@@ -15,6 +16,7 @@ import type { Season } from '../../model/types.ts';
 import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, heightAt, heightBeforeGrotto, structure } from '../../world/map.ts';
 import { TRICKLES, WATER_STONES } from './features.ts';
 import { buildShore } from './shore.ts';
+import { SKYLINE_DIST, SKYLINE_HEIGHT, SKYLINE_N, skylineTexture } from './skyline.ts';
 
 const HALF = WORLD.half;
 const TEX = 512;
@@ -196,14 +198,17 @@ export interface WaterUniforms {
   uNight: { value: number };
   uWinter: { value: number };
   uWet: { value: number };
+  /** the dome's zenith / horizon (reflected sky gradient) */
+  uZenith: { value: THREE.Color };
+  uHorizon: { value: THREE.Color };
 }
 
-function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUniforms, fall: THREE.Vector2): THREE.ShaderMaterial {
+function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, skyline: THREE.Texture, u: WaterUniforms, fall: THREE.Vector2): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       ...u,
-      uData: { value: data }, uLanes: { value: lanes }, uHalf: { value: HALF }, uFall: { value: fall },
+      uData: { value: data }, uLanes: { value: lanes }, uSkyline: { value: skyline }, uHalf: { value: HALF }, uFall: { value: fall },
       uShallow: { value: new THREE.Color(0x7fd9c8) }, uMid: { value: new THREE.Color(0x3fa3c8) }, uDeep: { value: new THREE.Color(0x22598a) },
       uBed: { value: new THREE.Color(0xd9c38c) }, uBank: { value: new THREE.Color(0x2f5a3a) },
       uFoam: { value: new THREE.Color(0xf4fbff) }, uIce: { value: new THREE.Color(0xcfe6f2) },
@@ -223,12 +228,23 @@ function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUnifor
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uData, uLanes; uniform float uTime, uHalf, uSun, uNight, uWinter, uWet; uniform vec2 uFall;
-      uniform vec3 uSky, uSunDir, uSunColor, uShallow, uMid, uDeep, uBed, uBank, uFoam, uIce;
+      uniform sampler2D uData, uLanes, uSkyline; uniform float uTime, uHalf, uSun, uNight, uWinter, uWet; uniform vec2 uFall;
+      uniform vec3 uSky, uSunDir, uSunColor, uShallow, uMid, uDeep, uBed, uBank, uFoam, uIce, uZenith, uHorizon;
       varying vec3 vWorld;
       #include <common>
       #include <fog_pars_fragment>
       ${NOISE_GLSL}
+      // the baked skyline (skyline.ts): (distance, height above the water) of the rim at azimuth az, lerped by hand
+      vec2 skyDec(vec4 t) { return vec2(t.r * 65280.0 + t.g * 255.0, t.b * 65280.0 + t.a * 255.0) / 65535.0 * vec2(${SKYLINE_DIST.toFixed(1)}, ${SKYLINE_HEIGHT.toFixed(1)}); }
+      vec2 skyAt(float az) {
+        float u = (az + PI) / (2.0 * PI) * ${SKYLINE_N.toFixed(1)} - 0.5;
+        float i = floor(u), f = u - i;
+        vec2 a = skyDec(texture2D(uSkyline, vec2((i + 0.5) / ${SKYLINE_N.toFixed(1)}, 0.5)));
+        vec2 b = skyDec(texture2D(uSkyline, vec2((i + 1.5) / ${SKYLINE_N.toFixed(1)}, 0.5)));
+        return mix(a, b, f);
+      }
+      // where a horizontal ray from p along unit d meets the ring of radius r about the valley centre
+      float ringT(vec2 p, vec2 d, float r) { float b = dot(p, d); return -b + sqrt(max(b * b - dot(p, p) + r * r, 1.0)); }
       void main() {
         vec2 p = vWorld.xz;
         vec2 tuv = (p + uHalf) / (2.0 * uHalf);
@@ -313,8 +329,36 @@ function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUnifor
           float farBank = smoothstep(0.1, 0.7, dot(toShore, look));
           float band = 1.0 - smoothstep(1.4, 4.2, shore + (rip - 0.5) * 2.2 + vnoise(p * 0.45) * 1.4);
           vec3 bank = mix(uBank, vec3(0.8, 0.84, 0.88), uWinter * 0.75);
-          vec3 skyR = mix(uSky, uSky * 1.15 + vec3(0.06), fr);
-          col = mix(col, skyR, 0.1 + fr * 0.6);
+          // the mirrored world: a gently wobbling reflected ray; below the valley's skyline it sees the rim (hazy
+          // cliffs, turf low down, snow on the far peaks), above it the dome's own gradient
+          vec3 nr = normalize(vec3((rip - 0.5) * 0.1 + (vnoise(p * 0.7 + t * 0.21) - 0.5) * 0.06, 1.0,
+                                   (vnoise(p * 0.7 + 7.3 - t * 0.17) - 0.5) * 0.06));
+          vec3 Rv = reflect(-V, nr);
+          Rv.y = max(Rv.y, 0.0);
+          float hl = max(length(Rv.xz), 1e-3);
+          vec2 hd = Rv.xz / hl;
+          float tr = ringT(p, hd, 160.0);
+          vec2 hit = p + hd * tr;
+          vec2 sk = skyAt(atan(hit.y, hit.x));
+          tr = ringT(p, hd, sk.x);
+          hit = p + hd * tr;
+          sk = skyAt(atan(hit.y, hit.x));
+          float sSky = sk.y / tr, sR = Rv.y / hl;
+          float dsl = sR - sSky;
+          float landK = 1.0 - smoothstep(-0.6, 0.6, dsl / max(fwidth(dsl), 1e-4));
+          float fh = clamp(sR / max(sSky, 1e-3), 0.0, 1.0);
+          vec3 skyC = mix(uHorizon, uZenith, smoothstep(0.0, 0.9, sqrt(Rv.y)));
+          vec3 light = uSky * 0.6 + uSunColor * uSun * 0.16;
+          // foothill woods low down, rock above, snow on the far peaks (all winter); a little haze, mirrored darker
+          vec3 land = mix(vec3(0.035, 0.07, 0.035), vec3(0.17, 0.13, 0.09), smoothstep(0.12, 0.5, fh)) * light;
+          float snowK = smoothstep(0.66, 0.88, fh) * max(uWinter, smoothstep(220.0, 300.0, sk.x) * 0.8);
+          // the rim's strata: lighter turf ledges, wobbling with the ripples
+          float ledge = smoothstep(0.55, 0.75, fract(fh * 6.0 + (rip - 0.5) * 0.5 + vnoise(hit * 0.05) * 0.6)) * smoothstep(0.1, 0.3, fh);
+          land = mix(land, vec3(0.09, 0.13, 0.05) * light, ledge * 0.6);
+          land = mix(land, vec3(0.62, 0.68, 0.76) * light, snowK);
+          land = mix(land, uHorizon * 0.8, 0.14 + 0.3 * smoothstep(140.0, 420.0, tr));
+          vec3 skyR = mix(skyC, land, landK);
+          col = mix(col, skyR, 0.14 + fr * 0.68 + landK * 0.16);
           col = mix(col, mix(col, bank, 0.8) * (0.85 + rip * 0.3), band * farBank * (0.35 + 0.4 * fr) * (1.0 - uWet * 0.4));
           reflK = band * farBank;
         }
@@ -584,12 +628,14 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
   const u: WaterUniforms = {
     uTime: { value: 0 }, uSky: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uSunColor: { value: new THREE.Color(1, 1, 1) }, uSun: { value: 2.2 }, uNight: { value: 0 }, uWinter: { value: 0 }, uWet: { value: 0 },
+    uZenith: { value: new THREE.Color(0x3f8ee6) }, uHorizon: { value: new THREE.Color(0xbfe3f7) },
   };
   const root = new THREE.Group();
   root.name = 'water';
   const { data, lanes } = bakeWaterData();
   const fall = buildFall();
-  const surface = new THREE.Mesh(buildSurface(), waterMaterial(data, lanes, u, new THREE.Vector2(fall.base.x, fall.base.z)));
+  const skyline = skylineTexture();
+  const surface = new THREE.Mesh(buildSurface(), waterMaterial(data, lanes, skyline, u, new THREE.Vector2(fall.base.x, fall.base.z)));
   surface.position.y = WORLD.water;
   surface.renderOrder = 1;
   surface.receiveShadow = false;
@@ -616,6 +662,8 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
       u.uSun.value = L.sunIntensity;
       u.uNight.value = L.night;
       u.uWet.value = L.wet;
+      if (L.skyZenith) u.uZenith.value.copy(L.skyZenith);
+      if (L.skyHorizon) u.uHorizon.value.copy(L.skyHorizon);
       const s = ctx.valley.sky.season;
       u.uWinter.value += ((s === 'winter' ? 1 : 0) - u.uWinter.value) * Math.min(1, f.dt * 2);
       if (s !== season) {
@@ -633,7 +681,7 @@ export const waterSystem: SystemFactory = (ctx: SceneCtx) => {
       sheet.geometry.dispose(); (sheet.material as THREE.Material).dispose();
       mist.geometry.dispose(); (mist.material as THREE.Material).dispose();
       if (trickles) { trickles.geometry.dispose(); (trickles.material as THREE.Material).dispose(); }
-      data.dispose(); lanes.dispose();
+      data.dispose(); lanes.dispose(); skyline.dispose();
       shore.dispose();
     },
   };

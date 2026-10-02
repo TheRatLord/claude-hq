@@ -229,7 +229,9 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // out in the rowboat (scene/seasons, service 'rowboat'), the middle of the pond is where the rarer fish are
   const rareBoost = () => (ctx.services.get('rowboat') as { fishBoost(x: number, z: number): number } | undefined)?.fishBoost(st.target.x, st.target.z) ?? 1;
-  const conditions = () => ({ season: ctx.valley.sky.season, hour: ctx.valley.sky.hour, weather: ctx.valley.sky.weather.kind, water: st.water, rareBoost: rareBoost() });
+  // the travelling merchant's glimmer lure (model/visitors.ts, service 'visitors'): the rarer fish bite more for the rest of the day
+  const lureBoost = () => { try { return (ctx.services.get('visitors') as { fishBoost(day: string): number } | undefined)?.fishBoost(dayKey(Date.now())) ?? 1; } catch { return 1; } };
+  const conditions = () => ({ season: ctx.valley.sky.season, hour: ctx.valley.sky.hour, weather: ctx.valley.sky.weather.kind, water: st.water, rareBoost: rareBoost() * lureBoost() });
   const r = rand(Date.now() >>> 0);
 
   function setPhase(ph: Phase, dur = 0): void { st.phase = ph; st.t = 0; st.dur = dur; waterI.verb = ph === 'idle' ? 'Cast a line' : ph === 'bite' ? 'Hook it!' : 'Reel in'; }

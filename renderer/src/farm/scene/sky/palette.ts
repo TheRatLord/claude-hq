@@ -33,13 +33,13 @@ type K = [hourOf: (rise: number, set: number) => number, key: SkyKey];
 
 const NIGHT: SkyKey = {
   zenith: 0x050a1e, horizon: 0x1a2748, glow: 0x243463, key: 0xa4b6ec, keyI: 1.55, hemiSky: 0x34406e, hemiGround: 0x15182a, hemiI: 1.0,
-  stars: 1, night: 1, exposure: 1.28, gain: 0x7c8498, shade: 0x0c1236, sat: 0.6, contrast: 1.04, bloom: 1, mist: 0.25,
+  stars: 1, night: 1, exposure: 1.28, gain: 0x7c8498, shade: 0x0c1236, sat: 0.62, contrast: 1.1, bloom: 1, mist: 0.25,
 };
 const KEYS: K[] = [
   [(r) => r - 1.7, NIGHT],
   [(r) => r - 0.6, {
-    zenith: 0x2e3f7c, horizon: 0xd99aa5, glow: 0xffa98e, key: 0xb39ae0, keyI: 0.6, hemiSky: 0x8088c0, hemiGround: 0x3e3648, hemiI: 1.1,
-    stars: 0.35, night: 0.6, exposure: 1.15, gain: 0x888290, shade: 0x1a1a48, sat: 0.95, contrast: 1.02, bloom: 0.9, mist: 0.9,
+    zenith: 0x27417e, horizon: 0xc4a4b0, glow: 0xffaa88, key: 0x9eb0e2, keyI: 0.6, hemiSky: 0x7488c4, hemiGround: 0x323648, hemiI: 1.1,
+    stars: 0.35, night: 0.6, exposure: 1.15, gain: 0x83868f, shade: 0x141c4c, sat: 0.95, contrast: 1.06, bloom: 0.9, mist: 0.9,
   }],
   [(r) => r + 0.35, {
     zenith: 0x6a94d0, horizon: 0xf8c8a8, glow: 0xffb080, key: 0xffc494, keyI: 2.2, hemiSky: 0xa8bce8, hemiGround: 0x5e5a50, hemiI: 1.3,
@@ -58,16 +58,16 @@ const KEYS: K[] = [
     stars: 0, night: 0, exposure: 1.0, gain: 0x85827c, shade: 0x141a3c, sat: 1.02, contrast: 1.04, bloom: 0.55, mist: 0,
   }],
   [(_r, s) => s - 1.0, {
-    zenith: 0x5a84c4, horizon: 0xffd29a, glow: 0xffb45e, key: 0xffc67e, keyI: 2.9, hemiSky: 0xd0c6c4, hemiGround: 0x7a6a44, hemiI: 1.35,
-    stars: 0, night: 0, exposure: 1.02, gain: 0x8c8074, shade: 0x1e1a44, sat: 1.05, contrast: 1.05, bloom: 0.7, mist: 0,
+    zenith: 0x5a84c4, horizon: 0xffd29a, glow: 0xffb45e, key: 0xffc67e, keyI: 3.0, hemiSky: 0xa4b0d4, hemiGround: 0x7a6a44, hemiI: 1.3,
+    stars: 0, night: 0, exposure: 1.02, gain: 0x8a8176, shade: 0x241c58, sat: 1.06, contrast: 1.07, bloom: 0.7, mist: 0,
   }],
   [(_r, s) => s - 0.1, {
-    zenith: 0x4a5aa0, horizon: 0xffa47a, glow: 0xff8a5a, key: 0xffaa74, keyI: 1.7, hemiSky: 0xa898b4, hemiGround: 0x4e4250, hemiI: 1.2,
-    stars: 0.05, night: 0.25, exposure: 1.08, gain: 0x88807a, shade: 0x201a4a, sat: 0.98, contrast: 1.05, bloom: 0.85, mist: 0.1,
+    zenith: 0x4a5aa0, horizon: 0xffa47a, glow: 0xff8a5a, key: 0xffaa74, keyI: 1.8, hemiSky: 0x8e94c4, hemiGround: 0x484254, hemiI: 1.2,
+    stars: 0.05, night: 0.25, exposure: 1.08, gain: 0x88807a, shade: 0x221c54, sat: 1.0, contrast: 1.07, bloom: 0.85, mist: 0.1,
   }],
   [(_r, s) => s + 0.65, {
-    zenith: 0x1f2865, horizon: 0x8a6c9e, glow: 0xd08a7a, key: 0x8e9ad0, keyI: 0.7, hemiSky: 0x525e8c, hemiGround: 0x222634, hemiI: 1.3,
-    stars: 0.55, night: 0.75, exposure: 1.28, gain: 0x7e8290, shade: 0x101640, sat: 0.82, contrast: 1.04, bloom: 1, mist: 0.2,
+    zenith: 0x1a2a6a, horizon: 0x6a76a8, glow: 0xd8907a, key: 0x8aa0d8, keyI: 0.75, hemiSky: 0x4c6096, hemiGround: 0x1e2232, hemiI: 1.3,
+    stars: 0.55, night: 0.75, exposure: 1.28, gain: 0x7c8494, shade: 0x0e1644, sat: 0.86, contrast: 1.08, bloom: 1, mist: 0.2,
   }],
   [(_r, s) => s + 2.1, NIGHT],
 ];

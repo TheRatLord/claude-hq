@@ -175,6 +175,23 @@ const M: Record<Motif, (g: C2) => void> = {
     g.beginPath(); g.ellipse(0, 0.38, 0.46, 0.38, 0, 0, Math.PI * 2); g.fill();
     for (const [x, y, r] of [[-0.62, -0.18, 0.17], [-0.24, -0.52, 0.19], [0.24, -0.52, 0.19], [0.62, -0.18, 0.17]] as const) { g.beginPath(); g.ellipse(x, y, r * 0.86, r * 1.15, x * 0.5, 0, Math.PI * 2); g.fill(); }
   },
+  // a wooden mallet over a new plank with two nails (the projects board: the first place mended)
+  mallet: (g) => {
+    box(g, -0.9, 0.45, 1.8, 0.32); dot(g, -0.6, 0.61, 0.07); dot(g, 0.6, 0.61, 0.07);
+    g.save(); g.translate(0.05, -0.15); g.rotate(-0.6);
+    g.beginPath(); g.roundRect(-0.55, -0.62, 0.62, 0.42, 0.06); g.fill();
+    g.save(); g.lineWidth *= 2.2; line(g, -0.24, -0.2, -0.24, 0.85); g.restore();
+    g.restore();
+    for (const [x0, y0, x1, y1] of [[0.55, -0.55, 0.8, -0.75], [0.62, -0.3, 0.92, -0.32]] as const) line(g, x0, y0, x1, y1);
+  },
+  // a station bell on its bracket, swinging, with a little ring line each side (the halt: all six restored)
+  bell: (g) => {
+    line(g, -0.55, -0.85, 0.55, -0.85); line(g, 0, -0.85, 0, -0.62);
+    g.beginPath(); g.moveTo(-0.15, -0.62); g.quadraticCurveTo(-0.42, -0.55, -0.45, 0.05); g.quadraticCurveTo(-0.5, 0.35, -0.68, 0.45);
+    g.lineTo(0.68, 0.45); g.quadraticCurveTo(0.5, 0.35, 0.45, 0.05); g.quadraticCurveTo(0.42, -0.55, 0.15, -0.62); g.closePath(); g.fill();
+    dot(g, 0, 0.62, 0.13);
+    for (const s of [-1, 1]) { g.beginPath(); g.arc(0, -0.05, 0.95, s < 0 ? Math.PI * 0.9 : -Math.PI * 0.1, s < 0 ? Math.PI * 1.1 : Math.PI * 0.1); g.stroke(); }
+  },
   house: (g) => { g.beginPath(); g.moveTo(-0.95, -0.05); g.lineTo(0, -0.85); g.lineTo(0.95, -0.05); g.stroke(); box(g, -0.7, -0.15, 1.4, 1.0); g.beginPath(); g.rect(-0.2, 0.3, 0.4, 0.55); g.fill(); box(g, 0.35, 0.05, 0.25, 0.22); box(g, 0.45, -0.8, 0.2, 0.35); },
 };
 

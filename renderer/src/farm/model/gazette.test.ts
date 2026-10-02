@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ISSUES_KEPT, NOTES_MAX, addDays, composeIssue, createGazette, dayWeather, demoInput, demoPast, duration, gatherFacts, issueLetter, issueNo,
-  parseFacts, parseGazette, rangeOf, weekOf, weekdayOf, weeklyDue,
+  parseFacts, parseGazette, rangeOf, weekOf, weekdayOf, weeklyDue, boardNeed, parseNote,
 } from './gazette.ts';
+import { createProjects } from './projects.ts';
 import type { GazetteData, GazetteInput, GzNote, WeekFacts } from './gazette.ts';
 import { dayKey, demoAlmanac, emptyAlmanac, RANKS } from './almanac.ts';
 import type { AlmanacData } from './almanac.ts';
@@ -117,6 +118,41 @@ test('gazette facts: the journal makes gossip, the fishing report, finds and the
   assert.ok(iss.gossip.some((g) => /Fern/.test(g) && /four hearts/.test(g)));
   assert.ok(iss.stories.some((s) => s.id === 'fish' && /71 cm/.test(s.head + s.body.join(' '))));
   assert.ok(iss.stories.some((s) => s.id === 'stamp' && s.stamp === 'big-catch'));
+});
+
+test('gazette: Valley Projects finished and unveiled make a story, and the board\'s teaser a classified', () => {
+  const notes: GzNote[] = [
+    { k: 'project', at: at(2026, 9, 29, 11), id: 'footbridge', ev: 'done' },
+    { k: 'project', at: at(2026, 9, 29, 12), id: 'footbridge', ev: 'unveiled' },
+    { k: 'project', at: at(2026, 10, 2, 12), id: 'lanterns', ev: 'done' },
+    { k: 'project', at: at(2026, 9, 20, 12), id: 'glasshouse', ev: 'unveiled' }, // the week before
+  ];
+  assert.equal(parseNote({ k: 'project', at: 5, id: 'nope', ev: 'done' }), null);
+  assert.equal(parseNote({ k: 'project', at: 5, id: 'halt', ev: 'built' }), null);
+  // the board: lanterns done, the observatory opens; the teaser is the open plan nearest done
+  const pj = createProjects(undefined, { spend: () => true });
+  pj.devComplete('lanterns');
+  pj.pay('observatory', 200);
+  const board = boardNeed(pj.view({ friends: null, coins: 0, basket: {} }));
+  assert.equal(board?.id, 'observatory');
+  assert.deepEqual(board?.needs, ['50 more bits', '1 more rare find', '4 more forage finds']);
+  const f = gatherFacts(input({ notes, board }));
+  assert.deepEqual(f.projects.map((p) => [p.id, p.ev]), [['footbridge', 'unveiled'], ['lanterns', 'done']]);
+  assert.deepEqual(parseFacts(structuredClone(f)), f, 'the facts survive the archive');
+  const iss = composeIssue(f);
+  // a quiet harvest week: the restored footbridge leads
+  assert.equal(iss.lead.kicker, 'Valley Projects');
+  assert.match(iss.lead.body.join(' '), /footbridge/i);
+  assert.match(iss.lead.body.join(' '), /lantern path/);
+  assert.ok(iss.classifieds.some((c) => c.head === 'Wanted' && /observatory: 50 more bits, 1 more rare find and 4 more forage finds/.test(c.text)), JSON.stringify(iss.classifieds));
+  assert.ok(iss.editorial.body.some((b) => /eye on the observatory/.test(b)));
+  // only finished, not yet seen
+  const g = composeIssue(gatherFacts(input({ notes: [notes[2]] })));
+  assert.match(g.lead.head, /Lantern Path/);
+  // nothing open (all done): no teaser
+  const all = createProjects(undefined);
+  for (const id of ['lanterns', 'footbridge', 'glasshouse', 'millwheel', 'observatory', 'halt'] as const) all.devComplete(id);
+  assert.equal(boardNeed(all.view({ friends: null, coins: 0, basket: {} })), null);
 });
 
 test('gazette compose: only facts, seeded per issue (same page twice, different weeks read differently)', () => {

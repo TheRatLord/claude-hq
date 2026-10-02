@@ -8,7 +8,9 @@ import { ICONS, KIND_ICON, icon } from './icons.ts';
 import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_LABEL, STATUS_RANK } from './format.ts';
 import { statusColor } from '../model/prefs.ts';
 import { DEFAULT_LAYERS, drawValley, statusMark, fitContent, fitView, hitTest, toWorld, villagerPin, type Hit, type MapExtras, type MapLayers, type View } from './mapdraw.ts';
-import { heart, PIN_COLOR, rosette, tile, type Glyph } from './mappins.ts';
+import { heart, PIN_COLOR, rosette, tile, type Glyph, type ProjectPin } from './mappins.ts';
+import type { ProjectsService } from '../model/projects.ts';
+import { projectSite, type ProjectSiteId } from '../world/projects.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { fishOdds, SIGHTINGS } from '../model/collection.ts';
 import { PLACE_NAME, type VisitPlace } from '../model/friends.ts';
@@ -66,8 +68,37 @@ function gather(ctx: HudCtx, now: number): MapExtras | null {
   const unread = s.letters.filter((l) => !l.read).length;
   const subtitle = [CAP(sky.season), fa?.name, s.almanac?.name].filter(Boolean).join(' · ');
   // secrets found (the grotto behind the waterfall: its "?" becomes a pin)
-  const found = svc<{ discovered?(): boolean }>('grotto')?.discovered?.() ? ['grotto'] : [];
-  return (extras = { season: sky.season, store, unread, requests, forage, forageLeft: forage.length, wildOut, wild, bites, festival, subtitle, found });
+  // (the travelling merchant's sketch map marks it too: model/visitors.ts)
+  const found = svc<{ discovered?(): boolean }>('grotto')?.discovered?.() || svc<{ mapped?(s: string): boolean }>('visitors')?.mapped?.('grotto') ? ['grotto'] : [];
+  // visitors in the valley right now (scene/visitors)
+  let visitors: MapExtras['visitors'] = [];
+  try { visitors = (svc<{ list(): { id: string; name: string; title: string; color: string; x: number; z: number; line: string }[] }>('visitorsScene')?.list() ?? []).map((q) => ({ ...q })); } catch { /* optional */ }
+  const projects = projectPins(svc<ProjectsService>('projects'), svc<{ anchor(id: string): { x: number; z: number } | null }>('projectsScene'));
+  return (extras = { season: sky.season, store, unread, requests, forage, forageLeft: forage.length, wildOut, wild, bites, festival, subtitle, found, projects, visitors });
+}
+
+/** The Valley Projects' pins: the board, then each place where the scene stands it (world/projects.ts until it has). */
+function projectPins(pj: ProjectsService | undefined, scene: { anchor(id: string): { x: number; z: number } | null } | undefined): ProjectPin[] {
+  if (!pj) return [];
+  const out: ProjectPin[] = [];
+  try {
+    const v = pj.view(null);
+    const where = (id: string) => { const a = scene?.anchor(id); if (a && Number.isFinite(a.x)) return a; return id === 'lanterns' ? null : projectSite(id as ProjectSiteId); };
+    const board = where('board');
+    if (board) out.push({ id: 'board', x: board.x, z: board.z, state: 'board', name: 'Projects board', lines: [`The Mayor's restoration plans: ${v.done} of ${v.total} restored`, 'E to read the plans and chip in'] });
+    for (const e of v.entries) {
+      const p = where(e.def.id);
+      if (!p) continue;
+      const name = CAP(e.def.name);
+      if (e.status === 'done' && e.pending) out.push({ id: e.def.id, x: p.x, z: p.z, state: 'ready', name, lines: ['Finished! Go and see it unveiled', e.def.where] });
+      else if (e.status === 'done') out.push({ id: e.def.id, x: p.x, z: p.z, state: 'restored', name, lines: [`Restored: ${e.def.unlock}`] });
+      else out.push({
+        id: e.def.id, x: p.x, z: p.z, state: 'ruin', name: `${name} (ruin)`,
+        lines: [e.status === 'locked' ? `On the board after ${e.waiting.map((w) => w.name).join(' and ')}` : `${Math.round(e.progress * 100)}% of the plan done`, 'Plans on the projects board in the square'],
+      });
+    }
+  } catch { /* optional */ }
+  return out;
 }
 
 /** A legend swatch: the same pin the map draws, on a tiny canvas. */
@@ -120,14 +151,16 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     key(tileSw('nook', PIN_COLOR.nook), 'Nook', 'Leisure nooks: pergola, picnic, knoll, hot spring, orchard, stones, hay meadow, swing tree'),
     key(tileSw('fish', PIN_COLOR.fish), 'Fishing'),
     key(swatch((g) => rosette(g, 0, -1, 7, 0)), 'Festival'),
-    key(tileSw('peak', PIN_COLOR.peak), 'Trail stop', 'The cliff trail (red dots): trailhead, bench, rope bridge, summit lookout'));
+    key(tileSw('peak', PIN_COLOR.peak), 'Trail stop', 'The cliff trail (red dots): trailhead, bench, rope bridge, summit lookout'),
+    key(tileSw('board', PIN_COLOR.project), 'Projects', 'The Mayor\'s projects board, and each place once it is restored'),
+    key(tileSw('ruin', PIN_COLOR.ruin), 'Ruin', 'A place waiting on the projects board (gold: finished, go and see it)'));
   const layerBtn = (id: keyof MapLayers, label: string, sw: HTMLCanvasElement, title: string) => {
     const btn = h('button.vh-maplayer', { type: 'button', title, 'data-testid': `map-layer-${id}`, 'aria-pressed': String(layers[id]) }, sw, h('span.l', { text: label }), h('span.n'));
     btn.addEventListener('click', () => { layers[id] = !layers[id]; saveLayers(); btn.setAttribute('aria-pressed', String(layers[id])); extrasAt = -1; draw(); });
     return btn;
   };
   const layerBtns = {
-    places: layerBtn('places', 'Places', tileSw('nook', PIN_COLOR.nook), 'Store, mailbox, yard, nooks, fishing spots, the festival'),
+    places: layerBtn('places', 'Places', tileSw('nook', PIN_COLOR.nook), 'Store, mailbox, yard, nooks, fishing spots, the projects, the festival'),
     requests: layerBtn('requests', 'Requests', swatch((g) => heart(g, 0, 0, 7.5, false, 0)), 'Hearts on the villagers with a request today'),
     forage: layerBtn('forage', 'Forage', tileSw('leaf', PIN_COLOR.leaf), 'Roughly where today\'s forageables lie (never the exact spot)'),
     wildlife: layerBtn('wildlife', 'Wildlife', tileSw('paw', PIN_COLOR.paw), 'Where and when the shy visitors come out'),

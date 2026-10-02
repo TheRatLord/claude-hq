@@ -1,0 +1,96 @@
+- generic [active] [ref=e1]:
+  - generic "The valley, first-person view" [ref=e2]
+  - generic:
+    - generic:
+      - generic:
+        - status
+      - navigation "Quick panels":
+        - button "Minimap" [ref=e3] [cursor=pointer]:
+          - generic [ref=e5]: "N"
+        - generic [ref=e6]:
+          - button "Mailbox" [ref=e7] [cursor=pointer]:
+            - generic [ref=e13]: J
+          - button "Map" [ref=e14] [cursor=pointer]:
+            - generic [ref=e21]: M
+          - button "Farm ledger" [ref=e22] [cursor=pointer]:
+            - generic [ref=e28]: Tab
+          - button "Terminals" [ref=e29] [cursor=pointer]:
+            - generic [ref=e34]: "⌃`"
+          - button "Menu" [ref=e35] [cursor=pointer]:
+            - generic [ref=e40]: Esc
+        - generic [ref=e42]:
+          - button "0/1 requests ▸" [ref=e43] [cursor=pointer]:
+            - generic [ref=e48]: 0/1
+            - generic [ref=e49]: requests
+            - generic [ref=e50]: ▸
+          - button "Open friends" [ref=e51] [cursor=pointer]
+      - note "Key hints":
+        - generic:
+          - generic: M
+          - text: map
+        - generic:
+          - generic: Tab
+          - text: ledger
+        - generic:
+          - generic: J
+          - text: mail
+        - generic:
+          - generic: "Ctrl+`"
+          - text: terminals
+        - generic:
+          - generic: Esc
+          - text: menu
+        - generic:
+          - generic: "?"
+          - text: all keys
+      - generic:
+        - generic:
+          - heading "Welcome to Claude Valley" [level=2]
+          - paragraph: Your agents are the farmers. Walk over and say hi — or reach any terminal from the menus.
+          - generic:
+            - generic:
+              - generic: Click
+              - text: look around
+            - generic:
+              - generic: W
+              - generic: A
+              - generic: S
+              - generic: D
+              - text: walk
+            - generic:
+              - generic: Shift
+              - text: sprint
+            - generic:
+              - generic: E
+              - text: talk ·
+              - generic: F
+              - text: terminal
+            - generic:
+              - generic: M
+              - text: map
+            - generic:
+              - generic: Tab
+              - text: ledger
+            - generic:
+              - generic: J
+              - text: mailbox
+            - generic:
+              - generic: Esc
+              - text: menu
+          - generic: Click anywhere to start
+      - region "Valley status and who needs you":
+        - status "Clock and connection" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]:
+            - generic "Cloudy" [ref=e59]
+            - generic [ref=e63]:
+              - generic [ref=e64]:
+                - generic [ref=e65]: 09:22
+                - generic "Autumn · Fri 2 Oct" [ref=e66]: Fri 2 Oct
+              - generic [ref=e71]:
+                - generic [ref=e72]: Connecting…
+                - generic "0 need you · 0 working · 0 done" [ref=e73]: waiting for herdr
+              - generic [ref=e75]:
+                - button "Homestead" [ref=e76]
+                - button "0" [ref=e85]
+      - text: ▸
+      - alert

@@ -74,6 +74,8 @@ export const postSystem: SystemFactory = (ctx) => {
     uInk: { value: new THREE.Color() }, uInkStrength: { value: 0.8 }, uOutlinePx: { value: 1 },
     uFogColor: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Color() },
     uMist: { value: 0 }, uMistHeight: { value: 4 }, uHaze: { value: 0 }, uHazeColor: { value: new THREE.Color() },
+    uHazeWarm: { value: new THREE.Color() }, uHazeDir: { value: new THREE.Vector3(0, 1, 0) },
+    uProjScale: { value: 1 }, uAO: { value: 0 }, uAOTint: { value: new THREE.Color() },
     uCloudShadow: { value: 0 }, uCloudCover: { value: 0 }, uCloudOffset: { value: new THREE.Vector2() },
     uBloom: { value: 0.6 }, uExposure: { value: 1 }, uSaturation: { value: 1 }, uContrast: { value: 1 }, uVignette: { value: 0.2 },
     uFlash: { value: 0 }, uNight: { value: 0 }, uUseBloom: { value: useBloom ? 1 : 0 },
@@ -84,7 +86,10 @@ export const postSystem: SystemFactory = (ctx) => {
   };
   const raysM = mk(raysFrag, { tDepth: { value: depth }, uSunUv: { value: new THREE.Vector2() }, uAspect: { value: 1 } });
   const sunNdc = new THREE.Vector3(), camFwd = new THREE.Vector3();
+  const tmpSilver = new THREE.Color(0.34, 0.42, 0.62);
   const composite = mk(compositeFrag, cu);
+  // contact shadows: 8 taps on high, 4 on medium, compiled out on low
+  composite.defines = { AO_TAPS: low ? 0 : ctx.quality === 'medium' ? 4 : 8 };
   const fxaa = new THREE.ShaderMaterial({
     vertexShader: fullscreenVert, fragmentShader: FXAAShader.fragmentShader, depthTest: false, depthWrite: false,
     uniforms: { tDiffuse: { value: ldrRT.texture }, resolution: { value: new THREE.Vector2() } },
@@ -155,8 +160,18 @@ export const postSystem: SystemFactory = (ctx) => {
       cu.uSunColor.value.copy(ctx.lighting.sunColor).multiplyScalar(Math.max(0, a.sunElev > -0.05 ? 1 : 0) * (1 - a.overcast * 0.7));
       cu.uMist.value = a.mist;
       cu.uMistHeight.value = 4 + a.fog * 9;
-      cu.uHaze.value = 0.42;
-      cu.uHazeColor.value.copy(ctx.lighting.fogColor).lerp(a.zenith, 0.3);
+      // aerial perspective: lighter by day, thinner and darker at night (distant land sinks into the dark, never
+      // lifts into a grey veil); the light side warms toward the sun's glow, or silvers toward the moon after dark
+      const nightK = a.night;
+      cu.uHaze.value = 0.58 * (1 - 0.4 * nightK);
+      cu.uHazeColor.value.copy(ctx.lighting.fogColor).lerp(a.zenith, 0.3).multiplyScalar(1 - 0.3 * nightK);
+      const sunUp = a.sunElev > -0.06;
+      cu.uHazeDir.value.copy(sunUp ? a.sun : a.moon);
+      if (sunUp) cu.uHazeWarm.value.copy(ctx.lighting.fogColor).lerp(a.glow, 0.55 * (1 - a.overcast * 0.8) * (1 - a.fog));
+      else cu.uHazeWarm.value.copy(cu.uHazeColor.value).multiplyScalar(1.35).lerp(tmpSilver, 0.15 * (1 - a.overcast));
+      cu.uProjScale.value = camera.projectionMatrix.elements[5] * h * 0.5;
+      cu.uAO.value = 0.75 * (1 - 0.35 * nightK) * (1 - a.fog * 0.5);
+      { const t = cu.uAOTint.value.copy(g.shadowTint).multiplyScalar(2.2).addScalar(0.5); t.setRGB(Math.min(1, t.r), Math.min(1, t.g), Math.min(1, t.b)); }
       cu.uCloudShadow.value = a.cloudShadow;
       cu.uCloudCover.value = a.cover;
       cu.uCloudOffset.value.copy(a.cloudOffset);

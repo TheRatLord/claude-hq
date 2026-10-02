@@ -217,7 +217,7 @@ kbd.vh-k, .vh-k { display: inline-grid; place-items: center; min-width: 22px; he
 .vh-toast { pointer-events: auto; position: relative; display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 8px; max-width: 100%; border-radius: 11px; cursor: pointer;
   background: linear-gradient(var(--paper), var(--paper-2)); border: 2.5px solid var(--wood-dark); box-shadow: 0 6px 18px rgba(30,15,5,.35); animation: vh-pop .25s; transition: opacity .4s, transform .4s; }
 .vh-toast > div { min-width: 0; }
-.vh-toast.out { opacity: 0; transform: translateX(12px); }
+.vh-toast.out { opacity: 0; transform: translateX(12px); pointer-events: none; }   /* a leaving toast never takes a click meant for the one sliding into its place */
 .vh-toast .vh-ico { width: 22px; height: 22px; }
 .vh-toast .t { font-weight: 800; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vh-toast .s { font-size: 12px; color: var(--ink-soft); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -380,6 +380,11 @@ kbd.vh-k, .vh-k { display: inline-grid; place-items: center; min-width: 22px; he
 .vh-row .job b { font-weight: 800; }
 .vh-row .job.ask { color: #8a5200; font-weight: 800; }
 .vh-row .since { font-size: 12px; font-weight: 700; color: var(--ink-faint); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+/* the ledger's since column: two short lines (harvest chip + ducklings / spend + time), right-aligned */
+.vh-row .since:has(> .l1) { flex-direction: column; align-items: flex-end; gap: 2px; min-width: 44px; }
+.vh-row .since > .l1, .vh-row .since > .l2 { display: flex; align-items: center; gap: 6px; }
+.vh-row .since > .l1:empty { display: none; }
+.vh-row .since .vh-harvest-chip, .vh-row .since .spend { margin-right: 0; }
 .vh-row .since .ducks { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-soft); }
 .vh-row .since .ducks .vh-ico { width: 16px; height: 16px; }
 .vh-row .acts { display: flex; gap: 5px; }

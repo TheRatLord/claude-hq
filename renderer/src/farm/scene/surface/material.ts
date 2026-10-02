@@ -19,6 +19,7 @@ export const SURFACE_UNIFORMS = {
 
 let quality: Quality = 'high';
 const live = new Set<WeakRef<THREE.Material>>();
+let adds = 0;
 /**
  * Global quality switch (the terrain system calls it with ctx.quality; safe at runtime: live surface materials
  * recompile). 'low' compiles surface detail out entirely; 'medium' pulls the fine-detail distance in.
@@ -89,6 +90,9 @@ export function withSurfaces<M extends THREE.Material>(m: M, o: SurfaceOpts = {}
   const ids = o.surfaces ? [...new Set([...surfIds(o.surfaces), id])] : SURF_NAMES.map((n) => SURF[n]);
   const state: SurfState = { def: { value: new THREE.Vector4(code, scale, strength, o.amount ?? 1) } };
   m.userData.surface = state;
+  // materials come and go with every rebuild (fields, festival dressing, seasons): drop the dead refs now and then, or
+  // the set itself grew by ~2k WeakRefs a minute in the soak
+  if (++adds % 512 === 0) for (const r of live) if (!r.deref()) live.delete(r);
   live.add(new WeakRef(m));
   const withDefaults = m as M & { defaultAttributeValues?: Record<string, number[]> };
   withDefaults.defaultAttributeValues = { ...(withDefaults.defaultAttributeValues ?? {}), surface: [0, 1, 1, 0] };

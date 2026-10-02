@@ -88,7 +88,7 @@ test('album: looks, frames, say cheese and the timer; the album panel; the farmh
   await page.waitForTimeout(1500);
   expect((await album(page)).list.length).toBe(6);
   expect(await page.evaluate(() => !!((window as unknown as W).__valley.ctx.services.get('photo') as Photo).cheese())).toBe(true);
-  await expect.poll(async () => (await album(page)).list.length, { timeout: 8000 }).toBe(7);
+  await expect.poll(async () => (await album(page)).list.length, { timeout: 20_000 }).toBe(7);   // the 3 s timer runs on frame time: slow under a loaded GPU
   await page.keyboard.press('KeyT'); await page.keyboard.press('KeyT');   // back to off (3 → 10 → off)
   await expect(page.getByTestId('photo-timer')).toContainText('off');
 

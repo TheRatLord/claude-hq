@@ -14,7 +14,7 @@ import { KIND_ICON, iconImage } from './icons.ts';
 import { fieldName, pinGlyph, shortName, WS_COLORS } from './format.ts';
 import { STATUS_SHAPE, statusColor } from '../model/prefs.ts';
 import { getBase, getHalf, baseReady, roundRectPath, S, WB, worldPois } from './mapbase.ts';
-import { FISH_SPOTS, HABITATS, heart, PIN_COLOR, PLACES, rosette, tile, TIME_SHORT, type Glyph } from './mappins.ts';
+import { FISH_SPOTS, HABITATS, heart, PIN_COLOR, PLACES, projectTile, rosette, tile, TIME_SHORT, type Glyph, type ProjectPin } from './mappins.ts';
 
 export { roundRectPath as roundRect } from './mapbase.ts';
 export { warmBase } from './mapbase.ts';
@@ -52,6 +52,10 @@ export interface MapExtras {
   subtitle: string;
   /** secret places the player has found (world/map.ts POIS with `hidden`: the grotto) */
   found?: readonly string[];
+  /** the Valley Projects: the Mayor's board and each place, ruined or restored (hud/map.ts gathers them) */
+  projects?: readonly ProjectPin[];
+  /** visitors in the valley right now (scene/visitors: 'visitorsScene'): the merchant's cart, the painter, the parcel post */
+  visitors?: readonly { id: string; name: string; title: string; color: string; x: number; z: number; line: string }[];
 }
 
 export interface DrawOpts {
@@ -307,10 +311,21 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
         put(`poi:${p.id}`, p, k, p.hidden ? PIN_COLOR.secret : PIN_COLOR.peak, p.name, [line]);
         extraLabels.push({ text: p.name, x: p.x, z: p.z, off: 2.6, ink: p.hidden ? '#4a3a7a' : '#7a2e20' });
       }
+      // the Valley Projects: the board, ruins (gold: finished, waiting to be seen), restored places (with a label)
+      for (const pp of ex.projects ?? []) {
+        const [k, color] = projectTile(pp);
+        put(`project:${pp.id}`, pp, k, color, pp.name, pp.lines);
+        if (pp.state === 'restored') extraLabels.push({ text: pp.name, x: pp.x, z: pp.z, off: 2.6, ink: '#7a3a1e' });
+      }
     }
     if (ex.store) {
       put('place:store', ex.store, 'store', PIN_COLOR.store, 'General store', ['E browse · F sell your basket', 'Yard decor, seasonal pieces, rank rewards']);
       if (!mini) extraLabels.push({ text: 'General store', x: ex.store.x, z: ex.store.z, off: 2.4, ink: '#2f6a44' });
+    }
+    // visitors: a tile in their own colour (the merchant's cart, the painter's easel, the parcel post), labelled on the big map
+    for (const vp of ex.visitors ?? []) {
+      put(`visitor:${vp.id}`, vp, vp.id === 'merchant' ? 'cart' : vp.id === 'painter' ? 'easel' : 'parcel', vp.color, `${vp.name} · ${vp.title}`, [vp.line]);
+      if (!mini) extraLabels.push({ text: vp.id === 'merchant' ? 'Merchant' : vp.id === 'painter' ? 'Painter' : 'Post', x: vp.x, z: vp.z, off: 2.4, ink: '#5a2e5e' });
     }
     if (ex.festival) {
       const [x, y] = toScreen(v, ex.festival.x, ex.festival.z);

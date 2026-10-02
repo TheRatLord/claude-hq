@@ -2,7 +2,8 @@
  * The Valley Gazette's wiring (model/gazette.ts is the pure paper; hud/gazette.ts prints it). main.ts creates the
  * newsroom here, which:
  *  - keeps the Gazette's journal (gifts, delivered requests, new hearts, catches with their size, first finds) from the
- *    friendship and Collections services as they happen;
+ *    friendship and Collections services as they happen, and the Valley Projects finished / unveiled;
+ *  - reads the projects board for its teaser ("Wanted: for the observatory, 120 more bits…");
  *  - delivers the weekly edition to the mailbox every Monday morning (or on the first visit of a new week), filing it
  *    in the back-issue archive (no letter when nothing at all happened last week);
  *  - composes the morning edition (the last seven days, today included) on demand for the noticeboard / G.
@@ -10,13 +11,14 @@
  * Persisted per browser profile in `claude-valley.gazette.v1`. The demo valley keeps its paper in memory and builds
  * its week from the seeded history (demoAlmanac, demoDay per farmer), never touching the real archive.
  */
-import { composeIssue, createGazette, demoInput, gatherFacts, issueLetter } from './model/gazette.ts';
+import { boardNeed, composeIssue, createGazette, demoInput, gatherFacts, issueLetter } from './model/gazette.ts';
 import type { EditionKind, GazetteInput, GazetteService, IssueRec, Issue } from './model/gazette.ts';
 import { rollDay } from './model/timeline.ts';
 import type { Valley } from './model/valley.ts';
 import type { CollectionService } from './model/collection.ts';
 import type { FriendsService } from './model/friends.ts';
 import type { StampsService } from './model/stamps.ts';
+import type { ProjectsService } from './model/projects.ts';
 import { localJson } from './storage.ts';
 
 export const GAZETTE_KEY = 'claude-valley.gazette.v1';
@@ -48,6 +50,8 @@ export interface NewsroomDeps {
   collection: CollectionService;
   friends: FriendsService;
   stamps: StampsService;
+  /** the Valley Projects board (its journal notes and the "board needs…" teaser) */
+  projects?: ProjectsService;
   /** null until the server said hello, then whether this is the demo valley */
   demo: () => boolean | null;
 }
@@ -68,6 +72,12 @@ export function installNewsroom(d: NewsroomDeps): Newsroom {
     if (r.def.kind === 'fish') paper.note({ k: 'catch', at: now(), item: r.def.id, cm: r.cm ?? 0 });
     if (r.isNew) paper.note({ k: 'find', at: now(), item: r.def.id });
   });
+  d.projects?.onChange((c) => {
+    if (c.kind === 'complete') paper.note({ k: 'project', at: c.at, id: c.id, ev: 'done' });
+    else if (c.kind === 'unveil') paper.note({ k: 'project', at: c.at, id: c.id, ev: 'unveiled' });
+  });
+  // the board's teaser (friendship read live: a blessing already there isn't "wanted")
+  const board = () => { try { return d.projects ? boardNeed(d.projects.view({ friends: friends.data(), coins: 0, basket: {} })) : null; } catch { return null; } };
 
   // ---- facts
   const input = (kind: EditionKind): GazetteInput => {
@@ -78,9 +88,9 @@ export function installNewsroom(d: NewsroomDeps): Newsroom {
       const farmers = [...s.farmers.values()].map((f) => ({ id: f.id, tag: f.tag, name: f.name }));
       const inp = demoInput(kind, now(), valley.almanacData(), farmers, today);
       // the player's own week (a real catch in the demo) joins the seeded one
-      return { ...inp, notes: [...inp.notes, ...paper.data().notes], stamps: { ...inp.stamps, ...stamps.data().earned } };
+      return { ...inp, notes: [...inp.notes, ...paper.data().notes], stamps: { ...inp.stamps, ...stamps.data().earned }, board: board() };
     }
-    return { kind, now: now(), almanac: valley.almanacData(), past: tl.past, today, stamps: stamps.data().earned, notes: paper.data().notes, demo: false };
+    return { kind, now: now(), almanac: valley.almanacData(), past: tl.past, today, stamps: stamps.data().earned, notes: paper.data().notes, demo: false, board: board() };
   };
   const facts = (kind: EditionKind) => gatherFacts(input(kind));
 
@@ -92,7 +102,7 @@ export function installNewsroom(d: NewsroomDeps): Newsroom {
   const deliver = (force = false): IssueRec | null => {
     if (!force && !paper.due()) return null;
     const f = facts('weekly');
-    const empty = f.points <= 0 && f.active <= 0 && !f.notes.length && !f.catches && !f.stamp;
+    const empty = f.points <= 0 && f.active <= 0 && !f.notes.length && !f.catches && !f.stamp && !f.projects.length;
     if (!force && empty) { paper.skip(); return null; }
     const rec = paper.file(f);
     post(rec);

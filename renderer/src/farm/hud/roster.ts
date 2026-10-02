@@ -32,7 +32,7 @@ function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
   for (const f of s.farmers.values()) {
     const plot = s.plots.get(f.plotId);
     if (!rosterFilterHit(only, f)) continue;
-    if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, agentName(f), f.needsYou ? 'needs blocked' : '')) continue;
+    if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, agentName(f), f.needsYou ? 'needs blocked' : '', f.said, f.todos?.current)) continue;
     get(f.plotId).rows.push({ id: f.id, kind: 'farmer', f });
   }
   for (const hp of only ? [] : s.helpers.values()) {
@@ -50,16 +50,17 @@ function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
 export function createRoster(ctx: HudCtx): Panel {
   const { el, body, closeBtn } = framePanel('roster', 'Farm Ledger', ICONS.book);
   closeBtn.addEventListener('click', () => ctx.panels.close());
-  const input = h('input.vh-input', { type: 'text', placeholder: 'Filter by name, field, job, question…', 'aria-label': 'Filter farmers', 'data-autofocus': '', spellcheck: 'false', 'data-testid': 'roster-filter' });
+  const input = h('input.vh-input', { type: 'text', placeholder: 'Filter by name, field, job, question, what they said…', 'aria-label': 'Filter farmers', 'data-autofocus': '', spellcheck: 'false', 'data-testid': 'roster-filter' });
   const summary = h('div.summary');
   const rowsEl = h('div.vh-rows.vh-scroll', { role: 'listbox', 'aria-label': 'Farmers', 'data-testid': 'roster-rows' });
   const foot = h('div.vh-foot', null,
     h('span', null, h('kbd.vh-k', { text: '↑' }), h('kbd.vh-k', { text: '↓' }), 'choose'),
-    h('span', null, h('kbd.vh-k', { text: 'Enter' }), 'open terminal'),
-    h('span', null, h('kbd.vh-k', { text: 'Shift+Enter' }), 'walk there'),
-    h('span', null, h('kbd.vh-k', { text: 'Ctrl+I' }), 'details card'),
-    h('span', null, h('kbd.vh-k', { text: 'Ctrl+Enter' }), 'new task'),
-    h('span', null, h('kbd.vh-k', { text: 'R' }), 'last harvest'),
+    // short words so the whole row fits on one line in a 1040 px ledger (the keys say the rest; ? lists them all)
+    h('span', null, h('kbd.vh-k', { text: 'Enter' }), 'terminal'),
+    h('span', null, h('kbd.vh-k', { text: 'Shift+Enter' }), 'walk'),
+    h('span', null, h('kbd.vh-k', { text: 'Ctrl+I' }), 'card'),
+    h('span', null, h('kbd.vh-k', { text: 'Ctrl+Enter' }), 'task'),
+    h('span', null, h('kbd.vh-k', { text: 'R' }), 'harvest'),
     h('span', null, h('kbd.vh-k', { text: 'Tab' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.top', null, h('div.vh-search', null, input), summary), rowsEl, foot);
 
@@ -137,7 +138,10 @@ export function createRoster(ctx: HudCtx): Panel {
         h('div', null, h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status] })),
         stripOf(id),
         job,
-        h('div.since', null, harvestChip(id), spendCell(f) ? h('span.spend', { title: `Today: ${spendLine(f.spend!)}`, 'data-testid': 'roster-spend' }, spendCell(f)) : null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
+        // two short lines (the harvest chip and ducklings over the spend and the time) so the job column keeps its room
+        h('div.since', null,
+          h('span.l1', null, harvestChip(id), ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null),
+          h('span.l2', null, spendCell(f) ? h('span.spend', { title: `Today: ${spendLine(f.spend!)}`, 'data-testid': 'roster-spend' }, spendCell(f)) : null, ago)),
         acts);
     } else {
       const hp = r.hp;

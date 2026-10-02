@@ -20,6 +20,7 @@
  *          --timescale K (server demo clock, 20)  --anim K (__valley.timeScale, 4)  --date-scale K (page Date speed, 1)
  *          --start ISO (page Date start; default now)  --seed N (1)  --actions list|all  --json FILE  --size WxH (1280x720)
  *          --stacks (append a short stack to every console warning / error)  --warmup 0 (skip the warm-up pass)
+ *          --tex (list textures uploaded / disposed since the last sample, with where each was made)
  *          --url URL (an existing backend + its built dist instead of a fresh demo dev server)
  * Actions: scenario panels terminal toasts poses weather inside gather wildlife festival forage pet flap socket hidden
  *          midnight
@@ -42,6 +43,11 @@ const ALL_ACTIONS = ['scenario', 'panels', 'terminal', 'toasts', 'poses', 'weath
 const ACTIONS = new Set(opt('--actions', 'all') === 'all' ? ALL_ACTIONS : opt('--actions', '').split(','));
 const [W, H] = opt('--size', '1280x720').split('x').map(Number);
 const JSON_OUT = opt('--json', '');
+const TEX = argv.includes('--tex');
+const POSES = ['hub', 'farmhouse', 'square', 'windmill', 'pond', 'barn', 'river', 'plots', 'east', 'trailhead', 'trail', 'bridge', 'summit'];
+const ROOMS = ['door', 'hearth', 'desk', 'bed', 'window'];
+const GATHERINGS = ['campfire', 'concert', 'market'];
+const FESTIVALS = ['blossom', 'lantern', 'founders', 'harvest', 'hallowtide', 'starlight', 'newyear'];
 const PANELS = ['map', 'mailbox', 'roster', 'almanac', 'collection', 'noticeboard', 'stats', 'pause', 'friends', 'pet', 'shop'];
 
 /**
@@ -55,7 +61,9 @@ function instrument(o: { start: number; scale: number; stacks: boolean }): void 
   const r0 = realNow();
   const clock = { offset: (o.start || r0) - r0, scale: o.scale, base: r0 };
   const fakeNow = () => { const r = realNow(); return Math.round(clock.base + clock.offset + (r - clock.base) * clock.scale); };
-  if (o.start || o.scale !== 1) {
+  // always installed (also at scale 1, start now): `hidden` and `midnight` move the page clock through it, and a
+  // jump without it silently did nothing
+  {
     class FakeDate extends RealDate {
       constructor(...a: unknown[]) {
         if (a.length === 0) super(fakeNow());
@@ -97,6 +105,39 @@ function instrument(o: { start: number; scale: number; stacks: boolean }): void 
       hide(h: boolean) { if (h === (hidden ?? false)) return; hidden = h; document.dispatchEvent(new Event('visibilitychange')); },
     },
   });
+}
+
+/**
+ * `--tex`: after the warm-up, track every texture three uploads (it adds its 'dispose' listener then) with where the
+ * texture was made, and print the ones that appeared (+) or went (−) since the last sample under each row. Texture
+ * growth is then a list of creation sites rather than a number.
+ */
+function texProbe(): void {
+  const T = (window as unknown as { __valley: { three: Record<string, { prototype: Record<string, unknown> }> } }).__valley.three;
+  const made = new WeakMap<object, string>();
+  const live = new Map<object, string>();
+  const site = () => (new Error().stack ?? '').split('\n').slice(3, 12).map((l) => l.trim().replace(/^at /, '').replace(/\?v=\w+/, '').replace(/https?:\/\/[^/]+/, ''))
+    .filter((l) => !l.includes('three.module') && !l.includes('three.core')).slice(0, 4).join(' < ');
+  // three's Texture constructor assigns `mapping`: a prototype setter sees every new texture once
+  Object.defineProperty(T.Texture.prototype, 'mapping', { configurable: true, get() { return undefined; }, set(v: unknown) { made.set(this, site()); Object.defineProperty(this, 'mapping', { value: v, writable: true, configurable: true, enumerable: true }); } });
+  const ed = T.EventDispatcher.prototype as { addEventListener(t: string, f: unknown): void; removeEventListener(t: string, f: unknown): void };
+  const ael = ed.addEventListener, rel = ed.removeEventListener;
+  type Tex = { isTexture?: boolean; name?: string; constructor: { name: string }; image?: { width?: number; height?: number } };
+  ed.addEventListener = function (this: Tex, type: string, fn: unknown) { if (type === 'dispose' && this.isTexture && !live.has(this)) live.set(this, `${this.constructor.name}${this.name ? `[${this.name}]` : ''} ${this.image?.width ?? '?'}x${this.image?.height ?? '?'} ${made.get(this) ?? '(made before the probe)'}`); ael.call(this, type, fn); };
+  ed.removeEventListener = function (this: Tex, type: string, fn: unknown) { if (type === 'dispose' && this.isTexture) live.delete(this); rel.call(this, type, fn); };
+  let prev = new Map<string, number>();
+  (window as unknown as { __soakTex(): string[] }).__soakTex = () => {
+    // one entry per GPU texture: clones (three clones a texture uniform into every new material's program uniforms)
+    // share their source and its upload, as renderer.info counts them
+    const bySource = new Map<unknown, string>();
+    for (const [t, k] of live) { const src = (t as { source?: unknown }).source ?? t; if (!bySource.has(src)) bySource.set(src, k); }
+    const now = new Map<string, number>();
+    for (const k of bySource.values()) now.set(k, (now.get(k) ?? 0) + 1);
+    const out: string[] = [];
+    for (const k of new Set([...now.keys(), ...prev.keys()])) { const d = (now.get(k) ?? 0) - (prev.get(k) ?? 0); if (d) out.push(`tex ${d > 0 ? '+' : '−'}${Math.abs(d)} ${k}`); }
+    prev = now;
+    return out.slice(0, 12);
+  };
 }
 
 interface Sample {
@@ -193,10 +234,18 @@ async function baseline(page: Page): Promise<void> {
   // The big one: the previous scenario's fields dissolve over 3.2 s of game time (scene/plots/field.ts close()) with
   // every mesh still in the scene until the end, so the count is flat *while* they go: 3 equal reads 2 s apart (6 s,
   // enough at the ~7 fps a loaded GPU gives) rather than 1 s apart
+  // The fields of the scenario just left stand in their harvest stage for a few seconds (the model's HARVEST_MS, page
+  // clock) before they close, and nothing in them moves meanwhile: a flat count then is not "settled". Those were the
+  // +300–500 `plots` objects (and +10–20 MB of heap) some samples caught. So the count only starts once every plot in the
+  // state is a live one again (≤ 40 s); the equal reads then cover the dissolve.
   let last = -1, same = 0;
-  for (let i = 0; i < 15 && same < 2; i++) {
-    const n = await ev(page, '(() => { let n = 0; __valley.ctx.scene.traverse(() => { n++; }); return n; })()') as number;
-    same = n === last ? same + 1 : 0;
+  for (let i = 0; i < 20 && same < 2; i++) {
+    const n = await ev(page, `(() => {
+      const plots = Object.values(__valley.state().plots ?? {});
+      if (plots.some((p) => p.stage === 'harvest' || p.stage === 'fallow')) return -1;
+      let n = 0; __valley.ctx.scene.traverse(() => { n++; }); return n;
+    })()`) as number;
+    same = n === last && n >= 0 ? same + 1 : 0;
     last = n;
     await page.waitForTimeout(2000);
   }
@@ -232,6 +281,31 @@ async function warmUp(page: Page): Promise<void> {
     await v('window.__hud.close()');
   }
   for (let pass = 0; pass < 2; pass++) for (const a of ACTIONS) if (a !== 'midnight') await act(page, a);
+  // The random picks above left most places unseen, and three uploads a texture the first time something using it is
+  // drawn: walking to a new pose (the landmarks' plaques, the noticeboard face…), a gathering's props or a room for
+  // the first time in the run's second half read as +1…+5 textures, i.e. a 44 → 51 "leak" at 6/h. Visit every one
+  // here and, at each stop, upload every texture the scene holds, drawn or not (far / hidden / culled objects; a room's
+  // holder is only in the scene while you stand inside it).
+  const upload = () => v(`(() => {
+    const r = __valley.ctx.renderer;
+    __valley.ctx.scene.traverse((o) => {
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+        for (const t of [...Object.values(m), ...Object.values(m.uniforms ?? {}).map((u) => u && u.value)]) {
+          if (t && t.isTexture && !t.isRenderTargetTexture && !t.isDepthTexture && t.image) r.initTexture(t);
+        }
+      }
+    });
+  })()`);
+  const each = async (on: boolean, list: string[], call: (x: string) => string, ms: number, off?: string) => {
+    if (!on) return;
+    for (const x of list) { await v(call(x)); await page.waitForTimeout(ms); await upload(); }
+    if (off) await v(off);
+  };
+  await each(ACTIONS.has('poses'), POSES, (x) => `__valley.pose(${JSON.stringify(x)})`, 700);
+  await each(ACTIONS.has('inside'), ROOMS, (x) => `__valley.inside(${JSON.stringify(x)})`, 900, '__valley.inside(false)');
+  await each(ACTIONS.has('gather'), GATHERINGS, (x) => `__valley.gather(${JSON.stringify(x)})`, 2500, '__valley.gather(null)');
+  await each(ACTIONS.has('festival'), FESTIVALS, (x) => `__valley.festival(${JSON.stringify(x)})`, 1200, '__valley.festival(null)');
+  await upload();
 }
 
 async function act(page: Page, a: string): Promise<void> {
@@ -255,17 +329,17 @@ async function act(page: Page, a: string): Promise<void> {
         break;
       }
       case 'toasts': for (let i = 0; i < 6; i++) await v(`window.__hud.toast({ text: 'soak ${i} ' + Date.now(), level: ${JSON.stringify(pick(['info', 'good', 'warn', 'error']))} })`); break;
-      case 'poses': await v(`__valley.pose(${JSON.stringify(pick(['hub', 'farmhouse', 'square', 'windmill', 'pond', 'barn', 'river', 'plots', 'east', 'trailhead', 'trail', 'bridge', 'summit']))})`); break;
+      case 'poses': await v(`__valley.pose(${JSON.stringify(pick(POSES))})`); break;
       case 'weather':
         await v(`__valley.setWeather(${JSON.stringify(pick(['clear', 'cloudy', 'rain', 'storm', 'snow', 'fog', 'clear']))})`);
         await v(`__valley.setHour(${Math.floor(rng() * 24)})`);
         if (rng() < 0.3) await v(`__valley.setSeason(${JSON.stringify(pick(['spring', 'summer', 'autumn', 'winter']))})`);
         if (rng() < 0.3) await v(`__valley.atmo({ wet: ${rng().toFixed(2)}, snow: ${rng().toFixed(2)}, rainbow: 1 })`);
         break;
-      case 'inside': await v(`__valley.inside(${JSON.stringify(pick(['door', 'hearth', 'desk', 'bed', 'window']))})`); await page.waitForTimeout(1500); await v('__valley.inside(false)'); break;
-      case 'gather': await v(`__valley.gather(${JSON.stringify(pick(['campfire', 'concert', 'market']))})`); await page.waitForTimeout(2500); await v('__valley.gather(null)'); break;
+      case 'inside': await v(`__valley.inside(${JSON.stringify(pick(ROOMS))})`); await page.waitForTimeout(1500); await v('__valley.inside(false)'); break;
+      case 'gather': await v(`__valley.gather(${JSON.stringify(pick(GATHERINGS))})`); await page.waitForTimeout(2500); await v('__valley.gather(null)'); break;
       case 'wildlife': await v(`__valley.wildlife(${JSON.stringify(pick(['deer', 'fox', 'heron', 'owl', 'hedgehog', 'geese']))}, 'here')`); await page.waitForTimeout(1500); break;
-      case 'festival': await v(`__valley.festival(${JSON.stringify(pick(['blossom', 'lantern', 'founders', 'harvest', 'hallowtide', 'starlight', 'newyear', null]))})`); await page.waitForTimeout(1200); break;
+      case 'festival': await v(`__valley.festival(${JSON.stringify(pick([...FESTIVALS, null]))})`); await page.waitForTimeout(1200); break;
       case 'forage': await v(`__valley.forage('2026-${String(1 + Math.floor(rng() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rng() * 28)).padStart(2, '0')}')`); if (rng() < 0.5) await v('__valley.fish("demo")'); break;
       case 'pet': await v(`__valley.pet(${JSON.stringify(pick(['puppy', 'kitten', 'fetch', 'find', 'pet', 'home']))})`); break;
       case 'flap': await v(`(async () => { const ids = Object.keys(__valley.state().farmers); const id = ids[Math.floor(Math.random() * ids.length)]; if (!id) return; for (let i = 0; i < 12; i++) { await __valley.force(id, { status: ['working', 'blocked', 'idle', 'done'][i % 4] }); await new Promise((r) => setTimeout(r, 60)); } })()`); break;
@@ -310,6 +384,7 @@ async function main(): Promise<void> {
     await page.waitForFunction(() => (window as unknown as { __valley?: V }).__valley?.ready === true, null, { timeout: 60_000 });
     await ev(page, 'window.__hud?.dismissHint(); __valley.ctx.services.get("audio")?._debug?.unlock?.()');
     if (opt('--warmup', '1') !== '0') { await warmUp(page); lastAction = 'warm-up'; }
+    if (TEX) await ev(page, `(${texProbe.toString()})()`);
     const t0 = Date.now();
     const end = t0 + MINUTES * 60_000;
     await baseline(page);
@@ -324,6 +399,7 @@ async function main(): Promise<void> {
       await page.waitForTimeout(SETTLE * 1000);
       samples.push(await sample(page, cdp, t0));
       row(samples.at(-1)!);
+      if (TEX) for (const l of (await ev<string[]>(page, '__soakTex()')) ?? []) console.log(`      ${l}`);
     }
   } finally {
     await browser.close().catch(() => {});

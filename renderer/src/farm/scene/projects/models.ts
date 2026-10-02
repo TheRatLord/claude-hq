@@ -325,10 +325,11 @@ export function buildGlasshouse(k: Kit, restored: boolean, G: Ground = FLAT): vo
         k.box(0.1, ridge - wall, 0.1, frame, { x, y: wall + (ridge - wall) / 2 });
       }
     });
-    // glass: walls, roof slopes, gable triangles (no light of their own: two lamps inside light it at night). The
-    // ruin's few loose panes are plain solid glass: dark at night, nothing lit behind them
+    // glass: walls, roof slopes, gable triangles (no light of their own: two lamps inside light it at night). Lit, the
+    // panes are a glasshouse's (Kit.pane): warm glass with the plants inside in silhouette, never a room with curtains.
+    // The ruin's few loose panes are plain solid glass: dark at night, nothing lit behind them
     const pane = (gw: number, gh: number, t: Parameters<Kit['box']>[4]) => k.box(gw, gh, 0.04, GLASS, t, restored ? 'glow' : 'solid');
-    k.emit(false, () => k.part('glass', () => {
+    k.emit(false, () => k.pane('glasshouse', () => k.part('glass', () => {
       const pw = w / 6 - 0.12, ph = eave - wall - 0.1, slope = Math.hypot(d / 2, ridge - eave), ang = Math.atan2(ridge - eave, d / 2);
       posts.slice(0, 6).forEach((x, i) => {
         const cx = x + w / 12;
@@ -348,7 +349,7 @@ export function buildGlasshouse(k: Kit, restored: boolean, G: Ground = FLAT): vo
         for (const sd of [-1, 1]) k.box(0.04, ph, d / 2 - 0.12, GLASS, { x, y: wall + ph / 2 + 0.05, z: sd * d / 4 }, 'glow');
         k.prism([[-d / 2 + 0.06, 0], [d / 2 - 0.06, 0], [0, ridge - eave - 0.06]], 0.04, GLASS, { x, y: eave + 0.02, ry: Math.PI / 2 }, 'glow');
       }
-    }));
+    })));
     if (restored) {
       // the door (open), benches of seedlings and pots, a watering can and a tub of violets by the door
       k.part('door', () => {

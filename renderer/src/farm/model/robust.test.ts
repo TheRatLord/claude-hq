@@ -20,6 +20,7 @@ import { createTimeline, demoDay, keyMoments, rollDay, summarize } from './timel
 import { composeIssue, createGazette, demoInput, gatherFacts } from './gazette.ts';
 import { createRecaps, demoRecaps, recapDiffQuery, recapHeadline, recapLine } from './recap.ts';
 import { createProjects } from './projects.ts';
+import { createVisitors, stockFor } from './visitors.ts';
 
 const NOW = new Date(2026, 9, 2, 14, 0).getTime();
 const now = () => NOW;
@@ -255,5 +256,26 @@ test('robust: the Valley Projects board loads any stored value', () => {
     x.pay('lanterns', 5); x.give('glasshouse', 'forage', 'morel'); x.event('celebrate', false); x.check({ friends: null }); x.unveil('lanterns'); x.pick();
     const v = x.view({ friends: null, coins: purse.coins, basket: purse.basket });
     return { data: x.data(), done: v.done, entries: v.entries.map((e) => [e.status, e.progress, e.ready]) };
+  });
+});
+
+test('robust: the visitors load any stored value', () => {
+  const purse = { coins: 5000 };
+  const owned: Record<string, number> = {};
+  const deps = {
+    spend: (c: number) => { if (c > purse.coins) return false; purse.coins -= c; return true; },
+    giftDecor: (id: string) => { owned[id] = (owned[id] ?? 0) + 1; return true; },
+    stash: () => {}, coins: () => purse.coins, owned: (id: string) => owned[id] ?? 0, secretKnown: () => false, halt: () => true,
+  };
+  const day = '2026-10-03';
+  const st = port(null);
+  const v = createVisitors(st, deps, { now });
+  for (const e of stockFor(day)) v.buy(e.def.id, day, true);
+  v.buyPainting(day, 'pond', 'autumn', 1); v.arrived('merchant', day); v.met('painter'); v.deliver('2026-10-01', 'autumn', NOW);
+  fuzz('visitors', st.saved, (raw) => {
+    const x = createVisitors(port(raw), deps, { now });
+    const stock = x.stock(day);
+    x.buy(stock[0]?.def.id ?? 'lure', day, true); x.buyPainting('2026-10-04', 'barn', 'autumn', 1); x.arrived('postie', day); x.met('merchant'); x.deliver('2026-10-05', 'autumn', NOW);
+    return { data: x.data(), stock: stock.map((e) => [e.def.id, e.price, e.lock]), boost: x.fishBoost(day), parcels: x.parcels().length, mapped: x.mapped('grotto') };
   });
 });

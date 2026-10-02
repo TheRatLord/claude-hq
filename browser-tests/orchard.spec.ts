@@ -85,9 +85,9 @@ test('orchard: shake an apple tree in autumn, the fruit lands in the basket; hon
 
   // winter: bare trees, nothing to shake down, the bees stay in
   await page.evaluate(() => (window as unknown as W).__valley.setSeason('winter'));
-  await page.waitForTimeout(1500);
+  // the season change lands on a later frame: poll rather than sleep (a busy machine can take a few seconds)
+  await expect.poll(() => orchard<State>().then((s) => s.trees.every((t) => t.phase === 'bare' && t.left === 0)), { timeout: 10_000 }).toBe(true);
   const w = await orchard<State>();
-  expect(w.trees.every((t) => t.phase === 'bare' && t.left === 0)).toBe(true);
   expect(w.bees.mood).toBe('wintering');
   expect(w.bees.activity).toBe(0);
   const r = await orchard<{ n: number; phase: string }>('shake', 3);

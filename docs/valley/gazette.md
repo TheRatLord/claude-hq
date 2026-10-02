@@ -27,7 +27,11 @@ relative to `renderer/src/farm/`.
 * **The stamp book**: the newest stamp inked in the covered days (shown as the inked stamp), and how many.
 * **The Gazette's journal** (`GzNote`, kept by `newsroom.ts` from the services' change hooks): gifts (with how much
   they liked it: "Hazel was delighted by your hazelnut"), delivered requests, every second heart, catches with their
-  size (the fishing report: the biggest real fish, junk never wins), first-ever finds.
+  size (the fishing report: the biggest real fish, junk never wins), first-ever finds, and the Valley Projects finished
+  (`ev: 'done'`) or unveiled (`'unveiled'`; [projects.md](projects.md)).
+* **The projects board** (the `projects` service's view, read live): `boardNeed` picks the open plan nearest done and
+  up to three unmet needs as short phrases ("150 more bits", "2 more fish", "Bram's blessing (3 ♥)"). Stored with the
+  facts (`board`), so a back issue keeps the teaser it printed.
 
 Nothing is invented about the valley: a quiet week prints *A Quiet Week in the Valley*, the gossip column says the
 fence was quiet, and stories without data are left out. The whimsical bits are clearly flavour: a fixed bank of
@@ -37,9 +41,11 @@ ten commits), price and motto.
 ## Composing
 
 `composeIssue(facts)` → `Issue`: masthead data, the lead (rank-up › record day › the harvest › quiet progress › all
-quiet), stories (farmer of the week, busiest field, your post, tests, streak, new ground, festival, stamp of the week,
+quiet; a place restored leads a week with no harvest), stories (Valley Projects: restored, or fully funded and waiting
+to be seen, with the champion's quote; farmer of the week, busiest field, your post, tests, streak, new ground, festival, stamp of the week,
 fishing report, Collections), the harvest in numbers, a pull quote, gossip, the weather recap and forecast,
-classifieds and the Mayor's editorial. Headlines and lines are templated with variety and seeded per edition and
+classifieds (the board's teaser is a *Wanted* ad) and the Mayor's editorial (a thank-you after an unveiling, and
+what the board has its eye on next). Headlines and lines are templated with variety and seeded per edition and
 covered days (`hash32('gazette|kind|from|to|no')`), so a page reads the same each time it's opened and different weeks
 read fresh. Issue numbers count weeks since the valley's first harvest (`issueNo`).
 

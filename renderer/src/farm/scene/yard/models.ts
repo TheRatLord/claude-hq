@@ -32,6 +32,8 @@ export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   'trophy-bronze': 0.35, 'trophy-silver': 0.35, 'trophy-gold': 0.4,
   // the grotto's hidden chest (scene/grotto)
   geode: 0.4,
+  // the travelling merchant's rare pieces (model/visitors.ts)
+  starlamp: 0.3, sundial: 0.35, moonflower: 0.45, whirligig: 0.3,
 });
 
 /** keepsake portraits: the villager's body colour, role hat colour and the canvas backdrop */
@@ -441,6 +443,72 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
         bk.cone(0.035 + (i % 2) * 0.012, 0.13 + (i % 3) * 0.04, cr[i % cr.length], { x: Math.cos(a) * r, y: 0.6 + Math.sin(a) * r * 0.8, z: 0.13, rx: Math.PI / 2 - 0.3, rz: Math.cos(a) * 0.4 }, 5);
       }
       out.lights.push({ x: 0, y: 0.6, z: 0.25, kind: 'candle' });
+      break;
+    }
+    // ---- the travelling merchant's rare pieces (model/visitors.ts STOCK, scene/visitors) ----
+    case 'starlamp': {
+      // a brass lantern on a crook, glazed in coloured panes (the bulbs mesh brightens them at night)
+      const h = 1.75, BR = 0xc9962a, BRD = 0x8a6420;
+      k.cyl(0.2, 0.12, PAL.stone, { y: 0.06 }, 6, 0.17);
+      k.cyl(0.035, h, BRD, { y: h / 2 + 0.1 }, 6);
+      k.beam(0, h + 0.08, 0, 0.32, h + 0.22, 0, 0.04, BRD);
+      k.beam(0.32, h + 0.22, 0, 0.42, h + 0.08, 0, 0.035, BRD);
+      k.at({ x: 0.42, y: h - 0.24 }, () => {
+        k.cyl(0.12, 0.04, BR, { y: 0.27 }, 6);
+        k.cone(0.12, 0.1, BR, { y: 0.34 }, 6);
+        k.ball(0.03, BR, { y: 0.41 });
+        k.cyl(0.12, 0.04, BR, { y: -0.01 }, 6);
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + Math.PI / 6; k.box(0.018, 0.27, 0.018, BRD, { x: Math.cos(a) * 0.115, y: 0.13, z: Math.sin(a) * 0.115 }); }
+      });
+      const panes = [0xff8a8a, 0xffd36a, 0x8ad0ff, 0xb59cff, 0x9ff0b0, 0xffb0e0];
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; bk.box(0.1, 0.24, 0.012, panes[i], { x: 0.42 + Math.cos(a) * 0.1, y: h - 0.11, z: Math.sin(a) * 0.1, ry: Math.PI / 2 - a }); }
+      bk.ball(0.05, 0xfff2c0, { x: 0.42, y: h - 0.11 });
+      out.lights.push({ x: 0.42, y: h - 0.11, z: 0, kind: 'lamp' });
+      break;
+    }
+    case 'sundial': {
+      // a fluted stone column with a green-bronze dial and its gnomon
+      const V = 0x5f9a7a, VD = 0x3f7a5a;
+      k.surf('fieldstone', () => k.box(0.6, 0.12, 0.6, PAL.stone, { y: 0.06 }));
+      k.cyl(0.17, 0.7, PAL.stone, { y: 0.47 }, 8, 0.14);
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; k.box(0.03, 0.62, 0.03, 0xb8b2a6, { x: Math.cos(a) * 0.16, y: 0.47, z: Math.sin(a) * 0.16 }); }
+      k.cyl(0.26, 0.06, PAL.stone, { y: 0.85 }, 10);
+      k.cyl(0.24, 0.035, V, { y: 0.9 }, 16);
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; k.box(0.012, 0.012, 0.05, VD, { x: Math.cos(a) * 0.19, y: 0.92, z: Math.sin(a) * 0.19, ry: -a + Math.PI / 2 }); }
+      k.prism([[-0.17, 0], [0.12, 0], [-0.17, 0.2]], 0.02, VD, { y: 0.915, ry: Math.PI / 2 });
+      break;
+    }
+    case 'moonflower': {
+      // a weathered stone pot of dark leaves and white trumpet flowers (on the bulbs mesh: they glow after dark)
+      k.surf('fieldstone', () => k.cyl(0.36, 0.42, 0xb8b2a6, { y: 0.21 }, 8, 0.42));
+      k.cyl(0.44, 0.06, 0x9a958c, { y: 0.44 }, 8);
+      k.cyl(0.38, 0.04, PAL.soil, { y: 0.46 }, 8);
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2, r = 0.1 + (i % 3) * 0.09;
+        k.ball(0.12, i % 2 ? PAL.leafDark : 0x2f5a34, { x: Math.cos(a) * r, y: 0.56 + (i % 3) * 0.08, z: Math.sin(a) * r, s: [1.2, 0.7, 1] });
+      }
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + 0.4, r = 0.12 + (i % 2) * 0.13, y = 0.72 + (i % 3) * 0.1;
+        bk.cone(0.09, 0.14, 0xf4f6ff, { x: Math.cos(a) * r, y, z: Math.sin(a) * r, rx: Math.PI + Math.sin(a) * 0.5, rz: Math.cos(a) * 0.5 }, 6);
+        bk.ball(0.025, 0xfff4b0, { x: Math.cos(a) * r, y: y - 0.02, z: Math.sin(a) * r });
+      }
+      out.lights.push({ x: 0, y: 0.8, z: 0.2, kind: 'candle' });
+      break;
+    }
+    case 'whirligig': {
+      // a painted wind toy on a pole: a little farmer at a well pump, a propeller and a tail vane
+      k.cyl(0.035, 1.3, PAL.woodDark, { y: 0.65 }, 6);
+      k.at({ y: 1.33 }, () => {
+        k.box(0.7, 0.05, 0.1, PAL.woodLight, {});
+        k.box(0.05, 0.22, 0.3, PAL.red, { x: -0.36, y: 0.06 });
+        k.cyl(0.05, 0.12, PAL.ink, { x: 0.38, rz: Math.PI / 2 }, 6);
+        for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.3; k.box(0.02, 0.36, 0.07, i % 2 ? PAL.yellow : PAL.blue, { x: 0.45, y: Math.cos(a) * 0.18, z: Math.sin(a) * 0.18, rx: a }); }
+        // the farmer: a little orange block at the pump handle, and the well
+        k.box(0.16, 0.14, 0.1, 0xd9774a, { x: -0.08, y: 0.13 });
+        k.box(0.14, 0.04, 0.1, 0xe3c86a, { x: -0.08, y: 0.22 });
+        k.cyl(0.07, 0.12, PAL.stone, { x: 0.15, y: 0.09 }, 7);
+        k.box(0.22, 0.02, 0.02, PAL.woodDark, { x: 0.05, y: 0.2, rz: -0.25 });
+      });
       break;
     }
     default:

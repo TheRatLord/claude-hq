@@ -14,6 +14,7 @@ import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
 import { altName, HELPER_LABEL, JOB_LABEL, nice, seedHue, shortName, STATUS_LABEL, STATUS_RANK } from './format.ts';
 import { h, type HudCtx, type Panel } from './ctx.ts';
 import { mascotOf } from '../model/mascots.ts';
+import { FOCUS_LABEL, focusQueue, type FocusItem } from '../model/ops.ts';
 
 export interface Drawer extends Panel {
   dim: HTMLElement;
@@ -22,6 +23,10 @@ export interface Drawer extends Panel {
   lastId(): string | null;
   tick(): void;
   cycle(dir: 1 | -1): void;
+  /** in control of the agent (its keys go to the terminal, so Ctrl+K etc. belong to it) */
+  controlling(): boolean;
+  /** the focus queue's Next button (hud.ts: Alt+N): who is next, and the step itself */
+  onNext: { peek(): FocusItem | null; run(): void } | null;
 }
 
 type Item = { id: string; plot: string; plotId: string; kind: 'farmer' | 'helper' };
@@ -54,9 +59,12 @@ export function createDrawer(ctx: HudCtx): Drawer {
   const cardBtn = h('button.vh-btn.small', { type: 'button', title: 'Farmer card' }, icon(ICONS.hand), 'Card');
   const walkBtn = h('button.vh-btn.small', { type: 'button', title: 'Close and walk to this farmer', 'aria-label': 'Walk there' }, icon(ICONS.walk), 'Walk');
   const ackBtn = h('button.vh-btn.small', { type: 'button', title: 'Mark as reviewed' }, icon(ICONS.check), 'Acknowledge');
+  // the focus queue (model/ops.ts): the next agent that wants you, with how many are waiting (Alt+N)
+  const nextN = h('span.n');
+  const nextBtn = h('button.vh-btn.small.vh-next', { type: 'button', 'data-testid': 'drawer-next', 'aria-keyshortcuts': 'Alt+N' }, icon(ICONS.bell), 'Next', nextN);
   const closeBtn = h('button.vh-btn.small.danger', { type: 'button', 'data-testid': 'drawer-close', title: 'Close (Ctrl+` / Esc while watching)' }, 'Close');
   const head = h('div.vh-dhead.vh-paper', null, face, h('div.who', null, h('div.nm', null, nameEl, pillEl, modeEl), sub),
-    h('div.ctl', null, takeBtn, ackBtn, fontDown, fontUp, histBtn, cardBtn, walkBtn, closeBtn));
+    h('div.ctl', null, takeBtn, ackBtn, nextBtn, fontDown, fontUp, histBtn, cardBtn, walkBtn, closeBtn));
   const askQ = h('span.q');
   const askOpts = h('span', { style: { display: 'contents' } });
   const ask = h('div.vh-dask', { hidden: true, 'data-testid': 'drawer-ask' }, icon(ICONS.bang), askQ, askOpts);
@@ -112,6 +120,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
   let reopenSince = 0;
   let wasReady = d.net.ready();
   let items: Item[] = [];
+  let nextHook: Drawer['onNext'] = null;
 
   const entity = (): Entity | null => (view ? d.net.entity(view.id) : null);
   const leader = () => d.settings.get('leaderKey') || 'Ctrl+`';
@@ -157,6 +166,15 @@ export function createDrawer(ctx: HudCtx): Drawer {
     takeBtn.className = `vh-btn small ${control ? '' : 'primary'}`;
     takeBtn.disabled = !view || busy || !d.net.ready() || (!control && view.life.input === 'disabled');
     ackBtn.style.display = f?.unseenDone ? '' : 'none';
+    if (s) {
+      const q = focusQueue(s.farmers.values());
+      const nx = nextHook?.peek() ?? null;
+      const n = q.filter((x) => x.id !== id).length;
+      nextN.textContent = String(n);
+      nextBtn.dataset.n = String(n);
+      nextBtn.disabled = !nx;
+      nextBtn.title = nx ? `Next: ${ctx.nameOf(nx.id)} (${FOCUS_LABEL[nx.why]}) · Alt+N${n > 1 ? ` · ${n} waiting` : ''}` : 'Nobody else needs you: all caught up (Alt+N)';
+    }
     cardBtn.style.display = f || hp ? '' : 'none';
     histBtn.textContent = view?.historyOpen ? 'Live' : 'History';
     hintL.replaceChildren(...(control
@@ -378,7 +396,8 @@ export function createDrawer(ctx: HudCtx): Drawer {
     if (n) show(n.id);
   }
 
-  return {
+  nextBtn.addEventListener('click', () => nextHook?.run());
+  const self: Drawer = {
     id: 'drawer', el, dim, ownsEscape: true,
     onOpen(arg) {
       dim.classList.add('open');
@@ -394,6 +413,9 @@ export function createDrawer(ctx: HudCtx): Drawer {
     },
     show,
     lastId: () => view?.id ?? last,
+    controlling: () => !!view && view.mode === 'control' && view.life.input === 'send',
+    get onNext() { return nextHook; },
+    set onNext(v) { nextHook = v; },
     tick,
     cycle,
     key(e) {
@@ -418,4 +440,5 @@ export function createDrawer(ctx: HudCtx): Drawer {
       return false;
     },
   };
+  return self;
 }

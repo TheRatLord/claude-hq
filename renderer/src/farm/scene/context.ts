@@ -28,6 +28,9 @@ export interface Lighting {
   fogColor: THREE.Color;
   fogNear: number;
   fogFar: number;
+  /** the sky dome's zenith and horizon colours (linear; water reflections). Optional: stand-alone lightings omit them */
+  skyZenith?: THREE.Color;
+  skyHorizon?: THREE.Color;
   /** 0 day … 1 deep night: lamps, windows and fireflies fade in with this */
   night: number;
   /** 0..1 current rain/snow wetness */
@@ -126,6 +129,8 @@ export interface UiPort {
   guide?(page?: string): void;
   /** the Valley Projects board (model/projects.ts, hud/projects.ts), on a project ('footbridge') */
   projects?(id?: string): void;
+  /** a visitor's panel (model/visitors.ts, hud/visitors.ts): the travelling merchant's cart ('merchant'), the painter's canvas ('painter') */
+  visitors?(who?: string): void;
   /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the

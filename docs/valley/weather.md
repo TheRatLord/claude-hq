@@ -34,7 +34,10 @@ does not dry the puddles. What it drives:
 * **God rays** (post, one quarter-res pass): a low sun (early morning, golden hour) fans shafts through trees and gaps
   in the clouds; skipped unless the sun is in front of the camera.
 
-Already there: cloud shadows, lightning that lights the valley, seasonal leaves / petals, sun motes. Weather also
+Already there: cloud shadows, lightning that lights the valley, seasonal leaves / petals, sun motes. The haze,
+contact shadows, time-of-day keys and water reflections are in [art.md → Light and air](art.md#light-and-air-the-painting-at-every-hour).
+Falling snow pulls the fog in to ~60 % of its clear-day reach (not half), so the lookout and the overview still read
+the valley through the flakes. Weather also
 drives footsteps ([audio.md](audio.md)), villagers sheltering ([friends.md](friends.md)), what bites
 ([pastimes.md](pastimes.md)) and gathering cancellations ([gatherings.md](gatherings.md)).
 

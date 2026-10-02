@@ -28,8 +28,10 @@ export type EmitSpec = false | (Partial<Pick<LightEmitter, 'radius' | 'intensity
   wall?: readonly [number, number, number];
 });
 
-/** glow part kinds in the `glowUV` attribute (z = kind + seed * 0.9) */
-const GLOW_RECT = 0, GLOW_ROUND = 1, GLOW_LAMP = 2;
+/** glow part kinds in the `glowUV` attribute (z = kind + seed * 0.9); 3 = no glowUV (flat lantern look) */
+const GLOW_RECT = 0, GLOW_ROUND = 1, GLOW_LAMP = 2, GLOW_GREEN_WALL = 4, GLOW_GREEN_ROOF = 5;
+/** how a pane looks lit at night (`Kit.pane`): a room with curtains (default), or a glasshouse full of plants */
+export type PaneStyle = 'room' | 'glasshouse';
 export const WINDOW_LIGHT = new THREE.Color(1.0, 0.5, 0.2);
 export const LAMP_LIGHT = new THREE.Color(1.0, 0.55, 0.22);
 
@@ -79,6 +81,9 @@ export class Kit {
   private emitStack: EmitSpec[] = [];
   /** glow parts added inside fn give this light (false = none) */
   emit(spec: EmitSpec, fn: () => void): this { this.emitStack.push(spec); try { fn(); } finally { this.emitStack.pop(); } return this; }
+  private paneStack: PaneStyle[] = [];
+  /** glow panes added inside fn light up at night in this style ('glasshouse': glowing glass, plant silhouettes, no curtains) */
+  pane(style: PaneStyle, fn: () => void): this { this.paneStack.push(style); try { fn(); } finally { this.paneStack.pop(); } return this; }
   private stack: THREE.Matrix4[] = [new THREE.Matrix4()];
   readonly r: () => number;
   /** default lightness jitter per part (hand-painted variety) */
@@ -138,9 +143,20 @@ export class Kit {
     const bb = g.boundingBox!, size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
     const dims = [size.x, size.y, size.z];
     const lamp = color === PAL.lampGlow;
-    const kind = lamp ? GLOW_LAMP : cyl ? GLOW_ROUND : GLOW_RECT;
+    const green = !lamp && this.paneStack[this.paneStack.length - 1] === 'glasshouse';
     const thin = dims.indexOf(Math.min(...dims));
-    const [a, b] = [0, 1, 2].filter((i) => i !== thin);
+    let [a, b] = [0, 1, 2].filter((i) => i !== thin);
+    let kind = lamp ? GLOW_LAMP : cyl ? GLOW_ROUND : GLOW_RECT;
+    let flip = 1;
+    if (green) {
+      // glasshouse panes: the pane's second coordinate runs uphill (plants stand on the low edge of a wall pane, the
+      // roof's glow fades toward the ridge), whichever way the part was built; roof panes (tilted) get their own look
+      const up = (i: number) => _gUp.set(i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0).transformDirection(m).y;
+      if (Math.abs(up(a)) > Math.abs(up(b))) [a, b] = [b, a];
+      flip = up(b) < 0 ? -1 : 1;
+      _gUp.set(thin === 0 ? 1 : 0, thin === 1 ? 1 : 0, thin === 2 ? 1 : 0).transformDirection(m);
+      kind = Math.abs(_gUp.y) > 0.3 ? GLOW_GREEN_ROOF : GLOW_GREEN_WALL;
+    }
     const wc = c.clone().applyMatrix4(m);
     const seed = Math.abs(Math.sin(wc.x * 12.9898 + wc.y * 78.233 + wc.z * 37.719) * 43758.5453) % 1;
     const pos = g.attributes.position, n = pos.count, uv = new Float32Array(n * 3);
@@ -153,7 +169,7 @@ export class Kit {
         uv[i * 3 + 1] = P[1] / (dims[1] || 1);
       } else {
         uv[i * 3] = P[a] / (dims[a] || 1);
-        uv[i * 3 + 1] = P[b] / (dims[b] || 1);
+        uv[i * 3 + 1] = (flip * P[b]) / (dims[b] || 1);
       }
       uv[i * 3 + 2] = kind + seed * 0.9;
     }
@@ -353,6 +369,7 @@ export function autoSurface(color: number, size: THREE.Vector3, cyl: boolean): S
  * lit interior (lanterns flicker with it). Parts without `glowUV` (hand-built lanterns) get the flat lantern look.
  */
 const GLASS = new THREE.Color(0.32, 0.42, 0.52);
+const _gUp = new THREE.Vector3();
 export function setGlow(m: THREE.MeshBasicMaterial, night: number, boost = 1): void {
   const k = Math.min(1, Math.max(0, night));
   const e = k * k * (3 - 2 * k);
@@ -405,7 +422,46 @@ vec3 glowInterior( vec3 g ) {
     vec3 glass = mix( vec3( 0.92, 0.52, 0.2 ), vec3( 0.36, 0.14, 0.05 ), smoothstep( 0.12, 0.55, abs( p.y + 0.04 ) + p.x * 0.7 ) );
     return glass + vec3( 0.65, 0.42, 0.2 ) * core;
   }
-  return vec3( 0.95, 0.58, 0.24 );
+  if ( kind < 3.5 ) return vec3( 0.95, 0.58, 0.24 );
+  // a glasshouse (Kit.pane('glasshouse')): no room and no curtains, just glass glowing from lamps hung among the
+  // plants: honey-gold low in the middle fading to a mossy dark, and the plants themselves as dark silhouettes
+  if ( kind < 4.5 ) {
+    // a wall pane (y up): the bench top and the leafy mounds of seedlings on it, a few tall stems with a leaf each
+    vec2 q = p - vec2( 0.0, -0.08 );
+    vec3 glow = mix( vec3( 0.98, 0.76, 0.36 ), vec3( 0.2, 0.28, 0.1 ), smoothstep( 0.0, 0.7, length( q * vec2( 0.85, 1.25 ) ) ) );
+    float x = p.x * 7.0 + seed * 23.0;
+    float mound = -0.2 + 0.07 * ( 0.5 + 0.5 * sin( x * 1.3 ) ) + 0.05 * sin( x * 3.1 + 1.7 ) + 0.03 * sin( x * 7.3 );
+    float sil = step( p.y, mound );
+    for ( int i = 0; i < 3; i++ ) {
+      float fi = float( i );
+      float sx = -0.32 + 0.32 * fi + 0.1 * sin( seed * 31.0 + fi * 2.3 );
+      float top = 0.02 + 0.3 * fract( seed * 5.7 + fi * 0.37 );
+      float bend = 0.12 * sin( seed * 13.0 + fi );
+      float sxy = sx + bend * ( p.y - mound ) * ( p.y - mound );
+      sil = max( sil, step( abs( p.x - sxy ), 0.01 ) * step( p.y, top ) );
+      // slender leaves angled up and out, alternating sides down the stem
+      for ( int j = 0; j < 3; j++ ) {
+        float fj = float( j ), sd = mod( fj + fi, 2.0 ) * 2.0 - 1.0;
+        vec2 d = p - vec2( sxy + sd * 0.045, top - 0.02 - fj * 0.085 );
+        d = mat2( 0.8, sd * 0.6, -sd * 0.6, 0.8 ) * d;
+        sil = max( sil, step( length( d * vec2( 1.0, 2.8 ) ), 0.05 - fj * 0.008 ) );
+      }
+    }
+    vec3 col = mix( glow, vec3( 0.05, 0.08, 0.035 ), sil * 0.92 );
+    // a faint sheen on the glass
+    col += vec3( 0.06, 0.07, 0.05 ) * smoothstep( 0.02, 0.0, abs( p.x + p.y * 0.6 - 0.18 ) );
+    return col * ( 0.86 + 0.24 * seed );
+  }
+  // a roof pane (y uphill): brighter toward the eave, a hanging basket trailing leaves in some panes
+  vec3 roof = mix( vec3( 0.86, 0.7, 0.36 ), vec3( 0.16, 0.2, 0.08 ), smoothstep( -0.5, 0.45, p.y + 0.2 * abs( p.x ) ) );
+  if ( seed > 0.5 ) {
+    vec2 o = p - vec2( ( seed - 0.75 ) * 0.6, -0.12 );
+    float bowl = step( length( o * vec2( 1.0, 1.6 ) ), 0.09 ) * step( o.y, 0.02 );
+    float trail = step( abs( o.x + 0.04 * sin( o.y * 40.0 ) ), 0.018 ) * step( o.y, 0.0 ) * step( -0.26, o.y );
+    float chain = step( abs( o.x ), 0.006 ) * step( 0.0, o.y );
+    roof = mix( roof, vec3( 0.06, 0.08, 0.035 ), max( max( bowl, trail ), chain ) * 0.9 );
+  }
+  return roof * ( 0.85 + 0.2 * seed );
 }`;
 export function glowMat(night = 0): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -433,7 +489,7 @@ export function glowMat(night = 0): THREE.MeshBasicMaterial {
       // lit glass counts as warm light for the night grade (see scene/lights/shader.ts VL_ALPHA)
       .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a = 1.0 - 0.5 * uGlow;');
   };
-  m.customProgramCacheKey = () => 'structures-glow-v3';
+  m.customProgramCacheKey = () => 'structures-glow-v4';
   setGlow(m, night);
   return m;
 }

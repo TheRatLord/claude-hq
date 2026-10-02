@@ -19,6 +19,7 @@ import type { IndoorSpace } from './scene/context.ts';
 import type { GatherService } from './scene/gather/gather.ts';
 import type { TrailService } from './scene/trail/trail.ts';
 import type { BarnService } from './model/barn.ts';
+import { PROJECTS, type ProjectsService } from './model/projects.ts';
 import type { AtmosphereService } from './scene/sky/sky.ts';
 import { showerOn } from './scene/sky/meteors.ts';
 import { NOOKS, TRAIL, structure } from './world/map.ts';
@@ -55,6 +56,16 @@ export function installStampBook(d: StampBookDeps): StampsService {
   const nooks = NOOKS.map((id) => { const s = structure(id); return { id, x: s.x, z: s.z, r: Math.max(s.size[0], s.size[1]) / 2 + NOOK_MARGIN }; });
   const summit = TRAIL.anchors.summit;
 
+  // the Valley Projects (projectboard.ts registers the service after the book is made): places restored = unveiled
+  const restored = () => {
+    const pj = svc.get('projects') as ProjectsService | undefined;
+    if (!pj) return 0;
+    if (!watchingProjects) { watchingProjects = true; pj.onChange((c) => { if (c.kind === 'unveil') soon(); }); }
+    const p = pj.data().p;
+    return PROJECTS.filter((def) => (p[def.id]?.unveiled ?? 0) > 0).length;
+  };
+  let watchingProjects = false;
+
   const world = (): StampWorld => {
     const s = valley.state, p = engine.ctx.player.pos;
     const outdoors = !(svc.get('indoors') as IndoorSpace | undefined)?.active;
@@ -75,6 +86,7 @@ export function installStampBook(d: StampBookDeps): StampsService {
       collection: collection.data(), friends: friends.data(), wallet: wallet.data(),
       stones: (svc.get('trail') as TrailService | undefined)?.stones() ?? 0,
       chores: (svc.get('barn') as BarnService | undefined)?.data().total.days ?? 0,
+      projects: { restored: restored(), total: PROJECTS.length },
       at: {
         summit: near(summit.x, summit.z, Math.max(summit.w, summit.d) + 2) && p.y > summit.y - 3,
         nook: nooks.find((n) => near(n.x, n.z, n.r))?.id ?? null,

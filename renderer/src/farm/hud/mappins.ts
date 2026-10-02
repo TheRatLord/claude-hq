@@ -16,11 +16,19 @@ export type Glyph =
   | 'store' | 'mail' | 'yard' | 'fish' | 'nook' | 'heart' | 'festival' | 'paw' | 'leaf' | 'peak' | 'door' | 'bridge' | 'boot'
   | 'pergola' | 'picnic' | 'lookout' | 'hotspring' | 'orchard' | 'stones' | 'haymeadow' | 'swingtree' | 'waterfall'
   // the secret grotto behind the waterfall: a "?" until found, then a cave mouth
-  | 'secret' | 'cave';
+  | 'secret' | 'cave'
+  // the Valley Projects (docs/valley/projects.md): the Mayor's board, a ruin, and each place once it is restored
+  | 'board' | 'ruin' | 'lamp' | 'glass' | 'wheel' | 'dome' | 'bell'
+  // visitors (docs/valley/visitors.md): the merchant's cart, the painter's easel, the parcel post
+  | 'cart' | 'easel' | 'parcel';
 
 export const PIN_COLOR = Object.freeze({
   store: '#3f8a5a', mail: '#c0453a', yard: '#8a6a3a', fish: '#3a78ad', nook: '#5f8a3e', heart: '#e0526b', heartReady: '#f0a72c',
   festival: '#e0a526', paw: '#8a5a36', leaf: '#6f9a3a', peak: '#9a3b2a', door: '#b8743a', secret: '#6a5aa8',
+  // the projects board and the places it restores (terracotta, like the board's ribbon); a ruin is weathered stone
+  project: '#b45f3a', ruin: '#857a6e',
+  // visitors: the travelling merchant's plum, the painter's red, the parcel post's red (scene/visitors/cast.ts LOOKS)
+  visitor: '#6a3a6e',
 });
 const INK = '#3b2a1e';
 
@@ -150,6 +158,86 @@ function symbol(g: CanvasRenderingContext2D, k: Glyph, r: number): void {
       g.fillStyle = '#7ff0e0'; g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.22, s * 0.1); g.lineTo(s * 0.34, s * 0.75); g.closePath(); g.fill();
       break;
     }
+    // ---- the Valley Projects ----
+    case 'board': {
+      // a noticeboard on two legs with three pinned cards
+      g.beginPath(); g.moveTo(-s * 0.6, s * 0.35); g.lineTo(-s * 0.6, s * 0.95); g.moveTo(s * 0.6, s * 0.35); g.lineTo(s * 0.6, s * 0.95); g.stroke();
+      g.fillRect(-s, -s * 0.85, s * 2, s * 1.25);
+      g.fillStyle = PIN_COLOR.project;
+      for (const [x, y] of [[-0.62, -0.6], [0.05, -0.68], [-0.3, -0.05]] as const) g.fillRect(x * s, y * s, s * 0.5, s * 0.42);
+      g.fillRect(s * 0.38, -s * 0.15, s * 0.42, s * 0.36);
+      break;
+    }
+    case 'ruin': {
+      // a broken arch: one whole pier, one snapped, a tumbled block
+      g.beginPath(); g.moveTo(-s * 0.95, s * 0.85); g.lineTo(-s * 0.95, -s * 0.2); g.quadraticCurveTo(-s * 0.9, -s * 0.9, -s * 0.05, -s * 0.92); g.lineTo(s * 0.12, -s * 0.62); g.lineTo(-s * 0.08, -s * 0.48);
+      g.quadraticCurveTo(-s * 0.45, -s * 0.45, -s * 0.48, -s * 0.05); g.lineTo(-s * 0.48, s * 0.85); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(s * 0.45, s * 0.85); g.lineTo(s * 0.45, -s * 0.05); g.lineTo(s * 0.7, -s * 0.25); g.lineTo(s * 0.95, -s * 0.05); g.lineTo(s * 0.95, s * 0.85); g.closePath(); g.fill();
+      g.save(); g.translate(s * 0.05, s * 0.68); g.rotate(0.35); g.fillRect(-s * 0.22, -s * 0.16, s * 0.44, s * 0.32); g.restore();
+      break;
+    }
+    case 'lamp': {
+      // a lantern on a post with an arm
+      g.beginPath(); g.moveTo(-s * 0.5, s * 0.95); g.lineTo(-s * 0.5, -s * 0.85); g.lineTo(s * 0.3, -s * 0.85); g.stroke();
+      g.beginPath(); g.moveTo(s * 0.05, -s * 0.55); g.lineTo(s * 0.55, -s * 0.55); g.lineTo(s * 0.68, s * 0.25); g.lineTo(-s * 0.08, s * 0.25); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(s * 0.3, -s * 0.85); g.lineTo(s * 0.3, -s * 0.55); g.stroke();
+      g.fillStyle = PIN_COLOR.festival; g.beginPath(); g.arc(s * 0.3, -s * 0.15, s * 0.16, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'glass': {
+      // a glasshouse: a pitched roof of panes over glazed walls
+      g.beginPath(); g.moveTo(-s, s * 0.85); g.lineTo(-s, -s * 0.15); g.lineTo(0, -s * 0.9); g.lineTo(s, -s * 0.15); g.lineTo(s, s * 0.85); g.closePath(); g.fill();
+      g.strokeStyle = PIN_COLOR.project; g.lineWidth = Math.max(0.8, r * 0.09);
+      g.beginPath(); for (const x of [-0.5, 0, 0.5]) { g.moveTo(x * s, s * 0.85); g.lineTo(x * s, -s * 0.15 - (0.5 - Math.abs(x)) * s * 1.5 + s * 0.02); } g.moveTo(-s, s * 0.3); g.lineTo(s, s * 0.3); g.stroke();
+      break;
+    }
+    case 'wheel': {
+      // a mill wheel: rim, hub and paddles
+      g.beginPath(); g.arc(0, 0, s * 0.85, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(0, 0, s * 0.22, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * s * 0.2, Math.sin(a) * s * 0.2); g.lineTo(Math.cos(a) * s * 1.02, Math.sin(a) * s * 1.02); g.stroke(); }
+      break;
+    }
+    case 'dome': {
+      // the observatory: a tower under an open dome, the telescope poking out
+      g.fillRect(-s * 0.7, -s * 0.05, s * 1.4, s * 0.9);
+      g.beginPath(); g.arc(0, -s * 0.05, s * 0.7, Math.PI, 0); g.fill();
+      g.strokeStyle = PIN_COLOR.project; g.lineWidth = Math.max(0.9, r * 0.12);
+      g.beginPath(); g.moveTo(-s * 0.05, -s * 0.15); g.lineTo(s * 0.12, -s * 0.72); g.stroke();
+      g.strokeStyle = '#fff8e8'; g.lineWidth = Math.max(1, r * 0.2); g.beginPath(); g.moveTo(s * 0.05, -s * 0.45); g.lineTo(s * 0.7, -s * 1.0); g.stroke();
+      break;
+    }
+    case 'bell': {
+      // the halt's bell on its bracket
+      g.beginPath(); g.moveTo(-s * 0.7, -s * 0.85); g.lineTo(s * 0.7, -s * 0.85); g.moveTo(0, -s * 0.85); g.lineTo(0, -s * 0.62); g.stroke();
+      g.beginPath(); g.moveTo(-s * 0.15, -s * 0.62); g.quadraticCurveTo(-s * 0.5, -s * 0.55, -s * 0.52, s * 0.1); g.quadraticCurveTo(-s * 0.55, s * 0.4, -s * 0.78, s * 0.5);
+      g.lineTo(s * 0.78, s * 0.5); g.quadraticCurveTo(s * 0.55, s * 0.4, s * 0.52, s * 0.1); g.quadraticCurveTo(s * 0.5, -s * 0.55, s * 0.15, -s * 0.62); g.closePath(); g.fill();
+      g.beginPath(); g.arc(0, s * 0.7, s * 0.15, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    // ---- visitors ----
+    case 'cart': {
+      // a covered cart: a hooped hood over a box on a big wheel
+      g.beginPath(); g.moveTo(-s * 0.9, -s * 0.05); g.quadraticCurveTo(-s * 0.85, -s * 0.95, 0, -s * 0.95); g.quadraticCurveTo(s * 0.85, -s * 0.95, s * 0.9, -s * 0.05); g.closePath(); g.fill();
+      g.fillRect(-s * 0.95, 0, s * 1.9, s * 0.45);
+      g.beginPath(); g.arc(-s * 0.15, s * 0.6, s * 0.34, 0, Math.PI * 2); g.fill();
+      g.fillStyle = PIN_COLOR.visitor; g.beginPath(); g.arc(-s * 0.15, s * 0.6, s * 0.12, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#fff8e8'; g.beginPath(); g.moveTo(s * 0.9, s * 0.2); g.lineTo(s * 1.15, s * 0.45); g.stroke();
+      break;
+    }
+    case 'easel': {
+      g.beginPath(); g.moveTo(-s * 0.55, s * 0.95); g.lineTo(-s * 0.1, -s * 0.9); g.moveTo(s * 0.55, s * 0.95); g.lineTo(s * 0.1, -s * 0.9); g.stroke();
+      g.fillRect(-s * 0.8, -s * 0.75, s * 1.6, s * 1.05);
+      g.fillStyle = PIN_COLOR.visitor; g.beginPath(); g.moveTo(-s * 0.7, s * 0.2); g.quadraticCurveTo(-s * 0.1, -s * 0.35, s * 0.7, s * 0.05); g.lineTo(s * 0.7, s * 0.2); g.closePath(); g.fill();
+      break;
+    }
+    case 'parcel': {
+      g.fillRect(-s * 0.85, -s * 0.55, s * 1.7, s * 1.35);
+      g.strokeStyle = PIN_COLOR.mail; g.lineWidth = Math.max(1, r * 0.14);
+      g.beginPath(); g.moveTo(0, -s * 0.55); g.lineTo(0, s * 0.8); g.moveTo(-s * 0.85, s * 0.1); g.lineTo(s * 0.85, s * 0.1); g.stroke();
+      g.beginPath(); g.moveTo(0, -s * 0.55); g.quadraticCurveTo(-s * 0.5, -s * 1.05, -s * 0.15, -s * 0.55); g.moveTo(0, -s * 0.55); g.quadraticCurveTo(s * 0.5, -s * 1.05, s * 0.15, -s * 0.55); g.stroke();
+      break;
+    }
     case 'heart': case 'festival': break;
   }
 }
@@ -231,6 +319,27 @@ export const PLACES: readonly PlaceDef[] = [
   { id: 'place:hillorchard', glyph: 'orchard', color: PIN_COLOR.leaf, name: 'Hillside orchard', line: 'Shake ripe trees, collect honey, press cider', x: ORCHARD_PIN.x, z: ORCHARD_PIN.z, label: true },
   { id: 'place:waterfall', glyph: 'waterfall', color: PIN_COLOR.fish, name: 'Waterfall', line: 'Where the river begins', ...at('waterfall') },
 ];
+/** The Valley Projects on the map: each place's tile once restored (a ruin is the 'ruin' tile until then). */
+export const PROJECT_GLYPH: Readonly<Record<string, Glyph>> = Object.freeze({
+  lanterns: 'lamp', footbridge: 'bridge', glasshouse: 'glass', millwheel: 'wheel', observatory: 'dome', halt: 'bell',
+});
+/** A Valley Project's pin, gathered live by the HUD (hud/map.ts): where (projectsScene.anchor / world/projects.ts) and how it stands. */
+export interface ProjectPin {
+  id: string;
+  x: number;
+  z: number;
+  /** board = the Mayor's board; ruin = not yet done (locked or open); ready = finished, waiting to be seen; restored */
+  state: 'board' | 'ruin' | 'ready' | 'restored';
+  name: string;
+  lines: string[];
+}
+/** the tile for a project pin: glyph + colour */
+export function projectTile(p: Pick<ProjectPin, 'id' | 'state'>): [Glyph, string] {
+  if (p.state === 'board') return ['board', PIN_COLOR.project];
+  if (p.state === 'restored') return [PROJECT_GLYPH[p.id] ?? 'board', PIN_COLOR.project];
+  return ['ruin', p.state === 'ready' ? PIN_COLOR.heartReady : PIN_COLOR.ruin];
+}
+
 /** Fishing spots: the dock, the pond's beach, the river by the bridge and the upper reach. */
 export const FISH_SPOTS: readonly (XZ & { water: 'pond' | 'river'; name: string })[] = [
   { ...at('dock'), water: 'pond', name: 'The dock' },

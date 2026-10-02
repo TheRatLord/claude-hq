@@ -36,6 +36,10 @@ the furniture), the player arrow + view cone, then the cached furniture: compass
 * houses = villagers; crosses = scarecrows;
 * rounded **tiles** = places (store, mailbox + unread count, your yard, the farmhouse door, nooks, fishing spots with
   what bites now, trail stops from `POIS`: trailhead / bench / rope bridge / summit, the *Hillside orchard* ([orchard.md](orchard.md)));
+* the **Valley Projects** ([projects.md](projects.md)): the board (terracotta tile with pinned cards), each ruin (a
+  grey broken arch; gold when finished and waiting to be seen) and each restored place (terracotta, its own glyph:
+  lamp, bridge, glasshouse, wheel, dome, bell; labelled). `ProjectPin` / `projectTile` in `mappins.ts`, gathered in
+  `map.ts` (`projectPins`: the `projects` service for state, `projectsScene.anchor` for where);
 * **hearts** = today's requests (on the villager, or on the place to visit; gold + pulsing when ready);
 * the **rosette** = the festival centrepiece (`festivals.where().center`).
 

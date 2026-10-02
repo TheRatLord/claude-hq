@@ -45,6 +45,8 @@ export const MOTIFS = Object.freeze([
   'boat', 'skates', 'snowman', 'egg', 'cave', 'paw',
   // the hillside orchard (Fern's notebook)
   'apple',
+  // the Valley Projects: a mallet and plank (the first place mended), the halt's bell (all six restored)
+  'mallet', 'bell',
 ] as const);
 export type Motif = (typeof MOTIFS)[number];
 
@@ -78,6 +80,8 @@ export interface StampWorld {
   stones: number;
   /** days with every barn animal fed (model/barn.ts) */
   chores: number;
+  /** the Valley Projects (model/projects.ts): places restored (completed and unveiled) of how many */
+  projects: { restored: number; total: number };
   /** where the player is */
   at: { summit: boolean; nook: string | null; festival: boolean; concert: boolean; campfire: boolean; /** in the grotto behind the waterfall */ grotto?: boolean };
   /** a rainbow in the sky / a meteor shower over a clear night sky, while you're out under it */
@@ -86,7 +90,7 @@ export interface StampWorld {
 
 export const emptyWorld = (now = 0): StampWorld => ({
   now, demo: false, hour: 12, season: 'summer', weather: 'clear', snow: 0, festival: null, outdoors: true, streak: 0, testsToday: 0,
-  working: 0, plots: [], collection: null, friends: null, wallet: null, stones: 0, chores: 0,
+  working: 0, plots: [], collection: null, friends: null, wallet: null, stones: 0, chores: 0, projects: { restored: 0, total: 6 },
   at: { summit: false, nook: null, festival: false, concert: false, campfire: false }, sky: { rainbow: false, shower: false },
 });
 
@@ -244,6 +248,13 @@ export const STAMPS: readonly StampDef[] = Object.freeze([
   S('concert', 'village', 'Front row', 'notes', 'Listen to a bandstand concert.',
     'Fiddle, banjo and flute under the bandstand lamp. You may have danced a bit.',
     (w) => w.at.concert, { dwell: 12_000 }),
+  // the Mayor's projects board (model/projects.ts): a place restored, then all six
+  S('first-project', 'village', 'Good as mended', 'mallet', 'Restore a place from the Mayor\'s projects board.',
+    'The first place on the projects board, mended and unveiled. Marigold pinned a ribbon on the plan.',
+    (w) => (w.projects?.restored ?? 0) >= 1),
+  S('all-projects', 'village', 'All aboard', 'bell', 'Restore all six places on the projects board.',
+    'Lanterns lit, bridge mended, glasshouse glazed, mill turning, dome open, and the evening train whistles at the halt.',
+    (w) => pr(w.projects?.restored ?? 0, w.projects?.total || 6)),
   S('perfect-gifts', 'village', 'Perfect presents', 'gift', 'A secret: know everyone\'s favourite things.',
     'You know exactly what everyone loves. That\'s what friends are for.',
     (w) => FRIEND_IDS.every((id) => Object.values(w.friends?.known[id] ?? {}).includes('love')), { secret: true }),

@@ -57,7 +57,8 @@ failing*, *Changes ready to review*, …), `recapLine` (`2 commits · +120 −30
 * **The farmer card → Last harvest** (`card-harvest`, above *Today*): the newest recap as one button (headline, when,
   title, chips) and the earlier ones as rows; R in the card opens the newest.
 * **The ledger**: a small basket chip in the farmer's row (`2↑` commits, `+120` lines, or ✓) with the facts in its
-  tooltip; click it, or R on the selected row.
+  tooltip; click it, or R on the selected row. It sits on the first of the row's two short right-hand lines (chip +
+  ducklings over spend + time), so the job column keeps its width and the footer's key hints stay on one line.
 
 ## `git.diff` (server, protocol rev 4)
 
