@@ -6,14 +6,18 @@
  * (shellNews; the last line, the prompt / cursor line redrawn constantly, never counts) and new lines accumulate while a
  * command runs; ONE news fires when the shell is back at its prompt ("meaningful news": a finished command, not
  * every chunk a dev server or `tail -f` prints). Full-screen activities (monitor, edit) are not news.
+ * Every poll also sniffs the foreground process for an agent CLI (shared/vendors.ts `vendorOfInfo`) and tells the
+ * model through `ctx.agentHint` (Aider / Goose / Crush in a plain shell pane become agents; WorldModel ignores the
+ * hint for panes herdr labels itself).
  * Works unchanged against HerdrLive, DemoWorld and Replay (it only calls `source.request`).
  */
 import { Enricher } from '../interfaces.ts';
-import type { BaseEntity, Clock, HerdrSource, Logger, TimerHandle } from '../interfaces.ts';
+import type { BaseEntity, Clock, EnricherCtx, HerdrSource, Logger, TimerHandle } from '../interfaces.ts';
 import { processFromInfo, isGitCommit } from '../../shared/classify.ts';
 import type { HerdrProcessInfo } from '../../shared/classify.ts';
 import type { ProcessInfo } from '../../shared/protocol.ts';
 import { isRecord, errMessage } from '../../shared/guards.ts';
+import { vendorOfInfo } from '../../shared/vendors.ts';
 
 const SHELL_MS = 2500;
 const AGENT_MS = 10_000;
@@ -59,6 +63,7 @@ interface Rec {
   dead: boolean;
   tail: string[] | null;
   pending: number;
+  ctx: EnricherCtx | null;
 }
 
 /** herdr's reply is `{process_info}` (or the info itself). Only the container shape is checked here. */
@@ -83,8 +88,8 @@ export class ProcInfoEnricher extends Enricher {
     this.recs = new Map();
   }
 
-  override attach(id: string, base: BaseEntity): void {
-    this._sync(id, base);
+  override attach(id: string, base: BaseEntity, ctx?: EnricherCtx): void {
+    this._sync(id, base, ctx);
   }
   override update(id: string, base: BaseEntity): void {
     this._sync(id, base);
@@ -104,7 +109,7 @@ export class ProcInfoEnricher extends Enricher {
     return { panes: this.recs.size };
   }
 
-  _sync(id: string, base: BaseEntity): void {
+  _sync(id: string, base: BaseEntity, ctx?: EnricherCtx): void {
     const shell = base.kind === 'shell';
     let r = this.recs.get(id);
     if (r && r.shell !== shell) {
@@ -112,7 +117,7 @@ export class ProcInfoEnricher extends Enricher {
       r = undefined;
     }
     if (!r) {
-      const rec: Rec = { id, shell, timer: null, busy: false, sent: '', lastCommitArgv: null, dead: false, tail: null, pending: 0 };
+      const rec: Rec = { id, shell, timer: null, busy: false, sent: '', lastCommitArgv: null, dead: false, tail: null, pending: 0, ctx: ctx ?? null };
       this.recs.set(id, rec);
       rec.timer = this.clock.setInterval(() => void this._poll(rec), shell ? this.shellMs : this.agentMs);
       void this._poll(rec);
@@ -152,6 +157,7 @@ export class ProcInfoEnricher extends Enricher {
       if (r.dead) return;
       const info = isRecord(res) ? res.process_info ?? res : null;
       const proc = processFromInfo(isProcessInfo(info) ? info : null);
+      r.ctx?.agentHint?.(vendorOfInfo(isProcessInfo(info) ? info : null));
       const j = JSON.stringify(proc);
       if (j !== r.sent) {
         r.sent = j;

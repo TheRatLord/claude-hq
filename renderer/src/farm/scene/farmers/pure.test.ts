@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ACTS, ACT_INFO, actPose, cycleLength, faceGlyphs, footAt, gait, newGlyphs, newPose, newSprings, poseDelta, springStep, FACES, NCH } from './pose.ts';
 import type { Body, GaitState } from './pose.ts';
 import { lookFor } from './look.ts';
-import { CLAWD, CODEX, GLYPHS, KIND_COLORS, clawdBody, clawdPlan, codexPlan } from './mascots.ts';
+import { BODIES as ALL_BODIES, BODY_STYLE, CLAWD, CODEX, GLYPHS, KIND_COLORS, clawdBody, clawdPlan, codexPlan } from './mascots.ts';
 import { farmerFace } from '../../hud/icons.ts';
 import { newMover, moveStep, separate, place } from './motion.ts';
 import { newTrail, trailPush, trailAt } from './trail.ts';
@@ -13,9 +13,9 @@ import { HANGOUTS, SITES, structure, POND } from '../../world/map.ts';
 import { JOBS } from '../../model/types.ts';
 import type { FarmerView, Job } from '../../model/types.ts';
 
-const BODIES: Body[] = ['clawd', 'codex'];
+const BODIES: readonly Body[] = ALL_BODIES;
 
-test('every act produces a finite pose and loops continuously, for both bodies', () => {
+test('every act produces a finite pose and loops continuously, for every body', () => {
   const a = newPose(), b = newPose();
   for (const body of BODIES) for (const act of ACTS) {
     for (let t = 0; t < 12; t += 0.016) {
@@ -60,7 +60,7 @@ test('planted feet never skate: a foot on the ground moves back at exactly the b
   for (const body of BODIES) for (const jog of [0, 1]) for (const heavy of [false, true]) {
     const L = cycleLength(body, jog, heavy);
     const g: GaitState = { cyc: 0, w: 1, jog, turn: 0, speed: 1, heavy, bounce: 1 };
-    const n = body === 'clawd' ? 4 : 2;
+    const n = BODY_STYLE[body].legs === 'legs' ? 4 : 2;
     const a = { z: 0, y: 0 }, b = { z: 0, y: 0 };
     let planted = 0, lifted = 0;
     const dx = 0.002; // metres travelled per step
@@ -84,6 +84,9 @@ test('planted feet never skate: a foot on the ground moves back at exactly the b
   assert.deepEqual(f[0], f[3]);
   assert.deepEqual(f[1], f[2]);
   assert.notDeepEqual(f[0], f[1]);
+  // a waddle alternates: one foot swings while the other stands
+  const w = [0, 1].map((i) => ({ ...footAt('goose', i, g, { z: 0, y: 0 }) }));
+  assert.ok((w[0].y === 0) !== (w[1].y === 0) || w[0].z !== w[1].z, 'the two feet are out of phase');
 });
 
 test('looks: deterministic, tier hats, kind bodies and colours', () => {
@@ -97,8 +100,11 @@ test('looks: deterministic, tier hats, kind bodies and colours', () => {
   assert.equal(lookFor({ seed: 'x', tier: 'haiku', kind: 'claude' }, 0).hat, 'bandana');
   assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent' }, 0).hat, 'beanie');
   assert.equal(lookFor({ seed: 'x', tier: 'opus', kind: 'codex' }, 0).body, 'codex');
-  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'gemini' }, 0).star, true);
-  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent' }, 0).body, 'clawd');
+  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'gemini' }, 0).body, 'gemini');
+  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent' }, 0).body, 'bot', 'an unknown agent is the sprout-bot, never a Clawd');
+  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent', vendor: 'goose' }, 0).body, 'goose');
+  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent', vendor: 'droid' }, 0).body, 'bot');
+  assert.equal(lookFor({ seed: 'x', tier: null, kind: 'agent', vendor: 'goose' }, 0).hat, 'beanie', 'the tier hat still applies');
   const scales = Array.from({ length: 60 }, (_, i) => lookFor({ seed: `s${i}`, tier: 'opus', kind: 'claude' }, 0).scale);
   assert.ok(Math.min(...scales) >= 0.95 && Math.max(...scales) <= 1.05 && new Set(scales).size > 10);
 });
@@ -252,7 +258,8 @@ test('the HUD portrait draws the same sprite grids and colours as the 3D mascots
   assert.equal(count(codex, KIND_COLORS.codex.body), cells(CODEX.front, '#EMa'));
   assert.equal(count(codex, KIND_COLORS.codex.dark), cells(CODEX.front, 'f'));
   assert.equal(count(codex, KIND_COLORS.codex.glyph), cells(GLYPHS.prompt, '#') + cells(GLYPHS.cursor, '#'));
-  for (const k of ['gemini', 'agent'] as const) assert.equal(count(farmerFace(0, k), KIND_COLORS[k].body), cells(CLAWD.front, '#a'));
+  // gemini / agent are their own mascots now (scene/farmers/mascots.test.ts checks the art portraits)
+  for (const k of ['gemini', 'agent'] as const) assert.equal(count(farmerFace(0, k), KIND_COLORS[k].body), 0);
   // with a tier the hat is added on top; the sprite is unchanged
   assert.ok(farmerFace(0, 'claude', 'opus').length > clawd.length);
   assert.equal(count(farmerFace(0, 'claude', 'opus'), KIND_COLORS.claude.body), cells(CLAWD.front, '#a'));

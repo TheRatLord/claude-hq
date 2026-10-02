@@ -7,7 +7,7 @@
  * Grids are read the way you see the mascot from the FRONT: column 0 is the viewer's left (= model +x is to the viewer's
  * right, matching three's camera), row 0 is the top. Every character is one cube of `u` metres.
  *
- *   Clawd  (kind 'claude'; 'gemini' and 'agent' are recolours)
+ *   Clawd  (kind 'claude'; villagers are Clawds in their own colours)
  *     The Claude Code banner sprite read as pixel art. Terminal cells are twice as tall as they are wide, so every
  *     sprite pixel is about 1 voxel wide and 2 voxels tall, chunked up into a sturdier toy (2-wide legs, 3-tall nubs):
  *          ▐▛███▜▌
@@ -28,8 +28,31 @@
  *   Glyphs  eyes, `>`, `_`, `^`, X … as small cell grids (`#` filled). A glyph is drawn centred on its anchor, one cell
  *           = `glyphCell` metres for that mascot, and a few cells proud of the body so it catches light and outline.
  *
+ *   The other mascots (Gemini sparkle, Aider parrot, OpenCode block, goose, Cursor cube, Amp A-frame, Crush heart, Qwen
+ *   ring, Copilot pilot and the sprout-bot for any other agent) are drawn from the shared art in model/mascots.ts
+ *   (`ART`: a front grid, a palette, a puffy depth profile and a few extra boxes) by `artBody` / `artPlan` below, so
+ *   the HUD portraits read the very same grids. They all stand on two feet (the shared Codex slipper, scaled).
+ *
  * Nothing here imports three: the mesher below emits plain arrays (and is unit-tested in node).
  */
+import { ART, ART_IDS, MASCOTS, charColor } from '../../model/mascots.ts';
+import type { ArtId, MascotArt, MascotId } from '../../model/mascots.ts';
+
+/** Every farmer body: Clawd, the Codex cloud, and the art mascots. */
+export type Body = MascotId;
+export const BODIES: readonly Body[] = MASCOTS;
+/**
+ * How a body moves and emotes: `gait` scuttle (Clawd's four legs) / hop (Codex's hop-waddle) / waddle (alternate steps,
+ * rocking side to side); `face` clawd (bar eyes) / codex (`>_`) / dot (round eyes); lobe `wobble`; `legs` four legs or
+ * two feet.
+ */
+export interface BodyStyle { gait: 'scuttle' | 'hop' | 'waddle'; face: 'clawd' | 'codex' | 'dot'; wobble: number; legs: 'legs' | 'feet' }
+export const BODY_STYLE: Readonly<Record<Body, BodyStyle>> = Object.freeze({
+  clawd: { gait: 'scuttle', face: 'clawd', wobble: 0.03, legs: 'legs' },
+  codex: { gait: 'hop', face: 'codex', wobble: 0.09, legs: 'feet' },
+  ...Object.fromEntries(ART_IDS.map((id) => [id, { gait: ART[id].gait, face: ART[id].eyes === 'dot' ? 'dot' : 'clawd', wobble: ART[id].wobble ?? 0.03, legs: 'feet' }])) as Record<ArtId, BodyStyle>,
+});
+export const isArt = (b: Body): b is ArtId => (ART_IDS as readonly string[]).includes(b);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Clawd
@@ -65,7 +88,8 @@ export const CLAWD = {
   starRow: 6.3,
 } as const;
 
-/** Body colours per kind (0xRRGGBB). */
+/** Body colours per kind (0xRRGGBB): Clawd and Codex (the gemini / agent recolours are the villagers' yardstick: villager
+ * colours stay clear of every agent colour). The art mascots' colours live in model/mascots.ts `ART[id].colors`. */
 export const KIND_COLORS = {
   claude: { body: 0xd97757, dark: 0xb65d40, glyph: 0x1f1512 },
   gemini: { body: 0x6f72e6, dark: 0x5456c2, glyph: 0x17163a },
@@ -131,6 +155,8 @@ export const GLYPHS = {
   hat: ['..#..', '.#.#.', '#...#'],
   /** surprised o */
   ring: ['.##.', '#..#', '#..#', '.##.'],
+  /** a round open eye (the art mascots' `dot` eyes) */
+  dot: ['.###.', '#####', '#####', '#####', '.###.'],
   /** sparkly proud eye */
   plus: ['.#.', '###', '.#.'],
 } as const;
@@ -298,7 +324,7 @@ const legRuns = (cs: [number, number][]) => {
 
 /** Everything the rig needs to know about one body plan, in metres (model space: +z front, +x model-left, y up). */
 export interface Plan {
-  body: 'clawd' | 'codex';
+  body: Body;
   u: number;
   /** body block, measured from the body pivot (bottom centre of the body) */
   w: number; h: number; d: number;
@@ -317,6 +343,8 @@ export interface Plan {
   hat: { x: number; y: number; z: number; s: number };
   /** height of the eyes, for look-at and emote placement */
   eyeY: number;
+  /** two-footed bodies: scale of the shared Codex slipper (x, y, z) */
+  foot: { x: number; y: number; z: number };
 }
 
 /** Grid column / row → body-space metres. */
@@ -354,7 +382,7 @@ export const clawdPlan = (): Plan => {
     shoulder: { x: m.x(bb.cols[1]) + u / 2, y: (m.y(Math.min(...armRows)) + m.y(Math.max(...armRows))) / 2, z: 0 },
     armLen: (Math.max(...armCols) - Math.min(...armCols) + 1) * u, armW: (Math.max(...armRows) - Math.min(...armRows) + 1) * u,
     glyphs: e, glyphCell: u * 0.58,
-    hat: { x: 0, y: h, z: -0.2 * u, s: 1.22 }, eyeY: e[0].y,
+    hat: { x: 0, y: h, z: -0.2 * u, s: 1.22 }, eyeY: e[0].y, foot: { x: 1, y: 1, z: 1 },
   };
 };
 
@@ -396,9 +424,159 @@ export const codexPlan = (): Plan => {
     shoulder: { x: m.x(bb.cols[1]) + u / 2 - 0.5 * u, y: (m.y(Math.min(...armRows)) + m.y(Math.max(...armRows))) / 2, z: 0 },
     armLen: (Math.max(...armCols) - Math.min(...armCols) + 1) * u + 0.5 * u, armW: (Math.max(...armRows) - Math.min(...armRows) + 1) * u,
     glyphs: [anchor('E'), anchor('M')], glyphCell: u,
-    hat: { x: 0, y: h, z: 0, s: 1.05 }, eyeY: anchor('E').y,
+    hat: { x: 0, y: h, z: 0, s: 1.05 }, eyeY: anchor('E').y, foot: { x: 1, y: 1, z: 1 },
   };
 };
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The art mascots (model/mascots.ts ART): depth profile, plan and body
+
+const isBodyCh = (a: MascotArt, ch: string | undefined) => charColor(a, ch) !== null;
+
+/** Body rows / columns of an art grid (everything but `.`, `a` and `f`). */
+function artBounds(a: MascotArt): { cols: [number, number]; rows: [number, number] } {
+  let c0 = 1e9, c1 = -1, r0 = 1e9, r1 = -1;
+  a.front.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (isBodyCh(a, row[c])) { c0 = Math.min(c0, c); c1 = Math.max(c1, c); r0 = Math.min(r0, r); r1 = Math.max(r1, r); } });
+  return { cols: [c0, c1], rows: [r0, r1] };
+}
+
+/**
+ * Half-depth (voxels) of every grid cell of an art mascot: the rim gets `depth[0]`, each ring further in two voxels
+ * more, up to `depth[1]` (or the row's cap); the flat bottom stays full depth so it stands squarely. 0 = no cell.
+ */
+export function artHalfDepth(id: ArtId): number[][] {
+  const a = ART[id], g = a.front;
+  const bottom = artBounds(a).rows[1];
+  const solid = (c: number, r: number) => r > bottom || (r >= 0 && c >= 0 && c < g[r].length && isBodyCh(a, g[r][c]));
+  const ringOpen = (c: number, r: number, k: number) => {
+    for (let dr = -k; dr <= k; dr++) for (let dc = -k; dc <= k; dc++) if (Math.abs(dr) + Math.abs(dc) <= k && !solid(c + dc, r + dr)) return true;
+    return false;
+  };
+  const [rim, mid] = a.depth;
+  return g.map((row, r) => [...row].map((_, c) => {
+    if (r > bottom || !solid(c, r)) return 0;
+    let d = 1;
+    while (d < 8 && !ringOpen(c, r, d)) d++;
+    const cap = a.rowDepth?.[r] ?? mid;
+    return Math.max(1, Math.round(Math.min(cap, Math.min(rim, cap) + (d - 1) * 2) / 2));
+  }));
+}
+
+/** The body character of a cell, an eye (`E`) resolved to the cell it sits on. */
+function bedChar(a: MascotArt, r: number, c: number): string {
+  const row = a.front[r];
+  if (row[c] !== 'E') return row[c];
+  for (let k = 1; k < row.length; k++) for (const n of [row[c - k], row[c + k]]) if (n && n !== 'E' && isBodyCh(a, n)) return n;
+  return '#';
+}
+
+/** Front / back surface z (voxels, rowZ included) of the body at grid point (x, y): the nearest cell in that row. */
+function surfaceAt(a: MascotArt, H: number[][], x: number, y: number, side: 1 | -1): number {
+  const bb = artBounds(a);
+  const r = Math.max(bb.rows[0], Math.min(bb.rows[1], Math.floor(y)));
+  const c0 = Math.floor(x);
+  let h = 0;
+  for (let k = 0; k < 20 && !h; k++) h = H[r][c0 - k] || H[r][c0 + k] || 0;
+  return side * h + (a.rowZ?.[r] ?? 0);
+}
+
+/** The extra boxes in body-cell space (x right, y up from the body bottom, z front). */
+function artExtras(a: MascotArt, H: number[][]) {
+  const bb = artBounds(a);
+  const cols = bb.cols[1] - bb.cols[0] + 1;
+  return (a.extras ?? []).map(([x, y, z, sx, sy, sz, ch, wob, from]) => ({
+    x: x - bb.cols[0] - cols / 2, y: bb.rows[1] + 1 - y,
+    z: from === 'mid' ? z : surfaceAt(a, H, x, y, from === 'front' ? 1 : -1) + z, sx, sy, sz, ch, wob,
+  }));
+}
+
+/** An art mascot's body plan (same contract as Clawd's and Codex's). */
+export function artPlan(id: ArtId): Plan {
+  const a = ART[id], g = a.front, u = a.u;
+  const bb = artBounds(a);
+  const m = mapper(g, bb.cols, bb.rows, u);
+  const H = artHalfDepth(id);
+  const rz = (r: number) => a.rowZ?.[r] ?? 0;
+  const feet = halves(scan(g, 'f').cells, m.cx);
+  const footRows = [...new Set(scan(g, 'f').cells.map(([, r]) => r))];
+  const legLen = (Math.max(...footRows) - bb.rows[1]) * u;
+  const hips = [feet[0], feet[1]].map((cs) => { const [c] = centroid(cs); return { x: m.x(c), z: 0.3 * u }; });
+  const fw = legRuns(feet[0]).reduce((n, run) => Math.max(n, run.length), 0);
+  const cfw = Math.max(...CODEX.front.map((r) => (r.match(/f+/) ?? [''])[0].length));
+  const cfh = CODEX.front.filter((r) => r.includes('f')).length;
+  const arm = halves(scan(g, 'a').cells, m.cx)[0];
+  const armRows = [...new Set(arm.map(([, r]) => r))], armCols = arm.map(([c]) => c);
+  let edge = -1;
+  for (const r of armRows) for (let c = 0; c < g[r].length; c++) if (isBodyCh(a, g[r][c])) edge = Math.max(edge, c);
+  const ex = artExtras(a, H);
+  const eyes = scan(g, 'E').cells.sort((p, q) => p[0] - q[0]).map(([c, r]) => {
+    let z = H[r][c] + rz(r);
+    // eyes ride on top of anything proud in front of them (goggles)
+    const gx = c - bb.cols[0] - (bb.cols[1] - bb.cols[0] + 1) / 2 + 0.5, gy = bb.rows[1] - r + 0.5;
+    for (const b of ex) if (Math.abs(gx - b.x) <= b.sx / 2 && Math.abs(gy - b.y) <= b.sy / 2 && b.z + b.sz / 2 > z) z = b.z + b.sz / 2;
+    return { x: m.x(c), y: m.y(r), z: z * u };
+  });
+  const h = (bb.rows[1] - bb.rows[0] + 1) * u;
+  const hatRow = a.hat.row ?? bb.rows[0], topRow = g[hatRow];
+  const topCols: number[] = [];
+  for (let c = 0; c < topRow.length; c++) if (isBodyCh(a, topRow[c])) topCols.push(c);
+  const maxHalf = Math.max(...H.flat());
+  return {
+    body: id, u, w: (bb.cols[1] - bb.cols[0] + 1) * u, h, d: maxHalf * 2 * u, legLen, hips,
+    shoulder: { x: m.x(edge) + u / 2 - 0.5 * u, y: (m.y(Math.min(...armRows)) + m.y(Math.max(...armRows))) / 2, z: (armRows.reduce((s, r) => s + rz(r), 0) / armRows.length) * u },
+    armLen: (Math.max(...armCols) - Math.min(...armCols) + 1) * u + 0.5 * u, armW: armRows.length * u,
+    glyphs: [eyes[0], eyes[eyes.length - 1]], glyphCell: u * a.glyphCell,
+    hat: { x: m.x((topCols[0] + topCols[topCols.length - 1]) / 2), y: (bb.rows[1] + 1 - hatRow) * u, z: (rz(hatRow) - (a.hat.dz ?? 0)) * u, s: a.hat.s },
+    eyeY: eyes[0].y,
+    foot: { x: (fw * u) / (cfw * CODEX.u), y: (footRows.length * u) / (cfh * CODEX.u), z: (fw * u) / (cfw * CODEX.u) },
+  };
+}
+
+/** An art mascot's body (pivot: bottom centre), the neckerchief in slot 3, extras baked. */
+export function artBody(id: ArtId): Vox {
+  const a = ART[id], g = a.front;
+  const v = new Vox();
+  const bb = artBounds(a);
+  const cols = bb.cols[1] - bb.cols[0] + 1, rows = bb.rows[1] - bb.rows[0] + 1;
+  const H = artHalfDepth(id);
+  if ((a.wobble ?? 0) >= 0.05) {
+    const cyc = rows / 2, maxR = Math.hypot(cols / 2, rows / 2);
+    v.wobAt = (x, y) => Math.max(0, (Math.hypot(x, y - cyc) / maxR - 0.5) / 0.5);
+  }
+  // baked colours are written straight into the (linear) vertex colours: convert the art's sRGB hex first, so the
+  // body shows the very colour the HUD portrait paints (the `#` cells get it through the instance palette)
+  const lin = (c: number) => { const x = c / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+  const shade = (rgb: number, k: number) => (Math.round(lin((rgb >> 16) & 255) * k * 255) << 16) | (Math.round(lin((rgb >> 8) & 255) * k * 255) << 8) | Math.round(lin(rgb & 255) * k * 255);
+  for (let r = bb.rows[0]; r <= bb.rows[1]; r++) for (let c = bb.cols[0]; c <= bb.cols[1]; c++) {
+    const half = H[r][c];
+    if (!half) continue;
+    const ch = bedChar(a, r, c);
+    const x = c - bb.cols[0] - cols / 2, y = bb.rows[1] - r, zo = a.rowZ?.[r] ?? 0;
+    const body = ch === '#';
+    const rgb = body ? (y === 0 ? 0xd2d2d2 : 0xffffff) : shade(charColor(a, ch) ?? 0xffffff, y === 0 ? 0.86 : 1);
+    for (let z = -half; z < half; z++) v.cell(x, y, z + zo, body ? SLOT.body : SLOT.fixed, rgb);
+  }
+  // the neckerchief: a band proud of every exposed cell of its row, leaving the face open; knot + tails at the right
+  const sr = bb.rows[1] - a.scarf.row;
+  let right = -1e9;
+  for (const c of [...v.cells.values()]) {
+    if (c.y !== sr) continue;
+    let exposed = false, faceOn = false;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!v.has(c.x + dx, c.y, c.z + dz)) { exposed = true; if (dz === 1) faceOn = true; }
+    if (!exposed || (faceOn && Math.abs(c.x + 0.5) < a.scarf.gap && c.z >= 0)) continue;
+    v.box(c.x + 0.5, c.y + 0.5, c.z + 0.5, 1.22, 0.8, 1.22, SLOT.accent, 0xffffff);
+    right = Math.max(right, c.x);
+  }
+  const kx = right + 1 - 2.2;
+  let fz = -1e9;
+  for (const c of v.cells.values()) if (c.y === sr && c.x === Math.floor(kx)) fz = Math.max(fz, c.z + 1);
+  if (fz < -1e8) fz = 3;
+  v.box(kx, sr + 0.5, fz + 0.45, 1.4, 1.2, 0.7, SLOT.accent, 0xdddddd);
+  v.box(kx - 0.45, sr - 0.65, fz + 0.35, 0.8, 1.3, 0.35, SLOT.accent, 0xeeeeee, 0, 1);
+  v.box(kx + 0.5, sr - 0.5, fz + 0.32, 0.7, 1.0, 0.35, SLOT.accent, 0xe4e4e4, 0, 1);
+  for (const b of artExtras(a, H)) v.box(b.x, b.y, b.z, b.sx, b.sy, b.sz, SLOT.fixed, shade(a.pal[b.ch] ?? a.colors.body, 1), 0, b.wob);
+  return v;
+}
 
 // =====================================================================================================================
 // Shape builders (pure): cells for each part, in cell units with the part's pivot at the origin

@@ -7,7 +7,7 @@ import {
 import { STATUSES } from '../../../../shared/protocol.ts';
 
 test('prefs: defaults keep the original behaviour (E / F / M / Tab / J, fov 62, bob on, 1x everything)', () => {
-  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT' });
+  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO' });
   assert.equal(DEFAULT_PREFS.fov, 62);
   assert.equal(DEFAULT_PREFS.headBob, true);
   assert.equal(DEFAULT_PREFS.mouseSens, 1);
@@ -40,23 +40,26 @@ test('prefs: storage garbage only fills known keys with sane, in-range values', 
 });
 
 test('prefs: a round trip through JSON is stable', () => {
-  const p = sanitizePrefs({ ...DEFAULT_PREFS, uiScale: 1.25, highContrast: true, colorSafe: true, keys: { ...DEFAULT_KEYS, map: 'KeyG' } });
+  const p = sanitizePrefs({ ...DEFAULT_PREFS, uiScale: 1.25, highContrast: true, colorSafe: true, keys: { ...DEFAULT_KEYS, map: 'KeyU' } });
   assert.deepEqual(sanitizePrefs(JSON.parse(JSON.stringify(p))), p);
 });
 
 test('keys: duplicates in storage resolve to defaults; conflicts are refused with the reason', () => {
-  assert.deepEqual(sanitizeKeys({ use: 'KeyG', alt: 'KeyG' }), { ...DEFAULT_KEYS, use: 'KeyG' });
-  assert.deepEqual(sanitizeKeys({ use: 'KeyF' }), DEFAULT_KEYS, 'use on F collides with alt → everything resets');
+  assert.deepEqual(sanitizeKeys({ use: 'KeyR', alt: 'KeyR' }), { ...DEFAULT_KEYS, use: 'KeyR' });
+  assert.deepEqual(sanitizeKeys({ use: 'KeyF' }), { ...DEFAULT_KEYS, use: 'KeyF', alt: 'KeyR' }, 'use on F: the chosen key wins, alt moves to a spare');
+  // a player who had put the map on O before the notebook existed keeps it; the notebook takes a spare key
+  assert.deepEqual(sanitizeKeys({ map: 'KeyO' }), { ...DEFAULT_KEYS, map: 'KeyO', notebook: 'KeyR' });
+  assert.deepEqual(sanitizeKeys({ map: 'KeyR', ledger: 'KeyO' }), { ...DEFAULT_KEYS, map: 'KeyR', ledger: 'KeyO', notebook: 'KeyV' });
   assert.deepEqual(keyConflict(DEFAULT_KEYS, 'use', 'KeyM'), { action: 'map' });
   assert.deepEqual(keyConflict(DEFAULT_KEYS, 'use', 'KeyW'), { reserved: 'walk' });
   assert.equal(keyConflict(DEFAULT_KEYS, 'use', 'KeyE'), null, 'its own key is fine');
-  assert.equal(keyConflict(DEFAULT_KEYS, 'use', 'KeyG'), null);
+  assert.equal(keyConflict(DEFAULT_KEYS, 'use', 'KeyU'), null);
   const r = rebind(DEFAULT_KEYS, 'map', 'KeyJ');
   assert.equal(r.keys, DEFAULT_KEYS);
   assert.deepEqual(r.conflict, { action: 'mail' });
-  const ok = rebind(DEFAULT_KEYS, 'map', 'KeyG');
+  const ok = rebind(DEFAULT_KEYS, 'map', 'KeyU');
   assert.equal(ok.conflict, null);
-  assert.equal(ok.keys.map, 'KeyG');
+  assert.equal(ok.keys.map, 'KeyU');
   assert.equal(DEFAULT_KEYS.map, 'KeyM', 'never mutates');
   for (const a of ACTIONS) assert.equal(keyConflict(DEFAULT_KEYS, a, DEFAULT_KEYS[a]), null, `default ${a} is not reserved`);
 });

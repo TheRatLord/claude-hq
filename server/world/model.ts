@@ -13,6 +13,9 @@
  *   `arrived`/`left`/`finished`/`blocked`/`unblocked` and enricher events are suppressed while grace runs. When it ends,
  *   still-unmatched old entities get `left` + `gone` in one tick.
  * - First snapshot: no `arrived` for panes that already exist.
+ * - Vendor (rev 3): herdr's `pane.agent` label (shared/vendors.ts `vendorOfLabel`); a pane herdr reports no agent for
+ *   takes the process-info enricher's `agentHint` instead (Aider, Goose, Crush … run in a plain shell pane), which
+ *   turns it into kind 'agent' until the hint clears. A hint is dropped whenever herdr labels the pane itself.
  */
 import { EventEmitter } from 'node:events';
 import {
@@ -28,6 +31,8 @@ import type {
   Clock, Enricher, EnricherCtx, HerdrSource, Logger, RawPane, RawAgent, RawSnapshot, RawTab, RawWorkspace, TimerHandle,
 } from '../interfaces.ts';
 import { baseName, seedKeyOf, projectOf, dedupeNames } from './naming.ts';
+import { isVendor, kindOfVendor, vendorOfLabel } from '../../shared/vendors.ts';
+import type { Vendor } from '../../shared/vendors.ts';
 import { Slots } from './slots.ts';
 import { SinceStore } from './since.ts';
 
@@ -65,6 +70,7 @@ interface PreBase {
   t: RawTab;
   id: string;
   kind: Kind;
+  vendor: Vendor | null;
   cwd: string;
   paneIndex: number;
   name: string;
@@ -93,6 +99,11 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
   patches: Map<string, Map<OwnerName, Partial<Entity>>>;
   /** id → ms the current working stretch began */
   workingSince: Map<string, number>;
+  /** id → the agent CLI the process-info sniff found in a pane herdr labels no agent for (`agentHint`) */
+  sniffed: Map<string, Vendor>;
+  /** pane ids herdr reports an agent label for (latest snapshot) */
+  _labelled: Set<string>;
+  _reapply: boolean;
   slots: Slots;
   since: SinceStore;
   workspaces: Workspace[];
@@ -143,6 +154,9 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     this._first = true;
     this._applying = false;
     this.counters = { events: 0, dropped: 0, rekeys: 0 };
+    this.sniffed = new Map();
+    this._labelled = new Set();
+    this._reapply = false;
     for (const e of enrichers) {
       assertEnricher(e);
       e.onPatch = (id, patch) => this._onPatch(e, id, patch);
@@ -291,7 +305,25 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
       source: this.source, clock: this.clock, log: this.log, session: this.session,
       // accepts sinceHint(ms) or sinceHint(id, ms)
       sinceHint: (a: number | string, b?: number) => this._sinceHint(id, b === undefined ? a : b),
+      agentHint: (v: string | null) => this._agentHint(id, v),
     };
+  }
+
+  /** The process sniff found (or lost) an agent CLI in pane `id`: rebuild the bases if that changes the pane. */
+  _agentHint(id: string, v: string | null): void {
+    if (!this.bases.has(id) || this._labelled.has(id)) return; // herdr's own label wins
+    const next = isVendor(v) ? v : null;
+    if ((this.sniffed.get(id) ?? null) === next) return;
+    if (next) this.sniffed.set(id, next);
+    else this.sniffed.delete(id);
+    // re-apply the latest snapshot once, outside any apply in progress
+    if (this._reapply) return;
+    this._reapply = true;
+    queueMicrotask(() => {
+      this._reapply = false;
+      const raw = this.source.snapshot();
+      if (raw) this.apply(raw);
+    });
   }
 
   _rekey(oldId: string, newId: string, newBase: Base): void {
@@ -308,6 +340,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     this.entities.delete(oldId);
     this.patches.delete(oldId);
     this.workingSince.delete(oldId);
+    this.sniffed.delete(oldId);
     this._dirty.delete(oldId);
     this._sent.delete(oldId);
     if (ws !== undefined) this.workingSince.set(newId, ws);
@@ -327,6 +360,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
     this.entities.delete(id);
     this.patches.delete(id);
     this.workingSince.delete(id);
+    this.sniffed.delete(id);
     this._dirty.delete(id);
     this._sent.delete(id);
     this.emit('msg', { t: S2R.GONE, id, reason });
@@ -359,22 +393,32 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
       slot: slotOf.get(w.workspace_id) ?? 0, status: w.agent_status ?? 'unknown' });
 
     const pre: PreBase[] = [];
+    this._labelled.clear();
     for (const p of raw.panes ?? []) {
       const id = p.pane_id;
       const a = agentsById.get(id);
       const w = wsById.get(p.workspace_id) ?? { workspace_id: p.workspace_id, label: p.workspace_id, number: 0 };
       const t = tabsById.get(p.tab_id) ?? { tab_id: p.tab_id, workspace_id: p.workspace_id, label: '', number: 0 };
       const agent = p.agent ?? null;
-      const known = KINDS.find((k) => k === agent);
-      const kind: Kind = !agent ? 'shell' : known && known !== 'shell' ? known : 'agent';
+      let kind: Kind, vendor: Vendor | null;
+      if (agent) {
+        this._labelled.add(id);
+        this.sniffed.delete(id); // herdr knows this one: a stale sniff must not outlive the label
+        vendor = vendorOfLabel(agent);
+        const known = KINDS.find((k) => k === agent);
+        kind = vendor ? kindOfVendor(vendor) : known && known !== 'shell' ? known : 'agent';
+      } else {
+        vendor = this.sniffed.get(id) ?? null;
+        kind = vendor ? kindOfVendor(vendor) : 'shell';
+      }
       const cwd = p.foreground_cwd ?? p.cwd ?? '';
       const paneIndex = orderOf.get(id) ?? 0;
-      pre.push({ p, a, w, t, id, kind, cwd, paneIndex, name: baseName({ agentName: a?.name, tabLabel: t.label, cwd }),
+      pre.push({ p, a, w, t, id, kind, vendor, cwd, paneIndex, name: baseName({ agentName: a?.name, tabLabel: t.label, cwd }),
         order: [w.number ?? 0, tabIndex.get(t.tab_id) ?? 0, paneIndex] });
     }
     const names = dedupeNames(pre.map((x) => ({ id: x.id, ws: x.w.workspace_id, name: x.name, order: x.order })));
     const bases = new Map<string, Base>();
-    for (const { p, a, w, t, id, kind, cwd, paneIndex } of pre) {
+    for (const { p, a, w, t, id, kind, vendor, cwd, paneIndex } of pre) {
       const status = p.agent_status ?? a?.agent_status ?? 'unknown';
       const stateSeq = kind === 'shell' ? null : (a?.state_change_seq ?? null);
       const identity = { terminalId: p.terminal_id ?? null, agentSession: p.agent_session?.value ?? a?.agent_session?.value ?? null,
@@ -388,6 +432,7 @@ export class WorldModel extends EventEmitter<WorldModelEvents> {
         id,
         terminalId: p.terminal_id ?? null,
         kind,
+        vendor,
         name: names.get(id) ?? '', // dedupeNames covers every pre entry
         seedKey: seedKeyOf(a?.name, id),
         status,

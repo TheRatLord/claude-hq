@@ -7,13 +7,14 @@
  */
 import type { FarmerView, HelperView, PlotView, ValleyState } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
-import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, rosterFilterHit, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS, type RosterFilter } from './format.ts';
+import { agentName, altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, matches, nice, rosterFilterHit, seedHue, STAGE_LABEL, STATUS_LABEL, STATUS_RANK, WS_COLORS, type RosterFilter } from './format.ts';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { earliest, stripRange } from '../model/timeline.ts';
 import { paintMiniStrip } from './timeline.ts';
 import { branchName, repoBits, spendLine } from './format.ts';
 import { costLabel, tokensLabel } from '../model/signals.ts';
 import './signals.css';
+import { mascotOf } from '../model/mascots.ts';
 
 const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
@@ -29,7 +30,7 @@ function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
   for (const f of s.farmers.values()) {
     const plot = s.plots.get(f.plotId);
     if (!rosterFilterHit(only, f)) continue;
-    if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, f.needsYou ? 'needs blocked' : '')) continue;
+    if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, agentName(f), f.needsYou ? 'needs blocked' : '')) continue;
     get(f.plotId).rows.push({ id: f.id, kind: 'farmer', f });
   }
   for (const hp of only ? [] : s.helpers.values()) {
@@ -106,7 +107,7 @@ export function createRoster(ctx: HudCtx): Panel {
     const ago = h('span.t', { title: 'time since their last activity' });
     if (r.kind === 'farmer') {
       const f = r.f;
-      const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
+      const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier);
       const job = f.needsYou
         ? h('div.job.ask', { title: f.question ?? '' }, h('b', { text: 'Needs you: ' }), f.question ?? 'waiting')
         : h('div.job', { title: `${JOB_REAL[f.job]}${f.detail ? ` · ${f.detail}` : ''}${f.title ? `\nTask: ${f.title}` : ''}` }, h('b', { text: JOB_LABEL[f.job] }), f.detail ? ` · ${f.detail}` : f.title ? ` · ${f.title}` : '');

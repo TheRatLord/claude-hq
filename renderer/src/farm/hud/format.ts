@@ -6,6 +6,7 @@ import type { FarmerView, HelperView, Job, LetterKind, LinkState, PlotKind, Plot
 import type { Status } from '../../../../shared/protocol.ts';
 import { costLabel, tokensLabel } from '../model/signals.ts';
 import type { RepoView, SpendView } from '../model/signals.ts';
+import { isVendor, vendorLabel } from '../../../../shared/vendors.ts';
 
 /** 'flint' → 'Flint'; ids and paths are left alone. */
 export function nice(name: string): string {
@@ -63,9 +64,15 @@ export const SEASON_LABEL: Record<Season, string> = { spring: 'Spring', summer: 
 
 export const TIER_LABEL: Record<string, string> = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', other: '' };
 
-/** 'Claude · Opus 5.5' (the model's display name when known, else its tier) */
-export function kindLine(f: Pick<FarmerView, 'kind' | 'tier'> & { model?: string | null }): string {
-  const k = f.kind === 'claude' ? 'Claude' : f.kind === 'codex' ? 'Codex' : f.kind === 'gemini' ? 'Gemini' : 'Agent';
+/** The agent CLI's display name: its vendor's ('OpenCode', 'Aider', …), else by kind ('Claude', 'Codex', 'Gemini', 'Agent'). */
+export function agentName(f: Pick<FarmerView, 'kind'> & { vendor?: string | null }): string {
+  if (f.vendor && isVendor(f.vendor)) return vendorLabel(f.vendor);
+  return f.kind === 'claude' ? 'Claude' : f.kind === 'codex' ? 'Codex' : f.kind === 'gemini' ? 'Gemini' : 'Agent';
+}
+
+/** 'Claude · Opus 5.5' (the model's display name when known, else its tier); 'Goose', 'OpenCode' … for other CLIs */
+export function kindLine(f: Pick<FarmerView, 'kind' | 'tier'> & { model?: string | null; vendor?: string | null }): string {
+  const k = agentName(f);
   const t = f.model && f.model !== k ? f.model : f.tier ? TIER_LABEL[f.tier] ?? '' : '';
   return t ? `${k} · ${t}` : k;
 }

@@ -8,11 +8,12 @@
  */
 import type { Entity } from '../../../../shared/protocol.ts';
 import type { FarmerView, ValleyState } from '../model/types.ts';
-import { createTermView, type TermView } from '../../ui/terminal/view.ts';
+import type { TermView } from '../../ui/terminal/view.ts';
 import type { TerminalKeyAction } from '../../ui/terminal/keys.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
 import { altName, HELPER_LABEL, JOB_LABEL, nice, seedHue, shortName, STATUS_LABEL, STATUS_RANK } from './format.ts';
 import { h, type HudCtx, type Panel } from './ctx.ts';
+import { mascotOf } from '../model/mascots.ts';
 
 export interface Drawer extends Panel {
   dim: HTMLElement;
@@ -24,6 +25,15 @@ export interface Drawer extends Panel {
 }
 
 type Item = { id: string; plot: string; plotId: string; kind: 'farmer' | 'helper' };
+
+/**
+ * The terminal viewer (xterm + its WebGL addon, ~0.5 MB of JS) loads on demand: prefetched once the valley is idle a
+ * few seconds after load, or right away by the first `show` (then the open waits for it, ~20 ms from a local server).
+ */
+type ViewModule = typeof import('../../ui/terminal/view.ts');
+let viewModule: ViewModule | null = null;
+let viewLoading: Promise<ViewModule> | null = null;
+export const loadTermView = (): Promise<ViewModule> => viewLoading ??= import('../../ui/terminal/view.ts').then((m) => (viewModule = m));
 
 export function createDrawer(ctx: HudCtx): Drawer {
   const { d } = ctx;
@@ -128,7 +138,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     const f = s?.farmers.get(id), hp = s?.helpers.get(id), e = d.net.entity(id);
     const plot = s?.plots.get(f?.plotId ?? hp?.plotId ?? '');
     const name = f ? shortName(f) : hp ? shortName(hp) : nice(e?.name ?? id);
-    if (face.dataset.for !== id) { face.dataset.for = id; face.innerHTML = f ? farmerFace(seedHue(f.seed), f.kind, f.tier) : ICONS.scarecrow; }
+    if (face.dataset.for !== id) { face.dataset.for = id; face.innerHTML = f ? farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier) : ICONS.scarecrow; }
     nameEl.textContent = name;
     if (f) { pillEl.className = `vh-pill st-${f.status}`; pillEl.textContent = f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status]; }
     else { pillEl.className = 'vh-pill'; pillEl.textContent = hp?.running ? 'Running' : 'Shell'; }
@@ -232,7 +242,30 @@ export function createDrawer(ctx: HudCtx): Drawer {
     }
   }
 
+  let waiting: { id: string; enterAt?: number } | null = null;
+  // prefetch the viewer once the valley has settled (the load's busy seconds are over)
+  setTimeout(() => {
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    const go = () => { void loadTermView().catch(() => { viewLoading = null; }); };
+    if (idle) idle(go, { timeout: 4000 }); else go();
+  }, 6000);
   function show(id: string, enterAt?: number): void {
+    if (!viewModule) {
+      // first terminal of the session before the prefetch landed: open it as soon as the viewer has loaded (the latest
+      // request wins; the drawer shows its empty / connecting state meanwhile)
+      const first = !waiting;
+      waiting = { id, ...(enterAt !== undefined ? { enterAt } : {}) };
+      last = id;
+      render();
+      if (first) {
+        loadTermView().then(() => { const w = waiting; waiting = null; if (w) show(w.id, w.enterAt); }, (err: unknown) => {
+          waiting = null;
+          ctx.toast({ text: "Couldn't open that terminal", sub: String(err instanceof Error ? err.message : err), level: 'error' });
+        });
+      }
+      return;
+    }
+    const createTermView = viewModule.createTermView;
     last = id;
     if (view?.id === id) { view.focus(enterAt !== undefined ? { enterAt } : {}); render(); return; }
     closeView();
@@ -356,6 +389,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     },
     onClose() {
       dim.classList.remove('open');
+      waiting = null;
       closeView();
     },
     show,

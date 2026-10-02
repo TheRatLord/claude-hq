@@ -238,6 +238,11 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       else if (rq?.done && chatOnly && n % 2 === 1) line = doneLine(f.v.role);
       line ??= closeLine(f.v.role, fr.hearts(f.v.id), n);
     }
+    // now and then (every third chat, at most one rumour every few minutes across the village) a villager mentions
+    // something you've never tried (Fern's notebook, model/guide.ts); never over somebody needing you
+    if (!line && ![...ctx.valley.farmers.values()].some((x) => x.needsYou)) {
+      try { line = (ctx.services.get('guide') as { rumour?(villager: string, nth: number): string | null } | undefined)?.rumour?.(f.v.id, n) ?? null; } catch { line = null; }
+    }
     line ??= lineFor(f.v.role, brief(ctx.valley), n);
     f.talks++;
     f.talkUntil = time + 6;

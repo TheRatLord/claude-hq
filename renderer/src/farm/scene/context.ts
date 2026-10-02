@@ -122,6 +122,8 @@ export interface UiPort {
    * frame on the farmhouse photo wall). Optional for fakes.
    */
   album?(id?: string): void;
+  /** Fern's field notebook (hud/guide.ts), on a page ('rowboat') or a chapter */
+  guide?(page?: string): void;
   /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the

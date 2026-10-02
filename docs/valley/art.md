@@ -37,6 +37,25 @@ relative to `renderer/src/farm/`.
 * **No external assets.** All geometry, textures (canvas), sounds (WebAudio synthesis) and fonts (system) are made
   in code. No downloads, no image/model/audio files.
 
+## Mascots (farmers)
+
+* **Clawd and the Codex cloud** are built in `scene/farmers/mascots.ts`; **every other mascot is data** in
+  `model/mascots.ts` (`ART`): a front grid (`#` body, `E` eyes, `a` arm nubs, `f` feet, other letters from `pal`), a
+  puffy depth profile (`depth: [rim, mid]` grows two voxels per ring in from the outline, `rowDepth` caps thin parts:
+  stalks, spikes, a neck; `rowZ` pushes rows forward: the goose's head), a few `extras` boxes measured from the body
+  surface (beaks, tails, goggles, glints), the neckerchief row and its face gap, and the hat's row and scale (a lower
+  row lets a spike, crest or antenna poke up through the hat). `artBody` / `artPlan` turn it into a body and a rig plan;
+  `hud/icons.ts farmerFace` paints the portrait from the same grid, so one edit changes both.
+* **Silhouette first, colour second**: each mascot evokes its tool's mark loosely (shape family + colour family), never
+  the logo itself; `scene/farmers/mascots.test.ts` keeps front silhouettes apart (IoU < 0.86 on a 12×12 mask) and body
+  colours apart (RGB distance > 45), including Clawd and Codex. Pal colours are sRGB hex and converted to linear when
+  baked, so the 3D body matches the portrait.
+* **Shared rig**: all art mascots stand on two feet (the Codex slipper, scaled per plan) and use the shared nubs,
+  glyphs, hats, props and poses; `BODY_STYLE` picks the gait (`scuttle` Clawd, `hop` Codex / Gemini / Crush / Qwen,
+  `waddle` the rest: alternate steps with a side rock), the face (`clawd` bars, `codex` `>_`, `dot` round eyes) and the
+  lobe wobble. Each body is its own InstancedMesh; a mascot nobody is costs no draw call (empty parts are hidden), so
+  crowd40 of Claude / Codex is unchanged and a full zoo adds at most 10 bodies × (main + shadow) = 20 calls.
+
 ## Local light (night, dusk, storms)
 
 Lamps, lanterns, windows and fires are real lights, not ground decals.

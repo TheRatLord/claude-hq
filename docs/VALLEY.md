@@ -21,6 +21,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [signals.md](valley/signals.md) | changing what the server knows about an agent and where it shows: model, context fill, todo checklist, git per field, token spend; the known-vs-surfaced audit |
 | [map.md](valley/map.md) | changing the map panel or minimap: painted base, live layers, pin language, layer toggles |
 | [onboarding.md](valley/onboarding.md) | changing the first-run welcome, tour checklist or one-time tips |
+| [guide.md](valley/guide.md) | changing Fern's field notebook (O): the activity pages and how they're found, Fern's nudges, villager rumours, the "what's new" letter |
 | [weather.md](valley/weather.md) | changing weather traces (wet, puddles, snow, frost), rainbow / mist / god rays, the night sky and meteors |
 | [audio.md](valley/audio.md) | changing sound: buses, music planner and band, gathering music, footsteps, ambience, levels, the audio debug renderer |
 | [almanac.md](valley/almanac.md) | changing prosperity points, ranks or town upgrades |
@@ -39,6 +40,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [grotto.md](valley/grotto.md) | changing the secret grotto behind the waterfall: the ledge cut, the cave room, its secrets (glow-caps, cave fish, the chest, the stamp), the map's "?" |
 | [trail.md](valley/trail.md) | changing the summit trail, its decks, the lookout or the valley viewer |
 | [viewmodel.md](valley/viewmodel.md) | changing your first-person paws: what they hold, gestures, the lantern, their overlay drawing, the `hands` service |
+| [desktop.md](valley/desktop.md) | changing the Electron shell: tray icon + menu, dock / taskbar badges, native notifications, the summon hotkey, window state, start at login, background rendering, the preload bridge |
 | [tools.md](valley/tools.md) | taking screenshots, benchmarking, auditing placement, running browser tests, or using URL params, debug keys and the `__valley` / `__hud` dev API |
 
 ## Layers (enforced by `renderer/src/farm/layers.test.ts`)
@@ -119,7 +121,12 @@ helpers.
   inside), seasons ≤ 8 (rowboat 3–4, winter ice 1 + snowmen 3), atmosphere ≤ 30 + post.
 * One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 * Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the
-  top view (`npm run bench`; ≈ 7–8 ms today), CPU frame (`cpu`) ≲ 8 ms with `crowd40`.
+  top view (`npm run bench`; 5–7 ms today, max ≈ 7.2 ms in `crowd40` snow at the hub), CPU frame (`cpu`) ≲ 8 ms with
+  `crowd40` (≈ 6.5–7 ms today).
+* Load: valley `ready` ≲ 4 s from navigation (≈ 3.1–3.3 s today: systems built ≈ 1.8 s, first frame ≈ 2.4 s),
+  ≲ 3 MB of JS on the first page (2.7 MB). Measure with `npm run bench -- --startup`
+  ([tools.md → Load time](valley/tools.md#load-time-npm-run-bench----startup)); `heightAt` / `clearance` / `pathAt`
+  run for every height sample of every build, so keep them cheap.
 * Per-area costs (wildlife, trail, interior, gatherings, festivals, audio, weather) are in their docs; how to measure
   is in [tools.md → Benchmark](valley/tools.md#benchmark-npm-run-bench).
 

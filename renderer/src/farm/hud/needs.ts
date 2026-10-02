@@ -14,6 +14,7 @@ import type { FarmerView } from '../model/types.ts';
 import { farmerFace, ICONS, icon } from './icons.ts';
 import { ago, altName, askOrder, seedHue, shortName } from './format.ts';
 import { h, syncList, type HudCtx } from './ctx.ts';
+import { mascotOf } from '../model/mascots.ts';
 
 /** rows beyond this go behind "+N more" (they are all in the mailbox's Needs you tab) */
 const MAX = 9;
@@ -81,7 +82,7 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     const sig = `${f.name}|${f.tag}|${f.question}|${f.options.map((o) => `${o.key}:${o.label}`).join('|')}|${i}|${isBusy}|${open}`;
     if (card.dataset.sig === sig) return;
     card.dataset.sig = sig;
-    (card.querySelector('.face') as HTMLElement).innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
+    (card.querySelector('.face') as HTMLElement).innerHTML = farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier);
     const name = card.querySelector('.name') as HTMLElement;
     name.textContent = shortName(f);
     name.title = [shortName(f), altName(f)].filter(Boolean).join(' · ');

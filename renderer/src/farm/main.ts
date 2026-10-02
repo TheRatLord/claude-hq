@@ -30,9 +30,10 @@ import { installPhotoMode } from './photo.ts';
 import { createAlbumStore } from './albumstore.ts';
 import { installStampBook, watchPhotos } from './stampbook.ts';
 import { installNewsroom } from './newsroom.ts';
+import { installGuide } from './guidebook.ts';
 import { localJson } from './storage.ts';
 import { createPrefsStore } from './prefs.ts';
-import { effectiveFpsCap, reducedMotion } from './model/prefs.ts';
+import { ACTIONS, effectiveFpsCap, keyLabel, reducedMotion } from './model/prefs.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
 import type { Quality } from './scene/context.ts';
@@ -42,9 +43,11 @@ import { createHud } from './hud/hud.ts';
 import type { HudNet } from './hud/port.ts';
 import { installDevApi, POSES } from './dev/api.ts';
 import { installOverlay } from './dev/overlay.ts';
+import { installDesktop } from './desktop.ts';
 import type { AudioService, FarmerLocator, IndoorSpace, VillagersService } from './scene/context.ts';
 import { SITES } from './world/map.ts';
 
+performance.mark('valley:main');   // every module evaluated (npm run bench -- --startup reads these marks)
 const params = new URLSearchParams(location.search);
 const settings = createSettings({ send });
 const platform = createPlatform(settings);
@@ -184,7 +187,19 @@ engine.ctx.services.set('stamps', stamps);
 // mailbox every Monday morning, the morning edition on the noticeboard / G; browser-local, the demo's in memory
 const gazette = installNewsroom({ valley, collection, friends, stamps, demo: () => (store.hello ? !!store.hello.demo : null) });
 engine.ctx.services.set('gazette', gazette);
+// Fern's field notebook (model/guide.ts, wired in guidebook.ts; hud/guide.ts draws it): every activity in the valley,
+// found from the services above (only a small 'seen' set of its own), her nudges (onboarding tips), the villagers'
+// rumours, and the "what's new" letter (never on a first run: the profile hadn't met Posy before this load)
+const guide = installGuide({
+  engine, controller, valley, collection, wallet, friends, stamps, onboarding,
+  photos: () => album.list().length,
+  keys: () => Object.fromEntries(ACTIONS.map((a) => [a, keyLabel(prefs.data.keys[a])])),
+  welcomed: onboarding.data().welcomed,
+});
+engine.ctx.services.set('guide', guide);
+performance.mark('valley:systems-start');
 for (const f of SYSTEMS) engine.add(f);
+performance.mark('valley:systems');
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
 let queued = false;
@@ -228,10 +243,14 @@ hud.bind({
   onboarding: () => onboarding,
   stamps: () => stamps,
   gazette: () => gazette,
+  guide: () => guide,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
   service: (name) => engine.ctx.services.get(name),
 });
 engine.onFrame((f) => hud.update(f));
+// the Electron shell (tray, badges, native notifications, summon hotkey, hidden-window render mode): a no-op in the
+// browser (farm/desktop.ts, shared/desktop.ts, docs/valley/desktop.md)
+installDesktop({ valley: () => valley.state, openTerminal: (id) => hud.openTerminal(id), openNeeds: () => hud.openNeeds(), setBackground: (ms) => engine.setBackground(ms) });
 
 installDevApi({
   engine, controller, valley,
@@ -273,11 +292,12 @@ let worldAt = 0;
 const readyCheck = setInterval(() => {
   if (!worldAt && (store.hello && valley.state.farmers.size + valley.state.plots.size > 0 || store.conn.state === 'open' && store.entities.size === 0 && store.hello)) {
     worldAt = drawn + 1;
+    performance.mark('valley:world');
     tick();
   }
   if (worldAt && (drawn >= worldAt + 3 || performance.now() - startedAt > 20_000)) {
     clearInterval(readyCheck);
     stopCounting();
-    setTimeout(() => { (window as unknown as { __valley: { ready: boolean } }).__valley.ready = true; }, 400);
+    setTimeout(() => { performance.mark('valley:ready'); (window as unknown as { __valley: { ready: boolean } }).__valley.ready = true; }, 400);
   }
 }, 100);

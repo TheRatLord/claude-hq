@@ -14,6 +14,7 @@
  *   __valley.timeScale(k)                 animation speed (0 freezes animation)
  *   __valley.service(name)                any published service (ctx.services.get): 'lights', 'trail', 'farmers', …
  *   __valley.perf()                       fps, draw calls, triangles, per-system ms
+ *   __valley.startup()                    load costs: per-system build ms, first frame time / ms, programs compiled
  *   __valley.systems()                    system names
  *   __valley.debug(flag, on?)             toggle ctx.debug flags (e.g. 'labels', 'colliders', 'nav')
  *   __valley.force(id, patch)             demo backend: patch an entity (status, activity…)  (demo only)
@@ -32,6 +33,9 @@
  *   __valley.gazette(cmd?)               The Valley Gazette (model/gazette.ts, newsroom.ts): gazette() → today's morning edition (lead,
  *                                         stories, back issues); 'open' opens it (also 'latest' / a back-issue index); 'deliver' files
  *                                         and posts a weekly edition now; 'weekly' | 'daily' → the facts an edition would print
+ *   __valley.guide(cmd?, a?)              Fern's field notebook (model/guide.ts, guidebook.ts): guide() → pages (found / fresh / now /
+ *                                         notes), seen, nudges; 'open' (a? = page or chapter) opens it; 'see' id ticks a seen signal;
+ *                                         'news' posts a "what's new" letter as if your last visit was older; 'reset' forgets it
  *   __valley.gather(kind?, seg?, stay?)   evening gatherings (scene/gather): gather('campfire' | 'concert' | 'market') puts one on now and
  *                                         stands you there (stay=true: don't move); seg jumps the campfire to 'story' | 'laugh' |
  *                                         'toast' | 'sing' | 'chat'; gather(null) back to the calendar; gather() → what's going on
@@ -287,6 +291,7 @@ export function installDevApi(d: DevDeps): void {
     },
     timeScale: (k: number) => engine.setTimeScale(k),
     perf: () => engine.perf(),
+    startup: () => engine.startup(),
     systems: () => engine.systems().map((s) => s.name),
     debug(flag: string, on?: boolean) { ctx.debug[flag] = on ?? !ctx.debug[flag]; return ctx.debug[flag]; },
     force: (id: string, patch: Record<string, unknown>) => d.demoForce?.(id, patch),
@@ -432,6 +437,13 @@ export function installDevApi(d: DevDeps): void {
     },
     /** ink one stamp now, as if earned (bits, a trophy at a milestone, the toast and the thunk) */
     /** The Valley Gazette: gazette() → today's edition; 'open' / 'latest' / n opens the panel; 'deliver' posts a weekly now; 'weekly' | 'daily' → facts */
+    /** Fern's field notebook: guide() → state; 'open' (page | chapter); 'see' id; 'news'; 'reset' */
+    guide(cmd?: string, a?: string) {
+      const g = ctx.services.get('guide') as { dev(cmd?: string, a?: string): unknown } | undefined;
+      if (!g) return null;
+      if (cmd === 'open') { (window as unknown as { __hud?: { open(id: string, arg?: unknown): void } }).__hud?.open('guide', a); return g.dev(); }
+      return g.dev(cmd, a);
+    },
     gazette(cmd?: 'open' | 'latest' | 'deliver' | 'weekly' | 'daily' | number) {
       const nr = ctx.services.get('gazette') as Newsroom | undefined;
       if (!nr) return null;

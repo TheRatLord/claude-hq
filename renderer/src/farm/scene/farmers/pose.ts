@@ -27,7 +27,9 @@ export const NCH = 27;
 export type Pose = Float32Array;
 export const newPose = (): Pose => new Float32Array(NCH);
 
-export type Body = 'clawd' | 'codex';
+import { BODY_STYLE } from './mascots.ts';
+import type { Body } from './mascots.ts';
+export type { Body } from './mascots.ts';
 
 export const PROPS = [
   'hoe', 'trowel', 'can', 'crate', 'basket', 'rod', 'notebook', 'magnifier', 'hammer', 'saw', 'letter', 'bindle', 'broom', 'brush', 'book',
@@ -770,7 +772,7 @@ export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, 
       break;
     }
   }
-  if (body === 'codex') {
+  if (BODY_STYLE[body].wobble >= 0.05) {
     // the blob sits lower on its tiny feet, so seated legs read as feet sticking out; lobes wobble with any squash
     o[CH.jig] += Math.abs(o[CH.sq]) * 1.5;
   }
@@ -782,9 +784,13 @@ export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, 
 
 export type GaitKind = 'walk' | 'jog' | 'amble';
 
-/** Distance covered per gait cycle (m). Clawd: one cycle = two diagonal footfalls; Codex: two hops. */
+/**
+ * Distance covered per gait cycle (m). Scuttle (Clawd): one cycle = two diagonal footfalls; hop (Codex, the bouncy
+ * shapes): two hops; waddle (the birds, blocks and bots): a left and a right step.
+ */
 export function cycleLength(body: Body, jog: number, heavy: boolean): number {
-  const c = body === 'clawd' ? 0.5 + jog * 0.28 : 0.68 + jog * 0.38;
+  const gk = BODY_STYLE[body].gait;
+  const c = gk === 'scuttle' ? 0.5 + jog * 0.28 : gk === 'waddle' ? 0.54 + jog * 0.3 : 0.68 + jog * 0.38;
   return heavy ? c * 0.72 : c;
 }
 
@@ -804,8 +810,8 @@ export interface GaitState {
   bounce: number;
 }
 
-/** Clawd stance fraction (share of a leg's cycle spent planted) and Codex contact fraction per hop. */
-const STANCE = { clawd: 0.6, codex: 0.42 } as const;
+/** Scuttle stance fraction (share of a leg's cycle spent planted), hop contact fraction per hop, waddle stance. */
+const STANCE = { clawd: 0.6, codex: 0.42, waddle: 0.56 } as const;
 
 /**
  * Foot placement relative to the leg's hip for leg `i` (Clawd FL FR BL BR, Codex L R): forward offset `z` (m) and
@@ -814,9 +820,10 @@ const STANCE = { clawd: 0.6, codex: 0.42 } as const;
 export function footAt(body: Body, i: number, g: GaitState, out: { z: number; y: number }): { z: number; y: number } {
   const L = cycleLength(body, g.jog, g.heavy);
   if (g.w <= 0.001) { out.z = 0; out.y = 0; return out; }
-  if (body === 'clawd') {
-    const s = STANCE.clawd - g.jog * 0.1;
-    const off = i === 0 || i === 3 ? 0 : 0.5; // diagonal pairs: FL+BR, FR+BL
+  const gk = BODY_STYLE[body].gait;
+  if (gk === 'scuttle' || gk === 'waddle') {
+    const s = (gk === 'waddle' ? STANCE.waddle : STANCE.clawd) - g.jog * 0.1;
+    const off = gk === 'waddle' ? (i === 0 ? 0 : 0.5) : i === 0 || i === 3 ? 0 : 0.5; // diagonal pairs FL+BR, FR+BL; waddle L, R
     const p = fract(g.cyc + off);
     const R = s * L; // stance travel = body travel while planted
     const lift = (0.06 + g.jog * 0.045) * (g.heavy ? 0.6 : 1);
@@ -853,7 +860,18 @@ export function gait(o: Pose, body: Body, g: GaitState, carry: boolean): void {
   o[CH.drop] *= keep; o[CH.lie] *= keep; o[CH.tuck] *= keep;
   for (const c of [CH.l0, CH.l1, CH.l2, CH.l3]) o[c] *= keep;
   const turnLean = Math.max(-0.3, Math.min(0.3, -g.turn * g.speed * 0.05));
-  if (body === 'clawd') {
+  const gk = BODY_STYLE[body].gait;
+  if (gk === 'waddle') {
+    // a step per half cycle: dip and squash on each footfall, rock onto the planted foot, toes-out twist
+    const step = fract(g.cyc * 2);
+    const low = S(step * PI) ** 2;
+    o[CH.bob] += (low * (0.022 + g.jog * 0.045) - (g.heavy ? 0.02 : 0)) * b * w;
+    o[CH.sq] += (C((step - 0.1) * TAU) * -0.05 - (g.heavy ? 0.035 : 0)) * b * w * (1 + g.jog * 0.5);
+    o[CH.roll] += (S(g.cyc * TAU) * 0.11 + turnLean) * w;
+    o[CH.twist] += S(g.cyc * TAU) * 0.08 * w;
+    o[CH.lean] = o[CH.lean] * keep + (0.05 + g.jog * 0.14 - (g.heavy ? 0.1 : 0)) * w;
+    o[CH.eyeY] = o[CH.eyeY] * keep + (g.jog * 0.2) * w;
+  } else if (gk === 'scuttle') {
     const step = fract(g.cyc * 2); // two footfalls per cycle
     const low = S(step * PI) ** 2; // 0 at footfall, 1 mid-stance
     o[CH.bob] += (low * (0.028 + g.jog * 0.05) - (g.heavy ? 0.02 : 0)) * b * w;
@@ -879,12 +897,12 @@ export function gait(o: Pose, body: Body, g: GaitState, carry: boolean): void {
     o[CH.twist] += side * S(hop * PI) * 0.07 * w;
     o[CH.lean] = o[CH.lean] * keep + (0.05 + g.jog * 0.12) * w;
   }
-  const sw = body === 'clawd' ? S(g.cyc * TAU) : S(g.cyc * TAU * 2) * 0.6;
+  const sw = gk !== 'hop' ? S(g.cyc * TAU) : S(g.cyc * TAU * 2) * 0.6;
   const arm = (0.35 + g.jog * 0.3) * w * (carry ? 0.15 : 1);
   o[CH.aLy] += sw * arm;
   o[CH.aRy] -= sw * arm;
   if (!carry) {
-    const up = body === 'codex' ? Math.max(0, -Math.cos(fract(g.cyc * 2) * TAU)) * 0.35 * w : 0; // flap on take-off
+    const up = gk === 'hop' ? Math.max(0, -Math.cos(fract(g.cyc * 2) * TAU)) * 0.35 * w : 0; // flap on take-off
     o[CH.aLz] = o[CH.aLz] * keep + (-0.05 + g.jog * 0.25 + up) * w;
     o[CH.aRz] = o[CH.aRz] * keep + (-0.05 + g.jog * 0.25 + up) * w;
   }
@@ -950,7 +968,8 @@ export function poseDelta(a: Pose, b: Pose): number {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Faces: which glyph each face slot shows. Clawd: [left eye, right eye]; Codex: [`>` eye, `_` cursor mouth].
+// Faces: which glyph each face slot shows. Clawd and the eyed mascots: [left eye, right eye] (bars or round dots);
+// Codex: [`>` eye, `_` cursor mouth].
 
 export interface GlyphState { g: string; sx: number; sy: number; dy: number; dx: number; roll: number; on: boolean }
 export const newGlyphs = (): [GlyphState, GlyphState] => [
@@ -966,21 +985,24 @@ const setG = (s: GlyphState, g: string, sx = 1, sy = 1, dy = 0, roll = 0, dx = 0
 export function faceGlyphs(body: Body, face: Face, blink: number, t: number, out: [GlyphState, GlyphState]): [GlyphState, GlyphState] {
   const [a, b] = out;
   const shut = 1 - 0.9 * blink;
-  if (body === 'clawd') {
+  const style = BODY_STYLE[body].face;
+  if (style !== 'codex') {
+    // bar eyes (Clawd, the blocky mascots) or round dots (the creatures); a dot eye is a touch flatter when focused
+    const eye = style === 'dot' ? 'dot' : 'bar', fy = style === 'dot' ? 0.7 : 0.55;
     for (const [s, side] of [[a, -1], [b, 1]] as const) {
       switch (face) {
         case 'happy': case 'proud': setG(s, 'caret', 1, 1, 0.5); break;
-        case 'focused': setG(s, 'bar', 1, 0.55 * shut); break;
+        case 'focused': setG(s, eye, 1, fy * shut); break;
         case 'stuck': setG(s, side < 0 ? 'chevR' : 'chevL'); break;
-        case 'sleepy': setG(s, 'bar', 1, 0.42 * shut, -1.1); break;
-        case 'worried': setG(s, 'bar', 1, 1.08 * shut, 0, side * 0.22); break;
+        case 'sleepy': setG(s, eye, 1, 0.42 * shut, -1.1); break;
+        case 'worried': setG(s, eye, 1, 1.08 * shut, 0, side * 0.22); break;
         case 'yawn': setG(s, 'dash', 1.1, 1.4, -0.3, side * -0.15); break;
-        case 'surprised': setG(s, 'bar', 1.3, 1.3 * shut, 0.2); break;
+        case 'surprised': setG(s, eye === 'dot' ? 'ring' : 'bar', 1.3, 1.3 * shut, 0.2); break;
         case 'asleep': setG(s, 'dash', 1, 1, -1.2); break;
-        case 'whistle': if (side < 0) setG(s, 'caret', 1, 1, 0.5); else setG(s, 'bar', 1, shut); break;
+        case 'whistle': if (side < 0) setG(s, 'caret', 1, 1, 0.5); else setG(s, eye, 1, shut); break;
         case 'oops': setG(s, 'x'); break;
         case 'sparkle': setG(s, 'plus', 1.2, 1.2, 0.3); break;
-        default: setG(s, 'bar', 1, shut); break;
+        default: setG(s, eye, 1, shut); break;
       }
     }
     return out;

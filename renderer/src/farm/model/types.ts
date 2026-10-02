@@ -56,6 +56,11 @@ export interface FarmerView {
    */
   tag: string;
   kind: Exclude<Kind, 'shell'>;
+  /**
+   * which agent CLI (shared/vendors.ts ids: 'claude', 'opencode', 'aider' …; rev 3), null when unknown. Display via
+   * `vendorLabel`; the farmer's mascot is `mascotOf(kind, vendor)` (model/mascots.ts). Optional for test fakes.
+   */
+  vendor?: string | null;
   /** stable appearance seed */
   seed: string;
   tier: ModelTier | null;

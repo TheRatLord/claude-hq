@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  HINTS, HINT_GAP_MS, HINT_SETTLE_MS, STEPS, WELCOME_BITS, WELCOME_DECOR, allDone, begin, createOnboarding, dismiss, dueHint, emptyOnboarding,
+  HINTS, HINT_GAP_MS, HINT_SETTLE_MS, NUDGE_FRESH_MS, STEPS, WELCOME_BITS, WELCOME_DECOR, allDone, begin, createOnboarding, dismiss, dueHint, emptyOnboarding,
   finish, nextStep, parseOnboarding, progress, replay, sawHint, settle, shouldWelcome, signal, tipsAllowed,
 } from './onboarding.ts';
 import type { OnboardingChange, OnboardingData, WelcomeLetter } from './onboarding.ts';
@@ -124,6 +124,38 @@ test('onboarding tips: once each, one per gap, settle after the welcome, never b
   for (const x of HINTS) assert.ok(x.text && x.sub.length > 20, x.id);
   assert.match(HINTS.find((x) => x.id === 'blocked')!.sub, /Alt\+1/);
   assert.match(HINTS.find((x) => x.id === 'rain')!.sub, /rain/i);
+});
+
+test('onboarding nudges (Fern\'s, model/guide.ts): the same cadence, only while fresh, never while somebody needs you', () => {
+  const d = emptyOnboarding();
+  begin(d, T0);
+  const t1 = T0 + HINT_SETTLE_MS + 1;
+  const at = new Map([['boat', t1 - 1000]] as const);
+  assert.equal(dueHint(d, ['boat'], t1, false, { wantedAt: at })?.id, 'boat');
+  assert.equal(dueHint(d, ['boat'], t1, false, { wantedAt: at, asks: 1 }), null, 'never over an ask');
+  assert.equal(dueHint(d, ['boat'], t1 + NUDGE_FRESH_MS, false, { wantedAt: at }), null, 'stale: you walked away from the dock');
+  assert.equal(dueHint(d, ['boat', 'rain'], t1 + NUDGE_FRESH_MS, false, { wantedAt: at })?.id, 'rain', 'a stale nudge never blocks a tip');
+  assert.equal(dueHint(d, ['boat'], t1, true, { wantedAt: at }), null, 'busy');
+  // the live service: queued while the world says so, shown once, then the gap applies to every tip
+  let t = t1;
+  const s = createOnboarding(undefined, { now: () => t, tips: true });
+  s.begin(true);
+  t += HINT_GAP_MS;
+  s.want('boat');
+  t += NUDGE_FRESH_MS + 1;
+  assert.equal(s.nextHint(false), null, 'went stale in the queue');
+  s.want('boat');
+  assert.equal(s.nextHint(false, 2), null, 'someone needs you');
+  assert.equal(s.nextHint(false, 0)?.id, 'boat');
+  s.want('barn');
+  assert.equal(s.nextHint(false), null, 'one per gap');
+  t += HINT_GAP_MS; s.want('barn'); s.want('boat');
+  assert.equal(s.nextHint(false)?.id, 'barn', 'the boat was seen: once per profile');
+  assert.ok(s.data().hints.seen.includes('boat') && s.data().hints.seen.includes('barn'));
+  // tips off silences nudges too
+  t += HINT_GAP_MS; s.setHintsOff(true); s.want('snow');
+  assert.equal(s.nextHint(false), null);
+  assert.deepEqual(parseOnboarding({ ...emptyOnboarding(), welcomed: true, hints: { off: false, seen: ['boat', 'zzz'], last: 0 } })!.hints.seen, ['boat']);
 });
 
 test('onboarding: parse is tolerant and keeps what matters', () => {

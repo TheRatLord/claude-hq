@@ -3,7 +3,7 @@
 Everything for checking your work: tests, screenshots on the real GPU, the benchmark, the map PNG, the placement
 audit, browser tests, URL parameters, in-game debug keys and the `window.__valley` / `window.__hud` dev API.
 
-Key sources: `scripts/shoot.ts`, `scripts/bench.ts`, `scripts/soak.ts`, `scripts/mapviz.ts`, `scripts/placement.ts` +
+Key sources: `scripts/shoot.ts`, `scripts/bench.ts` (+ `scripts/startup.ts`), `scripts/soak.ts`, `scripts/mapviz.ts`, `scripts/placement.ts` +
 `scripts/placement-allow.json`, `scripts/devserver.ts`, `scripts/workbench.ts`, `scripts/typecheck.ts`,
 `renderer/src/farm/dev/` (`api.ts`, `overlay.ts`, `gallery.ts`, `placement.ts`, `placementCore.ts`),
 `renderer/src/farm/photo.ts`, `renderer/src/farm/main.ts` (URL params), `browser-tests/`, `playwright.config.ts`,
@@ -17,11 +17,12 @@ node --test "renderer/src/farm/**/*.test.ts"        # model + layer rules (+ you
 npm run test:browser                                # Playwright browser tests (below)
 npm run shoot -- --shot name=a,pose=hub,hour=10     # screenshots on the real GPU → scratch/shots/a.png, prints errors + perf
 npm run bench -- --scenario mixed --pose hub,top    # GPU / CPU ms, calls, tris per pose (Benchmark below)
+npm run bench -- --startup                          # load time: first frame, ready, programs, JS (after npm run build)
 npm run soak -- --minutes 20                        # leave it running all day, compressed: leak report (Soak below)
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
-npm run app  |  npm run app:demo                    # Electron: live herdr session | demo world
+npm run app  |  npm run app:demo                    # Electron: live herdr session | demo world (desktop.md; browser-tests/electron.spec.ts)
 ```
 
 Read the PNGs you produce (they are the ground truth), compare against the art direction ([art.md](art.md)), iterate.
@@ -64,7 +65,7 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
   come and go: a few frames after a named pose, `pose()` fans rays across the middle of the view and, if something solid
   is within 4.5 m, steps back / aside (never into a collider) to the first clear spot. `pose=x,z,…` is never nudged.
 * **Demo scenarios** (`server/demo/scenarios.ts`, `--scenario`): `mixed allStates crowd40 trio longIdle queue churn
-  empty offline`.
+  empty offline zoo` (`zoo`: one pane per mascot vendor, an unknown label and a shell; [lore.md](lore.md#who-farms-here)).
 * **URL parameters** (`main.ts`): `t` (server token), `pose`, `hour`, `weather`, `season`, `festival=ID`
   ([festivals.md](festivals.md)), `almanac=POINTS` (demo; [almanac.md](almanac.md)), `quality=low|medium|high` (`low`
   compiles the wet / snow surfaces out and skips god rays; [weather.md](weather.md); beats Settings → Graphics → quality), `timescale=K`, `welcome=1|0`
@@ -91,7 +92,8 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
   (farmer / helper / plot / structure / villager id; `'villager:posy'`), `interact()`, `focused()`.
 * `setHour(h | null)`, `setWeather(kind | null, intensity?)`, `setSeason(s | null)`, `festival(id | null)`,
   `timeScale(k)` (0 freezes animation), `atmo(…)`, `meteor()` ([weather.md](weather.md)).
-* `perf()` (fps, `calls`, `tris`, `systemMs`), `systems()`, `debug(flag, on?)` (`'labels'`, `'colliders'`, `'nav'`),
+* `perf()` (fps, `calls`, `tris`, `systemMs`), `startup()` (load costs: per-system build ms, first frame time / ms,
+  programs compiled), `systems()`, `debug(flag, on?)` (`'labels'`, `'colliders'`, `'nav'`),
   `force(id, patch)` / `scenario(name, seed?)` (demo backend only), `villagers()` / `villager(id)`.
 * Areas: `almanac(points)`, `fireworks(s)`, `forage` / `forageGo` / `fish` / `collect`, `wildlife`, `coins` / `buy` /
   `sell` / `yard` / `furnish`, `hearts` / `requests` / `gift`, `gather`, `inside`, `stamps` / `stamp`, `boat` / `skate` / `snowman` ([seasons.md](seasons.md)); `ctx.services.get(name)` reaches any
@@ -129,10 +131,62 @@ costs worth knowing: mist banks ≈ 0.3 ms (night / dawn), wet surfaces ≈ 0.7 
 costs nothing), god rays ≈ 0.1 ms, shadow map ≈ 0.5 ms, post ≈ 1.2 ms. (The atmosphere's own earlier estimates, mist
 ≈ +1.5 ms and wet / snow / rays ≈ +0.3–0.6 ms each, are in [weather.md](weather.md); prefer fresh bench numbers.)
 
+Last re-baseline (2026-10-02, 3 alternating A/B runs per build, medians; `mixed` / `crowd40` × day / night / snow ×
+hub / square / top / inside): no GPU or draw-call regression from the nine feature rounds since the previous pass.
+
+| | GPU ms | cpu ms | sys ms | submit ms | calls |
+|---|---|---|---|---|---|
+| mean of 24 rows, before → after | 5.32 → 5.32 | 5.92 → 5.69 | 2.21 → 2.07 | 1.81 → 1.50 | 242 → 242 |
+| `crowd40` day hub | 6.67 → 6.44 | 7.90 → 7.11 | 2.75 → 2.50 | 2.85 → 1.91 | 330 → 329 |
+| `crowd40` snow hub | 7.16 → 7.03 | 7.41 → 6.59 | 2.65 → 2.39 | 2.54 → 1.74 | 312 → 311 |
+| `crowd40` night top | 6.76 → 6.29 | 9.10 → 7.63 | 2.76 → 2.32 | 4.44 → 2.56 | 370 → 368 |
+
+What changed (`scene/engine.ts`): three re-resolved a material's program (~10 µs each) ~40× a frame where consecutive
+draws of one material disagreed on instancing: the opaque sort now also groups by instance colour, and instanced /
+skinned shadow casters get their own (identical) depth material (`groupShadowDepth`, every 120 frames), down to ~15;
+colliders iterate an array with a bounding reject. Still the biggest CPU item: three's draw submission (~330 draws,
+each program switch re-uploads the 18-slot light pool's uniforms).
+
 Rules of thumb: a `DoubleSide` material does not need explicit back faces (`scene/plots/geo.ts` `singleSided`); a
 valley-wide `InstancedMesh` cannot be frustum-culled by three, so pack only what is in view (`scene/plots/meadow.ts`);
 transparent `DoubleSide` materials take `forceSinglePass: true` when additive (else three draws them twice and
 re-resolves the program each frame).
+
+## Load time (`npm run bench -- --startup`)
+
+`scripts/startup.ts` serves a built `dist/` from an in-process demo backend and loads the valley N times, each in a
+fresh Chromium on the real GPU (no shared program / HTTP / V8 code cache; Mesa's disk shader cache stays warm unless
+`--cold`). Per run: `main` (navigation → every module evaluated, mark `valley:main`), `sys` (building the systems, marks
+`valley:systems-start` → `valley:systems`; `--systems` adds the per-system split from `__valley.startup().buildMs`),
+`frame1` (first frame submitted) and `f1ms` (that frame's own ms: program links, first uploads), `world`, `ready`
+(`__valley.ready`, which includes 3 frames + a 400 ms settle), `progs` (programs compiled), `link` (main-thread ms
+stalled in `linkProgram` / `getProgramParameter`), `long` (long-task ms), `jsKB` (JS fetched), heap.
+
+```sh
+npm run build && npm run bench -- --startup --systems                     # 5 runs of dist/
+npm run bench -- --startup --dist dist,scratch/base/dist --runs 6           # A/B two builds, alternating; medians each
+```
+
+Last pass (2026-10-02, 5 alternating runs, medians, load ≈ 8): HEAD before → after.
+
+| | before | after |
+|---|---|---|
+| `main` (modules evaluated) | 273 ms | 162 ms |
+| systems built | 3906 ms | 1843 ms (terrain 1759 → 630, flora 1333 → 507) |
+| first frame at / its own ms | 5000 / 725 ms | 2468 / 376 ms |
+| `ready` | 5788 ms | 3290 ms |
+| programs at ready / link stall | 90 / 621 ms | 106 / 358 ms |
+| long tasks until ready | 5049 ms | 2713 ms |
+| JS on the first page | 3121 KB | 2690 KB |
+
+What made the difference: `world/map.ts` `heightAt` (pads keep their trig and a reach; `carve` skips the river outside
+its box), `pathAt` / `clearance` (per-path boxes, cached rectangles) and `noise.ts` `perlin2` are bit-identical and
+3–5× faster — they were ~60 % of the build; the tab icon and stamp images draw on CPU-backed canvases
+(`willReadFrequently`): `toDataURL` on a GPU canvas waited ~1.3 s on the GPU process while it compiled the first
+frame's shaders; `engine.add` hands each system's new objects to `renderer.compile` (into a linear render target like
+the post chain's, so the keys match the real frame) so the driver links programs while the next systems build; the
+terminal viewer (xterm, ~0.5 MB) is a lazy chunk, prefetched when idle ~6 s after load (`hud/drawer.ts`
+`loadTermView`). Rooms (farmhouse, barn, grotto) already build on first entry.
 
 ## Soak (`npm run soak`)
 

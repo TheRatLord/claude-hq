@@ -22,6 +22,8 @@ export interface PromptSpec {
 export interface NewPaneSpec {
   tab?: string;
   kind?: Kind;
+  /** herdr's agent label when it is not the kind itself (`opencode`, `aider` … for kind 'agent'; the zoo) */
+  agent?: string;
   /** agent display name; null = unnamed */
   name?: string | null;
   status?: Status;
@@ -499,6 +501,19 @@ export function buildScenario(scenario: string, { n = 12, seed = 1 }: { n?: numb
       }
       for (const act of SHELL_ACTIVITIES) specs.push({ ws: ws(), tab: 'shells', kind: 'shell', frozen: true, proc: SHELL_PROCS[act][0], procActivity: act });
       return { specs, schedule: false };
+    }
+    case 'zoo': {
+      // one of every agent CLI the valley draws its own mascot for, plus a vendor without one (Droid: the sprout-bot)
+      // and a label nobody knows; a shell to keep the scarecrow in the picture. Fixed 14 panes over 3 workspaces.
+      const zoo: [Kind, string | undefined, Status][] = [
+        ['claude', undefined, 'working'], ['codex', undefined, 'working'], ['gemini', undefined, 'idle'], ['agent', 'aider', 'working'],
+        ['agent', 'opencode', 'blocked'], ['agent', 'goose', 'working'], ['agent', 'cursor', 'idle'], ['agent', 'amp', 'working'],
+        ['agent', 'crush', 'done'], ['agent', 'qwen', 'working'], ['agent', 'copilot', 'idle'], ['agent', 'droid', 'working'],
+        ['agent', 'brand-new-cli', 'idle'],
+      ];
+      const specs: PaneSpec[] = zoo.map(([kind, agent, status], i) => ({ ws: Math.floor(i / 5), tab: i % 5 < 3 ? 'agents' : 'pair', kind, agent, status }));
+      specs.push({ ws: 2, tab: 'dev', kind: 'shell', proc: SHELL_PROCS.serve[0] });
+      return { specs, schedule: true };
     }
     case 'mixed':
     default:

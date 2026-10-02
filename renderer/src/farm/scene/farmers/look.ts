@@ -1,13 +1,15 @@
 // @pure
 /**
- * A farmer's appearance, derived deterministically from its seed + kind + model tier (no three): every window dresses
- * the same farmer the same way. The mascot itself is fixed by kind (Clawd for Claude, a blue-violet starred Clawd for
- * Gemini, a grey Clawd for other agents, the Codex cloud for Codex); only the tiny farm dressing and the personality
- * vary. Colours are 0xRRGGBB numbers; the rig turns them into instance palettes.
+ * A farmer's appearance, derived deterministically from its seed + kind / vendor + model tier (no three): every window
+ * dresses the same farmer the same way. The mascot itself is fixed by the agent CLI (`mascotOf` in model/mascots.ts:
+ * Clawd for Claude, the Codex cloud, the Gemini sparkle, the Aider parrot, the goose, …, the sprout-bot for any other
+ * agent); only the tiny farm dressing and the personality vary. Colours are 0xRRGGBB numbers; the rig turns them into
+ * instance palettes.
  */
 import { hash32, mulberry32 } from '../../../../../shared/identity.ts';
 import type { FarmerView } from '../../model/types.ts';
 import { KIND_COLORS } from './mascots.ts';
+import { ART, mascotOf } from '../../model/mascots.ts';
 import type { HatName, RoleHatName, WearName } from './mascots.ts';
 import type { Body } from './pose.ts';
 
@@ -21,7 +23,7 @@ export interface Look {
   dark: number;
   /** eye / face glyph colour */
   glyph: number;
-  /** Gemini's sparkle on the body */
+  /** a sparkle on Clawd's body (unused by agents since every vendor has its own mascot; kept for villagers / old looks) */
   star: boolean;
   /** neckerchief: the workspace colour */
   scarf: number;
@@ -58,10 +60,16 @@ const LIKES = ['fire', 'fish', 'well', 'board', 'porch', 'meadow'] as const;
 const NOOK_LIKES = ['checkers', 'blanket', 'lookout', 'soak'] as const;
 export type LikeKind = (typeof LIKES)[number] | (typeof NOOK_LIKES)[number] | 'bench';
 
-export function lookFor(f: Pick<FarmerView, 'seed' | 'tier' | 'kind'>, scarf: number): Look {
+/** Body colours of a mascot: Clawd / Codex from KIND_COLORS, the art mascots from their art. */
+export function bodyColors(body: Body): { body: number; dark: number; glyph: number } {
+  return body === 'clawd' ? KIND_COLORS.claude : body === 'codex' ? KIND_COLORS.codex : ART[body].colors;
+}
+
+export function lookFor(f: Pick<FarmerView, 'seed' | 'tier' | 'kind'> & { vendor?: string | null }, scarf: number): Look {
   const r = mulberry32(hash32(`look:${f.seed}`));
   const pick = <T>(a: readonly T[]): T => a[Math.floor(r() * a.length) % a.length];
-  const kc = KIND_COLORS[f.kind] ?? KIND_COLORS.agent;
+  const body = mascotOf(f.kind, f.vendor);
+  const kc = bodyColors(body);
   const hat = hatFor(f.tier);
   const hatColor = hat === 'straw' ? 0xecca6e : hat === 'cap' ? pick([0x5a6b4a, 0x6e5a48, 0x4a5a78, 0x8a4a3a]) : hat === 'bandana' ? pick([0xd9453b, 0x3f78c8, 0x5cae4f]) : pick([0xd9534f, 0x5b8fd6, 0x7fb069, 0xf0a04b, 0x9a6ad0]);
   const hatBand = hat === 'straw' ? scarf : hat === 'beanie' ? 0xf6f1e6 : 0xf4efe3;
@@ -71,7 +79,7 @@ export function lookFor(f: Pick<FarmerView, 'seed' | 'tier' | 'kind'>, scarf: nu
   for (const n of NOOK_LIKES) likes.splice(Math.floor(r2() * (likes.length + 1)), 0, n);
   const restless = r2();
   return {
-    kind: f.kind, body: f.kind === 'codex' ? 'codex' : 'clawd', color: kc.body, dark: kc.dark, glyph: kc.glyph, star: f.kind === 'gemini',
+    kind: f.kind, body, color: kc.body, dark: kc.dark, glyph: kc.glyph, star: false,
     scarf, hat, hatColor, hatBand,
     tempo: 1.75 + r() * 0.45, bounce: 0.8 + r() * 0.45, fidget: 0.6 + r() * 0.8, chatty: r(),
     blinkEvery: 2.6 + r() * 2.4, doubleBlink: 0.1 + r() * 0.25,

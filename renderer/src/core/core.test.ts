@@ -143,3 +143,46 @@ test('loop: repeated visibilitychange events never start a second frame chain', 
     else Reflect.deleteProperty(globalThis, 'document');
   }
 });
+
+test('loop: setBackground swaps rAF for a slow timer, 0 pauses, null resumes one rAF chain', () => {
+  const pending = new Map<number, FrameRequestCallback>();
+  const timers = new Map<number, { fn: () => void; ms: number }>();
+  let next = 0;
+  const doc = { hidden: false, addEventListener() {}, removeEventListener() {} };
+  const saved = {
+    raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, st: globalThis.setTimeout, ct: globalThis.clearTimeout,
+    doc: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+  };
+  globalThis.requestAnimationFrame = (fn) => { pending.set(++next, fn); return next; };
+  globalThis.cancelAnimationFrame = (id) => { pending.delete(id); };
+  globalThis.setTimeout = ((fn: () => void, ms: number) => { timers.set(++next, { fn, ms }); return next; }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((id: number) => { timers.delete(id); }) as unknown as typeof clearTimeout;
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
+  const ctx: LoopState = { clock: createClock(), perf: { fps: 0, frameMs: 0, cpuMs: 0, frameErrors: 0 }, dt: 0, rawDt: 0, time: 0, now: 0, hour: 0, frame: 0, hidden: false };
+  let frames = 0;
+  const loop = createLoop(ctx, () => { frames++; });
+  try {
+    loop.start();
+    assert.equal(pending.size, 1);
+    loop.setBackground(500);
+    assert.equal(pending.size, 0, 'no rAF in the background');
+    assert.deepEqual([...timers.values()].map((t) => t.ms), [500]);
+    const [[id, t]] = [...timers]; timers.delete(id); t.fn();
+    assert.equal(frames, 1, 'a background tick draws a frame');
+    assert.deepEqual([...timers.values()].map((x) => x.ms), [500], 'and schedules the next');
+    loop.setBackground(0);
+    assert.equal(pending.size + timers.size, 0, 'paused: nothing scheduled');
+    loop.setBackground(null);
+    loop.setBackground(null);
+    assert.equal(pending.size, 1, 'resumed: one rAF chain');
+    assert.equal(timers.size, 0);
+  } finally {
+    loop.stop();
+    globalThis.requestAnimationFrame = saved.raf;
+    globalThis.cancelAnimationFrame = saved.caf;
+    globalThis.setTimeout = saved.st;
+    globalThis.clearTimeout = saved.ct;
+    if (saved.doc) Object.defineProperty(globalThis, 'document', saved.doc);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+});

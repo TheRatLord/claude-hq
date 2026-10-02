@@ -12,9 +12,9 @@ export const PROTOCOL_VERSION = 1;
 /**
  * Additive revision inside PROTOCOL_VERSION (sent as `hello.revision`; never gates a connection). Bump it when optional
  * fields are added, so tools and recordings can tell what a server could send. 2: Entity.git, Entity.usage, commit
- * event `detail.msg`.
+ * event `detail.msg`. 3: Entity.vendor (which agent CLI: shared/vendors.ts), `zoo` demo scenario.
  */
-export const PROTOCOL_REVISION = 2;
+export const PROTOCOL_REVISION = 3;
 export const WS_PATH = '/ws';
 
 // ---------------------------------------------------------------------------------------------
@@ -382,6 +382,13 @@ export interface Entity {
   /** herdr terminal_id; null when herdr reports none */
   terminalId: string | null;
   kind: Kind;
+  /**
+   * rev 3: which agent CLI (shared/vendors.ts `Vendor`: 'claude', 'codex', 'gemini', 'aider', 'opencode', …); null for a
+   * shell or an agent herdr labels with something unknown. Absent from older servers and recordings: read as null.
+   * Base-owned: herdr's `pane.agent` label, else the process-info sniff (a CLI herdr does not know turns a shell pane
+   * into kind 'agent').
+   */
+  vendor?: string | null;
   name: string;
   seedKey: string;
   status: Status;
@@ -458,7 +465,7 @@ export interface Stats {
 
 // ---- server → renderer (JSON text frames, discriminated on `t`)
 
-export const SCENARIOS: readonly string[] = Object.freeze(['mixed', 'allStates', 'crowd40', 'trio', 'longIdle', 'queue', 'churn', 'empty', 'offline']);
+export const SCENARIOS: readonly string[] = Object.freeze(['mixed', 'allStates', 'crowd40', 'trio', 'longIdle', 'queue', 'churn', 'empty', 'offline', 'zoo']);
 
 /** Active simulated world; absent for live sources and recordings, including demo recordings. */
 export interface DemoConfig {
@@ -591,7 +598,7 @@ export type OwnerName = 'base' | 'transcripts' | 'subagents' | 'procinfo' | 'blo
 type EntityField = keyof Entity;
 
 const BASE_FIELDS = Object.freeze([
-  'id', 'terminalId', 'kind', 'name', 'seedKey', 'status', 'statusSince', 'statusSinceApprox', 'identity', 'stateSeq',
+  'id', 'terminalId', 'kind', 'vendor', 'name', 'seedKey', 'status', 'statusSince', 'statusSinceApprox', 'identity', 'stateSeq',
   'layoutRect', 'workspace', 'tab', 'paneIndex', 'cwd', 'project', 'repo', 'focused', 'baseTitle',
 ] as const satisfies readonly EntityField[]);
 const TRANSCRIPT_FIELDS = Object.freeze([

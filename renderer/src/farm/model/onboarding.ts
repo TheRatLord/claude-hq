@@ -16,10 +16,13 @@
  * Pure: no DOM; the clock and the store are injected (browser-local storage in the app, memory in tests).
  */
 
+import type { NudgeId } from './guide.ts';
+
 export type StepId = 'look' | 'walk' | 'talk' | 'terminal' | 'answer' | 'map' | 'ledger' | 'pastime';
 export type OnbSignal = Exclude<StepId, 'pastime'> | 'forage' | 'fish' | 'farmhouse';
 export type Pastime = 'forage' | 'fish' | 'farmhouse';
-export type HintId = 'blocked' | 'rain' | 'night' | 'basket';
+/** the world tips, plus Fern's nudges toward things you're standing next to and have never tried (model/guide.ts) */
+export type HintId = 'blocked' | 'rain' | 'night' | 'basket' | NudgeId;
 
 export interface StepDef {
   id: StepId;
@@ -52,13 +55,33 @@ export const PASTIMES: readonly { id: Pastime; label: string }[] = Object.freeze
 export const WELCOME_BITS = 50;
 export const WELCOME_DECOR = 'welcome';
 
-export interface HintDef { id: HintId; text: string; sub: string }
+export interface HintDef {
+  id: HintId;
+  text: string;
+  /** `{use}`, `{notebook}`… are filled with the bound keys by the HUD (model/guide.ts `fillKeys`) */
+  sub: string;
+  /** a nudge (model/guide.ts `nudgesFor`): only while it still applies (queued in the last `NUDGE_FRESH_MS`), never
+   *  while somebody needs you; said by `who` (a villager id) instead of Posy */
+  nudge?: boolean;
+  who?: string;
+}
 export const HINTS: readonly HintDef[] = Object.freeze([
   { id: 'blocked', text: 'Someone needs you!', sub: 'Press Alt+1 to answer the first ask from anywhere (J opens the mailbox).' },
   { id: 'rain', text: 'It\'s raining', sub: 'Fish bite better in the rain, and the thunder bass only comes up in a downpour.' },
   { id: 'night', text: 'Night is falling', sub: 'Lamps light the roads; look up for shooting stars, and listen for the owl at the standing stones.' },
   { id: 'basket', text: 'Something for your basket', sub: 'Sell your finds to Bram at the shipping bin or the General store, or give one to a villager (F).' },
+  // Fern's nudges (model/guide.ts nudgesFor): the moment you're next to something you've never tried
+  { id: 'boat', nudge: true, who: 'villager:fern', text: 'The rowboat is tied at the dock', sub: '{use} to climb in; W / S row, A / D turn. The middle of the pond has the bigger fish.' },
+  { id: 'skate', nudge: true, who: 'villager:fern', text: 'The pond has frozen over', sub: 'Walk out onto the ice to skate: W pushes a stride, A / D carve, S stops. Try a figure eight!' },
+  { id: 'snow', nudge: true, who: 'villager:fern', text: 'Snow\'s lying thick', sub: 'Look down at the snow and press {use} to roll a snowball. Stack three and dress them up.' },
+  { id: 'barn', nudge: true, who: 'villager:fern', text: 'The barn door\'s open', sub: 'The animals are hungry: {use} on the big door, hay for Daisy, Pepper and the sheep, grain for the hens.' },
+  { id: 'campfire', nudge: true, who: 'villager:fern', text: 'There\'s a campfire tonight', sub: 'Find a free log by the fire and press {use} to sit down with everyone.' },
+  { id: 'trail', nudge: true, who: 'villager:fern', text: 'The summit trail starts here', sub: 'Follow the switchbacks up the cliff to the lookout; the valley viewer up top can spy any farmer.' },
+  { id: 'pet', nudge: true, who: 'villager:fern', text: 'A basket of foundlings', sub: 'A puppy and a kitten are looking for a home: {use} on the basket to meet them.' },
+  { id: 'notebook', nudge: true, who: 'villager:fern', text: 'Fern\'s field notebook', sub: '{notebook} opens it: how to do everything you\'ve found, and hints for the things you haven\'t yet.' },
 ] as HintDef[]);
+/** a nudge counts only if it was queued this recently (the world still says so: you're still by the dock) */
+export const NUDGE_FRESH_MS = 8_000;
 /** at most one tip this often */
 export const HINT_GAP_MS = 4 * 60_000;
 /** quiet time after the welcome closes before the first tip */
@@ -239,11 +262,20 @@ export const tipsAllowed = (o: { param: string | null; automated: boolean }): bo
 
 export const hintDef = (id: HintId): HintDef | undefined => HINTS.find((x) => x.id === id);
 
-/** The tip to show now from `pending` (in order), or null: tips off, already seen, too soon, or the HUD is busy. */
-export function dueHint(d: OnboardingData, pending: readonly HintId[], now: number, busy: boolean): HintDef | null {
+/**
+ * The tip to show now from `pending` (in order), or null: tips off, already seen, too soon, or the HUD is busy.
+ * Nudges also need the world to still say so (`wantedAt` within `NUDGE_FRESH_MS`) and nobody to need you (`asks`).
+ */
+export function dueHint(d: OnboardingData, pending: readonly HintId[], now: number, busy: boolean, o: { asks?: number; wantedAt?: ReadonlyMap<HintId, number> } = {}): HintDef | null {
   if (d.hints.off || busy || !d.welcomed) return null;
   if (now - d.hints.last < HINT_GAP_MS) return null;
-  for (const id of pending) if (!d.hints.seen.includes(id)) return hintDef(id) ?? null;
+  for (const id of pending) {
+    if (d.hints.seen.includes(id)) continue;
+    const x = hintDef(id);
+    if (!x) continue;
+    if (x.nudge && ((o.asks ?? 0) > 0 || now - (o.wantedAt?.get(id) ?? -Infinity) > NUDGE_FRESH_MS)) continue;
+    return x;
+  }
   return null;
 }
 
@@ -289,10 +321,10 @@ export interface OnboardingService {
   replay(): void;
   dismiss(): void;
   fold(folded: boolean): void;
-  /** queue a tip (once per profile) */
+  /** queue a tip (once per profile; a nudge is re-queued each time the world still says so) */
   want(id: HintId): void;
-  /** the tip to show now (marks it seen), or null */
-  nextHint(busy: boolean): HintDef | null;
+  /** the tip to show now (marks it seen), or null; `asks` = farmers who need you right now (nudges wait) */
+  nextHint(busy: boolean, asks?: number): HintDef | null;
   setHintsOff(off: boolean): void;
   onChange(fn: (c: OnboardingChange) => void): () => void;
 }
@@ -304,6 +336,7 @@ export function createOnboarding(st: OnboardingStore | undefined, o: OnboardingP
   const d = data ?? emptyOnboarding();
   let version = 0;
   const pending: HintId[] = [];
+  const wantedAt = new Map<HintId, number>();
   const tips = o.tips ?? true;
   const fns = new Set<(c: OnboardingChange) => void>();
   const changed = (c: OnboardingChange) => {
@@ -339,10 +372,16 @@ export function createOnboarding(st: OnboardingStore | undefined, o: OnboardingP
     replay() { replay(d); changed({ kind: 'replay' }); },
     dismiss() { dismiss(d); changed({ kind: 'dismiss' }); },
     fold(f) { if (d.folded === f) return; d.folded = f; changed({ kind: 'fold' }); },
-    want(id) { if (!d.hints.seen.includes(id) && !pending.includes(id)) pending.push(id); },
-    nextHint(busy) {
+    want(id) {
+      if (d.hints.seen.includes(id)) return;
+      wantedAt.set(id, now());
+      if (!pending.includes(id)) pending.push(id);
+    },
+    nextHint(busy, asks = 0) {
       if (!tips) return null;
-      const x = dueHint(d, pending, now(), busy);
+      // stale nudges drop out of the queue (you walked away from the dock)
+      for (let i = pending.length - 1; i >= 0; i--) if (hintDef(pending[i])?.nudge && now() - (wantedAt.get(pending[i]) ?? -Infinity) > NUDGE_FRESH_MS) pending.splice(i, 1);
+      const x = dueHint(d, pending, now(), busy, { asks, wantedAt });
       if (!x) return null;
       sawHint(d, x.id, now());
       pending.splice(pending.indexOf(x.id), 1);

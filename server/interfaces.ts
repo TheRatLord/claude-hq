@@ -102,6 +102,12 @@ export interface EnricherCtx {
   session: string;
   /** Offer the pane's true `statusSince` (ms): `sinceHint(ms)` or `sinceHint(paneId, ms)` (WorldModel accepts both). */
   sinceHint(msOrId: number | string, ms?: number): void;
+  /**
+   * The agent CLI the pane's foreground process is (shared/vendors.ts `vendorOfInfo`), or null. Only matters for a
+   * pane herdr reports no agent for: a known CLI there makes the base kind 'agent' (vendor set) until the hint clears.
+   * Optional so test fakes may omit it.
+   */
+  agentHint?(vendor: string | null): void;
 }
 
 /** Minimal base entity as WorldModel builds it (FIELD_OWNERS.base fields). */

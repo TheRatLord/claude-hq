@@ -3,6 +3,8 @@
  * wraps it for the DOM, `iconImage()` rasterises it for the map canvas.
  */
 import type { LetterKind, PlotKind, WeatherKind } from '../model/types.ts';
+import { ART, MASCOTS, cellColor, mascotOf } from '../model/mascots.ts';
+import type { ArtId, MascotId } from '../model/mascots.ts';
 
 /** the HUD's ink: outlines, eyes and lettering on paper (icons, map pins, map labels) */
 export const INK = '#3b2a1e';
@@ -34,6 +36,8 @@ export const ICONS = {
   scarecrow: S(`<path d="M12 21V9M4 11.5h16" stroke="#8a5a32" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="3" fill="#f3dfae" ${ol}/><path d="M7 5.5h10l-2-3H9z" fill="#c8955a" ${ol}/><path d="M8.5 11h7l-1 6h-5z" fill="#6aa84f" ${ol}/>`),
   play: S(`<path d="M8 5l11 7-11 7z" fill="currentColor"/>`),
   pin: S(`<circle cx="12" cy="9" r="5" fill="#d9534f" ${ol}/><path d="M12 14v7" stroke="${INK}" stroke-width="1.6"/>`),
+  // Fern's field notebook: a green cover, an elastic band, a pencil tucked in
+  notebook: S(`<rect x="4.5" y="3" width="14" height="18" rx="1.8" fill="#5c8a4a" ${ol}/><path d="M7 3v18" stroke="#3f6a33" stroke-width="1.2"/><rect x="10" y="7" width="6.5" height="4" rx=".6" fill="#f3e6c4" ${ol}/><path d="M15.5 3v18" stroke="#c9573f" stroke-width="1.6"/><path d="M18.6 6.5l2.2-2.2 1 1-2.2 2.2z" fill="#f0c04a" ${ol}/><path d="M18.6 6.5L17 9.5l2.6-1.9" fill="#e8c9a0" ${ol}/>`),
   compass: S(`<circle cx="12" cy="12" r="9.5" fill="#f3dfae" ${ol}/><path d="M12 4.5l2.5 7.5h-5z" fill="#d9534f" ${ol}/><path d="M12 19.5l-2.5-7.5h5z" fill="#fff6e0" ${ol}/>`),
   send: S(`<path d="M3.5 11.5l17-7.5-5.5 16-3.5-6.5z" fill="#fff6e0" ${ol}/><path d="M11.5 13.5L20.5 4" stroke="${INK}" stroke-width="1.4"/>`),
   eye: S(`<path d="M2.5 12c2.5-4.5 5.8-6.5 9.5-6.5s7 2 9.5 6.5c-2.5 4.5-5.8 6.5-9.5 6.5S5 16.5 2.5 12z" fill="#fff6e0" ${ol}/><circle cx="12" cy="12" r="3.3" fill="#3f95d8" ${ol}/><circle cx="12" cy="12" r="1.3" fill="${INK}"/>`),
@@ -121,15 +125,18 @@ const KIND_COLORS = {
   agent: { body: 0x9c9ea6, dark: 0x7c7e86, glyph: 0x1c1d22 },
   codex: { body: 0xf4f1ea, dark: 0x2c2c33, glyph: 0x1b1b20 },
 };
-const STAR_COLOR = 0xfff0a8;
 
 /**
  * The farmer's portrait: the same voxel mascot as in the world, drawn flat as pixel art from the shared sprite grids
- * (Clawd for claude / gemini / agent, the Codex cloud for codex), wearing its tier hat when `tier` is given.
- * `hue` (the seed hue) picks the hat colour. The HUD crops it to a circle, so everything stays inside r ≈ 11.
+ * (Clawd, the Codex cloud, or an art mascot from model/mascots.ts), wearing its tier hat when `tier` is given.
+ * `who` is a mascot id (`mascotOf(f.kind, f.vendor)`) or a bare kind ('claude', 'agent' …). `hue` (the seed hue)
+ * picks the hat colour. The HUD crops it to a circle, so everything stays inside r ≈ 11.
  */
-export function farmerFace(hue: number, kind: string, tier?: string | null): string {
-  const kc = KIND_COLORS[kind as keyof typeof KIND_COLORS] ?? KIND_COLORS.agent;
+export function farmerFace(hue: number, who: string, tier?: string | null): string {
+  const m: MascotId = (MASCOTS as readonly string[]).includes(who) ? who as MascotId : mascotOf(who);
+  const kind = m === 'clawd' ? 'claude' : m;
+  const art = m !== 'clawd' && m !== 'codex' ? ART[m as ArtId] : null;
+  const kc = art ? art.colors : KIND_COLORS[kind as keyof typeof KIND_COLORS] ?? KIND_COLORS.agent;
   const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
   const body = hex(kc.body), glyphC = hex(kc.glyph);
   const fill: string[] = [], line: string[] = [];
@@ -143,7 +150,22 @@ export function farmerFace(hue: number, kind: string, tier?: string | null): str
     rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const col = paint(row[c]); if (col) px(x0 + c * p, y0 + r * p, p, p, col, outline); } });
   let top: number, cx: number, hp: number;
   const face: string[] = [];
-  if (kind === 'codex') {
+  if (art) {
+    // the art grid, the front-facing extras (beaks, goggles, glints) over it, then the eyes
+    const g = art.front, rows = g.length, cols = g[0].length;
+    const p = Math.min(17 / cols, 14.5 / rows), x0 = 12 - (cols * p) / 2, y0 = 22.2 - rows * p;
+    grid(g, x0, y0, p, (ch) => (ch === '.' || ch === 'E' ? null : ch === 'f' ? hex(kc.dark) : ch === 'a' ? body : null));
+    g.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const col = cellColor(art, r, c); if (col !== null) px(x0 + c * p, y0 + r * p, p, p, hex(col)); } });
+    for (const [x, y, , sx, sy, , ch, , from] of art.extras ?? []) if (from === 'front') px(x0 + (x - sx / 2) * p, y0 + (y - sy / 2) * p, sx * p, sy * p, hex(art.pal[ch] ?? kc.body), false);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (g[r][c] === 'E') {
+      const w = art.eyes === 'dot' ? 1.5 * p : 1.1 * p, hh = art.eyes === 'dot' ? 1.5 * p : 2.2 * p;
+      face.push(`<rect x="${+(x0 + (c + 0.5) * p - w / 2).toFixed(2)}" y="${+(y0 + (r + 0.5) * p - hh / 2).toFixed(2)}" width="${+w.toFixed(2)}" height="${+hh.toFixed(2)}" rx="${art.eyes === 'dot' ? +(w / 2.4).toFixed(2) : 0}" fill="${glyphC}"/>`);
+    }
+    let r0 = art.hat.row ?? 0;
+    while (r0 < rows - 1 && ![...g[r0]].some((_, c) => cellColor(art, r0, c) !== null)) r0++;
+    const tc = [...g[r0]].map((_, c) => (cellColor(art, r0, c) !== null ? c : -1)).filter((c) => c >= 0);
+    top = y0 + r0 * p; cx = x0 + ((tc[0] + tc[tc.length - 1] + 1) / 2) * p; hp = Math.max(0.55, Math.min(0.9, art.hat.s * 1.05));
+  } else if (kind === 'codex') {
     const p = 0.86, g = CODEX.front, x0 = 12 - (g[0].length * p) / 2, y0 = 7.4;
     grid(g, x0, y0, p, (ch) => (ch === '.' ? null : ch === 'f' ? hex(kc.dark) : body));
     // the >_ face: prompt glyph centred on 'E', cursor on 'M'
@@ -157,10 +179,6 @@ export function farmerFace(hue: number, kind: string, tier?: string | null): str
   } else {
     const p = 1.1, g = CLAWD.front, x0 = 12 - (g[0].length * p) / 2, y0 = 7.0;
     grid(g, x0, y0, p, (ch) => (ch === '.' ? null : ch === 'e' ? glyphC : ch === 'l' ? hex(kc.dark) : body));
-    if (kind === 'gemini') {
-      const sx = 12 - 0.5 * 0.7, sy = y0 + 5.4 * p;
-      for (const [dx, dy] of [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]]) face.push(`<rect x="${+(sx + dx * 0.7).toFixed(2)}" y="${+(sy + dy * 0.7).toFixed(2)}" width="0.7" height="0.7" fill="${hex(STAR_COLOR)}"/>`);
-    }
     top = y0; cx = 12; hp = 1;
   }
   // tier hat (matches the world: opus straw, sonnet flat cap, haiku bandana, others beanie)

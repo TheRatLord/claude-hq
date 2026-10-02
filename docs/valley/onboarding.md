@@ -39,6 +39,11 @@ One-time hints in the same corner, queued by the world (a farmer needs you → "
 (`HINT_GAP_MS`), the first 45 s after the welcome closes (`HINT_SETTLE_MS`), never during the tour, a panel / terminal,
 typing or photo mode; × dismisses, *Tips off* or Settings → *Valley tips* turns them off.
 
+**Fern's nudges** are tips too (`nudge: true`, `who: 'villager:fern'`): "The rowboat is tied at the dock — E to climb in"
+when you stand by something you've never tried ([guide.md](guide.md)). Same cadence and switches, plus: only while the
+world still says so (re-queued each second, stale after `NUDGE_FRESH_MS`), never while somebody needs you. Tip
+sub-lines may use `{use}` / `{notebook}` (filled with the bound keys).
+
 ## Automation
 
 `navigator.webdriver` (Playwright tests, `npm run shoot`) skips the welcome and the tips unless the URL has

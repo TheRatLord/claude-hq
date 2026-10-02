@@ -8,6 +8,7 @@ import type { Settings as WireSettings } from '../../../../shared/protocol.ts';
 import { ICONS, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { notifyPermission, requestNotify } from './notify.ts';
+import { desktopRows } from './desktopset.ts';
 import { replayWelcome } from './onboarding.ts';
 import { ACTIONS, ACTION_LABEL, DEFAULT_KEYS, IDLE_FPS, RANGES, keyLabel, rebind, type Action, type Prefs } from '../model/prefs.ts';
 
@@ -51,6 +52,7 @@ export function createPause(ctx: HudCtx): Panel {
       big('Noticeboard', ICONS.board, 'B', () => ctx.panels.open('noticeboard')),
       big('Almanac (system stats)', ICONS.stats, '', () => ctx.panels.open('stats')),
       big('Photo album', ICONS.camera, 'L', () => ctx.panels.open('album')),
+      ctx.b?.guide ? big('Fern\'s field notebook', ICONS.notebook, keyLabel(ctx.prefs.keys.notebook), () => ctx.panels.open('guide')) : null,
       big('Settings', ICONS.gear, '', () => setTab('settings')),
       big('Controls', ICONS.keyboard, '?', () => setTab('controls')),
       ctx.b?.onboarding ? big('Replay the welcome', ICONS.mail, '', () => replayWelcome(ctx)) : null);
@@ -129,7 +131,7 @@ export function createPause(ctx: HudCtx): Panel {
         return h('div.vh-set', null, h('span', { text: ACTION_LABEL[a] }), b);
       }),
       h('div.vh-set', null, h('span.vh-muted', { text: 'Walking (WASD, arrows), Space, Shift, Esc and the panel keys stay fixed.' }),
-        h('button.vh-btn.small', { type: 'button', 'data-testid': 'bind-reset', onclick: () => { P.keys = { ...DEFAULT_KEYS }; capturing = null; bindMsg = 'Keys back to E / F / M / Tab / J, Z / T'; savePref(); render(); } }, 'Reset keys')),
+        h('button.vh-btn.small', { type: 'button', 'data-testid': 'bind-reset', onclick: () => { P.keys = { ...DEFAULT_KEYS }; capturing = null; bindMsg = 'Keys back to E / F / M / Tab / J, Z / T, O'; savePref(); render(); } }, 'Reset keys')),
       h('div.vh-setmsg', { 'aria-live': 'polite', 'data-testid': 'bind-msg', text: bindMsg }),
     ],
     graphics: () => {
@@ -179,7 +181,7 @@ export function createPause(ctx: HudCtx): Panel {
         note('A caption line for the alert bell (someone needs you), the done chime and other cues that carry news.'),
       ];
     },
-    alerts: () => [notifyRow()],
+    alerts: () => [notifyRow(), desktopRows()],
     terminal: () => {
       const leader = h('input', { type: 'text', value: S.get('leaderKey'), 'aria-label': 'Terminal leader key', spellcheck: 'false' });
       leader.addEventListener('change', () => { if (leader.value.trim()) S.set({ leaderKey: leader.value.trim() }); });
@@ -273,6 +275,7 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['F'], 'facing a villager: give a gift from your basket (1…9 picks)'),
       ...row(['P'], 'photo mode: fly, [ ] time, 1–6 looks, V frames, F say cheese, Enter snaps'),
       ...row(['L'], 'the photo album (also from photo mode)'),
+      ...row([K('notebook')], "Fern's field notebook: every pastime, how-tos and hints"),
       ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'),
       head('In any panel'),
       ...row(['Tab', 'Shift+Tab'], 'next / previous control (the ledger: Tab closes it while Tab is its key)'), ...row(['←', '→'], 'switch tabs'),

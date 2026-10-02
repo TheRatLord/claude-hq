@@ -3,9 +3,10 @@
  * springs and gaits the valley uses, so every loop can be inspected, turned, scrubbed and flipbooked:
  *
  *   clawd / codex        variant = a gait ('walk' 'jog' 'hop' 'haul' 'stroll'), a job (its loop) or any single act
- *   mascot-cast          every kind × tier side by side, playing the variant
- *   mascot-faces         every expression on both mascots (blinking)
- *   mascot-props         the held props, each in the loop that uses it
+ *   mascot-<id>          the other mascots (gemini aider opencode goose cursor amp crush qwen copilot bot), same variants
+ *   mascot-cast          every mascot side by side (Clawd in each tier hat), playing the variant
+ *   mascot-faces         every expression on Clawd, Codex, a dot-eyed (Gemini) and a bar-eyed (OpenCode) mascot
+ *   mascot-props         the held props, each in the loop that uses it, in every mascot's nub
  *   duckling             variant = 'waddle' 'hurry' 'sit' 'peep' 'hatch' 'home'
  *   farmer-emotes        the emote atlas
  */
@@ -25,6 +26,9 @@ import { newTrail } from './trail.ts';
 import { Billboards } from './fx.ts';
 import { TRACE_MAX, Traces, tracePos } from './traces.ts';
 import { WORKSPACE_COLORS, PAL } from '../toon.ts';
+import { BODY_STYLE } from './mascots.ts';
+import { ART_IDS, MASCOT_NAME } from '../../model/mascots.ts';
+import type { MascotId } from '../../model/mascots.ts';
 import { JOBS } from '../../model/types.ts';
 import type { FarmerView, Job } from '../../model/types.ts';
 
@@ -57,7 +61,7 @@ export class Puppets {
     const k = this.dolls.length * 0.137;
     let act: Act = 'stand', walk: Doll['walk'] = null;
     if (variant === 'walk' || variant === 'jog' || variant === 'stroll') walk = variant;
-    else if (variant === 'hop') { if (look.body === 'codex') walk = 'walk'; else act = 'ask'; }
+    else if (variant === 'hop') { if (BODY_STYLE[look.body].gait === 'hop') walk = 'walk'; else act = 'ask'; }
     else if (variant === 'haul') { walk = 'haul'; act = 'carry'; }
     else if ((JOBS as readonly string[]).includes(variant)) act = JOB_ACT[variant as Job];
     else if ((ACTS as readonly string[]).includes(variant)) act = variant as Act;
@@ -103,7 +107,7 @@ export class Puppets {
       di.look = d.look; di.pose.set(d.out); di.gait = d.g; di.glyphs = d.glyphs; di.prop = d.prop; di.hold = d.prop ? holdOf(d.act) : 'R';
       di.at.x = d.x; di.at.z = d.z; di.at.yaw = yaw; di.at.scale = 1; di.at.y = 0;
       di.hatLag.x = d.hat.x; di.hatLag.z = d.hat.z; di.hatLag.y = 0;
-      di.wobble = (d.look.body === 'codex' ? 0.09 : 0.03) * Math.min(1, Math.abs(d.out[CH.jig]) * 0.35);
+      di.wobble = BODY_STYLE[d.look.body].wobble * Math.min(1, Math.abs(d.out[CH.jig]) * 0.35);
       di.wobblePhase = t * 13;
       this.crowd.draw(di, this.dout);
       if (d.top0.x < 1e8) {
@@ -119,7 +123,11 @@ export class Puppets {
 }
 
 const PUP = new WeakMap<THREE.Object3D, Puppets>();
-const fake = (seed: string, tier: FarmerView['tier'], kind: FarmerView['kind']) => ({ seed, tier, kind });
+const fake = (seed: string, tier: FarmerView['tier'], kind: FarmerView['kind'], vendor: string | null = null) => ({ seed, tier, kind, vendor });
+/** a stand-in agent for a mascot (its vendor id; Clawd = claude, the sprout-bot = an unknown agent) */
+const as = (m: MascotId, seed: string, tier: FarmerView['tier'] = null) =>
+  m === 'clawd' ? fake(seed, tier ?? 'opus', 'claude') : m === 'codex' ? fake(seed, tier, 'codex') : m === 'bot' ? fake(seed, tier, 'agent') : fake(seed, tier, m === 'gemini' ? 'gemini' : 'agent', m);
+const ALL: readonly MascotId[] = ['clawd', 'codex', ...ART_IDS];
 
 const stage = (build: (p: Puppets) => void, n: number, bounds?: THREE.Vector3): THREE.Object3D => {
   const p = new Puppets(n);
@@ -152,43 +160,50 @@ defineAsset({
   animate,
 });
 
-defineAsset({
-  name: 'mascot-cast', group: 'character', variants: GALLERY_VARIANTS,
-  note: 'kind × tier: Clawd opus straw · sonnet cap · haiku bandana · other beanie; Codex; Gemini (star); agent (grey)',
-  build: (o) => stage((p) => {
-    const cast: [FarmerView['tier'], FarmerView['kind']][] = [['opus', 'claude'], ['sonnet', 'claude'], ['haiku', 'claude'], [null, 'claude'], ['opus', 'codex'], ['sonnet', 'codex'], [null, 'gemini'], [null, 'agent']];
-    cast.forEach(([tier, kind], i) => p.add(lookFor(fake(`cast${i}`, tier, kind), WORKSPACE_COLORS[i]), o.variant ?? 'stand', (i % 4 - 1.5) * 1.9, Math.floor(i / 4) * 1.9 - 0.95));
-  }, 8),
+for (const [i, id] of ART_IDS.entries()) defineAsset({
+  name: `mascot-${id}`, group: 'character', variants: GALLERY_VARIANTS,
+  note: `${MASCOT_NAME[id]} (${id === 'bot' ? 'any other agent' : `${id} agents`}), ${(['opus', 'sonnet', 'haiku', null] as const)[i % 4] ?? 'beanie'} hat; variant = gait, job loop or act`,
+  build: (o) => stage((p) => p.add(lookFor(as(id, 'gallery', (['opus', 'sonnet', 'haiku', null] as const)[i % 4]), WORKSPACE_COLORS[(o.seed + i) % 8]), o.variant ?? 'walk', 0, 0), 1,
+    o.variant === 'stroll' ? new THREE.Vector3(3.4, 1.4, 3.4) : undefined),
   animate,
 });
 
 defineAsset({
-  name: 'mascot-faces', group: 'character', note: 'every expression, Clawd (front row) and Codex (back row) — eyes blink, the cursor blinks',
+  name: 'mascot-cast', group: 'character', variants: GALLERY_VARIANTS,
+  note: 'every mascot: Clawd ×4 tiers (opus straw · sonnet cap · haiku bandana · other beanie), Codex, then Gemini Aider OpenCode Goose / Cursor Amp Crush Qwen Copilot sprout-bot',
+  build: (o) => stage((p) => {
+    const cast: [MascotId, FarmerView['tier']][] = [['clawd', 'opus'], ['clawd', 'sonnet'], ['clawd', 'haiku'], ['clawd', 'other'], ['codex', 'opus'],
+      ...ART_IDS.map((id, i): [MascotId, FarmerView['tier']] => [id, (['opus', 'sonnet', 'haiku', null] as const)[i % 4]])];
+    cast.forEach(([m, tier], i) => p.add(lookFor(as(m, `cast${i}`, tier), WORKSPACE_COLORS[i % 8]), o.variant ?? 'stand', (i % 5 - 2) * 1.9, Math.floor(i / 5) * 2.0 - 2.0));
+  }, 15),
+  animate,
+});
+
+defineAsset({
+  name: 'mascot-faces', group: 'character', note: 'every expression: Clawd, Codex, Gemini (round eyes) and OpenCode (bars), one row each — eyes blink, the cursor blinks',
   build: () => stage((p) => {
-    FACES.forEach((f, i) => {
-      p.add(lookFor(fake(`face${i}`, 'sonnet', 'claude'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.7, Math.floor(i / 7) * 3.6 - 1.8, 0, f);
-      p.add(lookFor(fake(`face${i}`, null, 'codex'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.7, Math.floor(i / 7) * 3.6 - 0.1, 0, f);
-    });
-  }, FACES.length * 2),
+    const rows: MascotId[] = ['clawd', 'codex', 'gemini', 'opencode'];
+    FACES.forEach((f, i) => rows.forEach((m, r) =>
+      p.add(lookFor(as(m, `face${i}`, 'sonnet'), WORKSPACE_COLORS[i % 8]), 'stand', (i % 7 - 3) * 1.7, Math.floor(i / 7) * 7.2 + r * 1.8 - 6.3, 0, f)));
+  }, FACES.length * 4),
   animate,
 });
 
 defineAsset({
   name: 'mascot-props', group: 'prop', variants: PROPS,
-  note: 'held props, shown in the nub of the loop that uses them',
+  note: 'held props, shown in the nub of the loop that uses them, by every mascot',
   build: (o) => stage((p) => {
     const prop = (o.variant as Prop) ?? 'hoe';
     const act = (ACTS.find((a) => propOf(a) === prop) ?? 'stand') as Act;
-    p.add(lookFor(fake('props', 'haiku', 'claude'), WORKSPACE_COLORS[2]), act, -0.9, 0);
-    p.add(lookFor(fake('props', null, 'codex'), WORKSPACE_COLORS[5]), act, 1.0, 0);
-  }, 2),
+    ALL.forEach((m, i) => p.add(lookFor(as(m, 'props', 'haiku'), WORKSPACE_COLORS[i % 8]), act, (i % 6 - 2.5) * 1.9, Math.floor(i / 6) * 2.2 - 1.1));
+  }, ALL.length),
   animate,
 });
 
 defineAsset({
-  name: 'mascot-poses', group: 'character', note: 'every act side by side (reading order = ACTS), alternating Clawd / Codex',
+  name: 'mascot-poses', group: 'character', note: 'every act side by side (reading order = ACTS), cycling through every mascot',
   build: () => stage((p) => {
-    ACTS.forEach((a, i) => p.add(lookFor(fake(`pose${i % 5}`, (['opus', 'sonnet', 'haiku', null, 'opus'] as const)[i % 5], i % 2 ? 'codex' : 'claude'), WORKSPACE_COLORS[i % 8]), a, (i % 7 - 3) * 2.0, Math.floor(i / 7) * 2.2 - 4.4, 0));
+    ACTS.forEach((a, i) => p.add(lookFor(as(ALL[i % ALL.length], `pose${i % 5}`, (['opus', 'sonnet', 'haiku', null, 'opus'] as const)[i % 5]), WORKSPACE_COLORS[i % 8]), a, (i % 7 - 3) * 2.0, Math.floor(i / 7) * 2.2 - 4.4, 0));
   }, ACTS.length),
   animate,
 });

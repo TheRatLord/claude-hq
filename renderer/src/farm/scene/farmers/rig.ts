@@ -1,7 +1,8 @@
 /**
- * The mascot crowd renderer. Every body part is an instance of a handful of shared InstancedMeshes (Clawd body,
- * Clawd legs, Codex body, Codex feet, nubs, face glyphs, hats, props), written densely each frame, so 40 farmers cost
- * the same ~8 draw calls (+ shadow pass) as one and no triangles are spent on hidden slots.
+ * The mascot crowd renderer. Every body part is an instance of a handful of shared InstancedMeshes (one per body:
+ * Clawd, the Codex cloud and each art mascot; Clawd legs, two-footed slippers, nubs, face glyphs, hats, props),
+ * written densely each frame, so 40 farmers cost the same ~8 draw calls (+ shadow pass) as one, a mascot nobody is
+ * costs nothing (empty meshes are hidden) and no triangles are spent on hidden slots.
  *
  * `draw` turns a pose vector + gait state into part matrices:
  *   root (feet on the ground, yaw) → lie (flop back around the rear bottom edge) → body (lift, twist/lean/roll,
@@ -9,17 +10,23 @@
  *   to feet placed by the gait (planted feet stay put), stretching a little so contacts never break.
  */
 import * as THREE from 'three';
-import { clawdBodyGeometry, clawdLegGeometry, codexBodyGeometry, codexFootGeometry, GLYPH_GROUP, glyphGeometry, hatGeometryOf, nubGeometry, PROP_GROUP, propGeometry, ROLE_HAT_GROUP, roleHatGeometry, WEAR_GROUP, wearGeometry } from './geo.ts';
+import { artBodyGeometry, clawdBodyGeometry, clawdLegGeometry, codexBodyGeometry, codexFootGeometry, GLYPH_GROUP, glyphGeometry, hatGeometryOf, nubGeometry, PROP_GROUP, propGeometry, ROLE_HAT_GROUP, roleHatGeometry, WEAR_GROUP, wearGeometry } from './geo.ts';
 import { addInstanceAttrs, rigDepthMaterial, rigMaterial } from './mat.ts';
-import { HAT_NAMES, clawdPlan, codexPlan } from './mascots.ts';
+import { BODY_STYLE, HAT_NAMES, artPlan, clawdPlan, codexPlan } from './mascots.ts';
+import { ART_IDS } from '../../model/mascots.ts';
+import type { ArtId } from '../../model/mascots.ts';
 import type { GlyphName, HatName, Plan } from './mascots.ts';
 import { CH, footAt } from './pose.ts';
 import type { Body, GaitState, GlyphState, Hold, Pose, Prop } from './pose.ts';
 import type { Look } from './look.ts';
 
-export const PLANS: Readonly<Record<Body, Plan>> = { clawd: clawdPlan(), codex: codexPlan() };
+export const PLANS: Readonly<Record<Body, Plan>> = {
+  clawd: clawdPlan(), codex: codexPlan(),
+  ...Object.fromEntries(ART_IDS.map((id) => [id, artPlan(id)])) as Record<ArtId, Plan>,
+};
 
-type PartName = 'clawd' | 'leg' | 'codex' | 'foot' | 'nub' | 'glyph' | `hat_${HatName}` | 'prop' | 'rolehat' | 'wear';
+/** one InstancedMesh per body (an absent mascot costs no draw call: empty parts are hidden), plus the shared parts */
+type PartName = Body | 'leg' | 'foot' | 'nub' | 'glyph' | `hat_${HatName}` | 'prop' | 'rolehat' | 'wear';
 
 interface Part {
   mesh: THREE.InstancedMesh;
@@ -105,6 +112,7 @@ export class Crowd {
   private alloc(cap: number): void {
     const spec: [PartName, () => THREE.BufferGeometry, number, boolean][] = [
       ['clawd', clawdBodyGeometry, 1, true], ['leg', clawdLegGeometry, 4, true], ['codex', codexBodyGeometry, 1, true], ['foot', codexFootGeometry, 2, true],
+      ...ART_IDS.map((id) => [id, () => artBodyGeometry(id), 1, true] as [PartName, () => THREE.BufferGeometry, number, boolean]),
       ['nub', nubGeometry, 2, true], ['glyph', glyphGeometry, 2, false], ['prop', propGeometry, 1, true],
       // villagers' dressing (scene/villagers); empty — and so not drawn — in the farmers' crowd
       ['rolehat', roleHatGeometry, 1, true], ['wear', wearGeometry, 1, true],
@@ -121,8 +129,8 @@ export class Crowd {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
       mesh.castShadow = shadow && this.shadows;
-      // the Codex bevel steps self-shadow into acne; it still casts
-      mesh.receiveShadow = name !== 'codex';
+      // the Codex bevel steps (and the art mascots' puffy rings) self-shadow into acne; they still cast
+      mesh.receiveShadow = name !== 'codex' && !(ART_IDS as readonly string[]).includes(name);
       mesh.customDepthMaterial = rigDepthMaterial();
       mesh.count = 0;
       this.group.add(mesh);
@@ -168,6 +176,7 @@ export class Crowd {
     const o = d.pose;
     const col = colorsOf(d.look);
     const clawd = d.look.body === 'clawd';
+    const legs = BODY_STYLE[d.look.body].legs === 'legs';
     _c.setHex(d.produce); this.produce[0] = _c.r; this.produce[1] = _c.g; this.produce[2] = _c.b;
 
     // root
@@ -184,7 +193,7 @@ export class Crowd {
     _Br.copy(_L).multiply(T(0, lift, 0)).multiply(R(o[CH.lean], o[CH.twist], o[CH.roll], 'YXZ'));
     _Bs.copy(_Br).multiply(_t.makeScale(sxz, sy, sxz));
     _W.multiplyMatrices(_root, _Bs);
-    this.put(clawd ? 'clawd' : 'codex', _W, col.body, col.dark, col.scarf, d.look.star ? 1 : 0, d);
+    this.put(d.look.body, _W, col.body, col.dark, col.scarf, clawd && d.look.star ? 1 : 0, d);
     _bq.setFromRotationMatrix(_m.extractRotation(_Br));
 
     // legs / feet
@@ -194,7 +203,7 @@ export class Crowd {
       _hip.set(hp.x, 0, hp.z).applyMatrix4(_Bs);
       footAt(d.look.body, i, d.gait, _fo);
       const swing = o[CH.l0 + i];
-      if (clawd) {
+      if (legs) {
         _foot.set(hp.x, _fo.y, hp.z + _fo.z);
         _dir.subVectors(_foot, _hip);
         if (Math.abs(swing) > 1e-4) _dir.applyAxisAngle(_v2.set(1, 0, 0), -swing);
@@ -222,7 +231,7 @@ export class Crowd {
         _e.set(-_fo.y * 5 - tuck * 1.25 - swing * 0.6, o[CH.twist] * 0.5, 0, 'YXZ');
         _q2.setFromEuler(_e);
         if (lie > 1e-3) { _yq.copy(_bq).multiply(_q2); _q2.slerp(_yq, lie); }
-        _m.compose(_foot, _q2, _s.set(1, 1, 1));
+        _m.compose(_foot, _q2, _s.set(P.foot.x, P.foot.y, P.foot.z));
         _W.multiplyMatrices(_root, _m);
         this.put('foot', _W, col.dark, col.dark);
       }
@@ -250,7 +259,8 @@ export class Crowd {
       const g = d.glyphs[s];
       if (!g.on || g.sy <= 0.01) continue;
       const an = P.glyphs[s];
-      const ex = clawd ? o[CH.eyeX] * P.u * 0.8 : o[CH.eyeX] * P.u * 0.5, ey = o[CH.eyeY] * P.u * (clawd ? 0.6 : 0.5);
+      const style = BODY_STYLE[d.look.body].face;
+      const ex = o[CH.eyeX] * P.u * (style === 'codex' ? 0.5 : style === 'dot' ? 0.6 : 0.8), ey = o[CH.eyeY] * P.u * (style === 'codex' ? 0.5 : 0.6);
       _m.copy(_Bs).multiply(T(an.x + ex + g.dx * cell, an.y + ey + g.dy * cell, an.z)).multiply(R(0, 0, g.roll))
         .multiply(_t.makeScale(cell * g.sx * es, cell * g.sy * es, cell));
       _W.multiplyMatrices(_root, _m);

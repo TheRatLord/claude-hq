@@ -164,11 +164,14 @@ function landHeight(x: number, z: number): number {
   const r = Math.hypot(x, z * 1.05);
   const a = Math.atan2(z, x);
   const rim = WORLD.rim + 10 * fbm(Math.cos(a) * 1.3 + 4, Math.sin(a) * 1.3 - 2, 3) + 6 * Math.sin(a * 3 + 1);
-  const crag = 0.6 + 0.4 * fbm(x / 24, z / 24, 4);
   // gentle forested foothills, then steep rocky mountains, then taller hazy peaks far beyond the rim
   const foot = smooth(rim - 6, rim + 24, r), cliff = smooth(rim + 12, rim + 42, r), far = smooth(rim + 40, rim + 190, r);
-  const ridge = 1 - Math.abs(fbm(x / 48 + 9, z / 48 - 4, 4));
-  h += foot * (8 + 5 * crag) + cliff * (16 + 24 * crag * ridge) + far * (20 + 80 * ridge * ridge);
+  // (on the valley floor all three are 0: skip the two 4-octave noises)
+  if (foot > 0) {
+    const crag = 0.6 + 0.4 * fbm(x / 24, z / 24, 4);
+    const ridge = 1 - Math.abs(fbm(x / 48 + 9, z / 48 - 4, 4));
+    h += foot * (8 + 5 * crag) + cliff * (16 + 24 * crag * ridge) + far * (20 + 80 * ridge * ridge);
+  }
   h += smooth(-88, -112, z) * 16 * smooth(60, 0, Math.abs(x + 25));
   // the cliff wall steps up in rock strata: level grassy shelves and steep risers (not near the waterfall's face)
   const tw = smooth(rim + 6, rim + 18, r) * (1 - smooth(rim + 48, rim + 72, r)) * smooth(18, 34, Math.hypot(x + 25, z + 106));
@@ -184,12 +187,16 @@ function terraceHeight(x: number, z: number, h: number): number {
   return (i + smooth(shelf, 0.97, f)) * T - warp;
 }
 
-interface Pad { x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number; /** landmark terraces sit on top of the plaza */ top?: boolean; /** a field: its core (fence and all) wins over everything */ field?: boolean }
+interface Pad {
+  x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number; /** landmark terraces sit on top of the plaza */ top?: boolean; /** a field: its core (fence and all) wins over everything */ field?: boolean;
+  /** cos / sin of yaw and the squared reach of the blend skirt from the centre (heightAt's fast reject; never changed after padOf) */
+  c: number; s: number; reach2: number;
+}
 const pads: Pad[] = [];
 /** the summit trail once built (below): heightAt cuts it into the land */
 let trail: Trail | null = null;
 const padOf = (x: number, z: number, w: number, d: number, yaw: number, blend: number, y?: number): Pad =>
-  ({ x, z, hw: w / 2, hd: d / 2, yaw, blend, y: y ?? Math.max(WORLD.water + 1.2, landHeight(x, z)) });
+  ({ x, z, hw: w / 2, hd: d / 2, yaw, blend, y: y ?? Math.max(WORLD.water + 1.2, landHeight(x, z)), c: Math.cos(yaw), s: Math.sin(yaw), reach2: (Math.hypot(w / 2, d / 2) + blend + 1e-3) ** 2 });
 
 /** Signed distance from p to a rotated rectangle (negative inside). */
 function rectSdf(x: number, z: number, p: { x: number; z: number; hw: number; hd: number; yaw: number }): number {
@@ -200,9 +207,15 @@ function rectSdf(x: number, z: number, p: { x: number; z: number; hw: number; hd
   return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
 }
 
+/** the river's bounding box grown by its carving reach (carve skips the polyline walk outside it) */
+const RIVER_BOX = (() => {
+  const m = RIVER_HALF_WIDTH + 9.01;
+  return { x0: Math.min(...RIVER.map((p) => p.x)) - m, x1: Math.max(...RIVER.map((p) => p.x)) + m, z0: Math.min(...RIVER.map((p) => p.z)) - m, z1: Math.max(...RIVER.map((p) => p.z)) + m };
+})();
+
 function carve(x: number, z: number, h: number): number {
   const bed = WORLD.water - 1.4;
-  const dr = distToPolyline(x, z, RIVER);
+  const dr = x < RIVER_BOX.x0 || x > RIVER_BOX.x1 || z < RIVER_BOX.z0 || z > RIVER_BOX.z1 ? Infinity : distToPolyline(x, z, RIVER);
   if (dr < RIVER_HALF_WIDTH + 9) {
     const k = smooth(RIVER_HALF_WIDTH + 8, RIVER_HALF_WIDTH * 0.5, dr);
     h = lerp(h, Math.min(h, bed), k);
@@ -241,7 +254,13 @@ function padHeight(x: number, z: number): number {
   const h = carve(x, z, landHeight(x, z));
   let wsum = 1, hsum = h, tw = 0, th = 0, tk = 0, fk = 0, fy = 0;
   for (const p of pads) {
-    const d = rectSdf(x, z, p);
+    // rectSdf inlined with the pad's cached trig, after a cheap reject (beyond the skirt's corners: d ≥ blend). This
+    // loop runs for every height sample of every system build: it was most of the valley's load time
+    const dx = x - p.x, dz = z - p.z;
+    if (dx * dx + dz * dz >= p.reach2) continue;
+    const lx = dx * p.c - dz * p.s, lz = dx * p.s + dz * p.c;
+    const qx = Math.abs(lx) - p.hw, qz = Math.abs(lz) - p.hd;
+    const d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
     if (d >= p.blend) continue;
     const k = 1 - smooth(0, p.blend, d);
     const w = d < 0 ? 1e4 * Math.exp(Math.min(600, -d * 12)) : k / (1 - k + 1e-4);
@@ -520,10 +539,22 @@ export const PATHS: readonly PathLine[] = (() => {
   return out;
 })();
 
+/** each path's bounding box (pathAt / clearance skip a polyline walk that cannot change their answer) */
+const PATH_BOX = PATHS.map((p) => ({
+  x0: Math.min(...p.points.map((q) => q.x)), x1: Math.max(...p.points.map((q) => q.x)),
+  z0: Math.min(...p.points.map((q) => q.z)), z1: Math.max(...p.points.map((q) => q.z)),
+}));
+/** distance from (x, z) to a box: a lower bound of the distance to the polyline inside it */
+const boxDist = (b: { x0: number; x1: number; z0: number; z1: number }, x: number, z: number) =>
+  Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+const RIVER_BBOX = { x0: Math.min(...RIVER.map((p) => p.x)), x1: Math.max(...RIVER.map((p) => p.x)), z0: Math.min(...RIVER.map((p) => p.z)), z1: Math.max(...RIVER.map((p) => p.z)) };
+
 /** 0..1 how much (x,z) is on a path (1 = centre). */
 export function pathAt(x: number, z: number): number {
   let best = 0;
-  for (const p of PATHS) {
+  for (let i = 0; i < PATHS.length; i++) {
+    const p = PATHS[i];
+    if (boxDist(PATH_BOX[i], x, z) >= p.width * 0.75) continue;   // v would be 0
     const d = distToPolyline(x, z, p.points);
     const v = 1 - smooth(p.width * 0.35, p.width * 0.75, d);
     if (v > best) best = v;
@@ -536,19 +567,38 @@ export function pathAt(x: number, z: number): number {
   return Math.max(best, 1 - smooth(-1, 2, dh));
 }
 
+/** clearance's rectangles, in its original order: the square, structures, garden, yard, laundry line, fields */
+const CLEAR_RECTS = [
+  { x: HUB.x, z: HUB.z + 1, hw: 13, hd: 11, yaw: 0 },
+  ...STRUCTURES.map((s) => ({ x: s.x, z: s.z, hw: s.size[0] / 2, hd: s.size[1] / 2, yaw: s.yaw })),
+  { x: (GARDEN.x0 + GARDEN.x1) / 2, z: (GARDEN.z0 + GARDEN.z1) / 2, hw: (GARDEN.x1 - GARDEN.x0) / 2, hd: (GARDEN.z1 - GARDEN.z0) / 2, yaw: 0 },
+  { x: (YARD.x0 + YARD.x1) / 2, z: (YARD.z0 + YARD.z1) / 2, hw: (YARD.x1 - YARD.x0) / 2, hd: (YARD.z1 - YARD.z0) / 2, yaw: 0 },
+  { x: LAUNDRY.x, z: (LAUNDRY.z0 + LAUNDRY.z1) / 2, hw: 1.0, hd: (LAUNDRY.z1 - LAUNDRY.z0) / 2 + 0.5, yaw: 0 },
+  ...SITES.map((s) => ({ x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw })),
+].map((r) => ({ ...r, c: Math.cos(r.yaw), s: Math.sin(r.yaw), diag: Math.hypot(r.hw, r.hd) + 1e-6 }));
+
 /**
  * Distance to the nearest reserved feature (square, structure, site, path, water). Scatter uses it: trees want
  * > 3, grass tufts > 0.3, rocks > 1.5.
  */
 export function clearance(x: number, z: number): number {
-  let d = rectSdf(x, z, { x: HUB.x, z: HUB.z + 1, hw: 13, hd: 11, yaw: 0 });
-  for (const s of STRUCTURES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.size[0] / 2, hd: s.size[1] / 2, yaw: s.yaw }));
-  d = Math.min(d, rectSdf(x, z, { x: (GARDEN.x0 + GARDEN.x1) / 2, z: (GARDEN.z0 + GARDEN.z1) / 2, hw: (GARDEN.x1 - GARDEN.x0) / 2, hd: (GARDEN.z1 - GARDEN.z0) / 2, yaw: 0 }));
-  d = Math.min(d, rectSdf(x, z, { x: (YARD.x0 + YARD.x1) / 2, z: (YARD.z0 + YARD.z1) / 2, hw: (YARD.x1 - YARD.x0) / 2, hd: (YARD.z1 - YARD.z0) / 2, yaw: 0 }));
-  d = Math.min(d, rectSdf(x, z, { x: LAUNDRY.x, z: (LAUNDRY.z0 + LAUNDRY.z1) / 2, hw: 1.0, hd: (LAUNDRY.z1 - LAUNDRY.z0) / 2 + 0.5, yaw: 0 }));
-  for (const s of SITES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw }));
-  for (const p of PATHS) d = Math.min(d, distToPolyline(x, z, p.points) - p.width / 2);
-  d = Math.min(d, distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH - 1.5, Math.hypot(x - POND.x, z - POND.z) - POND.r - 1.5);
+  let d = Infinity;
+  // (same rectangles and maths as rectSdf, trig cached; one that cannot beat d is skipped: |p − centre| − its
+  // half-diagonal is a lower bound of its distance)
+  for (const r of CLEAR_RECTS) {
+    const dx = x - r.x, dz = z - r.z;
+    if (d !== Infinity && Math.sqrt(dx * dx + dz * dz) - r.diag >= d) continue;
+    const lx = dx * r.c - dz * r.s, lz = dx * r.s + dz * r.c;
+    const qx = Math.abs(lx) - r.hw, qz = Math.abs(lz) - r.hd;
+    d = Math.min(d, Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0));
+  }
+  for (let i = 0; i < PATHS.length; i++) {
+    const p = PATHS[i];
+    if (boxDist(PATH_BOX[i], x, z) - p.width / 2 >= d) continue;   // cannot get any closer
+    d = Math.min(d, distToPolyline(x, z, p.points) - p.width / 2);
+  }
+  if (boxDist(RIVER_BBOX, x, z) - RIVER_HALF_WIDTH - 1.5 < d) d = Math.min(d, distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH - 1.5);
+  d = Math.min(d, Math.hypot(x - POND.x, z - POND.z) - POND.r - 1.5);
   // the summit trail: its tread, the staircase, the bridge and the landings (the lookout's knob top)
   const dt = trailDist(TRAIL, x, z, anyKind);
   if (dt < Infinity) {

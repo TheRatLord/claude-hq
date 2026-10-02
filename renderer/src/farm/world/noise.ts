@@ -9,7 +9,7 @@ const PERM = new Uint8Array(512);
   for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
   for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
 }
-const GX = [1, -1, 1, -1, 1, -1, 0, 0], GY = [1, 1, -1, -1, 0, 0, 1, -1];
+const GX = new Int8Array([1, -1, 1, -1, 1, -1, 0, 0]), GY = new Int8Array([1, 1, -1, -1, 0, 0, 1, -1]);
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const grad = (h: number, x: number, y: number) => { const g = h & 7; return GX[g] * x + GY[g] * y; };
 
@@ -20,8 +20,9 @@ export function perlin2(x: number, y: number): number {
   const X = xi & 255, Y = yi & 255;
   const u = fade(xf), v = fade(yf);
   const aa = PERM[PERM[X] + Y], ab = PERM[PERM[X] + Y + 1], ba = PERM[PERM[X + 1] + Y], bb = PERM[PERM[X + 1] + Y + 1];
-  const x1 = grad(aa, xf, yf) + u * (grad(ba, xf - 1, yf) - grad(aa, xf, yf));
-  const x2 = grad(ab, xf, yf - 1) + u * (grad(bb, xf - 1, yf - 1) - grad(ab, xf, yf - 1));
+  const gaa = grad(aa, xf, yf), gab = grad(ab, xf, yf - 1);
+  const x1 = gaa + u * (grad(ba, xf - 1, yf) - gaa);
+  const x2 = gab + u * (grad(bb, xf - 1, yf - 1) - gab);
   return x1 + v * (x2 - x1);
 }
 

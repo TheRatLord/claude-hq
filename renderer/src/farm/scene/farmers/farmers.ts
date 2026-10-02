@@ -21,6 +21,7 @@ import { seeded } from '../../../core/rng.ts';
 import { Crowd } from './rig.ts';
 import type { DrawIn, DrawOut } from './rig.ts';
 import { lookFor } from './look.ts';
+import { BODY_STYLE } from './mascots.ts';
 import type { Look } from './look.ts';
 import { ACT_INFO, CH, PIGEON, SEAT_H, actPose, cycleLength, faceGlyphs, gait, holdOf, newGlyphs, newPose, newSprings, springSnap, springStep } from './pose.ts';
 import type { Act, Face, GaitState, GlyphState, Pose, Prop, Springs } from './pose.ts';
@@ -347,7 +348,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const lookOf = (f: FarmerView): { look: Look; key: string; produce: number } => {
     const plot = ctx.valley.plots.get(f.plotId);
     const ci = plot?.colorIndex ?? hash32(f.plotId) % WORKSPACE_COLORS.length;
-    return { look: lookFor(f, WORKSPACE_COLORS[ci % WORKSPACE_COLORS.length]), key: `${ci}|${f.tier}|${f.kind}|${plot?.kind}`, produce: PRODUCE[plot?.kind ?? 'wheat'] };
+    return { look: lookFor(f, WORKSPACE_COLORS[ci % WORKSPACE_COLORS.length]), key: `${ci}|${f.tier}|${f.kind}|${f.vendor ?? ''}|${plot?.kind}`, produce: PRODUCE[plot?.kind ?? 'wheat'] };
   };
 
   function create(f: FarmerView, walkIn: boolean): Actor {
@@ -744,7 +745,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     d.propLag.x = clamp(a.plag.x, -0.7, 0.7); d.propLag.z = clamp(a.plag.z, -0.5, 0.5);
     d.shear.x = clamp(a.shear.x, -0.12, 0.12); d.shear.z = clamp(a.shear.z, -0.12, 0.12);
     // world shear → body-local (the shader shears in model space)
-    d.wobble = a.look.body === 'codex' ? a.wob * 0.09 : a.wob * 0.03; d.wobblePhase = a.wobPh;
+    d.wobble = a.wob * BODY_STYLE[a.look.body].wobble; d.wobblePhase = a.wobPh;
     crowd.draw(d, drawOut);
     a.pos.set(mv.x, a.y, mv.z);
     a.head.copy(drawOut.head); a.hand.copy(drawOut.hand); a.eyes.copy(drawOut.eyes);

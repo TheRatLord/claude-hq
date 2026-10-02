@@ -4,21 +4,27 @@
  * `notify`) when a farmer gets blocked or finishes while the window is hidden or unfocused. Bursts within ~0.6 s merge
  * into one notification (copy: `notifyCopy` in format.ts), at most one per farmer per 15 s; clicking one focuses the
  * window and opens that farmer's terminal (several asks: the mailbox's Needs you tab).
+ * Inside the desktop shell (shared/desktop.ts bridge) the same notifications go out as native ones through Electron
+ * (no browser permission involved; same opt-in pref, merging and rate limits); their click comes back as a shell
+ * command that farm/desktop.ts routes to the same terminal / mailbox.
  * The tab title badge lives in status.ts. Everything here runs off the HUD's 4 Hz timer and valley events, never rAF.
  */
 import type { ValleyEvent, ValleyState } from '../model/types.ts';
 import { notifyCopy, shortName, type Ping } from './format.ts';
 import type { HudCtx } from './ctx.ts';
+import { desktopBridge } from '../../../../shared/desktop.ts';
 
 const MERGE_MS = 600;
 const PER_FARMER_MS = 15_000;
 
 export type NotifyPermission = 'granted' | 'denied' | 'default' | 'unsupported';
 export function notifyPermission(): NotifyPermission {
+  if (desktopBridge()) return 'granted';   // the desktop shell shows native notifications itself
   return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
 }
 /** ask the browser (only from a user gesture); resolves true when notifications may be shown */
 export async function requestNotify(): Promise<boolean> {
+  if (desktopBridge()) return true;
   if (typeof Notification === 'undefined') return false;
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;
@@ -50,6 +56,12 @@ export function createNotifier(ctx: HudCtx): Notifier {
     const copy = notifyCopy(pings);
     if (!copy || !ctx.prefs.notify || notifyPermission() !== 'granted' || !away()) return;
     last = copy;
+    const desk = desktopBridge();
+    if (desk) {
+      const asks = pings.filter((p) => p.kind === 'blocked');
+      try { desk.notify({ title: copy.title, body: copy.body, target: asks.length > 1 ? { kind: 'mailbox' } : { kind: 'terminal', id: (asks[0] ?? pings[0]).id } }); } catch { /* shell gone */ }
+      return;
+    }
     try {
       const n = new Notification(copy.title, { body: copy.body, tag: 'claude-valley', silent: false });
       const asks = pings.filter((p) => p.kind === 'blocked');
@@ -106,7 +118,8 @@ export function createNotifier(ctx: HudCtx): Notifier {
 function drawIcon(need: number, done: boolean): string {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
-  const g = c.getContext('2d');
+  // a CPU-backed canvas: toDataURL on a GPU canvas waits on the GPU process (≈ 1.3 s while the first frame's shaders compile)
+  const g = c.getContext('2d', { willReadFrequently: true });
   if (!g) return '';
   // Clawd: orange block body, arm nubs, two eye notches, stubby legs
   g.fillStyle = '#d97757';

@@ -22,6 +22,8 @@ import { decorIcon } from './shop.ts';
 import { friendDef } from '../model/friends.ts';
 import { coins, decorDef } from '../model/shop.ts';
 import { PASTIMES, STEPS, hintDef, nextStep, progress } from '../model/onboarding.ts';
+import { fillKeys } from '../model/guide.ts';
+import { keyLabels } from './guide.ts';
 import type { HintDef, HintId, OnbSignal, OnboardingChange, OnboardingService, StepId } from '../model/onboarding.ts';
 
 type Say = (text: string, ms?: number, o?: { who?: string; from?: string }) => void;
@@ -109,7 +111,8 @@ export function createOnboarding(ctx: HudCtx, say: Say): Onboarding {
   const tipText = h('div.t'), tipSub = h('div.s');
   const tipX = h('button.x', { type: 'button', 'data-testid': 'onb-tip-close', 'aria-label': 'Dismiss this tip', title: 'Dismiss' }, icon(ICONS.close));
   const tipOff = h('button.off', { type: 'button', 'data-testid': 'onb-tip-off', text: 'Tips off' });
-  const tip = h('div.vh-onbtip', { 'data-testid': 'onb-tip', role: 'status', hidden: true }, h('span.ic', { html: posy ? portrait(posy) : '' }), h('div.body', null, tipText, tipSub), h('div.side', null, tipX, tipOff));
+  const tipIc = h('span.ic', { html: posy ? portrait(posy) : '' });
+  const tip = h('div.vh-onbtip', { 'data-testid': 'onb-tip', role: 'status', hidden: true }, tipIc, h('div.body', null, tipText, tipSub), h('div.side', null, tipX, tipOff));
   let tipTimer: ReturnType<typeof setTimeout> | undefined;
   const hideTip = () => { tip.hidden = true; clearTimeout(tipTimer); };
   tipX.addEventListener('click', (e) => { e.stopPropagation(); hideTip(); });
@@ -121,8 +124,12 @@ export function createOnboarding(ctx: HudCtx, say: Say): Onboarding {
   });
   const showTip = (x: HintDef, ms = TIP_MS) => {
     tipText.textContent = x.text;
-    tipSub.textContent = x.sub;
+    // `{use}` / `{notebook}`… → the bound keys; a nudge comes from Fern (model/guide.ts), the rest from Posy
+    tipSub.textContent = fillKeys(x.sub, keyLabels(ctx));
+    const who = friendDef(x.who ?? 'posy');
+    tipIc.innerHTML = who ? portrait(who) : '';
     tip.dataset.id = x.id;
+    tip.classList.toggle('nudge', !!x.nudge);
     tip.hidden = false;
     tip.classList.remove('pop'); void tip.offsetWidth; tip.classList.add('pop');
     ctx.sfx('page');
@@ -236,7 +243,13 @@ export function createOnboarding(ctx: HudCtx, say: Say): Onboarding {
     if (just && performance.now() - justAt > 1200) { just = null; }
     render(s);
     // a tip: never during the tour, a panel, a terminal or typing
-    if (tip.hidden && !s.data().active) { const x = s.nextHint(busy()); if (x) showTip(x); }
+    // (Fern's nudges also wait while somebody needs you)
+    if (tip.hidden && !s.data().active) {
+      let asks = 0;
+      for (const f of ctx.state()?.farmers.values() ?? []) if (f.needsYou) asks++;
+      const x = s.nextHint(busy(), asks);
+      if (x) showTip(x);
+    }
   }
 
   return {

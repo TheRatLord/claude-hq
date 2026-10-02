@@ -488,6 +488,8 @@ export class DemoWorld extends HerdrSource {
     const cwd = spec.cwd ?? (kind === 'shell' && spec.proc?.[0] === 'tail' ? '/var/log/nginx' : w._cwd);
     const term = `term_demo_${hashHex(`${this.scenarioName}:${this.seed}:${id}:${++this._termSeq}`)}`;
     const agent = kind !== 'shell';
+    // the herdr agent label: the kind itself, or a vendor's (`opencode`, `aider` …) for kind 'agent' panes (zoo)
+    const label = spec.agent ?? kind;
     const status = agent ? spec.status ?? 'idle' : 'unknown';
     const pane: DemoPane = {
       pane_id: id, terminal_id: term, workspace_id: wsId, tab_id: t.tab_id, focused: false, cwd, foreground_cwd: cwd,
@@ -497,7 +499,7 @@ export class DemoWorld extends HerdrSource {
     const f: Facts = {
       kind, title: null, activity: null, activitySince: 0, model: null, modelTier: null, contextTokens: null, outputTokens: null,
       todos: null, lastPrompt: null, struggle: null, subagents: [], prompt: null, askActivity: false, lastText: null, work: null, usage: null,
-      proc: kind === 'shell' ? spec.proc ?? ['bash'] : [kind === 'codex' ? 'codex' : 'claude'],
+      proc: kind === 'shell' ? spec.proc ?? ['bash'] : spec.proc ?? [label],
       out: [], outSeq: 0, // shells: printed lines {seq, text, kind} (DemoWorld is the shell; fakeTerm renders them)
     };
     if (kind === 'shell' && f.proc[0] !== 'bash') {
@@ -505,9 +507,9 @@ export class DemoWorld extends HerdrSource {
     }
     if (agent) {
       const named = spec.name !== undefined ? spec.name : R.chance(0.8) ? this._pickName(R) : null;
-      pane.agent = kind;
-      pane.agent_session = { source: `herdr:${kind}`, agent: kind, kind: 'id', value: uuidOf(term) };
-      this.raw.agents.push({ pane_id: id, terminal_id: term, workspace_id: wsId, tab_id: t.tab_id, agent: kind, agent_status: status,
+      pane.agent = label;
+      pane.agent_session = { source: `herdr:${label}`, agent: label, kind: 'id', value: uuidOf(term) };
+      this.raw.agents.push({ pane_id: id, terminal_id: term, workspace_id: wsId, tab_id: t.tab_id, agent: label, agent_status: status,
         agent_session: pane.agent_session, cwd, foreground_cwd: cwd, ...(named ? { name: named } : {}), interactive_ready: true,
         state_change_seq: 1 + R.int(0, 40) });
       if (kind === 'claude') {
@@ -629,7 +631,7 @@ export class DemoWorld extends HerdrSource {
     if (!p || !f) return;
     let raw: string;
     if (f.kind === 'shell') raw = `demo@hq: ${home(p.foreground_cwd)}`;
-    else if (f.kind === 'codex') raw = 'codex';
+    else if (f.kind !== 'claude') raw = f.proc[0] ?? f.kind; // codex, opencode, aider …: the CLI's own name
     else {
       const t = f.title ?? 'Claude Code';
       raw = p.agent_status === 'working' ? `${SPIN[(p.revision ?? 0) % SPIN.length]} ${t}` : `✳ ${t}`;
@@ -760,7 +762,7 @@ export class DemoWorld extends HerdrSource {
       this._shellTicks(sim, { printFirst: false }); // _addPane already printed the command + its first lines
       return this._shellLoop(sim, true);
     }
-    if (sim.kind !== 'claude' && sim.kind !== 'codex') return;
+    // every other agent (codex, gemini, the zoo's vendors) walks herdr statuses only: no transcript facts
     const f = this._fact(sim.id);
     const R = sim.R;
     const spec = sim.spec;

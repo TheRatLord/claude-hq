@@ -8,11 +8,13 @@
  */
 import * as THREE from 'three';
 import {
-  CLAWD, CODEX, DUCK, GLYPH_NAMES, HAT_NAMES, HAT_VOXEL, Vox, clawdBody, clawdLeg, codexBody, codexFoot, duckBody, duckEgg, duckFoot, duckHead,
+  CLAWD, CODEX, DUCK, GLYPH_NAMES, HAT_NAMES, HAT_VOXEL, Vox, artBody, clawdBody, clawdLeg, codexBody, codexFoot, duckBody, duckEgg, duckFoot, duckHead,
   duckWing, glyph, hat, joinMeshes, ROLE_HAT_NAMES, roleHat, WEAR_NAMES, wear,
 } from './mascots.ts';
 import type { GlyphName, HatName, RoleHatName, VoxMesh, WearName } from './mascots.ts';
 import { PROPS } from './pose.ts';
+import { ART } from '../../model/mascots.ts';
+import type { ArtId } from '../../model/mascots.ts';
 import type { Prop } from './pose.ts';
 
 export function toGeometry(m: VoxMesh): THREE.BufferGeometry {
@@ -34,6 +36,8 @@ export const clawdBodyGeometry = () => once('clawdBody', () => toGeometry(clawdB
 export const clawdLegGeometry = () => once('clawdLeg', () => toGeometry(clawdLeg().mesh(CLAWD.u)));
 export const codexBodyGeometry = () => once('codexBody', () => toGeometry(codexBody().mesh(CODEX.u)));
 export const codexFootGeometry = () => once('codexFoot', () => toGeometry(codexFoot().mesh(CODEX.u)));
+/** An art mascot's body (model/mascots.ts ART), its own InstancedMesh in the crowd. */
+export const artBodyGeometry = (id: ArtId) => once(`art:${id}`, () => toGeometry(artBody(id).mesh(ART[id].u)));
 
 /** A unit nub: x from 0 to 1 (pivot at the body side), y and z centred; the rig scales it per mascot. */
 export const nubGeometry = () => once('nub', () => {

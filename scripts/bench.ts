@@ -19,6 +19,7 @@
  *          --size 1600x900  --quality high|medium|low (default: the game's default)  --reps 3  --frames 30
  *          --settle 2500 (ms after each pose)  --json FILE  --shots (PNG per pose → scratch/bench/<scenario>-<cond>-<pose>.png)
  *          --eval JS (run in the page after load, e.g. A/B toggles)
+ *   npm run bench -- --startup                           # load time instead: first frame, ready, programs (scripts/startup.ts)
  * The machine may be busy (other agents shooting): check `uptime`, run A and B alternately, compare medians.
  */
 import fs from 'node:fs';
@@ -27,6 +28,7 @@ import { chromium } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { startDev, REPO } from './devserver.ts';
 import { GPU_ARGS } from './gpu.ts';
+import { startupBench } from './startup.ts';
 
 const argv = process.argv.slice(2);
 const opt = (k: string, d: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -186,4 +188,4 @@ async function main(): Promise<void> {
   if (jsonOut) { fs.mkdirSync(path.dirname(path.resolve(REPO, jsonOut)), { recursive: true }); fs.writeFileSync(path.resolve(REPO, jsonOut), JSON.stringify(rows, null, 1)); }
 }
 
-if (import.meta.main) void main().catch((e: unknown) => { console.error(e); process.exitCode = 1; });
+if (import.meta.main) void (argv.includes('--startup') ? startupBench(argv) : main()).catch((e: unknown) => { console.error(e); process.exitCode = 1; });

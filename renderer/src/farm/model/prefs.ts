@@ -12,13 +12,14 @@ import type { Status } from '../../../../shared/protocol.ts';
 import type { ValleyEventKind } from './types.ts';
 import { pickTyped } from '../storage.ts';
 
-/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J, plus the paws: Z waves, T the lantern) */
-export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail', 'wave', 'lantern'] as const);
+/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J, plus the paws: Z waves, T the lantern, and
+ *  O for Fern's field notebook) */
+export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail', 'wave', 'lantern', 'notebook'] as const);
 export type Action = (typeof ACTIONS)[number];
 export type KeyBindings = Record<Action, string>;
-export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT' });
+export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO' });
 export const ACTION_LABEL: Readonly<Record<Action, string>> = Object.freeze({
-  use: 'Talk / use', alt: 'Terminal / alt action', map: 'Map', ledger: 'Farm ledger', mail: 'Mailbox', wave: 'Wave', lantern: 'Lantern',
+  use: 'Talk / use', alt: 'Terminal / alt action', map: 'Map', ledger: 'Farm ledger', mail: 'Mailbox', wave: 'Wave', lantern: 'Lantern', notebook: 'Field notebook',
 });
 
 /**
@@ -28,7 +29,7 @@ export const ACTION_LABEL: Readonly<Record<Action, string>> = Object.freeze({
 export const RESERVED_KEYS: Readonly<Record<string, string>> = Object.freeze({
   KeyW: 'walk', KeyA: 'walk', KeyS: 'walk', KeyD: 'walk', ArrowUp: 'walk', ArrowDown: 'walk', ArrowLeft: 'walk', ArrowRight: 'walk',
   Space: 'hop', ShiftLeft: 'sprint', ShiftRight: 'sprint', Escape: 'menu', Enter: 'confirm',
-  KeyB: 'noticeboard', KeyH: 'almanac', KeyK: 'collections', KeyI: 'pockets', KeyQ: 'requests', KeyN: 'minimap', KeyP: 'photo mode', KeyL: 'photo album',
+  KeyB: 'noticeboard', KeyH: 'almanac', KeyK: 'collections', KeyI: 'pockets', KeyQ: 'requests', KeyN: 'minimap', KeyP: 'photo mode', KeyL: 'photo album', KeyG: 'the Gazette',
   KeyC: 'fly down (photo mode)', Slash: 'all keys (?)', F3: 'performance overlay', F4: 'dev overlay', F6: 'dev overlay',
   Digit1: 'answers', Digit2: 'answers', Digit3: 'answers', Digit4: 'answers', Digit5: 'answers', Digit6: 'answers', Digit7: 'answers',
   Digit8: 'answers', Digit9: 'answers', Digit0: 'answers', ControlLeft: 'modifier', ControlRight: 'modifier', AltLeft: 'modifier',
@@ -120,18 +121,31 @@ export function sanitizePrefs(raw: unknown): Prefs {
   return p;
 }
 
-/** Bindings from storage: unknown actions dropped, reserved / non-string / duplicate codes fall back to the default. */
+/** free keys an action falls back to when its default was taken by a binding the player chose (e.g. a new default) */
+const SPARE_KEYS = ['KeyR', 'KeyV', 'KeyX', 'KeyY', 'KeyU', 'KeyO', 'KeyF', 'KeyE', 'KeyM', 'KeyJ', 'KeyZ', 'KeyT'];
+
+/**
+ * Bindings from storage: unknown actions dropped, reserved / non-string codes fall back to the default. The player's own
+ * choices win: an action left on its default whose key a chosen binding took (say a newly added default) moves to a
+ * spare key instead of resetting everything; two chosen bindings on one key keep the first.
+ */
 export function sanitizeKeys(raw: unknown): KeyBindings {
   const out: KeyBindings = { ...DEFAULT_KEYS };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const chosen = new Set<Action>();
   for (const a of ACTIONS) {
     const v = (raw as Record<string, unknown>)[a];
-    if (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9]{1,24}$/.test(v) && !RESERVED_KEYS[v]) out[a] = v;
+    if (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9]{1,24}$/.test(v) && !RESERVED_KEYS[v]) { out[a] = v; chosen.add(a); }
   }
-  // two actions on one key: the later ones go back to their defaults (and if that collides too, the whole set resets)
-  const seen = new Set<string>();
-  for (const a of ACTIONS) { if (seen.has(out[a])) out[a] = DEFAULT_KEYS[a]; seen.add(out[a]); }
-  return new Set(ACTIONS.map((a) => out[a])).size === ACTIONS.length ? out : { ...DEFAULT_KEYS };
+  const used = new Set<string>();
+  for (const a of ACTIONS) if (chosen.has(a)) { if (used.has(out[a])) { out[a] = DEFAULT_KEYS[a]; chosen.delete(a); } else used.add(out[a]); }
+  for (const a of ACTIONS) {
+    if (chosen.has(a)) continue;
+    const k = !used.has(DEFAULT_KEYS[a]) ? DEFAULT_KEYS[a] : SPARE_KEYS.find((s) => !used.has(s) && !RESERVED_KEYS[s]);
+    if (!k) return { ...DEFAULT_KEYS };
+    out[a] = k; used.add(k);
+  }
+  return out;
 }
 
 /** What `code` would collide with if given to `action`: another action, a fixed key, or null when it is free. */

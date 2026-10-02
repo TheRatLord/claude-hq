@@ -14,6 +14,7 @@ adding a signal, changing how one is derived, or moving where one appears.
 | struggle (fails, errors, no edits, context) | transcripts | `struggle` | `struggle`, `mood` | mood, letters |
 | tests pass/fail, errors, compaction, commits, turn news | transcripts / procinfo events | `event` | letters, timeline marks, valley events | mailbox, Today timeline, celebrations, shipping bin |
 | shell foreground process, ports, last exit | procinfo | `process` | `HelperView` | scarecrows, card |
+| **agent CLI (vendor)** | herdr `pane.agent` label, else procinfo's process sniff (`shared/vendors.ts`) | **`vendor`** (rev 3; base-owned) | **`FarmerView.vendor`** → `mascotOf()` | **the mascot itself**, portrait, card / ledger / prompt name ('OpenCode') |
 | **model id** | transcripts | `model`, `modelTier` | `tier` (hat) + **`model`** ('Opus 5.5') | hat; **card + ledger kind line** |
 | **context tokens** | transcripts | `contextTokens` | **`context` against the real window**, `contextTokens`, `contextWindow` | **card bar + '82% · 164k of 200k', nameplate gauge** |
 | **todo list** | transcripts (TodoWrite) | `todos` | `todos` counts + **`items` checklist** | **card checklist**, noticeboard |

@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three';
 import type { Interactable } from '../scene/context.ts';
-import { farmerLine } from './format.ts';
+import { agentName, farmerLine } from './format.ts';
 import { h, type HudCtx } from './ctx.ts';
 import { keyLabel } from '../model/prefs.ts';
 
@@ -20,7 +20,6 @@ export interface Prompt {
 
 /** rough half-width (m) of each kind of target, so the tag clears the silhouette */
 const RADIUS: Record<Interactable['kind'], number> = { farmer: 0.62, villager: 0.6, helper: 0.5, animal: 0.55, structure: 0.35, prop: 0.3, plot: 0.6 };
-const KIND_NAME: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', agent: 'Agent' };
 
 export function createPrompt(ctx: HudCtx): Prompt {
   const cross = h('div.vh-cross', { 'aria-hidden': 'true' });
@@ -60,7 +59,7 @@ export function createPrompt(ctx: HudCtx): Prompt {
         const f = ctx.farmer(c.id);
         if (f) {
           const field = ctx.plot(f.plotId)?.label;
-          role = field && field !== f.project ? `${KIND_NAME[f.kind] ?? f.kind} · ${field}` : KIND_NAME[f.kind] ?? f.kind;
+          role = field && field !== f.project ? `${agentName(f)} · ${field}` : agentName(f);
           subText = f.needsYou ? `needs you: ${f.question ?? 'waiting'}` : farmerLine(f);
           ask = f.needsYou;
         }

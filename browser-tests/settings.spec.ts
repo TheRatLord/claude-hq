@@ -49,8 +49,8 @@ test('settings: prefs round-trip through the panel and a reload; rebinding refus
   await expect(page.getByTestId('bind-use')).toHaveText('E');
   await expect(page.getByTestId('panel-pause')).toBeVisible();
   await page.getByTestId('bind-map').click();
-  await page.keyboard.press('g');
-  await expect(page.getByTestId('bind-map')).toHaveText('G');
+  await page.keyboard.press('u');
+  await expect(page.getByTestId('bind-map')).toHaveText('U');
 
   // --- Interface + Accessibility + Graphics ---
   await page.getByTestId('set-sec-interface').click();
@@ -78,7 +78,7 @@ test('settings: prefs round-trip through the panel and a reload; rebinding refus
   await page.keyboard.press('m');
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => (window as unknown as { __hud: H }).__hud.current())).toBeNull();
-  await page.keyboard.press('g');
+  await page.keyboard.press('u');
   await expect(page.getByTestId('panel-map')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('panel-map')).toBeHidden();
@@ -86,14 +86,14 @@ test('settings: prefs round-trip through the panel and a reload; rebinding refus
   // --- persisted: everything survives a reload ---
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('valley.hud.prefs') ?? '{}') as Record<string, unknown>);
   expect(stored).toMatchObject({ fov: 80, uiScale: 1.3, clock: '12h', colorSafe: true, highContrast: true, shadows: false, weatherFx: 0.25 });
-  expect((stored.keys as Record<string, string>).map).toBe('KeyG');
+  expect((stored.keys as Record<string, string>).map).toBe('KeyU');
   await boot(page, demoServer.origin, demoServer.token);
   expect(await page.evaluate(() => (window as unknown as { __valley: V }).__valley.ctx.camera.fov)).toBe(80);
   expect(await layerClass(page)).toMatch(/\bcb\b/);
   await expect(page.getByTestId('clock')).toHaveText(/(am|pm)$/);
   expect(await shadowCasters()).toBe(0);
-  await expect(page.getByTestId('dock-map')).toHaveAttribute('title', 'Map (G)');
-  await page.keyboard.press('g');
+  await expect(page.getByTestId('dock-map')).toHaveAttribute('title', 'Map (U)');
+  await page.keyboard.press('u');
   await expect(page.getByTestId('panel-map')).toBeVisible();
   await page.keyboard.press('Escape');
 

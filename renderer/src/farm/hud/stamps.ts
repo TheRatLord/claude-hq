@@ -164,8 +164,16 @@ const M: Record<Motif, (g: C2) => void> = {
     g.beginPath(); g.moveTo(0.62, 0.8); g.lineTo(0.72, 0.3); g.lineTo(0.82, 0.8); g.closePath(); g.fill();
     line(g, -1, 0.88, 1, 0.88);
   },
+  // a paw print: a pad and four toes (Fern's notebook: a pet of your own)
+  paw: (g) => {
+    g.beginPath(); g.ellipse(0, 0.38, 0.46, 0.38, 0, 0, Math.PI * 2); g.fill();
+    for (const [x, y, r] of [[-0.62, -0.18, 0.17], [-0.24, -0.52, 0.19], [0.24, -0.52, 0.19], [0.62, -0.18, 0.17]] as const) { g.beginPath(); g.ellipse(x, y, r * 0.86, r * 1.15, x * 0.5, 0, Math.PI * 2); g.fill(); }
+  },
   house: (g) => { g.beginPath(); g.moveTo(-0.95, -0.05); g.lineTo(0, -0.85); g.lineTo(0.95, -0.05); g.stroke(); box(g, -0.7, -0.15, 1.4, 1.0); g.beginPath(); g.rect(-0.2, 0.3, 0.4, 0.55); g.fill(); box(g, 0.35, 0.05, 0.25, 0.22); box(g, 0.45, -0.8, 0.2, 0.35); },
 };
+
+/** draw a motif in the unit box (−1..1, y down) with the current stroke / fill (Fern's notebook sketches with it, hud/guide.ts) */
+export function drawMotif(g: C2, motif: Motif): void { M[motif](g); }
 
 function line(g: C2, x0: number, y0: number, x1: number, y1: number): void { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
 function box(g: C2, x: number, y: number, w: number, hh: number): void { g.beginPath(); g.rect(x, y, w, hh); g.stroke(); }
@@ -207,7 +215,8 @@ export function stampImage(def: Pick<StampDef, 'id' | 'cat' | 'motif'>, look: St
   const S = STAMP_PX * 2;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
-  const g = cv.getContext('2d');
+  // CPU-backed: toDataURL on a GPU canvas waits on the GPU process (slow while shaders compile at load)
+  const g = cv.getContext('2d', { willReadFrequently: true });
   if (!g) return '';
   const r = rng(hash(def.id));
   const ink = look === 'inked' ? CAT_INK[def.cat] : '#9a8166';

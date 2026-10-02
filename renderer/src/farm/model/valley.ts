@@ -239,7 +239,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       : null;
     const ctx = contextFill(e);
     return {
-      id: e.id, name: e.name, project: projectName(e), tag: projectName(e), kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
+      id: e.id, name: e.name, project: projectName(e), tag: projectName(e), kind: e.kind === 'shell' ? 'agent' : e.kind, vendor: e.vendor ?? null, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
       status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw, tool: rec.tool,
       detail: needsYou ? shortDetail(e.prompt?.subject?.arg ?? e.prompt?.question ?? e.activity?.detail) : shortDetail(e.activity?.detail),
       title: e.title, needsYou, unseenDone, struggle, mood,

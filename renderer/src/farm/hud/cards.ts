@@ -10,6 +10,7 @@ import type { RepoView } from '../model/types.ts';
 import './signals.css';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { createDayCard } from './timeline.ts';
+import { mascotOf } from '../model/mascots.ts';
 
 export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void; showHelper(id: string): void } {
   const { el, body, closeBtn } = framePanel('card', 'Farmer', ICONS.hand);
@@ -29,7 +30,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const plot = s.plots.get(f.plotId);
     plaqueText.textContent = 'Farmer';
     plaqueIco.innerHTML = ICONS.hand;
-    const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), f.kind, f.tier);
+    const face = h('div.face'); face.innerHTML = farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier);
     const kids: (Node | null)[] = [];
     kids.push(h('div.hero', null, face, h('div', null,
       h('div.nm', { text: shortName(f), 'data-testid': 'card-name', title: shortName(f) }),

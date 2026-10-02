@@ -54,7 +54,7 @@ test('every scenario builds a herdr-shaped snapshot', () => {
       if (p.agent) assert.ok(raw.agents.some((a) => a.pane_id === p.pane_id && Number.isInteger(a.state_change_seq)));
       else assert.equal(p.agent_status, 'unknown');
     }
-    const want = { empty: 0, trio: 4, crowd40: 40, longIdle: 6, queue: 6, mixed: 12, churn: 12, allStates: 33 }[sc];
+    const want = { empty: 0, trio: 4, crowd40: 40, longIdle: 6, queue: 6, mixed: 12, churn: 12, allStates: 33, zoo: 14 }[sc];
     assert.equal(raw.panes.length, want, sc);
   }
   const mixed = need(new DemoWorld({ clock: new FakeClock(), n: 12 }).snapshot());
@@ -65,6 +65,30 @@ test('every scenario builds a herdr-shaped snapshot', () => {
   const crowd = need(new DemoWorld({ clock: new FakeClock(), scenario: 'crowd40' }).snapshot());
   assert.equal(crowd.workspaces.length, 8);
   assert.equal(crowd.agents.filter((a) => a.agent === 'codex').length, 3);
+});
+
+test('zoo: one pane per mascot vendor (herdr labels), an unknown label, a shell; vendors resolve through the model', async () => {
+  const { WorldModel } = await import('../world/model.ts');
+  const clock = new FakeClock();
+  const w = new DemoWorld({ clock, scenario: 'zoo' });
+  const raw = need(w.snapshot());
+  const labels = raw.agents.map((a) => raw.panes.find((p) => p.pane_id === a.pane_id)?.agent);
+  for (const l of ['claude', 'codex', 'gemini', 'aider', 'opencode', 'goose', 'cursor', 'amp', 'crush', 'qwen', 'copilot', 'droid', 'brand-new-cli']) assert.ok(labels.includes(l), l);
+  const model = new WorldModel({ source: w, clock, demo: true });
+  const ents = [...model.entities.values()];
+  const by = (v: string) => ents.find((e) => e.vendor === v);
+  assert.equal(by('opencode')?.kind, 'agent');
+  assert.equal(by('gemini')?.kind, 'gemini');
+  assert.equal(by('codex')?.kind, 'codex');
+  assert.equal(ents.filter((e) => e.kind === 'agent' && e.vendor === null).length, 1, 'the unknown label');
+  assert.equal(ents.filter((e) => e.kind === 'shell').length, 1);
+  // non-Claude agents walk statuses on schedule (no transcript facts)
+  w.start();
+  const seen = new Set<string>();
+  for (let i = 0; i < 360; i++) { clock.advance(1000); await new Promise((r) => setImmediate(r)); for (const e of model.entities.values()) if (e.vendor === 'goose') seen.add(e.status); }
+  assert.ok(seen.size >= 2, `goose changes status (${[...seen]})`);
+  model.close();
+  await w.close();
 });
 
 test('allStates: frozen, deterministic, 1 per status + 1 per ToolClass + 1 shell per ShellActivity', async () => {

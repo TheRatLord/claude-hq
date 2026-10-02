@@ -69,6 +69,7 @@ the power-user loop below: add a flow there when you add one.
   notifications** (Settings → Alerts, HUD pref `notify`; asks the browser for permission) fire on `blocked` /
   `finished` only while the window is hidden or unfocused: bursts merge (`notifyCopy`), one per farmer per 15 s;
   clicking opens that terminal (several asks: the mailbox). `__hud.notify()` shows the last copy and the icon badge.
+  In the desktop app they are native (Electron) notifications, with a tray, dock badge and summon hotkey: [desktop.md](desktop.md).
 * *Every key.* `?` opens the pause menu's Controls tab from anywhere outside a terminal: grouped (getting around,
   agents, mailbox, ledger, card & terminal, the valley). Add new keys there and to the hints bar's budget sparingly.
 
@@ -93,7 +94,7 @@ Two stores, on purpose:
 | section | pref | what it does |
 |---|---|---|
 | Controls | `mouseSens` (×0.2–3), `invertY`, `fov` (50–90°, default 62), `headBob`, `sprintToggle` | read live by `player/controller.ts` (fov by main.ts on the camera) |
-| Controls | `keys` | rebind use / alt / map / ledger / mail / wave / lantern (defaults E F M Tab J Z T). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
+| Controls | `keys` | rebind use / alt / map / ledger / mail / wave / lantern / notebook (defaults E F M Tab J Z T O). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
 | Graphics | `quality` (low / medium / high) | systems size pools at start, so it applies **on reload** (a *Reload now* button); `?quality=` wins and the note says so |
 | Graphics | `renderScale` (50–100 %), `shadows`, `weatherFx` (0–100 %) | live: `engine.setRenderScale` (× the quality's own scale), `engine.setShadows` (castShadow off on every light, re-applied after systems start), `ctx.comfort.weatherFx` (weather.ts scales rain / snow / leaves / motes) |
 | Graphics | `fpsCap` (display / 60 / 30) and `idleMin` (off / 2 / 5 / 10 / 30 min, default 10) | `engine.setFpsCap(effectiveFpsCap(…))`: after `idleMin` minutes with no key / mouse / wheel / touch the valley runs at `IDLE_FPS` (15) until the next input. Hidden tabs already stop rendering (core/loop.ts). Automated browsers (`navigator.webdriver`) never idle-throttle |
@@ -107,7 +108,7 @@ Two stores, on purpose:
 | Accessibility | `highContrast` | `.vh-layer.hc`: black ink, near-white paper, black borders, solid hints bar, white nameplates / bubbles / interaction tag, a black + gold focus ring |
 | Accessibility | `largeText` | the HUD zoom × 1.15 (`uiZoom`) and bigger nameplate / bubble / interaction-tag text (which the zoom leaves alone) |
 | Accessibility | `captions` | a caption line (bottom centre, `.vh-captions`, `role=log`) for the cues that carry news, from the valley events the audio layer voices (`captionFor`: needs you = alert bell, finished = done chime, cheer, oops, fanfare, a new field). One per kind and farmer per 1.5 s, three at most, ~5 s × `toastK` |
-| Alerts | `notify` | desktop notifications (above) |
+| Alerts | `notify` | desktop notifications (above); in the desktop app also the *Desktop app* rows (hotkey, tray, login, background drawing: [desktop.md](desktop.md), stored by the shell, not here) |
 
 **Screen readers and keyboards.** Panels are `role=dialog` with a label (their plaque); the left column is a named
 region, the dock a `nav`, the hints a `note`, toasts `aria-live=polite`, captions a `log`. A visually hidden
@@ -141,6 +142,7 @@ toggle), Tab containment, arrow-key tabs, captions and the live region.
 | Esc | the pause menu (also on losing pointer lock) |
 | P | photo mode ([album.md](album.md)) |
 | L | the photo album ([album.md](album.md)) |
+| O | Fern's field notebook: every activity, how-tos, progress, hints ([guide.md](guide.md)); rebindable |
 | F3 / F4 / F6 | dev overlays ([tools.md](tools.md#in-game-keys)) |
 
 ## HUD layout: calm by default, informative on demand
@@ -228,6 +230,6 @@ nothing in the HUD reads layout per frame except the map canvas, which redraws o
 ## Dev handle (`window.__hud`)
 
 `open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card noticeboard stats almanac collection shop friends pause
-drawer welcome`), `close()`,
+drawer welcome pet gazette album guide`), `close()`,
 `current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `prefs(patch?)`, `tour`
 ([onboarding.md](onboarding.md)). Full dev API: [tools.md](tools.md#dev-api).

@@ -49,6 +49,8 @@ import { createPetPanel } from './pet.ts';
 import { createGazettePanel } from './gazette.ts';
 import { createAlbumPanel } from './album.ts';
 import type { GazetteView } from './gazette.ts';
+import { createGuidePanel, watchGuide } from './guide.ts';
+import type { GuideService } from '../model/guide.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
 import type { StampsService } from '../model/stamps.ts';
 import { stampIconHtml } from './stamps.ts';
@@ -88,6 +90,8 @@ export interface HudBindings {
   stamps?(): StampsService;
   /** optional: The Valley Gazette (farm/newsroom.ts; hud/gazette.ts prints it) */
   gazette?(): GazetteView;
+  /** optional: Fern's field notebook (model/guide.ts, farm/guidebook.ts; hud/guide.ts shows it) */
+  guide?(): GuideService;
   /** optional: a scene service by name (ctx.services), duck-typed by the reader: the map reads 'forage', 'wildlife', 'festivals', 'yard' */
   service?(name: string): unknown;
 }
@@ -95,6 +99,8 @@ export interface HudBindings {
 export interface Hud {
   ui: UiPort;
   openTerminal(id: string): void;
+  /** the mailbox's Needs you tab (the desktop shell's summon hotkey, tray and notifications) */
+  openNeeds(): void;
   /** late binding: the engine exists after the HUD port is created */
   bind(b: HudBindings): void;
   update(f: FrameInfo): void;
@@ -190,7 +196,8 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
+  const guidePanel = createGuidePanel(ctx);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -209,7 +216,7 @@ export function createHud(d: HudDeps): Hud {
     dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')), quests.el);
   const leaderKbd = h('kbd.vh-k');
   // key caps that follow Settings → Controls (rebindable keys)
-  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [], wave: [], lantern: [] };
+  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [], wave: [], lantern: [], notebook: [] };
   const kc = (a: Action) => { const k = h('kbd.vh-k'); kcap[a].push(k); return k; };
   const syncKeys = () => {
     for (const a of Object.keys(kcap) as Action[]) for (const k of kcap[a]) k.textContent = keyLabel(prefs.keys[a]);
@@ -284,6 +291,8 @@ export function createHud(d: HudDeps): Hud {
     return matchCombo(e, leader);
   };
   const handled = (e: KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); };
+  /** Fern's notebook remembers a few HUD-only firsts (model/guide.ts SeenId) */
+  const guideSee = (id: 'lantern' | 'wave') => { try { b?.guide?.().see(id); } catch { /* optional */ } };
   /** the first-person paws (scene service 'hands'; HandsPort is a scene/context.ts type) */
   const paws = (): HandsPort | undefined => { try { return b?.service?.('hands') as HandsPort | undefined; } catch { return undefined; } };
   // photo mode (farm/photo.ts) owns the keyboard while it is on
@@ -338,6 +347,7 @@ export function createHud(d: HudDeps): Hud {
       if (e.code === 'KeyK') { handled(e); panels.toggle('collection'); return; }
       if (e.code === 'KeyG') { handled(e); panels.toggle('gazette'); return; }
       if (e.code === 'KeyL') { handled(e); panels.toggle('album'); return; }
+      if (e.code === K.notebook) { handled(e); panels.toggle('guide'); return; }
       if (e.code === 'KeyI') { handled(e); panels.toggle('shop', { tab: 'sell', at: 'pocket' }); return; }
       if (e.code === K.use && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
@@ -358,9 +368,10 @@ export function createHud(d: HudDeps): Hud {
       return;
     }
     // the first-person paws (scene/viewmodel): wave (Z), the lantern (T); rebindable
-    if (e.code === K.wave && !e.repeat) { const h = paws(); if (h) { handled(e); h.gesture('wave'); } return; }
-    if (e.code === K.lantern && !e.repeat) { const h = paws(); if (h) { handled(e); anchors.say(h.lantern() ? 'Lantern lit' : prefs.hands ? 'Lantern away' : 'Lantern: Settings → Interface → Show hands is off', 1100, undefined, 'screen'); } return; }
+    if (e.code === K.wave && !e.repeat) { const h = paws(); if (h) { handled(e); h.gesture('wave'); guideSee('wave'); } return; }
+    if (e.code === K.lantern && !e.repeat) { const h = paws(); if (h) { handled(e); guideSee('lantern'); anchors.say(h.lantern() ? 'Lantern lit' : prefs.hands ? 'Lantern away' : 'Lantern: Settings → Interface → Show hands is off', 1100, undefined, 'screen'); } return; }
     if (e.code === K.mail) { handled(e); panels.open('mailbox'); return; }
+    if (e.code === K.notebook) { handled(e); panels.open('guide'); return; }
     if (e.code === K.map) { handled(e); panels.open('map'); return; }
     if (e.code === K.ledger) { handled(e); panels.open('roster'); return; }
     switch (e.code) {
@@ -399,6 +410,7 @@ export function createHud(d: HudDeps): Hud {
     // (needs.ts only dozes while roaming)
     if (!layer.classList.contains('roam')) needs.attend();
     tour.panelChanged(panels.current()?.id ?? null);
+    guidePanel.panelChanged(panels.current()?.id ?? null);
     const idle = !locked && !panels.modal;
     hint.classList.toggle('show', idle && !prefs.hinted && !!b);
     freehint.classList.toggle('show', idle && prefs.hinted && !!b);
@@ -502,10 +514,12 @@ export function createHud(d: HudDeps): Hud {
       friends: (o) => panels.open('friends', o),
       pet: () => panels.open('pet'),
       album: (id) => panels.open('album', id),
+      guide: (page) => panels.open('guide', page),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
     openTerminal: (id) => openTerminal(id),
+    openNeeds: () => panels.open('mailbox', 'needs'),
     bind(x) {
       b = x;
       x.onValley((e) => {
@@ -533,6 +547,8 @@ export function createHud(d: HudDeps): Hud {
           if (r.isNew) toasts.push({ text: `New in your field guide: ${r.def.name}`, sub: 'K for the Collections book', icon: ICONS.book, level: 'good', key: `sight|${r.def.id}` });
         });
       } catch { /* optional */ }
+      // a page found in Fern's notebook (model/guide.ts): a toast with its sketch
+      try { const g = x.guide?.(); if (g) watchGuide(ctx, g); } catch { /* optional */ }
       // a stamp inked into the stamp book (model/stamps.ts): the stamp itself on the toast, a rubber-stamp thunk
       try {
         let thunkAt = 0;

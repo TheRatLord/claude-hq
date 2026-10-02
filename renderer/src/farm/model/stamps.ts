@@ -42,7 +42,7 @@ export const MOTIFS = Object.freeze([
   'mountain', 'cairn', 'meteor', 'compass', 'camera', 'star',
   'blossom', 'lantern', 'cake', 'pumpkin', 'jack', 'tree', 'firework', 'snowflake', 'leaf',
   'fence', 'lamp', 'gnome', 'portrait', 'house',
-  'boat', 'skates', 'snowman', 'egg', 'cave',
+  'boat', 'skates', 'snowman', 'egg', 'cave', 'paw',
 ] as const);
 export type Motif = (typeof MOTIFS)[number];
 

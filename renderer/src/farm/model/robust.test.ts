@@ -14,6 +14,7 @@ import { createOnboarding } from './onboarding.ts';
 import { createStamps } from './stamps.ts';
 import { createPetModel } from './pet.ts';
 import { createGrotto } from './grotto.ts';
+import { createGuide, emptyGuideWorld } from './guide.ts';
 import { createTimeline, demoDay, keyMoments, rollDay, summarize } from './timeline.ts';
 import { composeIssue, createGazette, demoInput, gatherFacts } from './gazette.ts';
 
@@ -189,5 +190,16 @@ test('robust: the grotto loads any stored value', () => {
     const x = createGrotto(port(raw), now);
     x.visit(); x.readPage(); x.openChest();
     return { ...x.data(), found: x.discovered(), open: x.chestOpen };
+  });
+});
+
+test('robust: Fern\'s notebook loads any stored value', () => {
+  const st = port(null);
+  const g = createGuide(st, { now });
+  g.update(emptyGuideWorld()); g.see('rowboat'); g.see('barn'); g.update(emptyGuideWorld()); g.read('rowboat'); g.news({ welcomed: true, keys: { notebook: 'O' } });
+  fuzz('guide', st.saved, (raw) => {
+    const s = createGuide(port(raw), { now });
+    s.update(emptyGuideWorld()); s.see('skate'); s.update(emptyGuideWorld()); s.read('skate'); s.rumour('villager:fern', 1); s.news({ welcomed: true });
+    return { data: s.data(), view: s.view().pages.map((p) => [p.found, p.fresh, p.notes]) };
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Browser frame loop with optional FPS capping and a 10 FPS hidden-tab timer.
+ * Browser frame loop with optional FPS capping, a 10 FPS hidden-tab timer and an embedder background rate / pause.
  * The caller owns the complete frame state and supplies the frame callback.
  */
 
@@ -32,6 +32,12 @@ export interface Loop {
   /** null = uncapped (vsync) */
   setFpsCap(fps: number | null): void;
   fpsCap(): number | null;
+  /**
+   * An embedder's say over drawing (the desktop shell when its window is hidden / minimized, or "Pause rendering"):
+   * null = normal (rAF; the hidden-tab timer while document.hidden), a number of ms = a timer at that interval
+   * instead of rAF, 0 = no frames at all until set back.
+   */
+  setBackground(ms: number | null): void;
 }
 
 export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void, now: () => number = Date.now): Loop {
@@ -39,6 +45,7 @@ export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void,
   let raf = 0;
   let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
   let cap: number | null = null;
+  let background: number | null = null;
   let lastFrameAt = 0;
   const perf = ctx.perf;
   const HIDDEN_MS = 100;
@@ -76,18 +83,23 @@ export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void,
     raf = requestAnimationFrame(onRaf);
     tick(t);
   };
+  /** the timer interval while not on rAF: the embedder's background rate, else the hidden-tab rate, else null (rAF) */
+  const timerMs = () => background !== null ? background : document.hidden ? HIDDEN_MS : null;
   const onHiddenTick = () => {
     hiddenTimer = null;
-    if (!running || !document.hidden) return;
+    const ms = timerMs();
+    if (!running || !ms) return;
     tick(performance.now());
-    hiddenTimer = setTimeout(onHiddenTick, HIDDEN_MS);
+    hiddenTimer = setTimeout(onHiddenTick, ms);
   };
   const onVisibility = () => {
     ctx.hidden = document.hidden;
     if (!running) return;
-    if (document.hidden) {
+    const ms = timerMs();
+    if (ms !== null) {
       cancelAnimationFrame(raf);
-      if (!hiddenTimer) hiddenTimer = setTimeout(onHiddenTick, HIDDEN_MS);
+      if (hiddenTimer && ms !== HIDDEN_MS) { clearTimeout(hiddenTimer); hiddenTimer = null; }
+      if (!hiddenTimer && ms > 0) hiddenTimer = setTimeout(onHiddenTick, ms);
     } else {
       if (hiddenTimer) { clearTimeout(hiddenTimer); hiddenTimer = null; }
       lastFrameAt = 0;
@@ -104,7 +116,7 @@ export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void,
       running = true;
       document.addEventListener('visibilitychange', onVisibility);
       ctx.hidden = document.hidden;
-      if (document.hidden) onVisibility();
+      if (timerMs() !== null) onVisibility();
       else raf = requestAnimationFrame(onRaf);
     },
     stop() {
@@ -115,5 +127,12 @@ export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void,
     },
     setFpsCap(fps) { cap = fps && fps > 0 ? fps : null; },
     fpsCap: () => cap,
+    setBackground(ms) {
+      const next = ms === null || !Number.isFinite(ms) ? null : Math.max(0, ms);
+      if (next === background) return;
+      background = next;
+      if (hiddenTimer) { clearTimeout(hiddenTimer); hiddenTimer = null; }
+      onVisibility();
+    },
   };
 }

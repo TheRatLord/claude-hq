@@ -16,9 +16,27 @@ Key sources: `model/jobs.ts`, `model/valley.ts`, `model/types.ts`, `scene/farmer
   reclaimed; after that the site returns to wild meadow.
 * **Agent = farmer.** Each agent pane is a farmer who works its workspace's field. Farmers are 3D voxel versions of
   the agents' mascots: Claude agents are **Clawd** (Claude Code's orange 8-bit crab: block body, two eye notches, arm
-  nubs, four stubby legs); Codex agents are a voxel **Codex cloud** (scalloped blob with a `>_` prompt face). A tiny tier
-  hat and a workspace-colour neckerchief are the only farm dressing; the mascot silhouette is sacred. Shell panes are
+  nubs, four stubby legs); Codex agents are a voxel **Codex cloud** (scalloped blob with a `>_` prompt face); other
+  CLIs have their own (below). A tiny tier hat and a workspace-colour neckerchief are the only farm dressing; the
+  mascot silhouette is sacred. Shell panes are
   **scarecrows** (helpers) whose lantern is lit while a process runs; a green/red ribbon shows the last exit.
+* **Who farms here** <a id="who-farms-here"></a>(`Entity.vendor`, `shared/vendors.ts`; `mascotOf` in `model/mascots.ts`).
+  The server knows the agent CLI from herdr's own agent label (Claude, Codex, Gemini, OpenCode, Cursor, Copilot, Amp,
+  Qwen, Droid, Kimi, Kilo, Cline, Grok, Devin, Kiro, Hermes, Pi / omp, Antigravity, Qoder, Mastra …) or, for a CLI
+  herdr does not label (Aider, Goose, Crush), from the pane's foreground process (program name after unwrapping
+  node / python / npx / uv, or its npm / PyPI package in argv; `goose up` and friends are the DB migrator, not an
+  agent). A sniffed agent has no herdr status (it naps as `unknown`) and turns back into a shell when it exits.
+  Mascots, each evoking its tool's mark loosely: **Gemini** a blue-to-violet four-point sparkle (side points are its
+  arms), **Aider** Polly the pair-programmer parrot (green, yellow belly, hooked beak, red crest, blue tail), **OpenCode**
+  a tall charcoal block with an open white square frame for a face, **Goose** a grey Toulouse goose (white bib, orange
+  beak and feet, head carried forward on its neck), **Cursor** an isometric cube on its corner (light top with a white
+  pointer facet, mid and dark sides), **Amp** a red "A"-frame with a cream crossbar face standing on the A's legs,
+  **Crush** a pink heart with a shine, **Qwen** a round purple body with little ears and a white ring whose Q tail flicks
+  out at the lower right, **Copilot** a goggled pilot's helmet with lavender ear cups. Every other agent (a known
+  vendor without a mascot, an unknown label, an old server's bare `agent`) is the **sprout-bot**: a sage-green tin box
+  with a cream screen face and a seedling on its antenna, never a recoloured Clawd. Names in the card, ledger and
+  prompt follow the vendor ('Goose', 'OpenCode'; `agentName` in `hud/format.ts`). Gallery `mascot-cast`,
+  `mascot-<id>`; demo `--scenario zoo`.
 * **Subagents = ducklings** that waddle in a line behind their farmer and go home (to the pond) when done.
 
 ## States and events
