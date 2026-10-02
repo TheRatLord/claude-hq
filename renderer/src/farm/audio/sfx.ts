@@ -8,6 +8,7 @@ import type { CritterSound } from './types.ts';
 import { BIG_BELL, bell, formant, noise, pluck, tone } from './synth.ts';
 import { planVoice } from './voicePlan.ts';
 import { renderVoice } from './voice.ts';
+import type { StepSurface } from './steps.ts';
 
 export interface RecipeOpts { pitch: number; rnd: () => number }
 export type Recipe = (c: BaseAudioContext, out: AudioNode, t: number, o: RecipeOpts) => number;
@@ -30,19 +31,9 @@ function bubble(c: BaseAudioContext, out: AudioNode, t: number, f: number, gain:
 
 export const SFX_RECIPES: Record<SfxName, Recipe> = {
   // ---- player
-  'step-grass': (c, out, t, o) => {
-    noise(c, out, t, { kind: 'pink', gain: 0.42, a: 0.006, d: 0.08 + o.rnd() * 0.03, filter: 'bandpass', f: (1800 + o.rnd() * 900) * o.pitch, f2: 1200, q: 0.9 });
-    return noise(c, out, t, { kind: 'white', gain: 0.08, a: 0.002, d: 0.05, filter: 'highpass', f: 5200, delay: 0.012 });
-  },
-  'step-wood': (c, out, t, o) => {
-    tone(c, out, t, { f: (150 + o.rnd() * 25) * o.pitch, f2: 85, gain: 0.3, a: 0.002, d: 0.09 });
-    tone(c, out, t, { type: 'triangle', f: 430 * o.pitch, f2: 380, gain: 0.05, a: 0.002, d: 0.07 });
-    return noise(c, out, t, { gain: 0.1, a: 0.001, d: 0.035, filter: 'bandpass', f: 1100, q: 2 });
-  },
-  'step-water': (c, out, t, o) => {
-    noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.01, d: 0.2, filter: 'lowpass', f: 2200 * o.pitch, f2: 450, q: 1.5 });
-    return bubble(c, out, t + 0.04 + o.rnd() * 0.05, 450 + o.rnd() * 300, 0.06);
-  },
+  'step-grass': (c, out, t, o) => STEP_RECIPES.grass(c, out, t, o),
+  'step-wood': (c, out, t, o) => STEP_RECIPES.deck(c, out, t, o),
+  'step-water': (c, out, t, o) => STEP_RECIPES.water(c, out, t, o),
   jump: (c, out, t) => {
     tone(c, out, t, { f: 210, f2: 320, gain: 0.08, a: 0.01, d: 0.08 });
     return noise(c, out, t, { kind: 'pink', gain: 0.2, a: 0.02, d: 0.14, filter: 'bandpass', f: 500, f2: 1400, q: 1 });
@@ -353,6 +344,30 @@ export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
     }
     return end;
   },
+  honk: (c, out, t, o) => {
+    const p = o.pitch;
+    let end = t;
+    const n = 1 + Math.floor(o.rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      const dt = i * (0.22 + o.rnd() * 0.08), f = (300 + o.rnd() * 40) * p;
+      end = formant(c, out, t, { wave: 'sawtooth', pitch: [[0, f], [0.06, f * 1.12], [0.16, f * 0.95]], formants: [[650, 4, 1], [1500, 6, 0.6]], gain: 0.16, a: 0.012, hold: 0.07, d: 0.08, delay: dt });
+    }
+    return end;
+  },
+  yip: (c, out, t, o) => {
+    const p = o.pitch;
+    let end = t;
+    const n = 1 + Math.floor(o.rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      noise(c, out, t, { kind: 'pink', gain: 0.08, a: 0.004, d: 0.08, filter: 'bandpass', f: 1400 * p, q: 2, delay: i * 0.5 });
+      end = formant(c, out, t, { wave: 'sawtooth', pitch: [[0, 620 * p], [0.05, 820 * p], [0.14, 520 * p]], formants: [[900, 4, 1], [2200, 6, 0.4]], gain: 0.13, a: 0.006, hold: 0.04, d: 0.1, delay: i * 0.5 });
+    }
+    return end;
+  },
+  snort: (c, out, t, o) => {
+    noise(c, out, t, { kind: 'white', gain: 0.22, a: 0.004, hold: 0.05, d: 0.16, filter: 'bandpass', f: 900 * o.pitch, f2: 500 * o.pitch, q: 1.4 });
+    return tone(c, out, t, { f: 160 * o.pitch, f2: 110 * o.pitch, glide: 0.15, gain: 0.06, a: 0.004, d: 0.18, lp: 700 });
+  },
   hoot: (c, out, t, o) => {
     const p = o.pitch;
     const h = (dt: number, len: number, g: number) => {
@@ -367,6 +382,62 @@ export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
     noise(c, out, t, { kind: 'white', gain: 0.35, a: 0.003, d: 0.16, filter: 'lowpass', f: 3500, f2: 700 });
     return bubble(c, out, t + 0.05, 500 * o.pitch, 0.12);
   },
+};
+
+/**
+ * Footsteps by surface (audio.ts picks one per step from steps.ts). Matched to roughly equal loudness; grass is the
+ * softest, stone and decks the most present. `PUDDLE` rides on top when the ground is wet.
+ */
+export const STEP_RECIPES: Record<StepSurface, Recipe> = {
+  grass: (c, out, t, o) => {
+    tone(c, out, t, { f: 95 * o.pitch, f2: 70, gain: 0.07, a: 0.004, d: 0.05 });
+    noise(c, out, t, { kind: 'white', gain: 0.06, a: 0.003, d: 0.05, filter: 'highpass', f: 5200, delay: 0.015 });
+    return noise(c, out, t, { kind: 'pink', gain: 0.62, a: 0.008, d: 0.09 + o.rnd() * 0.03, filter: 'bandpass', f: (1500 + o.rnd() * 900) * o.pitch, f2: 900, q: 0.9 });
+  },
+  dirt: (c, out, t, o) => {
+    tone(c, out, t, { f: 115 * o.pitch, f2: 70, gain: 0.16, a: 0.002, d: 0.05 });
+    noise(c, out, t, { kind: 'pink', gain: 0.2, a: 0.004, d: 0.06, filter: 'lowpass', f: 1100 });
+    let end = t;
+    const n = 4 + Math.floor(o.rnd() * 3);
+    for (let i = 0; i < n; i++) end = max(end, noise(c, out, t, { kind: 'white', gain: 0.14 + o.rnd() * 0.12, a: 0.001, d: 0.01 + o.rnd() * 0.014, filter: 'bandpass', f: (1800 + o.rnd() * 2200) * o.pitch, q: 1.6, delay: i * 0.011 + o.rnd() * 0.012 }));
+    return end;
+  },
+  stone: (c, out, t, o) => {
+    tone(c, out, t, { type: 'triangle', f: 310 * o.pitch, f2: 190, gain: 0.12, a: 0.001, d: 0.035, lp: 1800 });
+    noise(c, out, t, { kind: 'white', gain: 0.24, a: 0.001, d: 0.022, filter: 'bandpass', f: (2300 + o.rnd() * 500) * o.pitch, q: 1.6 });
+    return noise(c, out, t, { kind: 'pink', gain: 0.1, a: 0.01, d: 0.05, filter: 'highpass', f: 2600, delay: 0.025 });
+  },
+  deck: (c, out, t, o) => {
+    tone(c, out, t, { f: (150 + o.rnd() * 25) * o.pitch, f2: 85, gain: 0.3, a: 0.002, d: 0.09 });
+    tone(c, out, t, { f: 140 * o.pitch, gain: 0.08, a: 0.004, d: 0.16, delay: 0.004 });
+    tone(c, out, t, { type: 'triangle', f: 430 * o.pitch, f2: 380, gain: 0.05, a: 0.002, d: 0.07 });
+    return noise(c, out, t, { gain: 0.1, a: 0.001, d: 0.035, filter: 'bandpass', f: 1100, q: 2 });
+  },
+  floor: (c, out, t, o) => {
+    tone(c, out, t, { f: (125 + o.rnd() * 20) * o.pitch, f2: 90, gain: 0.24, a: 0.002, d: 0.07 });
+    noise(c, out, t, { kind: 'pink', gain: 0.12, a: 0.002, d: 0.03, filter: 'bandpass', f: 900, q: 2 });
+    // old boards: now and then one creaks underfoot
+    if (o.rnd() < 0.12) formant(c, out, t, { wave: 'sawtooth', pitch: [[0, 55 * o.pitch], [0.12, 75 * o.pitch], [0.22, 62 * o.pitch]], formants: [[800, 7, 1], [1500, 8, 0.4]], gain: 0.12, a: 0.03, hold: 0.08, d: 0.1, delay: 0.03 });
+    return t + 0.3;
+  },
+  water: (c, out, t, o) => {
+    noise(c, out, t, { kind: 'pink', gain: 0.3, a: 0.01, d: 0.2, filter: 'lowpass', f: 2200 * o.pitch, f2: 450, q: 1.5 });
+    return bubble(c, out, t + 0.04 + o.rnd() * 0.05, 450 + o.rnd() * 300, 0.07);
+  },
+  snow: (c, out, t, o) => {
+    noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.01, d: 0.1, filter: 'lowpass', f: 600 });
+    let end = t;
+    const n = 6 + Math.floor(o.rnd() * 4);
+    for (let i = 0; i < n; i++) end = max(end, noise(c, out, t, { kind: 'pink', gain: 0.16 + o.rnd() * 0.1, a: 0.002, d: 0.018 + o.rnd() * 0.012, filter: 'bandpass', f: (1100 + o.rnd() * 1200) * o.pitch, q: 1.3, delay: i * 0.012 + o.rnd() * 0.008 }));
+    return end;
+  },
+};
+/** Per-surface trims so every footstep lands at ≈ −28 dBFS momentary (grass a touch softer, decks a touch firmer). */
+export const STEP_GAIN: Readonly<Record<StepSurface, number>> = { grass: 1.25, dirt: 1.3, stone: 2, deck: 0.5, floor: 0.8, water: 1, snow: 1.6 };
+/** Puddle splash layered on a step in the wet. */
+export const PUDDLE: Recipe = (c, out, t, o) => {
+  noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.006, d: 0.13, filter: 'lowpass', f: 2600 * o.pitch, f2: 600, q: 1.2, delay: 0.01 });
+  return bubble(c, out, t + 0.03 + o.rnd() * 0.04, 500 + o.rnd() * 350, 0.035);
 };
 
 /** Where a sound goes: the settings category it belongs to. */

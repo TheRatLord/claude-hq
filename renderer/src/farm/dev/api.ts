@@ -10,6 +10,7 @@
  *   __valley.goTo(id)                     stand in front of a farmer / helper / plot / structure / villager id ('villager:posy' or 'posy')
  *   __valley.villagers()                  the villager pins, and __valley.villager(id) → what one is doing
  *   __valley.setHour(h|null)  setWeather(kind|null, intensity?)  setSeason(s|null)  festival(id|null)
+ *   __valley.atmo({ wet, snow, rainbow, mist, rays, frost } | null)   force weather moments (puddles, lying snow, …)
  *   __valley.timeScale(k)                 animation speed (0 freezes animation)
  *   __valley.perf()                       fps, draw calls, triangles, per-system ms
  *   __valley.systems()                    system names
@@ -17,8 +18,12 @@
  *   __valley.force(id, patch)             demo backend: patch an entity (status, activity…)  (demo only)
  *   __valley.scenario(name, seed?)        demo backend: reset to a scenario             (demo only)
  *   __valley.forage(day?)  forageGo(i)  fish(step?)  collect(n)   pastimes (scene/forage): today's finds, walk up, cast at the dock, fill the book
+ *   __valley.wildlife(id?, 'here'|'spook') wild visitors (deer fox heron owl hedgehog geese): list, or bring one out and stand in view
  *   __valley.coins(n)  buy(id, free?)  sell()  yard(step?)  furnish()   the economy (model/wallet.ts, scene/yard): add bits,
  *                                         buy decor, sell the basket, stand in the yard / at the store, a furnished demo yard
+ *   __valley.hearts(id?, n?)  requests(step?)  gift(id, item)   friendship (model/friends.ts): set a villager's hearts (milestones
+ *                                         fire), today's requests (requests('ready') completes them, requests('YYYY-MM-DD') rolls that
+ *                                         day's set), give a gift (stashed first if the basket lacks it)
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
@@ -33,7 +38,10 @@ import type { Season, WeatherKind } from '../model/types.ts';
 import type { FarmerLocator, IndoorSpace, StructureSpots, VillagersService } from '../scene/context.ts';
 import type { ForageDebug } from '../scene/forage/forage.ts';
 import type { CollectionService } from '../model/collection.ts';
+import type { WildlifeService } from '../scene/life/wildlife.ts';
+import type { WildId } from '../scene/life/wild.ts';
 import type { WalletService } from '../model/wallet.ts';
+import type { FriendsService } from '../model/friends.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
 import type { StructureId } from '../world/map.ts';
@@ -119,6 +127,28 @@ export function installDevApi(d: DevDeps): void {
     setSeason: (s: Season | null) => valley.setSky({ season: s }),
     /** force a festival (model/calendar.ts id: blossom lantern founders harvest hallowtide starlight newyear), null = the calendar */
     festival: (id: string | null) => valley.setSky({ festival: id }),
+    /**
+     * weather moments (scene/sky + scene/weather): atmo({ wet, snow }) sets the model's weather trace (puddles, lying
+     * snow); atmo({ rainbow, mist, rays, frost }) forces those 0..1 in the scene; atmo(null) follows the weather again;
+     * atmo() reads the eased state
+     */
+    atmo(o?: { wet?: number; snow?: number; rainbow?: number; mist?: number; rays?: number; frost?: number } | null) {
+      const at = ctx.services.get('atmosphere') as { force(o: Record<string, number | null>): unknown; state(): unknown } | undefined;
+      if (o === null) { valley.setSky({ trace: null }); at?.force({ rainbow: null, banks: null, rays: null, frost: null, wet: null, snow: null }); }
+      else if (o) {
+        const tr: { wet?: number; snow?: number } = {};
+        if (o.wet !== undefined) tr.wet = o.wet;
+        if (o.snow !== undefined) tr.snow = o.snow;
+        if (Object.keys(tr).length) valley.setSky({ trace: { ...valley.skyOverrides().trace, ...tr } });
+        const f: Record<string, number> = {};
+        if (o.rainbow !== undefined) f.rainbow = o.rainbow;
+        if (o.mist !== undefined) f.banks = o.mist;
+        if (o.rays !== undefined) f.rays = o.rays;
+        if (o.frost !== undefined) f.frost = o.frost;
+        at?.force(f);
+      }
+      return at?.state() ?? null;
+    },
     timeScale: (k: number) => engine.setTimeScale(k),
     perf: () => engine.perf(),
     systems: () => engine.systems().map((s) => s.name),
@@ -171,8 +201,40 @@ export function installDevApi(d: DevDeps): void {
     },
     /** mark the first n entries of the Collections book found (shots: panel=collection) */
     collect: (n = 12) => (ctx.services.get('collection') as CollectionService | undefined)?.devFill(n),
+    /** wild visitors (scene/life/wildlife.ts): wildlife() lists them; wildlife('deer') brings one out at its habitat and
+     *  stands you in view of it; wildlife('owl', 'here') summons it in front of the camera instead; wildlife('deer', 'spook') startles it */
+    wildlife(id?: string, mode?: 'here' | 'spook') {
+      const w = ctx.services.get('wildlife') as WildlifeService | undefined;
+      if (!w) return null;
+      if (!id) return w.list();
+      if (mode === 'spook') { w.spook(id as WildId); return true; }
+      const v = w.summon(id as WildId, mode === 'here');
+      if (v) api.teleport(v.x, v.z, v.yaw, v.pitch);
+      return v;
+    },
     /** add (or take, negative) bits; returns the balance */
     coins(n = 500) { const w = ctx.services.get('wallet') as WalletService | undefined; w?.devCoins(n); return w?.coins() ?? 0; },
+    /** friendship (model/friends.ts): hearts(id, n) sets a villager's hearts (milestones fire); hearts() lists everyone's */
+    hearts(id?: string, n?: number) {
+      const fr = ctx.services.get('friends') as FriendsService | undefined;
+      if (!fr) return null;
+      if (id && n !== undefined) fr.devHearts(id, n);
+      return Object.fromEntries(fr.all().map((v) => [v.def.id, v.hearts]));
+    },
+    /** today's requests: requests() lists them, requests('ready') completes them (bring: stashes the items), requests('2026-10-03') rolls that day's */
+    requests(step?: string) {
+      const fr = ctx.services.get('friends') as FriendsService | undefined;
+      if (!fr) return null;
+      const v = step === 'ready' ? fr.devRequests({ ready: true }) : step && /^\d{4}-\d{2}-\d{2}$/.test(step) ? fr.devRequests({ day: step }) : fr.requests();
+      return v.map((q) => ({ id: q.req.id, who: q.friend.short, text: q.text, have: q.have, n: q.n, ready: q.ready, done: q.done, reward: q.req.reward, asked: !!q.req.asked }));
+    },
+    /** give a villager a gift (the item is stashed first if the basket has none): the reaction plays in the world */
+    gift(id: string, item: string) {
+      const fr = ctx.services.get('friends') as FriendsService | undefined, w = ctx.services.get('wallet') as WalletService | undefined;
+      if (!fr || !w) return null;
+      if (!(w.data().basket[item] > 0)) w.stash(item, 1);
+      return fr.give(id, item);
+    },
     /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
     buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },
     /** sell the whole basket (as at Bram's) */

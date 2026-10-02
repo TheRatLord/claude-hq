@@ -1,22 +1,24 @@
 /**
  * The valley's sound. Publishes service 'audio' (ValleyAudio ⊃ AudioService): synthesised one-shots for every SFX
  * name, farmer babble, critter voices, positional loops for other packages, ambient beds by time/weather/place,
- * gentle generative music, footsteps from the controller and event stingers from the valley.
+ * composed-on-the-fly music pieces with rests between them (musicPlan.ts), surface-aware footsteps (steps.ts) and event
+ * stingers from the valley.
  *
  * Nothing sounds until the first user gesture creates the AudioContext (autoplay policy); sounds requested before
- * that are dropped. Debug: `__valley.ctx.services.get('audio')._debug` (unlock, stats, render, renderAll, music).
+ * that are dropped. Debug: `__valley.ctx.services.get('audio')._debug` (unlock, stats, music, next, render, mix, pcm,
+ * renderAll: debug.ts).
  */
 import * as THREE from 'three';
 import type { AudioService, FarmerLocator, IndoorSpace, SceneCtx, SfxName, SystemFactory } from '../scene/context.ts';
 import { SFX } from '../scene/context.ts';
 import type { Settings } from '../../core/settings.ts';
 import type { ValleyEvent } from '../model/types.ts';
-import { SITES, heightAt } from '../world/map.ts';
+import { SITES, heightAt, pathAt } from '../world/map.ts';
 import { createAudioEngine } from './engine.ts';
 import type { PosChain } from './engine.ts';
 import { createPolyphony, createRateLimiter, spatial } from './mix.ts';
 import type { SpatialOpts } from './mix.ts';
-import { CRITTER_RECIPES, SFX_RECIPES, busOf, sendOf } from './sfx.ts';
+import { CRITTER_RECIPES, PUDDLE, SFX_RECIPES, STEP_GAIN, STEP_RECIPES, busOf, sendOf } from './sfx.ts';
 import type { BusName, Recipe } from './sfx.ts';
 import { planVoice } from './voicePlan.ts';
 import type { VoiceMood } from './voicePlan.ts';
@@ -24,8 +26,11 @@ import { renderVoice } from './voice.ts';
 import { createAmbience } from './ambience.ts';
 import { createMusic } from './music.ts';
 import type { Music } from './music.ts';
+import type { FestivalName, MusicIn } from './musicPlan.ts';
 import { buildLoop } from './loops.ts';
 import type { LoopKind, LoopVoice } from './loops.ts';
+import { PLAZA, stepSurface } from './steps.ts';
+import type { StepIn, StepOut } from './steps.ts';
 import { CRITTER_SOUNDS } from './types.ts';
 import type { CritterSound, ValleyAudio } from './types.ts';
 
@@ -33,7 +38,7 @@ type LoopName = Parameters<AudioService['loop']>[0];
 
 /** Minimum gap between two plays of one name (s): bursts coalesce instead of stacking. */
 const GAPS: Record<string, number> = {
-  'step-grass': 0.07, 'step-wood': 0.07, 'step-water': 0.07, 'ui-hover': 0.04, 'ui-click': 0.03,
+  'step-grass': 0.07, 'step-wood': 0.07, 'step-water': 0.07, step: 0.07, 'step:splash': 0.07, 'ui-hover': 0.04, 'ui-click': 0.03,
   alert: 4, bell: 6, 'chime-done': 1.2, 'chime-pass': 1.5, oops: 1, ship: 0.8, mail: 1, thunder: 1.5,
   pop: 0.08, sparkle: 0.3, quack: 0.15, hoe: 0.25, creak: 0.5, bark: 0.3, meow: 0.6, purr: 1.2, moo: 0.8, baa: 0.6,
   'c:chirp': 0.07, 'c:coo': 0.4, 'c:flap': 0.1, 'c:ribbit': 0.1, 'c:plop': 0.08, 'c:hop': 0.05, 'c:hoot': 2, 'c:fish': 0.2, 'c:wag': 0.5, 'c:squeak': 0.3,
@@ -105,7 +110,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     const recipe = SFX_RECIPES[name];
     if (!recipe) return;
     const bus = busOf(name);
-    if (bus === 'notify') music?.duck(3);
+    if (bus === 'notify') music?.duck(3, 0.25);
     fire(name, recipe, bus, o, sendOf(name), SPATIAL[bus], bus === 'notify');
   }
 
@@ -121,6 +126,8 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!r) return;
     const plan = planVoice(seed, o.mood ?? 'happy', o.syllables, voiceCount++);
     const end = renderVoice(ac, r.input, t + 0.01, plan);
+    // the music leans back a little while someone near you talks
+    if (!o.pos || Math.hypot(o.pos.x - eng.listener.x, o.pos.z - eng.listener.z) < 12) music?.duck(plan.total + 0.4, 0.6);
     voiceEnds[slot] = end;
     r.release(end);
   }
@@ -174,69 +181,41 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       unlock: () => eng.unlock(),
       stats: () => ({
         state: eng.ac?.state ?? 'locked', time: now(), played, dropped, active: poly.active(now()), loops: loops.size,
-        beds: amb.stats(), levels: { ...amb.levels }, music: music ? { on: music.on, bar: music.bar } : null, gains: { ...eng.gains },
+        beds: amb.stats(), levels: { ...amb.levels }, music: music ? { on: music.on, ...music.stats(now()) } : null, gains: { ...eng.gains },
       }),
       music: (on: boolean) => { music?.setOn(on); return on; },
-      /** render a sound offline: 'alert', 'critter:chirp', 'voice:seed:mood:n', 'loop:river:0.8' */
-      render: (name: string, seconds = 3) => renderOffline(name, seconds),
+      /** dev: end the current piece (or rest) so the next one starts in a second */
+      next: () => { music?.skip(); return music?.stats(now()); },
+      // offline measurement (debug.ts, loaded on demand): see its header for the names
+      render: async (name: string, seconds = 3) => (await import('./debug.ts')).renderMeasure(name, seconds),
+      pcm: async (name: string, seconds = 3, sr = 44100) => (await import('./debug.ts')).renderPcm(name, seconds, sr),
+      mix: async (spec: string, seconds = 20) => (await import('./debug.ts')).mixMeasure(spec, seconds),
       async renderAll(seconds = 3) {
+        const d = await import('./debug.ts');
         const names = [...SFX, ...CRITTER_SOUNDS.map((c) => `critter:${c}`), 'voice:ann:happy:4', 'voice:bob:question:5', 'voice:cy:sad:4', 'voice:di:excited:8',
-          ...(['wind', 'rain', 'roof', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs'] as const).map((k) => `loop:${k}:1`), 'music:day', 'music:night'];
+          ...['grass', 'dirt', 'stone', 'deck', 'floor', 'water', 'snow'].map((k) => `step:${k}`), 'step:stone:wet',
+          ...(['wind', 'rain', 'roof', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs', 'leaves', 'cowbells'] as const).map((k) => `loop:${k}:1`)];
         const out: Record<string, unknown> = {};
-        for (const n of names) out[n] = await renderOffline(n, n.startsWith('loop:') || n.startsWith('music') ? 8 : seconds);
+        for (const n of names) out[n] = d.inDb(await d.renderMeasure(n, n.startsWith('loop:') ? 8 : seconds));
         return out;
       },
     },
   };
   ctx.services.set('audio', svc);
 
-  async function renderOffline(name: string, seconds: number): Promise<{ peak: number; rms: number; nan: boolean; len: number }> {
-    const sr = 44100;
-    const oc = new OfflineAudioContext(2, Math.ceil(sr * seconds), sr);
-    const [head, a, b, cc] = name.split(':');
-    if (head === 'critter') CRITTER_RECIPES[a as CritterSound](oc, oc.destination, 0.01, { pitch: 1, rnd });
-    else if (head === 'voice') renderVoice(oc, oc.destination, 0.01, planVoice(a, (b ?? 'happy') as VoiceMood, Number(cc) || undefined));
-    else if (head === 'loop') {
-      const lv = Number(b ?? 1);
-      const v = buildLoop(a as LoopKind, oc, { cpu: () => 0.6, tempC: () => 55, send: null });
-      v.out.gain.value = lv;
-      v.out.connect(oc.destination);
-      v.tick(0, seconds, lv);
-    } else if (head === 'music') {
-      const m = createMusic(oc, oc.destination);
-      for (let t = 0; t < seconds; t += 0.2) m.update(t, a as 'day' | 'night', 1);
-      // music gain ramps from 0; render at full level for measurement
-    } else SFX_RECIPES[name as SfxName](oc, oc.destination, 0.01, { pitch: 1, rnd });
-    const buf = await oc.startRendering();
-    let peak = 0, sum = 0, nan = false, last = 0;
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-      const d = buf.getChannelData(ch);
-      for (let i = 0; i < d.length; i++) {
-        const v = d[i];
-        if (!Number.isFinite(v)) { nan = true; continue; }
-        const av = Math.abs(v);
-        if (av > peak) peak = av;
-        if (av > 0.002 && i > last) last = i;
-        sum += v * v;
-      }
-    }
-    const r3 = (x: number) => Math.round(x * 1000) / 1000;
-    return { peak: r3(peak), rms: r3(Math.sqrt(sum / (buf.length * buf.numberOfChannels))), nan, len: r3(last / sr) };
-  }
-
-  // ---- music once unlocked
+  // ---- music once unlocked: its own bus (volumeMusic), a reverb send, tunes seeded per real day
   eng.onReady((ac) => {
-    const dest = eng.dry();
-    if (dest) {
-      // music has its own slider (volumeMusic) on top of the ambient bus
-      const mg = ac.createGain();
-      const vol = () => { const v = Number(settings?.get('volumeMusic') ?? 0.4); mg.gain.setTargetAtTime(Math.max(0, Math.min(1, v)) ** 2, ac.currentTime, 0.1); };
-      vol();
-      settings?.onChange((c) => { if ('volumeMusic' in c) vol(); });
-      mg.connect(dest);
-      music = createMusic(ac, mg);
-    }
+    const dest = eng.bus('music');
+    if (dest) music = createMusic(ac, dest, eng.send, 7 + ctx.valley.sky.dayOfYear * 31);
   });
+  const musicIn: MusicIn = { hour: 12, season: 'summer', weather: 'clear', intensity: 0, indoors: false, festival: null };
+  const readMusicIn = (): MusicIn => {
+    const sky = ctx.valley.sky;
+    musicIn.hour = sky.hour; musicIn.season = sky.season; musicIn.weather = sky.weather.kind; musicIn.intensity = sky.weather.intensity;
+    musicIn.indoors = indoorK > 0.5;
+    musicIn.festival = (sky.festival?.active?.id ?? null) as FestivalName | null;
+    return musicIn;
+  };
 
   // ---- footsteps + jump/land
   let stepOff: (() => void) | null = null;
@@ -244,10 +223,32 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     if (stepOff) return;
     const ctrl = ctx.services.get('controller') as { onStep?(fn: (speed: number, surface: 'grass' | 'water' | 'wood') => void): () => void } | undefined;
     if (!ctrl?.onStep) return;
-    stepOff = ctrl.onStep((speed, surface) => {
-      play(`step-${surface}`, { volume: Math.min(1, 0.45 + speed / 9), pitch: speed > 6 ? 1.06 : 1 });
-    });
+    stepOff = ctrl.onStep((speed, surface) => step(speed, surface));
   };
+  const stepIn: StepIn = { ctrl: 'grass', indoors: false, path: 0, plaza: 99, season: 'summer', weather: 'clear', wet: 0, snow: 0, height: 0 };
+  const stepOut: StepOut = { surface: 'grass', splash: 0 };
+  let stepSide = 1;
+  /** one footstep: the surface under the player (steps.ts), a puddle splash in the wet, a touch of left / right */
+  function step(speed: number, ctrlSurface: 'grass' | 'water' | 'wood'): void {
+    const p = ctx.player.pos, sky = ctx.valley.sky;
+    const trace = (sky as { trace?: { wet: number; snow: number } }).trace;
+    stepIn.ctrl = ctrlSurface;
+    stepIn.indoors = !!(ctx.services.get('indoors') as IndoorSpace | undefined)?.active;
+    stepIn.plaza = Math.hypot(p.x - PLAZA.x, p.z - PLAZA.z);
+    stepIn.path = stepIn.plaza < PLAZA.r || stepIn.indoors || ctrlSurface !== 'grass' ? 0 : pathAt(p.x, p.z);
+    stepIn.season = sky.season; stepIn.weather = sky.weather.kind;
+    stepIn.wet = trace?.wet ?? ctx.lighting?.wet ?? 0;
+    stepIn.snow = trace?.snow ?? 0;
+    stepIn.height = p.y;
+    stepSurface(stepIn, stepOut);
+    const recipe = STEP_RECIPES[stepOut.surface];
+    stepSide = -stepSide;
+    const vol = Math.min(1, 0.45 + speed / 9);
+    const pos = stepPos.set(eng.listener.x + eng.listener.rx * 0.35 * stepSide, eng.listener.y - 1.5, eng.listener.z + eng.listener.rz * 0.35 * stepSide);
+    fire('step', recipe, 'sfx', { volume: vol * STEP_GAIN[stepOut.surface], pitch: speed > 6 ? 1.06 : 1, pos }, 0, SPATIAL.sfx);
+    if (stepOut.splash > 0.05) fire('step:splash', PUDDLE, 'sfx', { volume: vol * stepOut.splash, pos }, 0, SPATIAL.sfx);
+  }
+  const stepPos = new THREE.Vector3();
   trySubscribeSteps();
   let air = false, airTime = 0, prevY = ctx.player.pos.y, lastAim = 0;
 
@@ -271,7 +272,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!recipe || !ac) return;
     if (gap !== undefined && !limiter.allow(`ev:gap:${name}`, ac.currentTime, gap)) return;
     const bus = busOf(name);
-    if (bus === 'notify') music?.duck(3);
+    if (bus === 'notify') music?.duck(3, 0.25);
     fire(`ev:${name}`, recipe, bus, o, sendOf(name), SPATIAL[bus], true);
   };
   const farFrom = (id: string, d: number) => {
@@ -332,7 +333,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       if (!ac || ac.state !== 'running') return;
       const t = ac.currentTime;
       amb.update(t);
-      music?.update(t, amb.levels.mood, amb.levels.music);
+      music?.update(t, readMusicIn(), amb.levels.music);
       const aimNow = t - lastAim > 0.066;
       if (aimNow) lastAim = t;
       for (const l of loops) if (l.voice) {

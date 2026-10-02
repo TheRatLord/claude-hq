@@ -44,6 +44,12 @@ export function nearestOnPolyline(x: number, z: number, pts: readonly XZ[], out:
   return Math.sqrt(best);
 }
 
+/** Gain of each bed at level 1 (shared with the offline mixdown in debug.ts). */
+export const BED_SCALE: Readonly<Record<LoopKind, number>> = {
+  wind: 0.55, rain: 0.6, roof: 0.75, birds: 1.6, crickets: 0.9, owls: 0.9, river: 0.8, waterfall: 1.1, pond: 0.4, frogs: 0.7,
+  fire: 0.6, windmill: 0.55, bees: 0.5, leaves: 0.9, cowbells: 0.7,
+};
+
 export interface Ambience {
   update(now: number): void;
   readonly levels: AmbientLevels;
@@ -62,27 +68,30 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
   const riverP: P3 = { x: 0, y: -0.8, z: 0 }, pondP: P3 = { x: POND.x, y: -0.8, z: POND.z };
   const bees: P3[] = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
   const beeD = [Infinity, Infinity];
+  const herd: P3 = { x: 0, y: 0, z: 0 };
   const B = (key: string, kind: LoopKind, scale: number, level: Bed['level'], pos: P3 | null = null, opts: SpatialOpts = {}): Bed =>
     ({ key, kind, scale, level, pos, opts, voice: null, chain: null, quietSince: 0, cur: 0 });
   const beds: Bed[] = [
-    B('wind', 'wind', 0.42, (l) => l.wind),
-    B('rain', 'rain', 0.6, (l) => l.rain),
+    B('wind', 'wind', BED_SCALE.wind, (l) => l.wind),
+    B('rain', 'rain', BED_SCALE.rain, (l) => l.rain),
     // indoors (the farmhouse): the rain drums on the roof instead
-    { ...B('roof', 'roof', 0.75, (l) => l.rain * indoor()), dry: true },
-    B('birds', 'birds', 1, (l) => l.birds),
-    B('crickets', 'crickets', 0.9, (l) => l.crickets),
-    B('owls', 'owls', 0.9, (l) => l.owls),
-    B('river', 'river', 0.8, (l) => l.river, riverP, { max: 90 }),
-    B('waterfall', 'waterfall', 1.1, (l) => l.waterfall, { x: wf.x, y: wf.y + 3, z: wf.z }, { max: 160 }),
-    B('pond', 'pond', 0.4, (l) => l.pond, pondP, { max: 60 }),
-    B('frogs', 'frogs', 0.7, (l) => l.frogs, pondP, { max: 90 }),
-    B('fire', 'fire', 0.6, (l) => l.fire, { x: fire.x, y: fire.y + 0.4, z: fire.z }, { max: 45 }),
-    B('windmill', 'windmill', 0.55, (l) => l.windmill, { x: mill.x, y: mill.y + 7, z: mill.z }, { max: 70 }),
-    B('bees0', 'bees', 0.5, (l) => l.bees * (beeD[0] <= beeD[1] ? 1 : 0.6), bees[0], { max: 40 }),
-    B('bees1', 'bees', 0.5, (l) => (Number.isFinite(beeD[1]) ? l.bees * 0.6 : 0), bees[1], { max: 40 }),
+    { ...B('roof', 'roof', BED_SCALE.roof, (l) => l.rain * indoor()), dry: true },
+    B('birds', 'birds', BED_SCALE.birds, (l) => l.birds),
+    B('crickets', 'crickets', BED_SCALE.crickets, (l) => l.crickets),
+    B('owls', 'owls', BED_SCALE.owls, (l) => l.owls),
+    B('river', 'river', BED_SCALE.river, (l) => l.river, riverP, { max: 90 }),
+    B('waterfall', 'waterfall', BED_SCALE.waterfall, (l) => l.waterfall, { x: wf.x, y: wf.y + 3, z: wf.z }, { max: 160 }),
+    B('pond', 'pond', BED_SCALE.pond, (l) => l.pond, pondP, { max: 60 }),
+    B('frogs', 'frogs', BED_SCALE.frogs, (l) => l.frogs, pondP, { max: 90 }),
+    B('fire', 'fire', BED_SCALE.fire, (l) => l.fire, { x: fire.x, y: fire.y + 0.4, z: fire.z }, { max: 45 }),
+    B('windmill', 'windmill', BED_SCALE.windmill, (l) => l.windmill, { x: mill.x, y: mill.y + 7, z: mill.z }, { max: 70 }),
+    B('bees0', 'bees', BED_SCALE.bees, (l) => l.bees * (beeD[0] <= beeD[1] ? 1 : 0.6), bees[0], { max: 40 }),
+    B('bees1', 'bees', BED_SCALE.bees, (l) => (Number.isFinite(beeD[1]) ? l.bees * 0.6 : 0), bees[1], { max: 40 }),
+    B('leaves', 'leaves', BED_SCALE.leaves, (l) => l.leaves),
+    B('cowbells', 'cowbells', BED_SCALE.cowbells, (l) => l.cowbells, herd, { ref: 4, max: 80 }),
   ];
   const levels = emptyLevels();
-  const inp: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 1e9, dPond: 1e9, dWaterfall: 1e9, dFire: 1e9, dWindmill: 1e9, dBees: Infinity };
+  const inp: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 1e9, dPond: 1e9, dWaterfall: 1e9, dFire: 1e9, dWindmill: 1e9, dBees: Infinity, dHerd: Infinity, dHub: 0 };
   const near: XZ = { x: 0, z: 0 };
   let nextThunder = 0, lastAim = 0;
 
@@ -112,6 +121,16 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
       else if (d < beeD[1]) { beeD[1] = d; bees[1].x = s.x; bees[1].z = s.z; bees[1].y = s.y + 1; }
     }
     inp.dBees = beeD[0];
+    // the nearest grazing herd (cows / sheep) for the bells
+    inp.dHerd = Infinity;
+    for (const p of ctx.valley.plots.values()) {
+      if ((p.kind !== 'cows' && p.kind !== 'sheep') || p.stage === 'harvest' || p.stage === 'fallow') continue;
+      const s = SITES[p.site];
+      if (!s) continue;
+      const d = Math.hypot(L.x - s.x, L.z - s.z);
+      if (d < inp.dHerd) { inp.dHerd = d; herd.x = s.x; herd.y = s.y + 1.2; herd.z = s.z; }
+    }
+    inp.dHub = Math.hypot(L.x, L.z + 2);
   };
 
   return {

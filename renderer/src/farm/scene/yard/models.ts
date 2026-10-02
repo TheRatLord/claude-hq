@@ -23,7 +23,37 @@ const HATS = [PAL.red, PAL.blue, PAL.green];
 export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   planter: 0.5, flamingo: 0.25, gnome: 0.3, birdhouse: 0.25, chime: 0.3, petbed: 0.55, bench: 0.85, birdbath: 0.45,
   scarecrow: 0.4, pumpkin: 0.35, snowman: 0.45, sapling: 0.5, parasol: 0.8, lamppost: 0.25, lights: 0.95, topiary: 0.55, goldgnome: 0.45,
+  // the villagers' pieces (model/friends.ts, 6 hearts) and their keepsake portraits (10 hearts)
+  postbox: 0.3, crates: 0.6, millstone: 0.6, prizepumpkin: 0.6, tent: 0.85, vane: 0.3,
+  'keep-posy': 0.4, 'keep-bram': 0.4, 'keep-hazel': 0.4, 'keep-marigold': 0.4, 'keep-fern': 0.4, 'keep-nimbus': 0.4,
 });
+
+/** keepsake portraits: the villager's body colour, role hat colour and the canvas backdrop */
+const KEEP: Readonly<Record<string, readonly [number, number, number]>> = {
+  posy: [0x3d9fa8, 0x2f3f6e, 0xf6e0c0], bram: [0xe6c547, 0x6fcf92, 0xd8ecf6], hazel: [0xd9c08a, 0xf1ece0, 0xb8d8a8],
+  marigold: [0x9b5a8c, 0x2a2530, 0xf6d8a0], fern: [0x5d8f45, 0xb89a62, 0xcfe6f2], nimbus: [0x6fb7e0, 0xf2c230, 0x3a4a78],
+};
+
+/** A painted portrait of a villager (a Clawd in their colours and hat) on a little easel: the 10-heart keepsake. */
+function keepsake(k: Kit, who: string): void {
+  const [body, hat, bg] = KEEP[who] ?? KEEP.posy;
+  const lean = -0.16;
+  for (const s of [-1, 1]) k.box(0.05, 1.25, 0.05, PAL.woodDark, { x: s * 0.26, y: 0.6, z: 0.05, rz: s * 0.1, rx: lean });
+  k.box(0.05, 1.15, 0.05, PAL.woodDark, { y: 0.55, z: -0.25, rx: 0.32 });
+  k.box(0.7, 0.05, 0.1, PAL.wood, { y: 0.52, z: 0.12 });
+  // the canvas in a gilt frame, leaning back on the easel; everything painted is a hair proud of the canvas
+  const cz = 0.1, cy = 0.9;
+  const at = (x: number, y: number, dz = 0) => ({ x, y: cy + y, z: cz + 0.045 + dz - y * Math.sin(-lean), rx: lean });
+  k.box(0.68, 0.62, 0.05, GOLD_DARK, { y: cy, z: cz, rx: lean });
+  k.box(0.58, 0.52, 0.05, bg, at(0, 0, -0.03));
+  k.box(0.3, 0.22, 0.02, body, at(0, -0.07));
+  for (const s of [-1, 1]) k.box(0.06, 0.05, 0.02, body, at(s * 0.18, -0.06));
+  for (const s of [-1, 1]) k.box(0.035, 0.06, 0.02, PAL.ink, at(s * 0.07, -0.04, 0.008));
+  for (const x of [-0.1, -0.035, 0.035, 0.1]) k.box(0.04, 0.06, 0.02, body, at(x, -0.21));
+  k.box(0.34, 0.07, 0.02, hat, at(0, 0.07));
+  k.box(0.22, 0.08, 0.02, hat, at(0, 0.13));
+  k.box(0.58, 0.05, 0.02, 0x6fae4f, at(0, -0.235, -0.005));
+}
 
 function gnome(k: Kit, hat: number, gold: boolean): void {
   const tunic = gold ? GOLD : 0x3f78c8, skin = gold ? GOLD : PAL.skin, beard = gold ? 0xffe9a0 : PAL.white, boot = gold ? GOLD_DARK : PAL.woodDark;
@@ -270,6 +300,74 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
       for (const s of [-1, 1]) k.box(0.09, 0.15, 0.05, 0x1f3a1a, { x: s * 0.17, y: 0.95, z: 0.25 }); // the eye notches
       break;
     }
+    case 'postbox': {
+      // Posy's red pillar box: a round post with a domed cap, a slot and a gold crown
+      k.cyl(0.24, 0.08, PAL.ink, { y: 0.04 }, 10);
+      k.cyl(0.2, 0.86, PAL.red, { y: 0.51 }, 10);
+      k.cyl(0.225, 0.07, PAL.ink, { y: 0.97 }, 10);
+      k.ball(0.21, PAL.red, { y: 1.0, s: [1, 0.55, 1] }, 1);
+      k.box(0.18, 0.035, 0.05, PAL.ink, { y: 0.8, z: 0.19 });
+      k.box(0.12, 0.08, 0.02, PAL.white, { y: 0.6, z: 0.2 });
+      k.ball(0.04, GOLD, { y: 1.13 });
+      break;
+    }
+    case 'crates': {
+      // Bram's stencilled crates: two side by side, one on top, a little askew
+      const crate = (x: number, y: number, z: number, ry: number, c: number) => {
+        k.surf(['planks', { scale: 0.7 }], () => k.box(0.5, 0.42, 0.46, c, { x, y: y + 0.21, z, ry }));
+        for (const dy of [0.05, 0.37]) k.box(0.52, 0.05, 0.48, PAL.woodDark, { x, y: y + dy, z, ry });
+        k.box(0.16, 0.12, 0.01, PAL.ink, { x: x + Math.sin(ry) * 0.235, y: y + 0.22, z: z + Math.cos(ry) * 0.235, ry });
+      };
+      crate(-0.27, 0, 0, 0.05, PAL.plank); crate(0.27, 0, 0.02, -0.08, PAL.woodLight); crate(0.02, 0.42, 0.01, 0.2, PAL.wood);
+      break;
+    }
+    case 'millstone': {
+      // a retired millstone on a stump, a flour sack leaning on it
+      k.surf(['bark', { scale: 0.7 }], () => k.cyl(0.2, 0.5, PAL.trunk, { y: 0.25 }, 8, 0.17));
+      k.surf(['rock', { scale: 0.9 }], () => k.cyl(0.55, 0.16, PAL.stone, { y: 0.58 }, 14));
+      k.cyl(0.1, 0.17, PAL.rockDark, { y: 0.585 }, 8);
+      for (let i = 0; i < 6; i++) { const a = i * 1.047; k.box(0.34, 0.012, 0.02, PAL.rockDark, { x: Math.cos(a) * 0.3, y: 0.665, z: Math.sin(a) * 0.3, ry: -a + 0.4 }); }
+      k.ball(0.17, PAL.cloth, { x: 0.38, y: 0.17, z: 0.34, s: [1, 1.2, 0.9] }, 1);
+      k.cyl(0.06, 0.08, PAL.cloth, { x: 0.38, y: 0.38, z: 0.34 }, 6);
+      break;
+    }
+    case 'prizepumpkin': {
+      // the Mayor's prize pumpkin: giant, ribbed, wearing a blue first-prize rosette
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; k.ball(0.32, i % 2 ? PAL.pumpkin : 0xd8742a, { x: Math.cos(a) * 0.2, y: 0.36, z: Math.sin(a) * 0.2, s: [0.75, 1, 0.75] }, 1); }
+      k.ball(0.38, PAL.pumpkin, { y: 0.36, s: [1, 0.9, 1] }, 1);
+      k.cyl(0.05, 0.2, PAL.leafDark, { y: 0.74, rz: 0.2 }, 6);
+      k.cyl(0.11, 0.03, PAL.blue, { x: 0.2, y: 0.5, z: 0.47, rx: Math.PI / 2 - 0.3 }, 10);
+      k.cyl(0.05, 0.035, GOLD, { x: 0.2, y: 0.5, z: 0.49, rx: Math.PI / 2 - 0.3 }, 8);
+      for (const s of [-1, 1]) k.box(0.05, 0.16, 0.01, PAL.blue, { x: 0.2 + s * 0.04, y: 0.36, z: 0.5, rz: s * 0.25, rx: -0.3 });
+      break;
+    }
+    case 'tent': {
+      // Fern's pup tent: a canvas A-frame, open door flap, a guy-line pole and a pennant
+      const w = 0.8, h = 0.95, d = 1.3, a = Math.atan2(h, w);
+      for (const s of [-1, 1]) k.box(0.03, Math.hypot(w, h), d, 0xb8a46a, { x: s * w / 2, y: h / 2, z: 0, rz: s * (Math.PI / 2 - a) });
+      k.box(0.03, 0.03, d + 0.06, PAL.woodDark, { y: h, z: 0 });
+      k.box(0.5, 0.6, 0.02, 0x5a4a2a, { y: 0.32, z: d / 2 - 0.05 });
+      k.box(0.28, 0.7, 0.02, 0xc8b47a, { x: 0.3, y: 0.36, z: d / 2 + 0.02, ry: -0.6, rz: 0.4 });
+      for (const z of [-1, 1]) k.cyl(0.02, h + 0.2, PAL.woodDark, { y: (h + 0.2) / 2, z: z * (d / 2 + 0.02) }, 5);
+      k.box(0.18, 0.11, 0.01, PAL.red, { x: 0.09, y: h + 0.13, z: d / 2 + 0.02 });
+      k.box(0.6, 0.06, 0.24, 0x7a8a48, { x: -0.05, y: 0.04, z: 0.15 });
+      break;
+    }
+    case 'vane': {
+      // Nimbus's weather vane: an iron pole, compass arms N/E/S/W, a brass cockerel and arrow on top
+      k.cyl(0.14, 0.06, PAL.stone, { y: 0.03 }, 8);
+      k.cyl(0.025, 1.7, PAL.metalDark, { y: 0.88 }, 6);
+      for (const r of [0, Math.PI / 2]) k.box(0.62, 0.025, 0.025, PAL.metalDark, { y: 1.42, ry: r });
+      for (const [x, z] of [[0.31, 0], [-0.31, 0], [0, 0.31], [0, -0.31]] as const) k.box(0.07, 0.09, 0.02, PAL.ink, { x, y: 1.42, z, ry: x ? Math.PI / 2 : 0 });
+      k.box(0.7, 0.025, 0.025, 0xc89a10, { y: 1.74, ry: 0.6 });
+      k.cone(0.06, 0.12, 0xc89a10, { x: Math.cos(0.6) * 0.38, y: 1.74, z: -Math.sin(0.6) * 0.38, rz: -Math.PI / 2, ry: 0.6 }, 4);
+      k.ball(0.11, 0xf2c230, { y: 1.88, s: [1.4, 1, 0.5] });
+      k.ball(0.06, 0xf2c230, { x: 0.12, y: 1.98, s: [1, 1, 0.6] });
+      k.cone(0.07, 0.16, 0xf2c230, { x: -0.16, y: 1.96, rz: 0.5, s: [1, 1, 0.4] }, 4);
+      k.box(0.03, 0.05, 0.02, PAL.red, { x: 0.13, y: 2.05 });
+      break;
+    }
+    default: if (id.startsWith('keep-')) keepsake(k, id.slice(5));
   }
   return out;
 }

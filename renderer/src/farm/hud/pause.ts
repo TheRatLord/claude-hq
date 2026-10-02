@@ -150,6 +150,7 @@ export function createPause(ctx: HudCtx): Panel {
       head('The valley'),
       ...row(['B'], 'noticeboard'), ...row(['H'], 'valley almanac'),
       ...row(['K'], 'collections book'), ...row(['I'], 'your basket & the shop'),
+      ...row(['F'], 'facing a villager: give a gift from your basket (1…9 picks)'),
       ...row(['P'], 'photo mode (fly, [ ] time, Enter saves a PNG)'),
       ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'));
   }

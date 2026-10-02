@@ -2,14 +2,19 @@
  * Post-processing ('post' service). The scene renders once into a half-float target with a float depth texture;
  * then: a tiny dual-filter bloom chain at ≤ half res (emissives only: high, time-of-day threshold), one combined
  * full-screen pass (depth ink outlines, valley mist, cloud shadows, bloom, grade, tone map, vignette, dither), and
- * FXAA to the canvas. Quality 'low' drops bloom and FXAA (composite straight to the canvas).
+ * FXAA to the canvas. Quality 'low' drops bloom, FXAA (composite straight to the canvas) and god rays.
+ * Weather moments: low-lying mist banks are ray-marched in the composite against the valley-floor heightmap
+ * (`groundTexture()`, weather/surfaces.ts); god rays are one quarter-res radial pass toward the sun, only while the sun
+ * is in front of the camera and `atmo.rays` is up.
  */
 import * as THREE from 'three';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import type { SystemFactory } from '../context.ts';
 import type { PostService } from '../engine.ts';
 import { atmoOf } from '../sky/atmo.ts';
-import { compositeFrag, downFrag, fullscreenVert, prefilterFrag, upFrag } from './shaders.ts';
+import { compositeFrag, downFrag, fullscreenVert, prefilterFrag, raysFrag, upFrag } from './shaders.ts';
+import { GROUND_HALF, groundTexture } from '../weather/surfaces.ts';
+import { WORLD } from '../../world/map.ts';
 
 const LEVELS = 5;
 
@@ -17,12 +22,13 @@ export const postSystem: SystemFactory = (ctx) => {
   const { renderer, scene, camera } = ctx;
   const a = atmoOf(ctx);
   const low = ctx.quality === 'low';
-  const useBloom = !low, useFxaa = !low;
+  const useBloom = !low, useFxaa = !low, useRays = !low;
 
   const depth = new THREE.DepthTexture(4, 4, THREE.FloatType);
   const sceneRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthTexture: depth, depthBuffer: true, samples: 0 });
   sceneRT.texture.generateMipmaps = false;
   const ldrRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType, depthBuffer: false });
+  const raysRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType, depthBuffer: false });
   const down: THREE.WebGLRenderTarget[] = [], up: THREE.WebGLRenderTarget[] = [];
   for (let i = 0; i < LEVELS; i++) {
     down.push(new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false }));
@@ -53,7 +59,12 @@ export const postSystem: SystemFactory = (ctx) => {
     uBloom: { value: 0.6 }, uExposure: { value: 1 }, uSaturation: { value: 1 }, uContrast: { value: 1 }, uVignette: { value: 0.2 },
     uFlash: { value: 0 }, uNight: { value: 0 }, uUseBloom: { value: useBloom ? 1 : 0 },
     uGain: { value: new THREE.Color(1, 1, 1) }, uShadowTint: { value: new THREE.Color(0, 0, 0) },
+    tGround: { value: groundTexture() }, tRays: { value: raysRT.texture }, uBanks: { value: 0 }, uWater: { value: WORLD.water },
+    uGroundHalf: { value: GROUND_HALF }, uRays: { value: 0 }, uBankDrift: { value: new THREE.Vector2() },
+    uBankColor: { value: new THREE.Color() }, uRaysColor: { value: new THREE.Color() },
   };
+  const raysM = mk(raysFrag, { tDepth: { value: depth }, uSunUv: { value: new THREE.Vector2() }, uAspect: { value: 1 } });
+  const sunNdc = new THREE.Vector3(), camFwd = new THREE.Vector3();
   const composite = mk(compositeFrag, cu);
   const fxaa = new THREE.ShaderMaterial({
     vertexShader: fullscreenVert, fragmentShader: FXAAShader.fragmentShader, depthTest: false, depthWrite: false,
@@ -72,6 +83,8 @@ export const postSystem: SystemFactory = (ctx) => {
       w = Math.max(1, Math.round(cw * pr)); h = Math.max(1, Math.round(ch * pr));
       sceneRT.setSize(w, h);
       ldrRT.setSize(w, h);
+      raysRT.setSize(Math.max(1, Math.round(w / 4)), Math.max(1, Math.round(h / 4)));
+      raysM.uniforms.uAspect.value = w / h;
       let lw = w, lh = h;
       for (let i = 0; i < LEVELS; i++) {
         lw = Math.max(1, Math.round(lw / 2)); lh = Math.max(1, Math.round(lh / 2));
@@ -136,6 +149,30 @@ export const postSystem: SystemFactory = (ctx) => {
       cu.uFlash.value = a.flash;
       cu.uNight.value = a.night;
       cu.uGain.value.copy(g.gain);
+      // mist banks: lit by the sky, warmed by a low sun; drift slowly downwind
+      cu.uBanks.value = a.banks;
+      if (a.banks > 0.001) {
+        cu.uBankDrift.value.set(a.cloudOffset.x * 0.004 + a.time * 0.004, a.cloudOffset.y * 0.004 + a.time * 0.003);
+        cu.uBankColor.value.copy(ctx.lighting.fogColor).lerp(a.horizon, 0.3).multiplyScalar(1.08 + 0.1 * (1 - a.night));
+      }
+      // god rays: only when the sun is in front of the camera
+      let rays = 0;
+      if (useRays && a.rays > 0.01) {
+        camera.getWorldDirection(camFwd);
+        const facing = camFwd.dot(a.sun);
+        if (facing > 0.05) {
+          sunNdc.copy(a.sun).multiplyScalar(400).add(cu.uCamPos.value).project(camera);
+          const su = sunNdc.x * 0.5 + 0.5, sv = sunNdc.y * 0.5 + 0.5;
+          const off = Math.max(Math.abs(su - 0.5), Math.abs(sv - 0.5));
+          rays = a.rays * Math.min(1, facing * 3) * (1 - Math.min(1, Math.max(0, (off - 0.7) / 0.6)));
+          if (rays > 0.005) {
+            raysM.uniforms.uSunUv.value.set(su, sv);
+            pass(raysM, raysRT);
+            cu.uRaysColor.value.copy(ctx.lighting.sunColor).multiplyScalar(0.55 * (1 - a.overcast * 0.5));
+          }
+        }
+      }
+      cu.uRays.value = rays > 0.005 ? rays : 0;
       cu.uShadowTint.value.copy(g.shadowTint);
       pass(composite, useFxaa ? ldrRT : null);
       if (useFxaa) pass(fxaa, null);
@@ -154,9 +191,9 @@ export const postSystem: SystemFactory = (ctx) => {
     dispose() {
       ctx.services.delete('post');
       renderer.info.autoReset = true;
-      for (const t of [sceneRT, ldrRT, ...down, ...up]) t.dispose();
+      for (const t of [sceneRT, ldrRT, raysRT, ...down, ...up]) t.dispose();
       depth.dispose();
-      for (const m of [prefilter, downM, upM, composite, fxaa]) m.dispose();
+      for (const m of [prefilter, downM, upM, composite, fxaa, raysM]) m.dispose();
       tri.dispose();
     },
   };

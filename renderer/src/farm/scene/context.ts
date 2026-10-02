@@ -108,6 +108,11 @@ export interface UiPort {
    */
   shop?(tab?: 'buy' | 'sell' | 'yard', at?: 'store' | 'bram' | 'pocket'): void;
   /**
+   * The Friends panel (model/friends.ts, hud/friends.ts): hearts, tastes and today's requests. `give` = a villager id:
+   * open on the gift picker for them (what's in your basket). Optional for fakes.
+   */
+  friends?(o?: { give?: string }): void;
+  /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the
    * screen. `o.who` heads the bubble (the speaker's name) when it is pinned to the screen edge.

@@ -112,6 +112,59 @@ export const CATALOG: readonly CollectDef[] = Object.freeze([
     blurb: '"Dear whoever finds this: the valley is lovely this time of year. Wish you were here." Unsigned.' }),
 ] as CollectDef[]);
 
+// ---------------------------------------------------------------------------------------------
+// Sightings: the field guide's wild visitors (scene/life/wildlife.ts). Not finds (nothing goes in the basket): seen
+// with your own eyes, counted once per day.
+
+/** when a visitor is about, in the book's words */
+export type SightTime = 'dawn-dusk' | 'night' | 'day' | 'evening' | 'morning-evening';
+export interface SightDef {
+  kind: 'sight';
+  id: string;
+  name: string;
+  blurb: string;
+  seasons: readonly Season[];
+  time: SightTime;
+  /** where to look, in the valley's voice */
+  place: string;
+  /** how to get close (shown with the silhouette) */
+  tip: string;
+  rare?: boolean;
+  color: string;
+}
+const SIGHT = (id: string, name: string, o: Omit<SightDef, 'kind' | 'id' | 'name'>): SightDef => ({ kind: 'sight', id, name, ...o });
+
+/** Every wild visitor, in field-guide order. Ids are stable (save keys) and match scene/life/wild.ts. */
+export const SIGHTINGS: readonly SightDef[] = Object.freeze([
+  SIGHT('deer', 'Roe deer', { seasons: ALL, time: 'dawn-dusk', color: '#c47a45', place: 'grazing at the edge of the woods near the valley rim',
+    tip: 'Come up slowly. When she lifts her head, stand still until she goes back to grazing.',
+    blurb: 'A doe and her fawn, out of the trees while the valley is still grey. Fern leaves a salt lick by the rim and pretends she doesn\'t.' }),
+  SIGHT('fox', 'Red fox', { seasons: ALL, time: 'night', color: '#e2762e', place: 'trotting the hedgerows round the fields after dark',
+    tip: 'Look for two green sparks in the lamplight, and don\'t run at him.',
+    blurb: 'Does his rounds of every field like a night watchman. Bram blames him for a missing glove. Bram has no proof.' }),
+  SIGHT('heron', 'Grey heron', { seasons: ALL, time: 'morning-evening', color: '#9ea7b3', place: 'standing in the river shallows',
+    tip: 'Mornings and late afternoons. He spooks from a long way off; approach along the bank, a few steps at a time.',
+    blurb: 'Patience on stilts. Nimbus has timed him at forty minutes without moving, then three fish in a minute.' }),
+  SIGHT('owl', 'Tawny owl', { seasons: ALL, time: 'night', color: '#8a5a36', place: 'on top of a standing stone up on the north knoll',
+    tip: 'Clear nights only. Listen for the hoot; she lets you come quite close if you take your time.',
+    blurb: 'Turns her head right round to keep an eye on you, which is fair: you were keeping an eye on her.' }),
+  SIGHT('hedgehog', 'Hedgehog', { seasons: ['spring', 'summer', 'autumn'], time: 'evening', color: '#6e4c34', place: 'snuffling under the orchard trees',
+    tip: 'Mild evenings. If it curls up, keep still and it will uncurl and carry on.',
+    blurb: 'Hunts slugs under the apple trees and snores in the hay. Hazel leaves out a saucer of water, never milk.' }),
+  SIGHT('geese', 'Greylag geese', { seasons: ['autumn', 'spring'], time: 'morning-evening', color: '#8f877b', place: 'flying over the valley in a long V',
+    tip: 'Autumn and spring, mornings and evenings. Listen for the honking and look up.',
+    blurb: 'South in autumn, home again in spring, and always arguing about the way. The Mayor waves. They never wave back.' }),
+] as SightDef[]);
+const SIGHT_BY_ID = new Map(SIGHTINGS.map((d) => [d.id, d]));
+export const sightDef = (id: string): SightDef | undefined => SIGHT_BY_ID.get(id);
+
+/** "where / when" line for a visitor (the book's hint line, also under the silhouette) */
+export function sightText(d: SightDef): string {
+  const seasons = d.seasons.length === 4 ? 'all year' : d.seasons.join(' & ');
+  const time = { 'dawn-dusk': 'at dawn and dusk', night: 'at night', day: 'by day', evening: 'in the evenings', 'morning-evening': 'mornings and late afternoons' }[d.time];
+  return `${d.place}, ${time}, ${seasons}`;
+}
+
 export const FORAGE: readonly ForageDef[] = CATALOG.filter((d): d is ForageDef => d.kind === 'forage');
 export const FISHES: readonly FishDef[] = CATALOG.filter((d): d is FishDef => d.kind === 'fish');
 const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
@@ -236,7 +289,10 @@ export interface CollectionData {
   picked: { day: string; keys: string[] };
   /** fish caught today (a small daily tally for the book's footer) */
   fishDay?: { day: string; n: number };
+  /** wild visitors seen: n = days seen on, first / last day */
+  seen?: Record<string, SeenRec>;
 }
+export interface SeenRec { n: number; first: string; last: string }
 
 export const emptyCollection = (): CollectionData => ({ v: 1, found: {}, picked: { day: '', keys: [] } });
 
@@ -258,9 +314,19 @@ export function parseCollection(raw: unknown): CollectionData | null {
     ? { day: p.day, keys: p.keys.filter((k): k is string => typeof k === 'string').slice(0, 64) }
     : { day: '', keys: [] };
   const fd = o.fishDay as Record<string, unknown> | undefined;
+  const seen: Record<string, SeenRec> = {};
+  if (o.seen && typeof o.seen === 'object') {
+    for (const [id, v] of Object.entries(o.seen as Record<string, unknown>)) {
+      if (!SIGHT_BY_ID.has(id) || !v || typeof v !== 'object') continue;
+      const f = v as Record<string, unknown>;
+      if (typeof f.n !== 'number' || !(f.n >= 1) || typeof f.first !== 'string' || !DAY_RE.test(f.first)) continue;
+      seen[id] = { n: Math.floor(f.n), first: f.first, last: typeof f.last === 'string' && DAY_RE.test(f.last) ? f.last : f.first };
+    }
+  }
   return {
     v: 1, found, picked,
     ...(fd && typeof fd.day === 'string' && typeof fd.n === 'number' ? { fishDay: { day: fd.day, n: Math.max(0, Math.floor(fd.n)) } } : {}),
+    ...(Object.keys(seen).length ? { seen } : {}),
   };
 }
 
@@ -287,6 +353,26 @@ export function recordFind(data: CollectionData, id: string, nowMs: number, cm =
   return { def, isNew: !prev, n: rec.n, record: record && !!prev };
 }
 
+export interface SightResult {
+  def: SightDef;
+  /** first time ever */
+  isNew: boolean;
+  /** days seen on */
+  n: number;
+}
+
+/** Record a sighting (mutates `data`): once per species per day (null when already seen today, or unknown). */
+export function recordSighting(data: CollectionData, id: string, nowMs: number): SightResult | null {
+  const def = SIGHT_BY_ID.get(id);
+  if (!def) return null;
+  const day = dayKey(nowMs);
+  const seen = (data.seen ??= {});
+  const prev = seen[id];
+  if (prev?.last === day) return null;
+  seen[id] = prev ? { n: prev.n + 1, first: prev.first, last: day } : { n: 1, first: day, last: day };
+  return { def, isNew: !prev, n: seen[id].n };
+}
+
 /** Which of `day`'s forage spawns were already picked. */
 export const pickedOn = (data: CollectionData, day: string): ReadonlySet<string> => new Set(data.picked.day === day ? data.picked.keys : []);
 
@@ -308,8 +394,20 @@ export interface CollectionEntry {
   /** can be found / caught in `season` */
   inSeason: boolean;
 }
+export interface SightEntry {
+  def: SightDef;
+  found: boolean;
+  /** days seen on */
+  n: number;
+  first: string | null;
+  last: string | null;
+  inSeason: boolean;
+}
 export interface CollectionView {
   entries: CollectionEntry[];
+  /** the field guide (wild visitors); not counted in found / total */
+  sightings: SightEntry[];
+  sight: { found: number; total: number };
   found: number;
   total: number;
   forage: { found: number; total: number };
@@ -323,8 +421,13 @@ export function collectionView(data: CollectionData, season: Season, nowMs: numb
     return { def, found: !!f, n: f?.n ?? 0, first: f?.first ?? null, best: f?.best ?? null, inSeason: def.seasons.includes(season) };
   });
   const count = (k: CollectKind) => ({ found: entries.filter((e) => e.def.kind === k && e.found).length, total: entries.filter((e) => e.def.kind === k).length });
+  const sightings = SIGHTINGS.map((def) => {
+    const f = data.seen?.[def.id];
+    return { def, found: !!f, n: f?.n ?? 0, first: f?.first ?? null, last: f?.last ?? null, inSeason: def.seasons.includes(season) };
+  });
   return {
     entries, found: entries.filter((e) => e.found).length, total: entries.length,
+    sightings, sight: { found: sightings.filter((e) => e.found).length, total: sightings.length },
     forage: count('forage'), fish: count('fish'),
     fishToday: data.fishDay?.day === dayKey(nowMs) ? data.fishDay.n : 0,
   };
@@ -362,7 +465,10 @@ export interface CollectionService {
   pick(spawn: ForageSpawn): FindResult | null;
   picked(day: string): ReadonlySet<string>;
   onFind(fn: (r: FindResult) => void): () => void;
-  /** dev: mark the first n catalog entries found (shots, the HUD panel) */
+  /** a wild visitor seen (counted once a day; null when already seen today) */
+  sight(id: string): SightResult | null;
+  onSight(fn: (r: SightResult) => void): () => void;
+  /** dev: mark the first n catalog entries found, then the field guide's (shots, the HUD panel) */
   devFill(n: number): void;
   /** dev: forget everything */
   devReset(): void;
@@ -373,6 +479,7 @@ export function createCollection(store: CollectionStore | undefined, now: () => 
   try { data = parseCollection(store?.load()) ?? emptyCollection(); } catch { data = emptyCollection(); }
   let version = 0;
   const fns = new Set<(r: FindResult) => void>();
+  const sightFns = new Set<(r: SightResult) => void>();
   const save = () => { version++; try { store?.save(data); } catch (err) { console.warn('[collection] save failed', err); } };
   const after = (r: FindResult | null) => {
     if (!r) return null;
@@ -388,11 +495,23 @@ export function createCollection(store: CollectionStore | undefined, now: () => 
     pick: (spawn) => after(pickForage(data, spawn, now())),
     picked: (day) => pickedOn(data, day),
     onFind(fn) { fns.add(fn); return () => fns.delete(fn); },
+    sight(id) {
+      const r = recordSighting(data, id, now());
+      if (!r) return null;
+      save();
+      for (const f of [...sightFns]) { try { f(r); } catch (err) { console.error('[collection] sight listener threw', err); } }
+      return r;
+    },
+    onSight(fn) { sightFns.add(fn); return () => sightFns.delete(fn); },
     devFill(n) {
       const day = dayKey(now());
       CATALOG.slice(0, Math.max(0, n)).forEach((d, i) => {
         if (data.found[d.id]) return;
         data.found[d.id] = { n: 1 + (i % 4), first: day, ...(d.kind === 'fish' && !d.junk ? { best: Math.round((d.cm[0] + d.cm[1]) / 2) } : {}) };
+      });
+      SIGHTINGS.slice(0, Math.max(0, n - CATALOG.length)).forEach((d, i) => {
+        const seen = (data.seen ??= {});
+        seen[d.id] ??= { n: 1 + (i % 3), first: day, last: day };
       });
       save();
     },

@@ -37,6 +37,8 @@ import type { CollectionService } from '../model/collection.ts';
 import { createShopPanel } from './shop.ts';
 import type { YardPort } from './shop.ts';
 import type { WalletService } from '../model/wallet.ts';
+import { createFriendsPanel, createQuests } from './friends.ts';
+import type { FriendsService } from '../model/friends.ts';
 import { UPGRADES } from '../model/almanac.ts';
 import { createHint, createPause } from './pause.ts';
 import { createNotifier } from './notify.ts';
@@ -67,6 +69,8 @@ export interface HudBindings {
   /** optional: the player's wallet (bits, basket, yard decor: model/wallet.ts) and the scene's yard (scene/yard) */
   wallet?(): WalletService;
   yard?(): YardPort | undefined;
+  /** optional: friendship with the villagers + their daily requests (model/friends.ts) */
+  friends?(): FriendsService;
 }
 
 export interface Hud {
@@ -136,6 +140,7 @@ export function createHud(d: HudDeps): Hud {
   const notifier = createNotifier(ctx);
   const greetFestival = festivalGreeter((t) => toasts.push(t));
   const minimap = createMinimap(ctx);
+  const quests = createQuests(ctx);
   const hint = createHint();
   // the free-mouse reminder is the first item of the key-hints bar (one bar at the bottom, not two)
   const freehint = h('span.vh-freehint', null, h('kbd.vh-k', { text: 'Click' }), 'look around');
@@ -156,7 +161,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createPause(ctx), drawer]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPause(ctx), drawer]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -172,7 +177,7 @@ export function createHud(d: HudDeps): Hud {
     dockBtn('Map', 'M', ICONS.map, () => panels.toggle('map'), 'dock-map'),
     dockBtn('Farm ledger', 'Tab', ICONS.book, () => panels.toggle('roster'), 'dock-roster'),
     termBtn,
-    dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')));
+    dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')), quests.el);
   const leaderKbd = h('kbd.vh-k');
   const hints = h('div.vh-hints', null, freehint,
     h('span.opt', null, h('kbd.vh-k', { text: 'E' }), 'talk'), h('span.opt', null, h('kbd.vh-k', { text: 'F' }), 'terminal'),
@@ -341,6 +346,7 @@ export function createHud(d: HudDeps): Hud {
     lastUnread = unread;
     stats.sample();
     minimap.refresh();
+    quests.refresh();
     if (!pointerDown) drawer.tick();
     const cur = panels.current();
     if (cur && cur.id !== 'drawer' && !pointerDown) { try { cur.refresh?.(); } catch (e) { console.error('[hud] panel refresh', e); } }
@@ -382,6 +388,7 @@ export function createHud(d: HudDeps): Hud {
       roster: () => panels.open('roster'),
       collection: () => panels.open('collection'),
       shop: (tab, at) => panels.open('shop', { tab: tab ?? 'buy', at: at ?? (tab === 'yard' ? 'pocket' : 'store') }),
+      friends: (o) => panels.open('friends', o),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },
@@ -404,6 +411,10 @@ export function createHud(d: HudDeps): Hud {
       try {
         x.collection?.().onFind((r) => {
           if (r.isNew) toasts.push({ text: `New in your collection: ${r.def.name}`, sub: `${r.def.rare ? 'a rare one! · ' : ''}K for the Collections book`, icon: ICONS.book, level: 'good', key: `find|${r.def.id}` });
+        });
+        // a first-ever sighting of a wild visitor (scene/life/wildlife.ts) for the field guide
+        x.collection?.().onSight((r) => {
+          if (r.isNew) toasts.push({ text: `New in your field guide: ${r.def.name}`, sub: 'K for the Collections book', icon: ICONS.book, level: 'good', key: `sight|${r.def.id}` });
         });
       } catch { /* optional */ }
       tick();

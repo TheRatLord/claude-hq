@@ -1,10 +1,15 @@
 /**
  * Weather: rain streaks + ground/water ripples, storms (heavier rain, lightning that lights the valley, distant
- * bolts, thunder), drifting snow, a rainbow after rain in daylight, falling leaves (autumn) / petals (spring) in the
- * wind, and glinting motes in the sun on clear days. Intensities come from the eased atmosphere state the sky
- * system maintains, so every change eases in.
+ * bolts, thunder), drifting snow, falling leaves (autumn) / petals (spring) in the wind, and glinting motes in the sun
+ * on clear days. Intensities come from the eased atmosphere state the sky system maintains, so every change eases in.
  *
- * Dev: `__valley.debug('rainbow', true)` forces the rainbow, `__valley.debug('lightning', true)` strikes once.
+ * Weather moments driven by the model's weather trace (`sky.trace`, model/sky.ts): the ground stays wet and puddled
+ * for hours after a real shower and lying snow builds through a snowy morning (both drawn on every toon surface by
+ * surfaces.ts through the shared `VW` uniform block written here), frost on cold clear nights and mornings, and the
+ * rainbow in the first hour after a shower stops while the sun is out.
+ *
+ * Dev: `__valley.atmo({ wet, snow, frost, rainbow })`, `__valley.debug('rainbow', true)` forces the rainbow,
+ * `__valley.debug('lightning', true)` strikes once.
  */
 import * as THREE from 'three';
 import type { SystemFactory } from '../context.ts';
@@ -13,6 +18,9 @@ import { createField } from './particles.ts';
 import { createRipples } from './ripples.ts';
 import { createLightning } from './lightning.ts';
 import { PAL } from '../toon.ts';
+import { VW, setWeatherSurfaceQuality } from './surfaces.ts';
+import { sunTimes } from '../../model/sky.ts';
+import type { IndoorSpace } from '../context.ts';
 
 const LEAF_COLORS = [PAL.leafAutumn, PAL.leafAutumn2, 0xe8b640, 0xb8562e];
 const PETAL_COLORS = [0xf7c6d6, 0xfbe3ea, 0xf09ab8, 0xffffff];
@@ -20,6 +28,8 @@ const PETAL_COLORS = [0xf7c6d6, 0xfbe3ea, 0xf09ab8, 0xffffff];
 export const weatherSystem: SystemFactory = (ctx) => {
   const a = atmoOf(ctx);
   const low = ctx.quality === 'low';
+  // before any program compiles (no system renders while the systems are created)
+  setWeatherSurfaceQuality(ctx.quality);
   const scale = low ? 0.45 : ctx.quality === 'medium' ? 0.75 : 1;
   const rain = createField('rain', Math.round(14000 * scale), [32, 20, 32], 'rain');
   const snow = createField('snow', Math.round(16000 * scale), [50, 22, 50], 'snow');
@@ -33,7 +43,20 @@ export const weatherSystem: SystemFactory = (ctx) => {
   ctx.scene.add(group);
 
   const cam = new THREE.Vector3(), vel = new THREE.Vector3(), tmpC = new THREE.Color(), rippleC = new THREE.Color();
-  let rainMemory = 0, leafSeason = '';
+  let leafSeason = '', firstFrame = true, frostDoy = -1, frostTimes = sunTimes(0);
+  const g = a.ground;
+
+  const writeSurfaces = (indoor: boolean, rainNow: number, time: number) => {
+    const L = ctx.lighting;
+    const k = indoor ? 0 : 1;
+    VW[0] = g.wet * k; VW[1] = g.snow * k; VW[2] = rainNow * k; VW[3] = time % 600;
+    VW[4] = a.zenith.r; VW[5] = a.zenith.g; VW[6] = a.zenith.b; VW[7] = g.frost * k;
+    VW[8] = a.horizon.r; VW[9] = a.horizon.g; VW[10] = a.horizon.b; VW[11] = smooth(0.2, 0.85, g.wet);
+    VW[12] = L.sunDir.x; VW[13] = L.sunDir.y; VW[14] = L.sunDir.z;
+    const glint = Math.min(2.2, L.sunIntensity * 0.55) * (1 - a.overcast * 0.6);
+    VW[16] = L.sunColor.r * glint; VW[17] = L.sunColor.g * glint; VW[18] = L.sunColor.b * glint; VW[19] = L.night;
+    VW[20] = 0.92; VW[21] = 0.95; VW[22] = 1.0; VW[23] = clamp01(a.daylight * (1 - a.overcast)) * 0.8 + L.night * 0.15;
+  };
 
   return {
     name: 'weather',
@@ -103,17 +126,39 @@ export const weatherSystem: SystemFactory = (ctx) => {
       if (ctx.debug.lightning) { ctx.debug.lightning = false; lightning.strike(); }
       a.flash = lightning.update(dt, a.storm, cam, ctx.player.yaw) * (low ? 0.7 : 1);
 
-      // --- rainbow: after rain ends, in daylight with the sun out
-      if (a.rain > 0.3) rainMemory = 1;
-      else rainMemory = Math.max(0, rainMemory - dt / 300);
-      const bowT = ctx.debug.rainbow ? 1 : (rainMemory > 0 && a.rain < 0.15 ? 1 : 0) * smooth(0.05, 0.2, a.sunElev) * (1 - a.overcast) * smooth(0.02, 0.2, rainMemory);
-      a.rainbow = ease(a.rainbow, bowT, dt, 6);
+      // --- what the weather left on the ground (model trace: puddles linger, snow builds), eased
+      const tr = sky.trace;
+      const fo = a.force;
+      const gdt = firstFrame || a.snap ? 1000 : dt;
+      firstFrame = false;
+      const wetT = fo.wet ?? Math.max(tr.wet, r * 0.9);
+      g.wet = ease(g.wet, wetT, gdt, wetT > g.wet ? 6 : 25);
+      g.snow = ease(g.snow, fo.snow ?? Math.max(tr.snow, s * 0.25), gdt, 12);
+      // frost: cold, clear-ish nights and mornings until the sun has been up a while
+      const doy = sky.dayOfYear;
+      const cold = sky.season === 'winter' ? 1 : doy >= 305 || doy < 75 ? 0.6 : 0;
+      if (doy !== frostDoy) { frostDoy = doy; frostTimes = sunTimes(doy); }
+      const st = frostTimes, hr = sky.hour;
+      const frostHour = hr < st.rise ? 1 : hr < st.rise + 3.2 ? 1 - smooth(st.rise + 0.6, st.rise + 3.2, hr) : smooth(st.set + 0.5, st.set + 3, hr);
+      const frostT = fo.frost ?? cold * frostHour * (1 - a.overcast * 0.85) * (1 - clamp01(g.wet * 2.5)) * (1 - r);
+      g.frost = ease(g.frost, frostT, gdt, 8);
+      const indoor = (ctx.services.get('indoors') as IndoorSpace | undefined)?.active === true;
+      writeSurfaces(indoor, r, f.time);
+
+      // --- rainbow: in the first hour after a real shower stops (model trace), with the sun out
+      const since = tr.sinceRain;
+      const afterRain = since === null ? 0 : 1 - smooth(0.5, 1.2, since);
+      const bowT = fo.rainbow ?? (ctx.debug.rainbow ? 1 : afterRain * (1 - smooth(0.05, 0.25, a.rain)) * smooth(0.04, 0.2, a.sunElev) * (1 - a.overcast * 0.75) * (1 - a.fog));
+      a.rainbow = ease(a.rainbow, bowT, a.snap ? 1000 : dt, 6);
+      a.snap = false;
     },
     stats: () => ({
       rain: rain.geo.instanceCount, snow: snow.geo.instanceCount, leaves: leaves.geo.instanceCount, motes: motes.geo.instanceCount,
       flash: +a.flash.toFixed(2), rainbow: +a.rainbow.toFixed(2),
+      wet: +g.wet.toFixed(2), snowCover: +g.snow.toFixed(2), frost: +g.frost.toFixed(2),
     }),
     dispose() {
+      VW[0] = VW[1] = VW[2] = VW[7] = 0;
       ctx.scene.remove(group);
       group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } });
     },

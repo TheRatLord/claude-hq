@@ -138,6 +138,15 @@ export function sell(d: WalletData, id: string, n = Infinity): Sale {
   return { n: k, coins };
 }
 
+/** Take up to `n` of one item out of the basket without pay (a gift, a request delivered). Returns how many. */
+export function take(d: WalletData, id: string, n = 1): number {
+  const held = d.basket[id] ?? 0;
+  const k = Math.min(held, Math.max(0, Math.floor(n)));
+  if (!k) return 0;
+  if (held - k > 0) d.basket[id] = held - k; else delete d.basket[id];
+  return k;
+}
+
 /** Sell everything in the basket. */
 export function sellAll(d: WalletData): Sale {
   let n = 0, coins = 0;
@@ -186,9 +195,12 @@ export interface ShopEntry {
   affordable: boolean;
 }
 
-/** The store's shelves right now: every item with its price and whether you can have it. */
-export function shopView(d: WalletData, o: { rank: number; season: Season }): ShopEntry[] {
-  return DECOR.map((def) => {
+/** what the shelves depend on: the Almanac rank, the season, and (optional) villagers' hearts (model/friends.ts) */
+export interface ShopCtx { rank: number; season: Season; hearts?: (id: string) => number }
+
+/** The store's shelves right now: every item with its price and whether you can have it (keepsakes are never stocked). */
+export function shopView(d: WalletData, o: ShopCtx): ShopEntry[] {
+  return DECOR.filter((def) => !def.keepsake).map((def) => {
     const owned = ownedOf(d, def.id);
     const price = priceOf(def, owned);
     return {
@@ -204,11 +216,11 @@ export type BuyResult = { ok: true; piece: Piece; price: number } | { ok: false;
  * Buy one decor item: pays, adds the piece to storage, or puts it straight on the first free yard slot when
  * `autoPlace` (the shop's default: what you buy shows up in the yard).
  */
-export function buy(d: WalletData, id: string, o: { rank: number; season: Season; autoPlace?: boolean; free?: boolean }): BuyResult {
+export function buy(d: WalletData, id: string, o: ShopCtx & { autoPlace?: boolean; free?: boolean }): BuyResult {
   const def = decorDef(id);
   if (!def) return { ok: false, reason: 'unknown' };
   const owned = ownedOf(d, id);
-  const locked = lockOf(def, { rank: o.rank, season: o.season, owned });
+  const locked = lockOf(def, { rank: o.rank, season: o.season, owned, hearts: o.hearts });
   if (locked && !(o.free && locked !== 'max')) return { ok: false, reason: locked };
   const price = o.free ? 0 : priceOf(def, owned);
   if (d.coins < price) return { ok: false, reason: 'coins' };
@@ -272,6 +284,9 @@ export type WalletChange =
   | { kind: 'sell'; n: number; coins: number }
   | { kind: 'work'; coins: number }
   | { kind: 'buy'; piece: Piece; price: number }
+  | { kind: 'take'; id: string; n: number }
+  | { kind: 'reward'; coins: number; why: string }
+  | { kind: 'gift'; piece: Piece }
   | { kind: 'yard'; uid: number }
   | { kind: 'dev' };
 
@@ -285,12 +300,18 @@ export interface WalletService {
   basketCount(): number;
   basketValue(): number;
   workToday(): { coins: number; left: number };
-  shop(o: { rank: number; season: Season }): ShopEntry[];
+  shop(o: ShopCtx): ShopEntry[];
   stash(id: string, n?: number): void;
   sell(id: string, n?: number): Sale;
   sellAll(): Sale;
+  /** take finds out of the basket without pay (gifts, requests); returns how many */
+  take(id: string, n?: number): number;
+  /** bits for something done (a villager's request) */
+  reward(coins: number, why: string): void;
+  /** a free decor piece (a villager's keepsake), straight into the yard when there's room */
+  gift(id: string): Piece | null;
   work(kind: ValleyEventKind): number;
-  buy(id: string, o: { rank: number; season: Season; autoPlace?: boolean; free?: boolean }): BuyResult;
+  buy(id: string, o: ShopCtx & { autoPlace?: boolean; free?: boolean }): BuyResult;
   place(uid: number, slot: number): { moved: boolean; displaced: number | null };
   store(uid: number): boolean;
   rotate(uid: number, steps?: number): number | null;
@@ -332,6 +353,14 @@ export function createWallet(st: WalletStore | undefined, o: { now?: () => numbe
     stash(id, n = 1) { const before = d.basket[id] ?? 0; if (stash(d, id, n) !== before) changed({ kind: 'stash', id, n }); },
     sell(id, n) { const s = sell(d, id, n); if (s.n) changed({ kind: 'sell', ...s }); return s; },
     sellAll() { const s = sellAll(d); if (s.n) changed({ kind: 'sell', ...s }); return s; },
+    take(id, n = 1) { const k = take(d, id, n); if (k) changed({ kind: 'take', id, n: k }); return k; },
+    reward(c, why) {
+      const k = Math.max(0, Math.floor(c));
+      if (!k) return;
+      d.coins = Math.min(COIN_MAX, d.coins + k);
+      changed({ kind: 'reward', coins: k, why });
+    },
+    gift(id) { const r = buy(d, id, { rank: 99, season: 'spring', autoPlace: true, free: true }); if (!r.ok) return null; changed({ kind: 'gift', piece: r.piece }, true); return r.piece; },
     work(kind) { const c = workPay(d, kind, now()); if (c) changed({ kind: 'work', coins: c }); return c; },
     buy(id, x) { const r = buy(d, id, x); if (r.ok) changed({ kind: 'buy', piece: r.piece, price: r.price }, true); return r; },
     place(uid, slot) { const r = place(d, uid, slot); if (r.moved) changed({ kind: 'yard', uid }, true); return r; },

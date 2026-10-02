@@ -97,7 +97,7 @@ async function main(): Promise<void> {
   // --url http://127.0.0.1:PORT/?t=TOKEN shoots an already-running backend (e.g. live herdr) instead of a demo
   const target = opt('--url', '');
   const dev = target ? { url: new URL(target), close: async () => {} } : await startDev({
-    port: 0, quiet: true, scenario: opt('--scenario', 'mixed'), seed: Number(opt('--seed', '1')), population: Number(opt('--demo', '12')),
+    port: 0, quiet: true, hmr: false, scenario: opt('--scenario', 'mixed'), seed: Number(opt('--seed', '1')), population: Number(opt('--demo', '12')),
     ...(argv.includes('--timescale') ? { timescale: Number(opt('--timescale', '1')) } : {}),
   });
   const browser = await chromium.launch({ headless: true, args: GPU_ARGS });

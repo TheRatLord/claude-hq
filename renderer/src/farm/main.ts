@@ -18,6 +18,8 @@ import { createValley } from './model/valley.ts';
 import { demoAlmanac } from './model/almanac.ts';
 import { createCollection } from './model/collection.ts';
 import { createWallet } from './model/wallet.ts';
+import { createFriends, friendDef } from './model/friends.ts';
+import type { FriendLetter } from './model/friends.ts';
 import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
 import { storeSource, createAgentPort } from './source.ts';
@@ -92,6 +94,7 @@ const collection = createCollection({
   save: (d) => localStorage.setItem(COLLECTION_KEY, JSON.stringify(d)),
 });
 collection.onFind((r) => { if (r.isNew) valley.harvest('found'); });
+collection.onSight((r) => { if (r.isNew) valley.harvest('found'); });
 engine.ctx.services.set('collection', collection);
 // the wallet (bits, the basket of finds, yard decor: model/wallet.ts; the store + yard are scene/yard, the panel hud/shop.ts):
 // browser-local; finds go into the basket, real agent work pays a few bits a day (capped)
@@ -103,6 +106,24 @@ const wallet = createWallet({
 collection.onFind((r) => wallet.stash(r.def.id));
 valley.on((e) => { wallet.work(e.kind); });
 engine.ctx.services.set('wallet', wallet);
+// friendship with the villagers + their daily requests (model/friends.ts; the villagers system talks, hud/friends.ts shows):
+// browser-local; gifts come out of the basket, requests pay bits, milestone letters go in the mailbox
+const FRIENDS_KEY = 'claude-valley.friends.v1';
+const friends = createFriends({
+  load: () => { const raw = localStorage.getItem(FRIENDS_KEY); return raw ? JSON.parse(raw) : null; },
+  save: (d) => localStorage.setItem(FRIENDS_KEY, JSON.stringify(d)),
+}, {
+  season: () => valley.state.sky.season,
+  basket: { count: (id) => wallet.data().basket[id] ?? 0, take: (id, n) => wallet.take(id, n), stash: (id, n) => wallet.stash(id, n) },
+  pay: (c, why) => wallet.reward(c, why),
+  gift: (id) => { wallet.gift(id); },
+});
+const postFriendLetter = (l: FriendLetter) => valley.post({ id: l.id, at: l.at, from: l.from, fromName: friendDef(l.from)?.name ?? '', title: l.title, body: l.body });
+for (const l of friends.data().letters) postFriendLetter(l);
+friends.onChange((c) => { if (c.kind === 'milestone' && c.letter) postFriendLetter(c.letter); });
+collection.onFind((r) => { if (r.def.kind === 'fish' && !r.def.junk) friends.caught(r.def.id, valley.state.sky.hour); });
+valley.on((e) => friends.event(e.kind));
+engine.ctx.services.set('friends', friends);
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
@@ -140,6 +161,7 @@ hud.bind({
   sfx: (name) => (engine.ctx.services.get('audio') as AudioService | undefined)?.play(name),
   collection: () => collection,
   wallet: () => wallet,
+  friends: () => friends,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
 });
 engine.onFrame((f) => hud.update(f));

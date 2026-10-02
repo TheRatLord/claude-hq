@@ -212,6 +212,18 @@ export interface Gauges {
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 export type WeatherKind = 'clear' | 'cloudy' | 'rain' | 'storm' | 'fog' | 'snow';
 export interface Weather { kind: WeatherKind; /** 0..1 */ intensity: number; /** 0..1 cloud cover */ clouds: number; /** m/s, direction radians */ wind: number; windDir: number }
+/**
+ * What the recent real-clock weather left behind (model/sky.ts `weatherTrace`, pure): integrated over the previous
+ * two days of 3-hour weather blocks, so puddles linger after a shower and snow builds up through a snowy morning.
+ */
+export interface WeatherTrace {
+  /** ground wetness 0..1: soaks in fast during rain, dries over a few hours (slower at night, in fog, in winter) */
+  wet: number;
+  /** lying snow 0..1: builds through snow blocks, melts in rain and sun */
+  snow: number;
+  /** real hours since the last rain / storm stopped; null while it rains or if it has been dry for over 12 h */
+  sinceRain: number | null;
+}
 export interface Sky {
   /** local fractional hour 0..24 */
   hour: number;
@@ -220,6 +232,8 @@ export interface Sky {
   season: Season;
   dayOfYear: number;
   weather: Weather;
+  /** puddles, lying snow and time since rain (from the recent weather blocks) */
+  trace: WeatherTrace;
   /** the real-calendar festival on today, and the next one (model/calendar.ts) */
   festival: FestivalView;
 }

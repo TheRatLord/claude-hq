@@ -69,6 +69,33 @@ void main() {
 }`;
 
 /**
+ * God rays (quarter res): march from the pixel toward the sun's screen position, gathering the open sky near the sun
+ * (depth = far: the dome; clouds, trees, roofs and the rim occlude), with decay. The composite adds it in sun colour.
+ */
+export const raysFrag = /* glsl */`
+uniform sampler2D tDepth;
+uniform vec2 uSunUv;
+uniform float uAspect;
+varying vec2 vUv;
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+void main() {
+  const int N = 30;
+  vec2 d = (uSunUv - vUv) / float(N);
+  vec2 p = vUv + d * ign(gl_FragCoord.xy);
+  float acc = 0.0, w = 1.0, wsum = 0.0;
+  for (int i = 0; i < N; i++) {
+    vec2 c = clamp(p, vec2(0.0), vec2(1.0));
+    float sky = step(0.999999, texture2D(tDepth, c).x) * step(abs(p.x - 0.5), 0.5) * step(abs(p.y - 0.5), 0.5);
+    vec2 q = (p - uSunUv) * vec2(uAspect, 1.0);
+    acc += sky * exp(-dot(q, q) * 4.0) * w;
+    wsum += w;
+    w *= 0.975;
+    p += d;
+  }
+  gl_FragColor = vec4(vec3(acc / wsum), 1.0);
+}`;
+
+/**
  * The one combined pass: ink outlines from depth, height fog + sun scatter, drifting cloud shadows, bloom, grade,
  * tone map, vignette, dither → sRGB.
  */
@@ -91,6 +118,12 @@ uniform vec3 uHazeColor;
 // cloud shadows
 uniform float uCloudShadow, uCloudCover;
 uniform vec2 uCloudOffset;
+// mist banks (low-lying, ray-marched against the valley floor heightmap) + god rays
+uniform sampler2D tGround;
+uniform sampler2D tRays;
+uniform float uBanks, uWater, uGroundHalf, uRays;
+uniform vec2 uBankDrift;
+uniform vec3 uBankColor, uRaysColor;
 // grade
 uniform float uNight, uBloom, uExposure, uSaturation, uContrast, uVignette, uFlash, uUseBloom;
 uniform vec3 uGain, uShadowTint;
@@ -195,6 +228,41 @@ void main() {
     vec3 fc = uFogColor + uSunColor * pow(max(dot(rd, uSunDir), 0.0), 6.0) * 0.35;
     col = mix(col, fc, fogK);
   }
+
+  // --- mist banks: thick over the river and pond and in the low ground, a thin skin over the fields, drifting
+  if (uBanks > 0.001) {
+    float top = uWater + 7.5;
+    float t0 = 0.0, t1 = min(dist, 150.0);
+    if (uCamPos.y > top) t0 = rd.y < -1e-4 ? (top - uCamPos.y) / rd.y : t1;
+    if (rd.y > 1e-4) t1 = min(t1, max(0.0, (top - uCamPos.y) / rd.y));
+    if (t1 > t0) {
+      const int N = 14;
+      float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      float tau = 0.0, prev = t0;
+      for (int i = 0; i < N; i++) {
+        // samples bunch up near the eye (quadratic), where the layers are seen at their thinnest
+        float u = (float(i) + jit) / float(N);
+        float t = t0 + (t1 - t0) * u * u;
+        float ds = t - prev; prev = t;
+        vec3 p = uCamPos + rd * t;
+        float g = texture2D(tGround, p.xz / (2.0 * uGroundHalf) + 0.5).r;
+        float wat = 1.0 - smoothstep(uWater - 0.2, uWater + 0.4, g);
+        float h = p.y - max(g, uWater);
+        // a dense sheet on the water, pooling in the low ground, a thin skin over the fields
+        float dens = exp(-max(h, 0.0) / 1.1) * 2.2 * wat + exp(-max(p.y - uWater, 0.0) / 1.4) * 0.8 + exp(-max(h, 0.0) / 0.4) * 0.2;
+        float n = vnoise(p.xz * 0.055 + uBankDrift) * 0.6 + vnoise(p.xz * 0.17 - uBankDrift * 1.8) * 0.4;
+        dens *= smoothstep(0.38, 0.7, n + wat * 0.15) * 1.7;
+        tau += dens * ds;
+      }
+      float k = min(1.0 - exp(-tau * 0.085 * uBanks), 0.92);
+      float bl = dot(uBankColor, vec3(0.2126, 0.7152, 0.0722));
+      vec3 bc = mix(uBankColor, vec3(bl), 0.5) * 1.15 + uSunColor * pow(max(dot(rd, uSunDir), 0.0), 4.0) * 0.4;
+      col = mix(col, bc, k);
+    }
+  }
+
+  // --- god rays
+  if (uRays > 0.001) col += uRaysColor * texture2D(tRays, uv).r * uRays;
 
   // --- bloom
   if (uUseBloom > 0.5) col += texture2D(tBloom, uv).rgb * uBloom;

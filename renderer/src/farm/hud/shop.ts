@@ -17,6 +17,7 @@ import type { Season } from '../model/types.ts';
 import { RANKS } from '../model/almanac.ts';
 import { collectDef } from '../model/collection.ts';
 import { DECOR, coins, decorDef, sellPrice } from '../model/shop.ts';
+import { friendDef } from '../model/friends.ts';
 import type { DecorDef } from '../model/shop.ts';
 import { WORK_CAP, YARD_SLOTS } from '../model/wallet.ts';
 import type { Piece, ShopEntry, WalletChange, WalletService } from '../model/wallet.ts';
@@ -71,6 +72,19 @@ export function decorIcon(id: string, style = 0): string {
     case 'lamppost': return S(`<path d="M12 9v12M9 21h6" stroke="${INK}" stroke-width="1.8" stroke-linecap="round"/><path d="M9 4h6l-1 5h-4z" fill="#ffc566" ${ol}/><path d="M8 4l4-2.5L16 4z" fill="${INK}"/>`);
     case 'lights': return S(`<path d="M4 22V10a8 6 0 0116 0v12" fill="none" stroke="#cf9c63" stroke-width="2.2"/><g fill="#ffd27a" stroke="#e89a1c" stroke-width=".7"><circle cx="5" cy="7.5" r="1.2"/><circle cx="8" cy="5" r="1.2"/><circle cx="12" cy="4" r="1.2"/><circle cx="16" cy="5" r="1.2"/><circle cx="19" cy="7.5" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="21" cy="13" r="1.2"/><circle cx="3" cy="18" r="1.2"/><circle cx="21" cy="18" r="1.2"/></g>`);
     case 'topiary': return S(`<rect x="5" y="17" width="14" height="5" fill="#6e4a2a" ${ol}/><rect x="5" y="7" width="14" height="8" rx="1" fill="#5fa64a" ${ol}/><path d="M3 10h2M19 10h2" stroke="#3f7f3a" stroke-width="2.4"/><path d="M7 15v2M10 15v2M14 15v2M17 15v2" stroke="#3f7f3a" stroke-width="2"/><path d="M9 9.5v2M15 9.5v2" stroke="${INK}" stroke-width="1.6"/>`);
+    // the villagers' own pieces (6 hearts) and their keepsake portraits (10 hearts)
+    case 'postbox': return S(`<path d="M7 9a5 5 0 0110 0v12H7z" fill="#d9453b" ${ol}/><path d="M6 9h12" stroke="${INK}" stroke-width="1.6"/><rect x="9" y="12" width="6" height="1.6" rx=".8" fill="${INK}"/><path d="M6 21h12" stroke="${INK}" stroke-width="2"/><circle cx="12" cy="5.4" r="1" fill="#f2c33a"/>`);
+    case 'crates': return S(`<rect x="3" y="12" width="9" height="8" fill="#c8955a" ${ol}/><rect x="12" y="12" width="9" height="8" fill="#b98555" ${ol}/><rect x="7" y="4.5" width="9" height="7.5" fill="#d8a86a" ${ol}/><path d="M3 16h9M12 16h9M7 8.3h9" stroke="#8a5a32" stroke-width="1"/>`);
+    case 'millstone': return S(`<path d="M9 13h6v8H9z" fill="#8a5a32" ${ol}/><ellipse cx="12" cy="11" rx="9.5" ry="3.6" fill="#b7b0a3" ${ol}/><ellipse cx="12" cy="10.4" rx="2" ry=".8" fill="#6f6a60"/><path d="M5 10.5l3 1M19 10.5l-3 1M12 8l0 1.2" stroke="#8f887c" stroke-width="1"/>`);
+    case 'prizepumpkin': return S(`<path d="M12 7c0-2 1-3 2.5-3.5" stroke="#4e8a36" stroke-width="2" fill="none" stroke-linecap="round"/><ellipse cx="11" cy="14.5" rx="9" ry="7" fill="#e8812f" ${ol}/><path d="M7 9.5c-1 3-1 7 0 10M15 9.5c1 3 1 7 0 10M11 8v13" stroke="#c8661f" stroke-width="1"/><circle cx="18.5" cy="9" r="3" fill="#3f78c8" ${ol}/><path d="M17.5 11.5l-1 4 2-1.2 2 1.2-1-4" fill="#3f78c8" ${ol}/><circle cx="18.5" cy="9" r="1.2" fill="#f2c33a"/>`);
+    case 'tent': return S(`<path d="M2.5 20L12 4.5 21.5 20z" fill="#b8a46a" ${ol}/><path d="M12 4.5L9 20h6z" fill="#5a4a2a" ${ol}/><path d="M12 4.5v-2" stroke="${INK}" stroke-width="1.4"/><path d="M12 2.5l3 1-3 1" fill="#d9453b"/>`);
+    case 'vane': return S(`<path d="M12 9v12M8 21h8" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/><path d="M4 12h16M12 12" stroke="${INK}" stroke-width="1"/><path d="M8 7c1-3 4-4 6-3l2 2-1 2H9z" fill="#f2c230" ${ol}/><path d="M3 6h3l-1.5 1.8L6 9.5H3z" fill="#f2c230" ${ol}/><text x="3.2" y="15.5" font-size="4" font-weight="800" fill="${INK}">W</text><text x="17.5" y="15.5" font-size="4" font-weight="800" fill="${INK}">E</text>`);
+  }
+  if (id.startsWith('keep-')) {
+    const pal: Record<string, [string, string]> = { posy: ['#3d9fa8', '#2f3f6e'], bram: ['#e6c547', '#6fcf92'], hazel: ['#d9c08a', '#f1ece0'], marigold: ['#9b5a8c', '#2a2530'], fern: ['#5d8f45', '#b89a62'], nimbus: ['#6fb7e0', '#f2c230'] };
+    const [body, hat] = pal[id.slice(5)] ?? [c, c];
+    return S(`<path d="M6 22l3-9M18 22l-3-9M12 22v-8" stroke="#8a5a32" stroke-width="1.6" stroke-linecap="round"/><rect x="4.5" y="2.5" width="15" height="13" rx="1" fill="#c8955a" ${ol}/><rect x="6.3" y="4.3" width="11.4" height="9.4" fill="#fff1d0"/>`
+      + `<rect x="8.5" y="8" width="7" height="5.7" fill="${body}" ${ol}/><rect x="10" y="9.5" width="1" height="1.6" fill="${INK}"/><rect x="13" y="9.5" width="1" height="1.6" fill="${INK}"/><path d="M8 8c.5-2 2-3 4-3s3.5 1 4 3z" fill="${hat}" ${ol}/>`);
   }
   return S(`<circle cx="12" cy="12" r="8" fill="${c}" ${ol}/>`);
 }
@@ -137,7 +151,8 @@ export function createShopPanel(ctx: HudCtx): Panel {
   let tab: ShopTab = 'buy', at: ShopAt = 'pocket', sel = DECOR[0].id, pick: number | null = null, sig = '';
   const wallet = (): WalletService | null => { try { return ctx.b?.wallet?.() ?? null; } catch { return null; } };
   const yard = (): YardPort | null => { try { return ctx.b?.yard?.() ?? null; } catch { return null; } };
-  const ctxOf = () => { const s = ctx.state(); return { rank: s?.almanac.rank ?? 0, season: (s?.sky.season ?? 'spring') as Season }; };
+  const hearts = (id: string): number => { try { return ctx.b?.friends?.()?.hearts(id) ?? 0; } catch { return 0; } };
+  const ctxOf = () => { const s = ctx.state(); return { rank: s?.almanac.rank ?? 0, season: (s?.sky.season ?? 'spring') as Season, hearts }; };
   const canBuy = () => at === 'store';
   const canSell = () => at === 'store' || at === 'bram';
   const coinTag = (n: number, cls = '') => h(`span.vh-price${cls}`, null, icon(COIN_ICON), h('b', { text: n.toLocaleString('en-US') }));
@@ -151,18 +166,21 @@ export function createShopPanel(ctx: HudCtx): Panel {
   function lockText(e: ShopEntry, season: Season): string {
     if (e.locked === 'max') return `you have all ${e.def.max}`;
     if (e.locked === 'rank') return `stocked once the valley is a ${RANKS[e.def.rank ?? 0]?.name ?? 'bigger town'}`;
+    if (e.locked === 'friend') return `${friendDef(e.def.friend?.id ?? '')?.short ?? 'a villager'}'s own piece: stocked once you're friends (${e.def.friend?.hearts ?? 6} ♥)`;
+    if (e.locked === 'keepsake') return 'a keepsake: given, never sold';
+    if (e.def.friend) return `${friendDef(e.def.friend.id)?.short ?? 'a friend'}'s own piece, for friends only`;
     if (e.locked === 'season') return `${(e.def.seasons ?? []).join(' & ')} stock · back next ${e.def.seasons?.[0] ?? 'season'}`;
     return season && e.def.seasons ? `${season} stock: only this season` : '';
   }
   function buyView(w: WalletService): HTMLElement[] {
-    const { rank, season } = ctxOf();
-    const shelf = w.shop({ rank, season });
+    const sc = ctxOf(), season = sc.season;
+    const shelf = w.shop(sc);
     if (!shelf.some((e) => e.def.id === sel)) sel = shelf[0].def.id;
     const grid = h('div.vh-shop-grid', { 'data-testid': 'shop-grid' });
     for (const e of shelf) {
       const b = h(`button.item${e.def.id === sel ? '.sel' : ''}${e.locked ? '.locked' : ''}${!e.locked && !e.affordable ? '.poor' : ''}`, { type: 'button', 'data-id': e.def.id, title: e.def.name });
       const ic = h('span.ic'); ic.innerHTML = decorIcon(e.def.id);
-      b.append(ic, h('span.nm', { text: e.def.name }), e.locked === 'max' ? h('span.lk', { text: 'all yours' }) : e.locked ? h('span.lk', null, icon(LOCK_ICON), e.locked === 'rank' ? RANKS[e.def.rank ?? 0]?.name ?? '' : e.def.seasons?.[0] ?? '') : coinTag(e.price));
+      b.append(ic, h('span.nm', { text: e.def.name }), e.locked === 'max' ? h('span.lk', { text: 'all yours' }) : e.locked ? h('span.lk', null, icon(LOCK_ICON), e.locked === 'rank' ? RANKS[e.def.rank ?? 0]?.name ?? '' : e.locked === 'friend' ? `${friendDef(e.def.friend?.id ?? '')?.short ?? ''} ${e.def.friend?.hearts ?? 6}♥` : e.def.seasons?.[0] ?? '') : coinTag(e.price));
       if (e.owned) b.append(h('span.own', { text: `${e.owned}/${e.def.max}` }));
       if (e.def.seasons) b.append(h('span.season', { text: e.def.seasons[0][0].toUpperCase() + e.def.seasons[0].slice(1) }));
       b.addEventListener('click', () => { sel = e.def.id; ctx.sfx('ui-click'); render(true); });
@@ -268,7 +286,7 @@ export function createShopPanel(ctx: HudCtx): Panel {
     const w = wallet();
     const s = ctx.state();
     if (!w) { main.replaceChildren(h('div.empty', { text: 'The General store isn\'t open in this valley.' })); return; }
-    const nsig = `${w.version}|${tab}|${at}|${sel}|${pick}|${s?.almanac.rank}|${s?.sky.season}`;
+    const nsig = `${w.version}|${tab}|${at}|${sel}|${pick}|${s?.almanac.rank}|${s?.sky.season}|${ctx.b?.friends?.()?.version ?? 0}`;
     if (!force && nsig === sig) return;
     sig = nsig;
     title.textContent = tab === 'buy' ? 'General store' : tab === 'sell' ? 'Your basket' : 'Your yard';

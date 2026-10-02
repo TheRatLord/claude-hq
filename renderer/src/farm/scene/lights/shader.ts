@@ -18,6 +18,8 @@
  * including ones built outside `toon()` with their own `onBeforeCompile`, gets it with no per-material hook.
  */
 import * as THREE from 'three';
+// wet sheen, puddles, lying snow and frost ride on the same toon programs (atmosphere package)
+import '../weather/surfaces.ts';
 
 /** point-light pool slots that can carry building occluders (lights.ts never pools more points than this) */
 export const VL_OCC_SLOTS = 12;

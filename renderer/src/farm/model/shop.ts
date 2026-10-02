@@ -48,6 +48,10 @@ export interface DecorDef {
   styles?: readonly string[];
   /** css colour for the HUD icon swatch */
   color: string;
+  /** a villager's own piece: stocked once you're this good friends (model/friends.ts) */
+  friend?: { id: string; hearts: number };
+  /** a gift (a 10-heart keepsake): never on the shelves */
+  keepsake?: boolean;
 }
 
 const D = (id: string, name: string, price: number, max: number, color: string, blurb: string, o: Partial<DecorDef> = {}): DecorDef =>
@@ -83,6 +87,23 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
     { rank: 4 }),
   D('goldgnome', 'Golden gnome', 900, 1, '#f2c33a', 'For the valley that has everything. Polished every Sunday.',
     { rank: 7 }),
+  // the villagers' own pieces, stocked once you are good friends (6 hearts, model/friends.ts)
+  D('postbox', 'Posy\'s pillar box', 140, 1, '#d9453b', 'A little red post box of your own. Posy empties it on her rounds, and leaves a violet when there\'s nothing in it.',
+    { friend: { id: 'villager:posy', hearts: 6 } }),
+  D('crates', 'Bram\'s crate stack', 120, 2, '#c8955a', 'Three shipping crates, stencilled and stacked just so. Bram checked the corners with a set square.',
+    { friend: { id: 'villager:bram', hearts: 6 } }),
+  D('millstone', 'Millstone table', 160, 1, '#b7b0a3', 'An old millstone from the windmill, retired onto a stump. Hazel says it ground flour for forty years and deserves a sit down.',
+    { friend: { id: 'villager:hazel', hearts: 6 } }),
+  D('prizepumpkin', 'Prize pumpkin', 180, 1, '#e8812f', 'A giant pumpkin wearing the Mayor\'s own first-prize rosette. Do not carve. The Mayor will know.',
+    { friend: { id: 'villager:marigold', hearts: 6 } }),
+  D('tent', 'Ranger\'s pup tent', 150, 1, '#8a7a48', 'Fern\'s spare canvas tent, pitched for stargazing in your own back yard. The bedroll is still warm, somehow.',
+    { friend: { id: 'villager:fern', hearts: 6 } }),
+  D('vane', 'Weather vane', 170, 1, '#f2c230', 'A brass cockerel on a pole that always points where the wind is going. Nimbus calibrated it personally.',
+    { friend: { id: 'villager:nimbus', hearts: 6 } }),
+  // 10-heart keepsakes: a portrait on an easel, given (never sold)
+  ...([['posy', 'Posy', '#3d9fa8'], ['bram', 'Bram', '#e6c547'], ['hazel', 'Hazel', '#d9c08a'], ['marigold', 'Mayor Marigold', '#9b5a8c'], ['fern', 'Fern', '#5d8f45'], ['nimbus', 'Nimbus', '#6fb7e0']] as const)
+    .map(([id, name, color]) => D(`keep-${id}`, `Portrait of ${name}`, 500, 1, color, `A keepsake from ${name}, painted on a little easel: a best friend's face to keep your yard company.`,
+      { keepsake: true, friend: { id: `villager:${id}`, hearts: 10 } })),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));
@@ -94,11 +115,13 @@ export function priceOf(d: DecorDef, owned: number): number {
   return Math.max(5, Math.round(p / 5) * 5);
 }
 
-export type Locked = 'rank' | 'season' | 'max' | null;
+export type Locked = 'rank' | 'season' | 'max' | 'friend' | 'keepsake' | null;
 
-/** Why a decor item can't be bought right now (null = in stock). */
-export function lockOf(d: DecorDef, o: { rank: number; season: Season; owned: number }): Locked {
+/** Why a decor item can't be bought right now (null = in stock). `hearts` = a villager's hearts (model/friends.ts). */
+export function lockOf(d: DecorDef, o: { rank: number; season: Season; owned: number; hearts?: (id: string) => number }): Locked {
   if (o.owned >= d.max) return 'max';
+  if (d.keepsake) return 'keepsake';
+  if (d.friend && (o.hearts?.(d.friend.id) ?? 0) < d.friend.hearts) return 'friend';
   if (d.rank !== undefined && o.rank < d.rank) return 'rank';
   if (d.seasons && !d.seasons.includes(o.season)) return 'season';
   return null;

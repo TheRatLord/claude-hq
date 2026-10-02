@@ -94,6 +94,8 @@ export function withSurfaces<M extends THREE.Material>(m: M, o: SurfaceOpts = {}
   withDefaults.defaultAttributeValues = { ...(withDefaults.defaultAttributeValues ?? {}), surface: [0, 1, 1, 0] };
   const key = `surf:${surfaceSetKey(ids)}:${o.fragmentKey ?? (o.fragment ? hashStr(o.fragment) : '')}`;
   return chainShader(m, (sh) => {
+    // atmosphere (scene/weather/surfaces.ts): puddles and lying snow only on the surface-library world, never on characters
+    sh.fragmentShader = `#define VW_SURF\n${quality === 'low' ? '' : '#define VW_SURF_ID\n'}${sh.fragmentShader}`;
     if (quality === 'low') return;
     Object.assign(sh.uniforms, SURFACE_UNIFORMS, { uSurfDef: state.def });
     sh.vertexShader = sh.vertexShader

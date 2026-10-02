@@ -8,6 +8,8 @@ import { ago, bytesRate, clock, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL,
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { FESTIVAL_ICON } from './festival.ts';
 import { SOON_DAYS, dayText, inDaysText } from '../model/calendar.ts';
+import type { RequestView } from '../model/friends.ts';
+import { HEART_ICON } from './friends.ts';
 
 export function createNoticeboard(ctx: HudCtx): Panel {
   const { el, body, closeBtn } = framePanel('noticeboard', 'Noticeboard', ICONS.board);
@@ -36,7 +38,10 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     const done = farmers.filter((f) => f.unseenDone);
     const working = farmers.filter((f) => f.status === 'working');
     const plots = [...s.plots.values()].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.label.localeCompare(b.label));
-    const nsig = JSON.stringify([need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0, s.almanac.points, s.sky.festival?.active?.id, s.sky.festival?.active?.day, s.sky.festival?.next?.inDays]);
+    // villagers' requests for today (model/friends.ts)
+    let reqs: RequestView[] = [];
+    try { reqs = ctx.b?.friends?.()?.requests() ?? []; } catch { reqs = []; }
+    const nsig = JSON.stringify([reqs.map((q) => `${q.req.id}${q.have}${q.ready}${q.done}`), need.map((f) => f.id + f.question), done.map((f) => f.id), working.map((f) => f.id + f.job), plots.map((p) => p.id + p.stage + p.farmers.length), s.letters.slice(0, 5).map((l) => l.id + l.title), Math.floor(s.sky.hour * 4), s.sky.weather.kind, s.gauges ? Math.round(s.gauges.cpu * 20) : 0, s.almanac.points, s.sky.festival?.active?.id, s.sky.festival?.active?.day, s.sky.festival?.next?.inDays]);
     if (nsig === sig) return;
     sig = nsig;
     const notes: HTMLElement[] = [];
@@ -57,6 +62,11 @@ export function createNoticeboard(ctx: HudCtx): Panel {
       h('div.big', { text: fn.name }),
       h('p', { text: fn.blurb }),
       h('p.vh-muted', { text: `${inDaysText(fn.inDays)[0].toUpperCase()}${inDaysText(fn.inDays).slice(1)} · ${fn.start}`, style: { fontSize: '12px' } })));
+    if (reqs.length) notes.push(note(reqs.some((q) => q.ready) ? '.req.ask' : '.req', () => ctx.panels.open('friends'),
+      h('h4', null, icon(HEART_ICON), 'Requests'),
+      h('ul', null, ...reqs.map((q) => h(`li${q.done ? '.vh-muted' : ''}`, null, h('b', { text: q.friend.short }), `: ${q.text.replace(new RegExp(`\\s(for )?${q.friend.short}\\b`), '')}`,
+        h('span.vh-muted', { text: ` · ${q.done ? 'done ✓' : q.ready ? 'ready, tell them!' : q.next}`, style: { fontSize: '12px' } })))),
+      h('p.vh-muted', { text: 'Talk to them to hear more, and to hand it over. Tap for your friends.', style: { fontSize: '12px' } })));
     const wk = s.sky.weather.kind === 'clear' && s.sky.daylight < 0.25 ? 'night' : s.sky.weather.kind;
     notes.push(note('', () => ctx.panels.open('stats'),
       h('h4', null, icon(WEATHER_ICON[wk]), 'Today in the valley'),

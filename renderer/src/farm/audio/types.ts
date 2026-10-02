@@ -21,6 +21,9 @@ export const CRITTER_SOUNDS = Object.freeze([
   'sniff', // dog: 3–4 quick snuffles
   'shake', // dog shaking off water: a fluttery rattle with droplets
   'caw', // crow: a rough "kaah"
+  'honk', // greylag geese going over: a nasal "ahng-ahng"
+  'yip', // fox: a short hoarse bark at night
+  'snort', // deer alarm: a sharp nasal blow as she bolts
 ] as const);
 export type CritterSound = (typeof CRITTER_SOUNDS)[number];
 

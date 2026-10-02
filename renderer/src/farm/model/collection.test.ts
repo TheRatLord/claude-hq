@@ -137,3 +137,38 @@ test('collection: first-ever finds are an Almanac harvest, three a day', async (
   assert.equal(a.points, HARVEST.found.cap * HARVEST.found.points);
   assert.equal(a.days[0].counts.found, 6);
 });
+
+test('collection: sightings are their own field guide, once a day, persisted, never in the finds', async () => {
+  const { SIGHTINGS, recordSighting, sightText, sightDef } = await import('./collection.ts');
+  assert.equal(new Set(SIGHTINGS.map((d) => d.id)).size, SIGHTINGS.length);
+  for (const d of SIGHTINGS) { assert.ok(d.blurb.length > 20 && d.tip.length > 10, d.id); assert.ok(sightText(d).length > 10); assert.ok(!CATALOG.some((c) => c.id === d.id)); }
+  assert.equal(sightDef('nope'), undefined);
+  const data = emptyCollection();
+  const r = recordSighting(data, 'deer', at(2026, 10, 1, 7));
+  assert.ok(r?.isNew && r.n === 1);
+  assert.equal(recordSighting(data, 'deer', at(2026, 10, 1, 19)), null, 'once a day');
+  const r2 = recordSighting(data, 'deer', at(2026, 10, 2, 7));
+  assert.ok(r2 && !r2.isNew && r2.n === 2);
+  assert.equal(recordSighting(data, 'unicorn', at(2026, 10, 2, 7)), null);
+  assert.deepEqual(data.found, {}, 'a sighting is not a find');
+  // round trip through storage, junk dropped
+  const back = parseCollection(JSON.parse(JSON.stringify({ ...data, seen: { ...data.seen, unicorn: { n: 1, first: '2026-10-01' }, fox: { n: 0, first: 'x' } } })));
+  assert.deepEqual(back?.seen, { deer: { n: 2, first: '2026-10-01', last: '2026-10-02' } });
+  // the view lists them separately; found / total stay the catalogue's
+  const v = collectionView(data, 'autumn', at(2026, 10, 2));
+  assert.equal(v.sight.found, 1);
+  assert.equal(v.sight.total, SIGHTINGS.length);
+  assert.equal(v.total, CATALOG.length);
+  assert.ok(v.sightings.find((e) => e.def.id === 'geese')?.inSeason);
+  assert.ok(!v.sightings.find((e) => e.def.id === 'hedgehog' && e.inSeason === false));
+  // the live book: listeners, no onFind for sightings
+  let now = at(2026, 10, 1, 7);
+  const c = createCollection(undefined, () => now);
+  const sights: string[] = [], finds: string[] = [];
+  c.onSight((x) => sights.push(x.def.id)); c.onFind((x) => finds.push(x.def.id));
+  c.sight('owl'); c.sight('owl'); now = at(2026, 10, 2, 7); c.sight('owl');
+  assert.deepEqual(sights, ['owl', 'owl']);
+  assert.deepEqual(finds, []);
+  c.devFill(CATALOG.length + 2);
+  assert.equal(c.view('autumn').sight.found, 3, 'deer + fox filled, the owl was seen');
+});

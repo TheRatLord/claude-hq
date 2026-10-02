@@ -62,6 +62,8 @@ export interface Valley {
   useAlmanac(store: AlmanacStore): void;
   /** a harvest that is not a valley event (the player's first-ever finds for the Collections book): points, maybe a rank */
   harvest(kind: HarvestKind): number;
+  /** a letter from a villager (model/friends.ts milestones): a 'news' letter at `at`, once per `id` */
+  post(l: { id: string; at: number; from: string; fromName: string; title: string; body: string }): void;
 }
 
 /** Where the almanac persists (browser-local storage in the app; nothing in tests unless given). */
@@ -384,6 +386,13 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       state.almanac = almanacView(alData, wallNow());
     },
     harvest,
+    post(l) {
+      const id = `V:${l.id}`;
+      if (state.letters.some((x) => x.id === id)) return;
+      state.letters.push({ id, at: l.at, kind: 'news', farmerId: l.from, farmerName: l.fromName, plotLabel: '', title: l.title, body: l.body, read: false, resolved: false });
+      state.letters.sort((a, b) => b.at - a.at);
+      if (state.letters.length > LETTERS_MAX) state.letters.length = LETTERS_MAX;
+    },
     setAlmanac(points) {
       const before = state.almanac.rank;
       alData = { ...alData, points: Math.max(0, points) };

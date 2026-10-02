@@ -344,6 +344,49 @@ test('economy: sell your basket at the General store, buy decor, it stands in yo
   expect(errors).toEqual([]);
 });
 
+test('friends: F gives a gift from your basket, today\'s request is asked, done, and handed over (E) for bits', async ({ page, demoServer }) => {
+  test.slow(); // software rendering
+  const errors = await openValley(page, demoServer.origin, demoServer.token);
+  type Fr = { view(id: string): { hearts: number; known: Record<string, string>; giftedToday: boolean; talkedToday: boolean } | null; requests(): { req: { who: string; asked?: boolean }; ready: boolean; done: boolean }[] };
+  type W = { stash(id: string, n?: number): void; coins(): number };
+  type V = { setHour(h: number): void; setWeather(k: string): void; goTo(id: string): unknown; focused(): { id: string } | null; villager(id: string): { inside: boolean } | null; requests(step?: string): unknown; ctx: { services: Map<string, unknown> } };
+  const v = <T>(fn: (v: V) => T) => page.evaluate((src) => new Function('v', `return (${src})(v)`)((window as unknown as { __valley: V }).__valley), fn.toString()) as Promise<Awaited<T>>;
+  const standBy = async (id: string) => {
+    await expect.poll(() => v(new Function('x', `return x.villager('${id}')?.inside`) as (x: V) => boolean), { timeout: 30_000 }).toBe(false);
+    await expect.poll(async () => { await v(new Function('x', `x.goTo('${id}')`) as (x: V) => void); return v((x) => x.focused()?.id ?? ''); }, { timeout: 20_000 }).toBe(id);
+  };
+  await page.evaluate(() => { (window as unknown as { __hud: { dismissHint(): void } }).__hud.dismissHint(); });
+  await v((x) => { x.setHour(12); x.setWeather('clear'); });
+  // the request tracker is up under the dock with today's 1–3 requests
+  await expect(page.getByTestId('quests')).toBeVisible();
+  const n = await v((x) => (x.ctx.services.get('friends') as Fr).requests().length);
+  expect(n).toBeGreaterThanOrEqual(1);
+  // a hazelnut in the basket; F on Hazel opens the gift picker, 1 gives the first thing (she loves hazelnuts)
+  await v((x) => (x.ctx.services.get('wallet') as W).stash('hazelnut', 1));
+  await standBy('villager:hazel');
+  await page.keyboard.press('KeyF');
+  const panel = page.getByTestId('panel-friends');
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId('friends-give')).toContainText('A gift for Hazel');
+  await page.keyboard.press('Digit1');
+  await expect(panel).toBeHidden();
+  await expect.poll(() => v((x) => (x.ctx.services.get('friends') as Fr).view('hazel')?.known.hazelnut)).toBe('love');
+  // a request: done (dev), then E on whoever posted it hands it over for bits and hearts
+  await v((x) => x.requests('ready'));
+  const who = await v((x) => (x.ctx.services.get('friends') as Fr).requests()[0].req.who);
+  await expect(page.getByTestId('quests').locator('.q.ready').first()).toBeVisible();
+  const before = await v((x) => (x.ctx.services.get('wallet') as W).coins());
+  await standBy(who);
+  await page.keyboard.press('KeyE');
+  await expect.poll(() => v((x) => (x.ctx.services.get('friends') as Fr).requests()[0].done)).toBe(true);
+  expect(await v((x) => (x.ctx.services.get('wallet') as W).coins())).toBeGreaterThan(before);
+  await expect(page.getByTestId('quests').locator('.q.done')).toHaveCount(1);
+  // the noticeboard pins them too
+  await page.keyboard.press('KeyB');
+  await expect(page.getByTestId('cork')).toContainText('Requests');
+  expect(errors).toEqual([]);
+});
+
 test('the farmhouse: E on the door walks in, the room has its own interactables, E on the inside door steps out', async ({ page, demoServer }) => {
   test.slow(); // software rendering
   const errors = await openValley(page, demoServer.origin, demoServer.token);

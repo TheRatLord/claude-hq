@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { ambientLevels, busGains, createPolyphony, createRateLimiter, cricketPeriod, emptyLevels, logRate, spatial, taper } from './mix.ts';
 import type { AmbientIn } from './mix.ts';
 import { planVoice, timbreOf } from './voicePlan.ts';
-import { barSeconds, inScale, planBar } from './musicPlan.ts';
 
 test('spatial: close is loud and centred, far is quiet and dull, sides pan', () => {
   const near = spatial(0.5, 0, 0, 1, 0);
@@ -26,6 +25,8 @@ test('bus gains follow the sliders with a square taper; mute silences master onl
   assert.equal(g.master, 0.25);
   assert.equal(g.sfx, 1);
   assert.equal(g.ambient, 0);
+  assert.ok(Math.abs(g.music - 0.16) < 1e-9, 'music has its own slider (default 0.4)');
+  assert.equal(busGains({ volumeMusic: 1, volumeAmbient: 0 }).music, 1, 'music no longer rides the ambience slider');
   assert.equal(busGains({ audioMuted: true }).master, 0);
   assert.ok(busGains({}).ambient > 0, 'defaults when the settings service is missing');
   assert.equal(taper(Number.NaN), 0);
@@ -51,17 +52,15 @@ test('polyphony caps concurrent one-shots, priority steals', () => {
   assert.ok(p.admit(2.5, 3, false), 'slots free up as sounds end');
 });
 
-const base: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 200, dPond: 200, dWaterfall: 300, dFire: 200, dWindmill: 200, dBees: Infinity };
+const base: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 200, dPond: 200, dWaterfall: 300, dFire: 200, dWindmill: 200, dBees: Infinity, dHerd: Infinity, dHub: 0 };
 
 test('ambient beds: day birds, night crickets/owls, rain hushes birds, water near water', () => {
   const day = ambientLevels(base);
   const night = ambientLevels({ ...base, hour: 23, daylight: 0 }, emptyLevels());
   assert.ok(day.birds > 0.4 && day.crickets === 0 && day.owls === 0);
   assert.ok(night.birds < 0.05 && night.crickets > 0.4 && night.owls > 0.4);
-  assert.equal(night.mood, 'night');
   const rain = ambientLevels({ ...base, weather: 'rain', intensity: 0.8 });
   assert.ok(rain.rain > 0.7 && rain.birds < day.birds * 0.4);
-  assert.equal(rain.mood, 'rain');
   const dawn = ambientLevels({ ...base, hour: 6.6, daylight: 0.5 });
   assert.ok(dawn.birds > ambientLevels({ ...base, hour: 15, daylight: 0.5 }).birds, 'dawn chorus');
   assert.ok(ambientLevels({ ...base, dRiver: 3 }).river > 0.95 && day.river === 0);
@@ -73,6 +72,13 @@ test('ambient beds: day birds, night crickets/owls, rain hushes birds, water nea
   assert.ok(ambientLevels({ ...base, dBees: 5 }).bees > 0.5 && day.bees === 0);
   assert.ok(ambientLevels({ ...base, weather: 'storm', intensity: 1 }).wind > day.wind);
   for (const v of Object.values(night)) if (typeof v === 'number') assert.ok(v >= 0 && v <= 1.3);
+  // the trees rustle out in the countryside on a breezy day, not on the square; bare in winter
+  const breezy = { ...base, wind: 7, dHub: 60 };
+  assert.ok(ambientLevels(breezy).leaves > 0.4 && ambientLevels({ ...breezy, dHub: 3 }).leaves === 0);
+  assert.ok(ambientLevels({ ...breezy, season: 'winter' }).leaves < ambientLevels(breezy).leaves * 0.5);
+  // cowbells near a herd by day only
+  assert.ok(ambientLevels({ ...base, dHerd: 8 }).cowbells > 0.9 && day.cowbells === 0);
+  assert.equal(ambientLevels({ ...base, dHerd: 8, hour: 23, daylight: 0 }).cowbells, 0);
 });
 
 test('log rate + cricket thermometer', () => {
@@ -98,19 +104,3 @@ test('voice plans: deterministic, per-seed timbre, mood contours', () => {
   for (const s of planVoice('zed', 'happy', 6).syllables) assert.ok(s.dur > 0.03 && s.f0 > 100 && s.f0 < 700 && s.gain > 0 && s.gain <= 1);
 });
 
-test('music: deterministic, in scale, night sparser, breathes', () => {
-  assert.deepEqual(planBar(5, 'day', 3), planBar(5, 'day', 3));
-  let day = 0, night = 0;
-  for (let b = 0; b < 64; b++) {
-    const d = planBar(b, 'day'), n = planBar(b, 'night');
-    for (const x of [...d.notes, ...n.notes]) {
-      if (x.voice === 'pluck' || x.voice === 'bell') assert.ok(inScale(x.midi), `melody note ${x.midi} in scale`);
-      assert.ok(x.t >= 0 && x.t < d.barSec + n.barSec && x.dur > 0 && x.vel > 0 && x.vel <= 1);
-    }
-    day += d.notes.filter((x) => x.voice === 'pluck').length;
-    night += n.notes.filter((x) => x.voice === 'bell').length;
-  }
-  assert.ok(night < day * 0.8, `night ${night} sparser than day ${day}`);
-  assert.equal(planBar(14, 'day').notes.filter((x) => x.voice === 'pluck').length, 0);
-  assert.ok(barSeconds('night') > barSeconds('day'));
-});

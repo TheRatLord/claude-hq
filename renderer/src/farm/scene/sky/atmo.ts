@@ -60,7 +60,19 @@ export interface Atmo {
   /** the wind service's global gust factor this frame (≈0.6..1.4) */
   gust: number;
   time: number;
+  /** eased ground state from the model's weather trace (weather writes): surface wetness, lying snow, frost 0..1 */
+  ground: { wet: number; snow: number; frost: number };
+  /** low-lying mist banks 0..1 (dawn over water / low ground, fog days; sky writes, post reads) */
+  banks: number;
+  /** god rays 0..1 (low sun through gaps; sky writes, post reads) */
+  rays: number;
+  /** dev overrides (`__valley.atmo({ … })`): null = follow the weather */
+  force: AtmoForce;
+  /** a dev force just changed: jump the eased moments there this frame (sky reads, weather clears) */
+  snap: boolean;
 }
+
+export interface AtmoForce { rainbow: number | null; banks: number | null; rays: number | null; frost: number | null; wet: number | null; snow: number | null }
 
 const store = new WeakMap<SceneCtx, Atmo>();
 
@@ -77,6 +89,8 @@ export function atmoOf(ctx: SceneCtx): Atmo {
       vignette: 0.2, bloomThreshold: 1.2, bloomStrength: 0.6, ink: new THREE.Color(0x2b2420), inkStrength: 0.8,
     },
     windSpeed: 2, windDir: new THREE.Vector2(1, 0), gust: 1, time: 0,
+    ground: { wet: 0, snow: 0, frost: 0 }, banks: 0, rays: 0,
+    force: { rainbow: null, banks: null, rays: null, frost: null, wet: null, snow: null }, snap: false,
   };
   store.set(ctx, a);
   return a;

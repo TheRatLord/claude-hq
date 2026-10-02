@@ -64,7 +64,8 @@ the lead.
   the roster, the needs-you strip, the mailbox or the agent dots: Clawds in non-agent body colours, each with a role
   hat (one shared instanced mesh), one piece of role wear over the body, a green role signboard for a nameplate and a
   house-shaped pin on the maps. Talking to one (E) says a line about the valley (`lines.ts`, via `ui.say`) and a beat
-  later opens their shortcut; F just chats. The prompt's second line says what they open.
+  later opens their shortcut; F just chats (or, with something in your basket, gives a gift: see *Friendship and
+  requests* below). The prompt's second line says what they open, their hearts and any request.
 
   | villager | look | post | E opens | lunch · evening · night |
   |---|---|---|---|---|
@@ -91,6 +92,32 @@ the lead.
   and river toward itself; on clear nights a shooting star crosses now and then (`scene/sky/meteors.ts`), and on the
   real peak nights of the Perseids, Geminids and Quadrantids they come every few seconds. The first one you see in a
   while gets a "make a wish" line.
+* **Weather leaves traces and makes moments** (atmosphere package). Weather follows the real clock (`model/sky.ts`,
+  3-hour blocks); `sky.trace` (`weatherTrace`, pure + `sky.test.ts`) integrates the last two days of blocks into
+  `wet` (soaks in fast, dries over hours: slower at night, in fog and winter), lying `snow` (builds ~3 h to full, melts
+  in rain / sun) and `sinceRain`, so every window agrees and a reload does not dry the puddles. What it drives:
+  * **Wet world + puddles** (`scene/weather/surfaces.ts`): one shader-chunk patch on every toon material (no
+    per-material hook; shared `VW` uniform block written by the weather system). Wet surfaces darken and richen with a
+    soft sky sheen and a banded sun glint (wet lamp pools shine at night). Puddles grow and shrink with `wet` on flat
+    ground-level surface-library faces (`VW_SURF`, defined by `withSurfaces`; height checked against `vwGround`, a
+    128² heightmap of `heightAt`): freely on paths, the square and soil, now and then on grass; they mirror the sky
+    gradient, the sun and lamp light, and ring with drops while it rains. Never on characters, never indoors.
+  * **Lying snow + frost**: snow covers up-facing world faces in drifts as `trace.snow` builds (the square, roofs,
+    fences, crops), with sun sparkle; on cold clear nights and mornings (winter, Nov–mid-Mar) the ground goes pale and
+    twinkles with pin-point frost that shimmers as you move, until the sun has been up a while.
+  * **Rainbow** on the antisolar ring in the first hour after a real shower stops, with the sun out.
+  * **Mist banks** (post): at dawn a few mornings a week (more in autumn / spring, after rain, in calm air) mist
+    pools over the river and pond and lies in the low ground, burning off by mid-morning; all day on fog days. Ray-
+    marched in the composite against the same heightmap, drifting downwind, lit by the low sun.
+  * **God rays** (post, one quarter-res pass): a low sun (early morning, golden hour) fans shafts through trees and
+    gaps in the clouds; skipped unless the sun is in front of the camera.
+  Already there: cloud shadows, lightning that lights the valley, seasonal leaves / petals, sun motes. Dev:
+  `__valley.atmo({ wet, snow, frost, rainbow, mist, rays })` (0..1; wet/snow set the model trace, the rest force the
+  scene), `atmo(null)` to follow the weather again, `atmo()` reads the eased state; `__atmo.bench(n)` = GPU ms per
+  frame (timer query; A/B a moment on and off). Cost on the 780M at 1600×900 (frame ≈ 6–7 ms GPU): wet, snow, rays
+  ≈ +0.3–0.6 ms each, mist ≈ +1.5 ms (dawn / fog only); no draw calls added (rays: one quarter-res post pass).
+  `?quality=low` compiles the wet / puddle / snow / frost surfaces out of every toon program and skips the rays pass
+  (in software rendering the untaken surface branch alone cost ~30% of the frame); mist banks stay.
 * **Photo mode (P)** (`farm/photo.ts`): the HUD steps away and the camera flies free (WASD along the view, Space / C,
   Shift); the wheel zooms, [ ] scrub the clock, Enter saves a PNG; P or Esc puts the view and the clock back.
 * **The Valley Almanac (H) is the valley's long memory.** Real work is a *harvest* worth prosperity points (commit 10,
@@ -119,6 +146,31 @@ the lead.
   line of flavour; persisted per browser profile (`claude-valley.collection.v1`, service `collection`, `HudBindings.collection`).
   A first-ever find is a `found` harvest in the Almanac (+5, three a day). Dev: `__valley.forage(day?)`, `forageGo(i)`,
   `fish()` / `fish('bite' | 'hook' | 'demo')`, `collect(n)`; gallery assets `forage`, `catch`, `fishing-rod`.
+* **Wild visitors and the field guide.** Shy, larger wildlife that rewards being in the right place at the right
+  time (`scene/life/wildlife.ts`; rhythm + shyness pure and tested in `wild.ts`, sculpted models `wildModels.ts`, motion
+  `wildAnim.ts`, gallery `wildAssets.ts`): a **roe doe and her fawn** graze the meadow in front of the woods near the rim
+  at dawn and dusk (IK'd walk / gallop on `gait.ts`, feet on the slope, white tail flagged as they bound off); a **red
+  fox** trots the hedgerows round one field after dark, stops to sniff and listen, yips; a **grey heron** stands in the
+  river shallows mornings and late afternoons, wades and stabs for fish (splash, sometimes a catch), and lifts off in slow
+  deep beats to land further down the river; a **tawny owl** sits on a standing stone (or a hay bale) at night, turns its
+  head right round to keep you in view, blinks slowly, hoots, flits stone to stone; a **hedgehog** snuffles under the
+  orchard trees on mild evenings (not winter) and curls into a ball when you come close; **greylag geese** go over in a
+  long V, honking, mornings and evenings (south in autumn, home in spring). Which spot, whether today has a visit (a
+  small skip chance) and arrival times wander per date (`wildDay`, seeded). Eyes catch the lamplight after dark (one
+  additive glint draw). **Shyness** (`Shy`): a walking player is noticed at the species' `notice` range (a still one only
+  close, a sprinting one from further); while it watches you (alert pose: head up, ears pricked, tail up) its nerves rise
+  as you keep coming and settle when you stand still, so the way in is a few steps, stop, wait for the head to go down;
+  sprinting at it or getting inside `flee` sends it off (deer bound, fox streaks, heron/owl fly, hedgehog curls; a third
+  fright and the heron/owl leave for the window). **Field guide:** a good look (in range, in view ~0.8 s, not fleeing)
+  records a sighting once a day in the Collections book's *Field guide* section (`model/collection.ts` `SIGHTINGS`,
+  `sight(id)` / `onSight`, data `seen` — never a find, never in the basket); silhouettes show where / when and a tip until
+  seen; a first sighting toasts and is a `found` harvest. Budget: one instanced draw per species + 1 eyeshine (≤ 7, only
+  while something is out); life total stays ≤ ~23 with everything about. Sounds: `honk`, `yip`, `snort` critter voices
+  (plus `hoot`, `caw`, `flap`). Dev: `__valley.wildlife()` lists, `wildlife('deer')` brings one out at its habitat and
+  stands you in view (it ignores you for 12 s), `wildlife('owl', 'here')` in front of the camera, `wildlife('deer',
+  'spook')` startles it; service `wildlife`. Gallery: `deer` (graze walk alert bound fawn lie), `fox` (trot walk sniff
+  alert run), `heron` (stand hunt wade fly takeoff), `owl` (perch watch hoot fly), `hedgehog` (snuffle walk curl),
+  `goose` (fly glide).
 * **Bits, the General store and your yard (I).** The valley's little economy (pure + tested `model/shop.ts` catalogue
   and prices, `model/wallet.ts` purse/basket/yard; `scene/yard/`, system `yard`, service `wallet`; HUD `hud/shop.ts`,
   panel `shop`). The coin is the **bit** (a copper coin stamped with a sprout), shown on the status sign's coin chip.
@@ -136,6 +188,32 @@ the lead.
   (lamp post, arch, pumpkin) register `LightEmitter`s. Persisted per profile (`claude-valley.wallet.v1`). Keys: I opens
   your pockets (basket; 1/2/3 tabs). Dev: `__valley.coins(n)`, `buy(id, free?)`, `sell()`, `furnish()` (fill the yard),
   `yard()` / `yard('store' | 'carry')`; gallery assets `decor` (variant `id` or `id:style`), `general-store`.
+* **Friendship and requests (villagers).** Pure + tested `model/friends.ts` (service `friends`, `HudBindings.friends`,
+  persisted per profile in `claude-valley.friends.v1`); dialogue in `scene/villagers/friendlines.ts` (pure, tested); HUD
+  `hud/friends.ts` (panel `friends`, the request tracker, toasts). Each villager has **hearts** (0–10, 100 points each):
+  the day's first chat (E or F) +20, **one gift a day each** from your basket (F on a villager while the basket has
+  something → the gift picker, 1–9 or a click; loved +80, liked +45, anything else +20, disliked −25), a finished request
+  +60. Tastes fit the roles: Hazel loves hazelnuts, acorns, chanterelles; Nimbus frost crystals, the message in a bottle,
+  thunder bass, moonlit char; Fern feathers, pinecones, morels, trout; Bram the big fish (salmon, pike, carp, thunder bass);
+  Posy violets, wild strawberries, mussel shells; Mayor Marigold the showy prizes (golden koi, chanterelles, maple leaves,
+  moonlit char). What they think of a gift is remembered and shown in the picker and on their card. Reactions are lines
+  in their voice + an emote (heart / sparkle / note / sweat). **Requests:** each real day 1–3 villagers post one
+  (`requestsFor(day, season)`, deterministic, feasible in season): bring N of an in-season forageable (counted from the
+  basket, taken on delivery), catch a fish (any weather; sometimes "before dusk", or "anything after dark"), visit a far
+  nook at the right hour (the standing stones after dark, the stargazers' knoll at night, the swing tree, the hot spring
+  at dusk, the orchard by day, the hay meadow: the villagers system checks where you stand twice a second), or agent work
+  via `ValleyEvent`s (answer a farmer who needs you = `unblocked`, ship a commit = `ship`, a green test run = `celebrate`,
+  a finished task = `finished`). Talking to them the first time says the request (instead of opening their shortcut);
+  when it's done (toast "Request ready") E on them hands it over: bits (`WalletService.reward`) + hearts, a thank-you
+  line, a heart emote. Unfinished requests lapse at midnight. The **tracker** (`data-testid="quests"`) sits under the
+  dock (top right, a `data-hud-obstacle="children"` child of the dock), folds to its header (pref `valley.hud.quests`),
+  hides under big panels, rows open the Friends panel; the noticeboard pins a Requests note; the prompt's hint line shows
+  `♥ n` and "has a request" / "request ready!". **Milestones:** 2 ♥ a letter, 4 ♥ warmer lines (`closeLine`), 6 ♥ their
+  own decor piece in the General store (`DecorDef.friend`: Posy's pillar box, Bram's crate stack, Hazel's millstone
+  table, the Mayor's prize pumpkin, Fern's pup tent, Nimbus's weather vane), 8 ♥ a recipe letter, 10 ♥ a keepsake portrait
+  on an easel (`keep-<id>`, `DecorDef.keepsake`, never sold) given into your yard with a last letter. Letters are kept in
+  the friends data and re-posted to the mailbox on load (`Valley.post`, kind `news`). Dev: `__valley.hearts(id?, n?)`,
+  `requests()` / `requests('ready')` / `requests('YYYY-MM-DD')` (that date's set, as today's), `gift(id, item)`.
 * **The farmhouse has a walk-in interior** (`scene/interior/`, system `interior`, service `indoors` = `IndoorSpace`).
   E on the front door ("Go inside") fades (real-time, works at timescale 0) into one warm room built in place in the
   farmhouse's own frame (`layout.ts` is pure + tested: room box, windows, furniture anchors, colliders, viewpoints).
@@ -304,6 +382,48 @@ the lead.
 * **Performance:** the 4 Hz tick refreshes only what changed (keyed rows with per-row signatures: `syncList`, the
   ledger's row cache); nothing in the HUD reads layout per frame except the map canvas, which redraws only while open.
   Check with `npm run shoot -- --scenario crowd40 --shot name=r,pose=hub,panel=roster` (fps in the printed perf).
+## Sound (`audio/*`: WebAudio synthesis, no files)
+
+* **Buses** (`engine.ts`): sfx, notify, voice → master; ambient (the beds, critters, other packages' loops) and
+  **music** → a hidden-tab duck (30 %) → master. Every bus has its own slider (pause menu → Sound: master, effects,
+  ambience, alerts & chimes, farmer voices, music; square-law taper in `mix.ts busGains`). Master chain (`buildMaster`,
+  shared with the offline mixdowns): a gentle glue compressor (−16 dB, 2:1) then a fast limiter (−4 dB, 20:1). Indoors
+  the outdoor beds go through a low-pass and duck; the music, the `roof` rain and loops started by the interior stay dry.
+* **Music** (`musicPlan.ts` pure + tested, `music.ts` player, `instruments.ts` band). Pieces, not a drone: a piece is
+  planned for the moment (`musicScene`: morning 5–11, afternoon 11–17, evening 17–21:30, night, rain (storms too,
+  quieter; a fierce storm gets none), indoors) with a key, a mode, a tempo (56–108 bpm), 3/4 or 4/4 and a song form
+  (`iAABAo`, `iABAo`, …: 2 intro bars, 4- or 8-bar sections, 2 outro bars; ≈ 45–125 s). Melodies come from a 2-bar motif
+  stated, sequenced, restated and cadenced; strong beats sit on chord tones, weak beats on the mode's pentatonic,
+  everything is diatonic, A ends home and B on the dominant. After a piece it **rests 15–75 s** (longer at night) so the
+  valley's own sound carries the silence. Going in / out or a storm fades the piece within ~1 s; a new hour or rain lets
+  it finish. **Seasons change the band** (`KITS`: spring flute + kalimba, summer marimba + guitar, autumn reed +
+  guitar, winter glockenspiel / music box + electric piano; rain = electric piano + strings; indoors a parlour waltz).
+  **Festivals** (`sky.festival.active`): every other outdoor piece is the festival's own, built on its leitmotif and
+  instrument (`FESTIVAL_MUSIC`: Blossom flute reel, Lantern bell lullaby, Founders' "happy birthday" music box waltz,
+  Harvest barn-dance oom-pah, Hallowtide minor celesta + pizzicato, Starlight jingle bells + sleigh shaker, New Year
+  auld lang syne on a soft horn), auto-harmonized (`harmonizeTune`). Tunes are seeded per real day. Ducks to 25 % under
+  notifications and to 60 % while someone near you talks.
+* **Footsteps** (`steps.ts` pure + tested, `STEP_RECIPES` in `sfx.ts`): the controller's grass / water / wood is refined
+  from where you stand: paved square = stone, roads (`pathAt` > 0.55) = dirt crunch, decks (bridge, dock, porch) = hollow
+  wood, the farmhouse = floorboards (one creaks now and then), lying snow (`sky.trace.snow`) or winter above the snow
+  line = snow crunch, wading = splash; wet ground (`sky.trace.wet`, lingers after rain) adds a puddle splash. Steps
+  alternate a touch left / right; `STEP_GAIN` levels the surfaces.
+* **Ambience** (`ambience.ts` + pure `ambientLevels` in `mix.ts`, loops in `loops.ts`): wind (gusts), rain, river /
+  waterfall / pond by distance (positional), dawn chorus and daytime birds, crickets (tempo follows the CPU
+  thermometer), owls and pond frogs at night, the campfire after dusk, the windmill (creak period = CPU), bees by live
+  hives, **leaves** rustling with the gusts out in the countryside (thin in winter) and **cowbells** near a cows / sheep
+  field by day. Beds are built only while audible and retired after 8 s of silence.
+* **Levels** (measured offline, default sliders, momentary loudness in dBFS after the master): land beds ≈ −40, near
+  water −28…−33, music ≈ −34, footsteps ≈ −31…−36, needs-you alert peak ≈ −5; mixes peak below −11 dBFS. Instruments are
+  trimmed to equal loudness (`INSTRUMENT_GAIN`), roles balanced in `ROLE_GAIN`, overall `MUSIC_LEVEL`. CPU: the audio
+  system costs ≈ 0.1 ms / frame; music schedules ≲ 30 notes a bar (a few oscillators each).
+* **Measure, don't guess** (`audio/debug.ts`, loaded on demand): `const d = __valley.ctx.services.get('audio')._debug`;
+  `d.render('inst:flute:67' | 'step:dirt:wet' | 'loop:leaves:1' | 'piece:evening:autumn:harvest' | 'alert')` → peak /
+  RMS / momentary loudness / spectral centroid / HF share; `d.mix('meadow,music=afternoon,steps=grass')` renders 20 s of a
+  moment per layer and through the master (presets: square meadow river pond campfire mill falls dawn rain storm snow);
+  `d.pcm(name, s)` returns 16-bit PCM for a WAV; `d.renderAll()`; `d.stats()` (beds, music piece / bar / rest);
+  `d.next()` skips to the next piece; `d.music(false)`.
+
 ## Coordinates & conventions
 
 * Metres. +x east, +z south (north = −z), +y up. Models are built facing **+z** (their front); `rotation.y = yaw`
@@ -325,7 +445,7 @@ the lead.
 | **plots** | `scene/plots/*` | 12 plot kinds × lifecycle, animals (pettable), scarecrow helpers, service `plots` |
 | **farmers** | `scene/farmers/*` | characters, jobs → animation, emotes, ducklings, greetings, service `farmers` |
 | **villagers** | `scene/villagers/*` (role hats / wear / lantern data live in `farmers/mascots.ts` + `geo.ts`, drawn by the shared rig) | the persistent villager cast, routines, dialogue, service `villagers` (`VillagersService`: map pins, debug) |
-| **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), services `audio`, `pets` |
+| **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), wild visitors, services `audio`, `pets`, `wildlife` |
 | **hud** | `hud/*` | every DOM overlay, terminal drawer, `UiPort` |
 | **interior** | `scene/interior/*` | the walk-in farmhouse room, service `indoors` (`IndoorSpace`) |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
@@ -356,11 +476,18 @@ npm run shoot -- --shot name=f,pose=square,festival=hallowtide,hour=21   # a fes
 npm run shoot -- --shot "name=c,pose=hub,panel=collection,eval=__valley.collect(16)"   # the Collections book
 npm run shoot -- --shot "name=f,pose=hub,eval=__valley.fish('demo'),frames=9,every=450"  # cast, bite, catch (flipbook)
 npm run shoot -- --shot "name=p,pose=hub,eval=__valley.forageGo(0)"                       # stand over today's first find
+npm run shoot -- --shot "name=w,hour=7,weather=clear,eval=__valley.wildlife('deer')"       # a wild visitor at its habitat (fox owl: hour=22; heron hour=9)
+npm run shoot -- --shot "name=wf,hour=9,weather=clear,hud=0,wait=500,eval=__valley.wildlife('heron');setTimeout(()=>__valley.wildlife('heron','spook'),1500),frames=12,every=200"  # take-off
+npm run shoot -- --shot "name=g,hour=8,weather=clear,pose=hub,eval=__valley.wildlife('geese'),wait=5000"   # a skein going over
 npm run shoot -- --shot "name=y,hour=11,eval=__valley.furnish();__valley.yard()"   # your yard, filled (hour=21 for the lights)
 npm run shoot -- --shot "name=yc,hour=11,eval=__valley.furnish();__valley.yard('carry')"   # carrying: slot rings + ghost
 npm run shoot -- --shot "name=st,hour=11,eval=__valley.yard('store')"     # the General store cart
 npm run shoot -- --shot "name=sp,pose=hub,eval=__valley.coins(800);__hud.open('shop',{tab:'buy',at:'store'})"  # shop panel (tab buy|sell|yard)
 npm run shoot -- --shot name=d,gallery=decor,variant=scarecrow:2     # one decor piece (id or id:style)
+npm run shoot -- --shot "name=fa,goto=villager:fern,hour=10,eval=setTimeout(()=>dispatchEvent(new KeyboardEvent('keydown',{code:'KeyE'})),1200)"  # a villager asks for today's request
+npm run shoot -- --shot "name=fg,pose=hub,eval=__valley.hearts('posy',7);__valley.gift('hazel','boot');__valley.ctx.services.get('wallet').stash('koi',2);__hud.open('friends',{give:'villager:marigold'})"  # Friends panel + gift picker
+npm run shoot -- --shot "name=fd,goto=villager:hazel,hour=10,eval=__valley.requests('ready');setTimeout(()=>dispatchEvent(new KeyboardEvent('keydown',{code:'KeyE'})),1200)"  # hand a request over
+npm run shoot -- --shot "name=fs,hour=22,eval=__valley.requests('2026-10-06');__valley.goTo('stones')"   # a visit request (stones after dark) turning ready
 npm run shoot -- --shot name=i,pose=inside,hour=10          # farmhouse interior (inside:hearth|shelf|desk|bed|tank|window|sun|room)
 npm run shoot -- --shot "name=ir,pose=inside:hearth,hour=21,weather=rain,eval=__valley.collect(28)"  # night, rain on the glass, full shelf
 npm run mapviz                                      # top-down map PNG, no browser
@@ -369,6 +496,12 @@ npm run dev                                         # interactive: /, /gallery/,
 npm run app  |  npm run app:demo                    # Electron: live herdr session | demo world
 # in game: F3 perf overlay, F4 valley state inspector, F6 debug labels, P photo mode (fly, [ ] time, wheel zoom, Enter → PNG)
 # __valley.meteor() launches a shooting star where the camera looks
+npm run shoot -- --shot "name=wet,pose=hub,hour=16,weather=clear,eval=__valley.atmo({wet:1})"        # puddles after rain, sun out
+npm run shoot -- --shot "name=rb,hour=16.5,weather=cloudy,cam=0;3;10;-1.3;0.2,eval=__valley.atmo({wet:0.9,rainbow:1})"  # rainbow
+npm run shoot -- --shot "name=mist,hour=7,weather=clear,cam=0;22;70;0;-0.22,eval=__valley.atmo({mist:1})"   # dawn mist on the river
+npm run shoot -- --shot "name=gr,hour=16.8,weather=cloudy,cam=0;3;10;1.87;0.3"                          # god rays (face the sun)
+npm run shoot -- --shot "name=sn,pose=hub,hour=10,weather=snow,season=winter"                             # lying snow builds
+npm run shoot -- --shot "name=fr,cam=0;2.2;14;0;-0.35,hour=7.6,weather=clear,eval=__valley.atmo({frost:1})"  # frost sparkle
 ```
 
 Read the PNGs you produce (they are the ground truth), compare against the art direction, iterate. Poses:

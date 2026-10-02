@@ -50,23 +50,25 @@ export interface Volumes {
   volumeAmbient: number;
   volumeNotify: number;
   volumeVoices: number;
+  volumeMusic: number;
   audioMuted: boolean;
 }
 export const DEFAULT_VOLUMES: Readonly<Volumes> = Object.freeze({
-  volumeMaster: 0.8, volumeSfx: 0.8, volumeAmbient: 0.5, volumeNotify: 0.9, volumeVoices: 0.7, audioMuted: false,
+  volumeMaster: 0.8, volumeSfx: 0.8, volumeAmbient: 0.5, volumeNotify: 0.9, volumeVoices: 0.7, volumeMusic: 0.4, audioMuted: false,
 });
-export interface BusGains { master: number; sfx: number; ambient: number; notify: number; voice: number }
+export interface BusGains { master: number; sfx: number; ambient: number; notify: number; voice: number; music: number }
 
 /** Sliders are perceptual (0..1); gains use a square-law taper so the middle of a slider sounds like the middle. */
 export const taper = (v: number): number => { const x = clamp(Number.isFinite(v) ? v : 0, 0, 1); return x * x; };
 
-export function busGains(v: Partial<Volumes>, out: BusGains = { master: 0, sfx: 0, ambient: 0, notify: 0, voice: 0 }): BusGains {
+export function busGains(v: Partial<Volumes>, out: BusGains = { master: 0, sfx: 0, ambient: 0, notify: 0, voice: 0, music: 0 }): BusGains {
   const get = <K extends keyof Volumes>(k: K): Volumes[K] => (v[k] ?? DEFAULT_VOLUMES[k]) as Volumes[K];
   out.master = get('audioMuted') ? 0 : taper(get('volumeMaster'));
   out.sfx = taper(get('volumeSfx'));
   out.ambient = taper(get('volumeAmbient'));
   out.notify = taper(get('volumeNotify'));
   out.voice = taper(get('volumeVoices'));
+  out.music = taper(get('volumeMusic'));
   return out;
 }
 
@@ -118,7 +120,6 @@ export function createPolyphony(cap = 40): Polyphony {
 
 export type WeatherKindLike = 'clear' | 'cloudy' | 'rain' | 'storm' | 'fog' | 'snow';
 export type SeasonLike = 'spring' | 'summer' | 'autumn' | 'winter';
-export type MusicMood = 'day' | 'night' | 'rain';
 
 export interface AmbientIn {
   hour: number;
@@ -142,6 +143,10 @@ export interface AmbientIn {
   dWindmill: number;
   /** nearest bee plot, Infinity when none */
   dBees: number;
+  /** nearest cow / sheep field, Infinity when none */
+  dHerd: number;
+  /** distance from the village square (the trees are out in the countryside) */
+  dHub: number;
 }
 
 export interface AmbientLevels {
@@ -149,10 +154,12 @@ export interface AmbientLevels {
   river: number; waterfall: number; pond: number;
   birds: number; crickets: number; owls: number; frogs: number;
   fire: number; windmill: number; bees: number;
-  music: number; mood: MusicMood;
+  leaves: number; cowbells: number;
+  /** music level multiplier (storms hush it) */
+  music: number;
 }
 export const emptyLevels = (): AmbientLevels => ({
-  wind: 0, rain: 0, storm: 0, river: 0, waterfall: 0, pond: 0, birds: 0, crickets: 0, owls: 0, frogs: 0, fire: 0, windmill: 0, bees: 0, music: 0, mood: 'day',
+  wind: 0, rain: 0, storm: 0, river: 0, waterfall: 0, pond: 0, birds: 0, crickets: 0, owls: 0, frogs: 0, fire: 0, windmill: 0, bees: 0, leaves: 0, cowbells: 0, music: 0,
 });
 
 /** Dawn chorus: a bump around sunrise-ish (hour ≈ 6.5). */
@@ -182,7 +189,10 @@ export function ambientLevels(a: AmbientIn, out: AmbientLevels = emptyLevels()):
   out.fire = proximity(a.dFire, 2.5, 30) * lit * (1 - 0.6 * out.rain);
   out.windmill = proximity(a.dWindmill, 5, 50) * (0.3 + 0.7 * clamp(a.cpu, 0, 1));
   out.bees = Number.isFinite(a.dBees) ? proximity(a.dBees, 3, 26) * clamp(a.daylight * 1.4, 0, 1) * (1 - out.rain) * (cold ? 0 : 1) : 0;
-  out.mood = night > 0.62 ? 'night' : out.rain > 0.3 ? 'rain' : 'day';
+  // wind in the trees: out in the countryside, stronger with the wind, thin in winter (bare boughs)
+  const boughs = a.season === 'winter' ? 0.3 : a.season === 'autumn' ? 1.1 : 0.9;
+  out.leaves = clamp((out.wind - 0.1) * 1.3 * boughs * smooth(12, 34, a.dHub) * (1 - 0.6 * out.rain), 0, 1);
+  out.cowbells = Number.isFinite(a.dHerd) ? proximity(a.dHerd, 6, 60) * smooth(0.12, 0.45, a.daylight) * (1 - 0.7 * out.rain) * (1 - 0.6 * snow) : 0;
   out.music = 1 - out.storm * 0.6;
   return out;
 }

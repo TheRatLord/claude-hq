@@ -3,11 +3,15 @@
  * moon (real phase), stars and rainbow, drifting low-poly clouds, the one shadow-casting key light (sun by day,
  * moonlight by night; its shadow camera follows the player with texel snapping), the hemisphere fill, fog matched to
  * the horizon. Publishes `ctx.lighting` every frame and the 'wind' service. Weather changes ease in.
+ * Also decides the light-and-air moments: mist banks (dawn over the water and low ground, burning off by
+ * mid-morning, a few mornings a week; all day in fog) and god rays (a low sun through trees and cloud gaps), and
+ * publishes the dev service 'atmosphere' (`__valley.atmo(…)` forces any moment).
  */
 import * as THREE from 'three';
 import type { SystemFactory } from '../context.ts';
 import type { WeatherKind } from '../../model/types.ts';
 import { atmoOf, clamp01, ease, smooth } from './atmo.ts';
+import type { Atmo } from './atmo.ts';
 import { arcDir, dayAngle, moonPhase, peakElevation } from './celestial.ts';
 import { createMix, samplePalette } from './palette.ts';
 import { createDome } from './dome.ts';
@@ -15,6 +19,14 @@ import { createClouds } from './clouds.ts';
 import { createWind } from './wind.ts';
 import { createMeteors, showerOn } from './meteors.ts';
 import type { AudioService, IndoorSpace } from '../context.ts';
+import { sunTimes } from '../../model/sky.ts';
+import { hash32 } from '../../../../../shared/identity.ts';
+
+/** dev service 'atmosphere': force the weather moments (null = follow the weather) */
+export interface AtmosphereService {
+  force(o: Partial<Atmo['force']>): Atmo['force'];
+  state(): { rainbow: number; banks: number; rays: number; wet: number; snow: number; frost: number; mist: number; sun: number[] };
+}
 
 const SHADOW_SPAN = 72;
 const NIGHT_DIR = new THREE.Vector3(-0.42, 0.78, 0.46).normalize();
@@ -43,6 +55,34 @@ export const skySystem: SystemFactory = (ctx) => {
 
   const wind = createWind(a);
   ctx.services.set('wind', wind);
+  const atmosphere: AtmosphereService = {
+    force(o) { Object.assign(a.force, o); a.snap = true; return { ...a.force }; },
+    state: () => ({ rainbow: a.rainbow, banks: a.banks, rays: a.rays, wet: a.ground.wet, snow: a.ground.snow, frost: a.ground.frost, mist: a.mist, sun: a.sun.toArray().map((v) => +v.toFixed(3)) }),
+  };
+  ctx.services.set('atmosphere', atmosphere);
+  // dev: GPU cost of the whole frame (scene + post) right now, synced with a 1-px readback: __atmo.bench(30)
+  (globalThis as { __atmo?: unknown }).__atmo = {
+    service: atmosphere,
+    /** GPU ms per frame (timer query; falls back to a synced wall clock) */
+    async bench(n = 20): Promise<number> {
+      const post = ctx.services.get('post') as { render(): void } | undefined;
+      if (!post) return -1;
+      const gl = renderer.getContext() as WebGL2RenderingContext;
+      const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null;
+      if (!ext) return -1;
+      const q = gl.createQuery()!;
+      gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+      for (let i = 0; i < n; i++) post.render();
+      gl.endQuery(ext.TIME_ELAPSED_EXT);
+      for (let i = 0; i < 200; i++) {
+        await new Promise((r) => setTimeout(r, 10));
+        if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
+      }
+      const ns = gl.getQueryParameter(q, gl.QUERY_RESULT) as number;
+      gl.deleteQuery(q);
+      return ns / 1e6 / n;
+    },
+  };
 
   const key = new THREE.DirectionalLight(0xffffff, 3);
   key.name = 'key-light';
@@ -78,6 +118,7 @@ export const skySystem: SystemFactory = (ctx) => {
   let first = true;
   let wet = 0;
   let windAngle = 0;
+  let mistDoy = -1, mistDayK = 1, mistTimes = sunTimes(0);
 
   const greyOf = (c: THREE.Color, grey: THREE.Color, k: number, keepLum = 1) => {
     const lum = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
@@ -283,8 +324,31 @@ export const skySystem: SystemFactory = (ctx) => {
       g.inkStrength = 0.75 - mix.night * 0.2 - fg * 0.3;
       a.mist = Math.min(2, mix.mist * (sky.season === 'summer' ? 0.6 : 1) * (0.5 + 0.5 * clamp01(wet + fg + oc * 0.5)) + fg * 1.6 + rn * 0.25);
       a.cloudShadow = clamp01(sky.daylight * (1 - oc) * smooth(0.08, 0.35, a.cover) * 0.8);
+
+      // --- mist banks: pooling over the water and low ground at dawn, burning off by mid-morning; all day in fog
+      {
+        if (sky.dayOfYear !== mistDoy) { mistDoy = sky.dayOfYear; mistTimes = sunTimes(mistDoy); mistDayK = 0.35 + 0.65 * ((hash32(`mist:${mistDoy}`) % 1000) / 1000); }
+        const tm = mistTimes, hr = sky.hour;
+        const dawn = smooth(tm.rise - 2.5, tm.rise + 0.3, hr) * (1 - smooth(tm.rise + 1.4, tm.rise + 3.6, hr));
+        const night = Math.max(1 - smooth(tm.rise - 3, tm.rise - 1.5, hr), smooth(tm.set + 0.8, tm.set + 3, hr)) * 0.35;
+        const seasonK = sky.season === 'autumn' ? 1 : sky.season === 'spring' ? 0.85 : sky.season === 'winter' ? 0.7 : 0.55;
+        // not every morning: a few days a week, deterministic per date (mistDayK)
+        const dayK = mistDayK;
+        const damp = 0.55 + 0.45 * clamp01(sky.trace.wet * 1.5);
+        const calm = 1 - smooth(3.5, 8, a.windSpeed);
+        const base = Math.max(dawn * dayK, night) * seasonK * damp * calm * (1 - rn);
+        const bankT = a.force.banks ?? Math.max(base, fg * 0.85);
+        a.banks = ease(a.banks, bankT, a.snap ? 1000 : dt, 10);
+      }
+      // --- god rays: a low sun (golden hour, early morning) through trees and gaps in the clouds; after storms too
+      {
+        const low = smooth(-0.02, 0.06, a.sunElev) * (1 - smooth(0.22, 0.5, a.sunElev));
+        const broken = 0.55 + 0.45 * smooth(0.15, 0.6, a.cover) * (1 - smooth(0.85, 1, a.cover));
+        const raysT = a.force.rays ?? low * broken * (1 - fg) * (1 - rn * 0.85) * (1 - clamp01(oc - 0.6) * 2) * (1 - sn * 0.8);
+        a.rays = ease(a.rays, raysT, a.snap ? 1000 : dt, 4);
+      }
       // no cloud shadows or valley mist drifting through the farmhouse
-      if (indoor) { a.cloudShadow = 0; a.mist = 0; g.vignette += 0.06; }
+      if (indoor) { a.cloudShadow = 0; a.mist = 0; a.banks = 0; a.rays = 0; g.vignette += 0.06; }
     },
     stats: () => ({ hour: +ctx.valley.sky.hour.toFixed(2), moon: +a.moonPhase.toFixed(2), sunI: +key.intensity.toFixed(2), night: +L.night.toFixed(2) }),
     dispose() {
@@ -293,6 +357,7 @@ export const skySystem: SystemFactory = (ctx) => {
       dome.mesh.geometry.dispose(); (dome.mesh.material as THREE.Material).dispose();
       clouds.mesh.geometry.dispose(); (clouds.mesh.material as THREE.Material).dispose();
       ctx.services.delete('wind');
+      ctx.services.delete('atmosphere');
       ctx.services.delete('meteors');
       meteors.dispose();
     },

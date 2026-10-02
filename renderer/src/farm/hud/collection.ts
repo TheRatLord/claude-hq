@@ -4,8 +4,8 @@
  * voice. Reads the live book (model/collection.ts) through `HudBindings.collection`; a first-ever find pops a toast.
  */
 import './collection.css';
-import { whereText } from '../model/collection.ts';
-import type { CollectDef, CollectionEntry, CollectionService } from '../model/collection.ts';
+import { sightText, whereText } from '../model/collection.ts';
+import type { CollectDef, CollectionEntry, CollectionService, SightDef, SightEntry } from '../model/collection.ts';
 import { ICONS, KIND_ICON, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 
@@ -50,6 +50,20 @@ export function collectIcon(d: CollectDef): string {
   return S(`<circle cx="12" cy="12" r="8" fill="${c}" ${ol}/>`);
 }
 
+/** Field-guide sketches of the wild visitors (side views; blacked out by css until seen). */
+export function sightIcon(d: SightDef): string {
+  const c = d.color;
+  switch (d.id) {
+    case 'deer': return S(`<path d="M5 13c0-3 3-4 7-4h3l2-3 1-3 1 .5-.5 2.5 2 1 1 2-2 1-2 .3-1 3c0 2-1 3-2 3v5h-1.5l-.3-4.5-4.7.4-.6 4.1H7.4L7 16c-1.5-.5-2-1.6-2-3z" fill="${c}" ${ol}/><path d="M17.6 4.5l1.6-1.8M19 6.4l2.2-.6" stroke="${INK}" stroke-width="1.1"/><circle cx="19.2" cy="8.4" r=".7" fill="${INK}"/><path d="M5 12.5c-1 0-1.6.6-1.8 1.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>`);
+    case 'fox': return S(`<path d="M2.5 14c2.5-3 5-2 7-2h6l2-3 .5-3 1.5 2 1.5-1v3l1.5 1.5-1 1.3-2 .2-1 2.5c-.5 1.5-1.5 2-2.5 2v3h-1.4l-.4-2.6H11l-.6 2.6H9l.2-3c-2 0-3.5-.5-6.7-.5z" fill="${c}" ${ol}/><path d="M2.5 14c-.3 1 0 2 1 2.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="19" cy="10.3" r=".7" fill="${INK}"/>`);
+    case 'heron': return S(`<path d="M5 13c2-2 5-3 8-2.5l1.5-3c-.5-2 0-4 2-4.5 1.2-.2 2 .6 2 1.6l4 .9-4 .5c-1 2-2.7 3.4-2.5 5.7.2 2-1.5 3.7-4 4.3H9c-2 0-3.5-1-4-2.5z" fill="${c}" ${ol}/><path d="M11 18v4M13 18l.5 4" stroke="${INK}" stroke-width="1.2"/><path d="M17 4.2l-3-.6" stroke="${INK}" stroke-width="1"/><circle cx="17.6" cy="5.4" r=".6" fill="${INK}"/>`);
+    case 'owl': return S(`<path d="M6.5 7c0-3 2.5-4.5 5.5-4.5S17.5 4 17.5 7c1 2.5 1.5 5.5 1 8.5-.6 3.4-3 5.5-6.5 5.5s-5.9-2.1-6.5-5.5c-.5-3 0-6 1-8.5z" fill="${c}" ${ol}/><circle cx="9.6" cy="8.4" r="2.4" fill="#e9cfa2" ${ol}/><circle cx="14.4" cy="8.4" r="2.4" fill="#e9cfa2" ${ol}/><circle cx="9.6" cy="8.4" r="1.1" fill="${INK}"/><circle cx="14.4" cy="8.4" r="1.1" fill="${INK}"/><path d="M12 10l-.8 1.6h1.6z" fill="#d8b860"/><path d="M8 21h8" stroke="${INK}" stroke-width="1.4"/>`);
+    case 'hedgehog': return S(`<path d="M3 16c0-4.5 3.5-8 8.5-8S20 11 20.5 14l1.5 1.4-1.6 1.2c-.6 1.4-1.8 2.4-3.4 2.4H6c-1.8 0-3-1.3-3-3z" fill="${c}" ${ol}/><path d="M5 11l-1-2M8 9l-.5-2.2M11 8.3V6M14 8.5l.6-2.2M17 10l1.3-1.8M4.4 13.6l-2-.6" stroke="${INK}" stroke-width="1.1"/><path d="M17 16.5c1.5-.2 3.3-.6 4.9-1" fill="none" stroke="#d9b88e" stroke-width="1.6"/><circle cx="18.6" cy="14.4" r=".7" fill="${INK}"/>`);
+    case 'geese': return S(`<path d="M2 15l4-2 2-3 1 2 4 .5-4 1.5zM9 9l3-1.5 1.5-2.5.8 1.8 3.3.3-3.3 1.3zM13.5 17l3-1.5 1.6-2.4.7 1.8 3.2.4-3.3 1.2z" fill="${c}" ${ol}/>`);
+  }
+  return S(`<circle cx="12" cy="12" r="8" fill="${c}" ${ol}/>`);
+}
+
 const fmtDay = (key: string | null) => (key ? new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: key.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' }) : '');
 
 export function createCollectionPanel(ctx: HudCtx): Panel {
@@ -65,11 +79,12 @@ export function createCollectionPanel(ctx: HudCtx): Panel {
   const top = h('div.vh-col-head', null, h('div.badge', null, icon(KIND_ICON.berries)), h('div.rk', null, count, h('div.rk-bar', null, fill), sub));
   const forageGrid = h('div.vh-col-grid', { 'data-testid': 'collection-forage' });
   const fishGrid = h('div.vh-col-grid', { 'data-testid': 'collection-fish' });
-  const fTitle = h('div.vh-h3'), sTitle = h('div.vh-h3');
+  const sightGrid = h('div.vh-col-grid', { 'data-testid': 'collection-sightings' });
+  const fTitle = h('div.vh-h3'), sTitle = h('div.vh-h3'), wTitle = h('div.vh-h3');
   const detail = h('div.vh-col-detail', { 'data-testid': 'collection-detail' });
   const how = h('div.vh-al-legend', null, h('b', { text: 'How to collect: ' }),
-    'look for a glint in the grass and press E to pick things up (a new batch every day, by season) · look at open water by the pond or the river and press E to cast, then E again when the bobber dips · a first-ever find adds +5 to the Almanac.');
-  body.append(top, h('div.vh-col-main', null, h('div.vh-col-lists', null, fTitle, forageGrid, sTitle, fishGrid), detail), how);
+    'look for a glint in the grass and press E to pick things up (a new batch every day, by season) · look at open water by the pond or the river and press E to cast, then E again when the bobber dips · wild visitors are shy: be in the right place at the right time, come slowly and stop when they look up, and a good look adds them to the field guide · a first-ever find adds +5 to the Almanac.');
+  body.append(top, h('div.vh-col-main', null, h('div.vh-col-lists', null, fTitle, forageGrid, sTitle, fishGrid, wTitle, sightGrid), detail), how);
 
   let selected = '';
   let sig = '';
@@ -85,6 +100,26 @@ export function createCollectionPanel(ctx: HudCtx): Panel {
     return t;
   }
 
+  function sightTile(e: SightEntry): HTMLElement {
+    const t = h(`button.tile${e.found ? '.got' : ''}${e.def.id === selected ? '.sel' : ''}${e.inSeason ? '.now' : ''}`, { type: 'button', title: e.found ? e.def.name : 'Not seen yet', 'data-id': e.def.id });
+    const ic = h('span.ic');
+    ic.innerHTML = sightIcon(e.def);
+    t.append(ic, h('span.nm', { text: e.found ? e.def.name : '???' }), h('span.n', { text: e.found ? `${e.n} ${e.n === 1 ? 'day' : 'days'}` : e.inSeason ? 'about now' : '' }));
+    t.addEventListener('click', () => { selected = e.def.id; ctx.sfx('ui-click'); sig = ''; render(); });
+    return t;
+  }
+
+  function sightDetail(e: SightEntry): HTMLElement[] {
+    const big = h(`div.big${e.found ? '' : '.sil'}`);
+    big.innerHTML = sightIcon(e.def);
+    const kids: HTMLElement[] = [big, h('div.t', { text: e.found ? e.def.name : 'Not seen yet' })];
+    kids.push(h('div.blurb', { text: e.found ? e.def.blurb : e.def.tip }));
+    kids.push(h('div.where', null, h('b', { text: 'Look: ' }), sightText(e.def), e.inSeason ? h('span.now', { text: ' · about this season' }) : null));
+    if (e.found) kids.push(h('div.facts', { text: [`Seen on ${e.n} ${e.n === 1 ? 'day' : 'days'}`, e.first ? `first on ${fmtDay(e.first)}` : '', e.last && e.last !== e.first ? `last on ${fmtDay(e.last)}` : ''].filter(Boolean).join(' · ') }));
+    if (e.found) kids.push(h('div.where', null, h('b', { text: 'Tip: ' }), e.def.tip));
+    return kids;
+  }
+
   function render(): void {
     const b = book();
     const season = ctx.state()?.sky.season ?? 'spring';
@@ -95,7 +130,18 @@ export function createCollectionPanel(ctx: HudCtx): Panel {
     const v = b.view(season);
     count.textContent = `${v.found} of ${v.total} found`;
     fill.style.width = `${Math.round((v.found / Math.max(1, v.total)) * 100)}%`;
-    sub.textContent = [`${v.forage.found}/${v.forage.total} forage`, `${v.fish.found}/${v.fish.total} fish`, v.fishToday ? `${v.fishToday} caught today` : null].filter(Boolean).join(' · ');
+    sub.textContent = [`${v.forage.found}/${v.forage.total} forage`, `${v.fish.found}/${v.fish.total} fish`, `${v.sight.found}/${v.sight.total} wild visitors`, v.fishToday ? `${v.fishToday} caught today` : null].filter(Boolean).join(' · ');
+    wTitle.replaceChildren(icon(ICONS.book), `Field guide · wild visitors · ${v.sight.found}/${v.sight.total}`);
+    sightGrid.replaceChildren(...v.sightings.map(sightTile));
+    const sight = v.sightings.find((x) => x.def.id === selected);
+    if (sight) {
+      forageGrid.replaceChildren(...v.entries.filter((e) => e.def.kind === 'forage').map(tile));
+      fishGrid.replaceChildren(...v.entries.filter((e) => e.def.kind === 'fish').map(tile));
+      fTitle.replaceChildren(icon(ICONS.sprout), `Forage · ${v.forage.found}/${v.forage.total}`);
+      sTitle.replaceChildren(icon(ICONS.duck), `Fish & finds · ${v.fish.found}/${v.fish.total}`);
+      detail.replaceChildren(...sightDetail(sight));
+      return;
+    }
     if (!selected || !v.entries.some((e) => e.def.id === selected)) selected = (v.entries.find((e) => e.found) ?? v.entries.find((e) => e.inSeason) ?? v.entries[0]).def.id;
     fTitle.replaceChildren(icon(ICONS.sprout), `Forage · ${v.forage.found}/${v.forage.total}`);
     sTitle.replaceChildren(icon(ICONS.duck), `Fish & finds · ${v.fish.found}/${v.fish.total}`);

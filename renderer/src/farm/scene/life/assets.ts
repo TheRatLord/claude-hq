@@ -159,3 +159,6 @@ function pet(kind: PetKind, name: string, note: string, loops: readonly string[]
 }
 pet('dog', 'dog', 'Biscuit: greets you at a gallop, heels, sits, plays, sleeps curled on the porch; pet him (hearts + bark)', DOG_LOOPS);
 pet('cat', 'cat', 'Mochi: naps, loafs, stretches, grooms, kneads, walks the fence; pet her (purr + slow blink)', CAT_LOOPS);
+
+// the wild visitors (deer, fox, heron, owl, hedgehog, geese)
+import './wildAssets.ts';

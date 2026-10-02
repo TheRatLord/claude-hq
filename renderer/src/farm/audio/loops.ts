@@ -8,7 +8,7 @@ import type { NoiseKind } from './synth.ts';
 import { noise, noiseSrc, tone } from './synth.ts';
 import { cricketPeriod } from './mix.ts';
 
-export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs', 'roof'] as const);
+export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs', 'roof', 'leaves', 'cowbells'] as const);
 export type LoopKind = (typeof LOOP_KINDS)[number];
 
 export interface LoopEnv {
@@ -28,6 +28,17 @@ export interface LoopVoice {
 
 type C = BaseAudioContext;
 const rnd = Math.random;
+
+/** The valley's gusts, 0..1-ish: shared by the wind bed and the leaves so trees rustle when the wind swells. */
+export const gust = (now: number): number => 0.5 + 0.28 * Math.sin(now * 0.21) + 0.17 * Math.sin(now * 0.57 + 1.3) + 0.1 * Math.sin(now * 1.63 + 0.4);
+
+/** A cowbell / sheep-bell clank: inharmonic partials, a dull knock. */
+function clank(c: C, out: AudioNode, t: number, f: number, g: number): number {
+  noise(c, out, t, { kind: 'white', gain: g * 0.5, a: 0.001, d: 0.012, filter: 'bandpass', f: f * 3, q: 2 });
+  let end = t;
+  for (const [ratio, amp, d] of [[1, 1, 0.5], [2.32, 0.5, 0.28], [4.1, 0.22, 0.15], [5.6, 0.1, 0.08]] as const) end = Math.max(end, tone(c, out, t, { f: f * ratio, gain: g * amp, a: 0.002, d }));
+  return end;
+}
 
 export function buildLoop(kind: LoopKind, c: C, env: LoopEnv): LoopVoice {
   const out = c.createGain();
@@ -64,12 +75,39 @@ export function buildLoop(kind: LoopKind, c: C, env: LoopEnv): LoopVoice {
       const whistle = bed('white', 'bandpass', 1300, 9, 0);
       tick = (now) => {
         if (!mod(now)) return;
-        const g = 0.5 + 0.28 * Math.sin(now * 0.21) + 0.17 * Math.sin(now * 0.57 + 1.3) + 0.1 * Math.sin(now * 1.63 + 0.4);
+        const g = gust(now);
         body.filt.frequency.setTargetAtTime(260 + 620 * g, now, 0.6);
         body.g.gain.setTargetAtTime(0.3 + 0.55 * g, now, 0.5);
         whistle.g.gain.setTargetAtTime(0.35 * Math.max(0, g - 0.62), now, 0.8);
         whistle.filt.frequency.setTargetAtTime(1100 + 500 * g, now, 0.8);
       };
+      break;
+    }
+    case 'leaves': {
+      // wind through the trees: a leafy hiss that swells with the gusts, and loose leaves fluttering
+      const hiss = bed('white', 'bandpass', 3600, 0.6, 0);
+      const body = bed('pink', 'bandpass', 1700, 0.7, 0);
+      tick = (now, horizon, level) => {
+        if (mod(now)) {
+          const g = Math.max(0, gust(now) - 0.25);
+          hiss.g.gain.setTargetAtTime(0.32 * g * g + 0.02, now, 0.45);
+          hiss.filt.frequency.setTargetAtTime(2800 + 1800 * g, now, 0.6);
+          body.g.gain.setTargetAtTime(0.22 * g + 0.03, now, 0.5);
+        }
+        every(now, horizon, level * Math.max(0.2, gust(now)), () => 0.12 + rnd() * 0.6, (at) => {
+          noise(c, out, at, { kind: 'pink', gain: 0.03 + rnd() * 0.06, a: 0.004, d: 0.03 + rnd() * 0.05, filter: 'bandpass', f: 2500 + rnd() * 3000, q: 1.2 });
+        });
+      };
+      break;
+    }
+    case 'cowbells': {
+      // a couple of grazing animals somewhere over there, bells clanking as they shift and crop the grass
+      const ps = [panner(-0.35, 0.3), panner(0.3, 0.3)];
+      const fs = [620 + rnd() * 160, 880 + rnd() * 200];
+      tick = (now, horizon, level) => every(now, horizon, level, () => 1.4 + rnd() * 4.5, (at) => {
+        const k = rnd() < 0.5 ? 0 : 1, n = 1 + Math.floor(rnd() * 3);
+        for (let i = 0; i < n; i++) clank(c, ps[k], at + i * (0.24 + rnd() * 0.18), fs[k] * (0.985 + rnd() * 0.03), 0.06 + rnd() * 0.05);
+      });
       break;
     }
     case 'rain': {

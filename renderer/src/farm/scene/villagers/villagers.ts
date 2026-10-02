@@ -35,6 +35,8 @@ import type { Place, Villager } from './cast.ts';
 import { hash01, hoursInto, keyOf, nextBeat, roundStop, whereAt } from './schedule.ts';
 import type { Where } from './schedule.ts';
 import { brief, callOut, lineFor, shipLine } from './lines.ts';
+import { askLine, closeLine, doneLine, giftLine, giftedLine, remindLine, thanksLine } from './friendlines.ts';
+import type { FriendsChange, FriendsService } from '../../model/friends.ts';
 
 /** Height of the role hat above the body top (labels and emotes clear it). */
 const HAT_TOP: Readonly<Record<Villager['hat'], number>> = { postcap: 0.28, eyeshade: 0.18, millcap: 0.3, tophat: 0.45, ranger: 0.34, souwester: 0.34 };
@@ -192,23 +194,45 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       pos: (out) => out.set(f.pos.x, f.pos.y + 0.6, f.pos.z),
       enabled: () => !f.inside && f.fade > 0.5,
       use: () => talk(f, false),
-      alt: { verb: v.fn === 'say' ? 'Ask more' : 'Just chat', use: () => talk(f, true) },
-      hint: () => hintFor(f.v),
+      // F: a gift from your basket (model/friends.ts) when you have one and they haven't had one today; else a chat
+      alt: { get verb() { return canGift(f) ? 'Give a gift' : v.fn === 'say' ? 'Ask more' : 'Just chat'; }, use: () => (canGift(f) ? gift(f) : talk(f, true)) },
+      hint: () => hintFor(f.v) + friendHint(f.v),
     });
     folks.push(f);
   }
 
   /** E: a line about the valley, then the villager's shortcut (the panel opens a beat later so the line reads first) */
   function talk(f: Folk, chatOnly: boolean): void {
-    const b = brief(ctx.valley);
-    const line = lineFor(f.v.role, b, f.talks + (chatOnly ? 1 : 0));
+    const n = f.talks + (chatOnly ? 1 : 0);
+    // friendship first (model/friends.ts): the day's first chat counts; today's request is asked for, nudged or delivered
+    const fr = friends();
+    let line: string | null = null, news = false;
+    if (fr) {
+      fr.talk(f.v.id);
+      const rq = fr.view(f.v.id)?.request ?? null;
+      if (rq?.ready) {
+        const r = fr.deliver(f.v.id);
+        if (r) {
+          line = thanksLine(f.v.role, r.req, r.coins); news = true;
+          f.react = { act: 'cheer', face: 'sparkle', until: time + 2.4 }; f.emote = 'heart'; f.emoteUntil = time + 3.2;
+        }
+      } else if (rq && !rq.done && !rq.req.asked) {
+        line = askLine(f.v.role, rq.req); news = true;
+        fr.asked(f.v.id);
+        f.emote = 'bulb'; f.emoteUntil = time + 3;
+      } else if (rq && !rq.done && chatOnly) line = remindLine(f.v.role, rq.req, rq.next);
+      else if (rq?.done && chatOnly && n % 2 === 1) line = doneLine(f.v.role);
+      line ??= closeLine(f.v.role, fr.hearts(f.v.id), n);
+    }
+    line ??= lineFor(f.v.role, brief(ctx.valley), n);
     f.talks++;
     f.talkUntil = time + 6;
     f.greeted = true; f.greetCool = time + 25;
     f.lineUntil = 0; // the anchored say bubble carries the line; drop any call-out bubble so it doesn't show twice
-    ctx.ui.say(line, 4200, { who: f.v.name, from: f.v.id });
-    audio()?.voice(f.v.id, { pos: f.pos, mood: 'happy', syllables: 3 + Math.floor(f.k * 3) });
-    if (chatOnly || f.v.fn === 'say') return;
+    ctx.ui.say(line, news ? 6000 : 4200, { who: f.v.name, from: f.v.id });
+    audio()?.voice(f.v.id, { pos: f.pos, mood: news ? 'excited' : 'happy', syllables: 3 + Math.floor(f.k * 3) });
+    // a request asked for / delivered is the moment: the shortcut waits for the next E
+    if (chatOnly || f.v.fn === 'say' || news) return;
     const fn = f.v.fn;
     setTimeout(() => {
       switch (fn) {
@@ -220,6 +244,53 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
         case 'map': ctx.ui.map(); break;
       }
     }, 850);
+  }
+
+  /** friendship + requests (service 'friends', model/friends.ts; main.ts creates it) */
+  const friends = (): FriendsService | undefined => ctx.services.get('friends') as FriendsService | undefined;
+  const canGift = (f: Folk): boolean => {
+    const fr = friends();
+    return !!fr && basket() > 0 && !fr.view(f.v.id)?.giftedToday;
+  };
+  /** F with something in the basket: the HUD's gift picker for this villager (the reaction plays on the 'gift' change) */
+  function gift(f: Folk): void {
+    f.talkUntil = time + 8;
+    f.greeted = true; f.greetCool = time + 25;
+    if (ctx.ui.friends) ctx.ui.friends({ give: f.v.id });
+    else ctx.ui.say(giftedLine(f.v.role), 3000, { who: f.v.name, from: f.v.id });
+  }
+  /** the prompt's hint: hearts, and a request worth knowing about */
+  function friendHint(v: Villager): string {
+    const fv = friends()?.view(v.id);
+    if (!fv) return '';
+    const rq = fv.request;
+    const req = rq && !rq.done ? (rq.ready ? ' · request ready!' : !rq.req.asked ? ' · has a request' : '') : '';
+    return ` · ♥ ${fv.hearts}${req}`;
+  }
+  /** a friendship change the scene shows: gift reactions in their voice */
+  function onFriends(c: FriendsChange): void {
+    if (c.kind !== 'gift') return;
+    const f = folks.find((x) => x.v.id === c.who);
+    if (!f) return;
+    ctx.ui.say(giftLine(f.v.role, c.tier, c.item), 5000, { who: f.v.name, from: f.v.id });
+    f.talkUntil = time + 6;
+    f.emote = c.tier === 'love' ? 'heart' : c.tier === 'like' ? 'sparkle' : c.tier === 'dislike' ? 'sweat' : 'note';
+    f.emoteUntil = time + 3.2;
+    if (c.tier === 'love') f.react = { act: 'cheer', face: 'sparkle', until: time + 2.4 };
+    audio()?.voice(f.v.id, { pos: f.pos, mood: c.tier === 'dislike' ? 'sad' : c.tier === 'love' ? 'excited' : 'happy', syllables: 3 + Math.floor(f.k * 3) });
+  }
+  let offFriends: (() => void) | null = null;
+  /** visits (requests like "the standing stones after dark"): checked twice a second against where you stand */
+  let visitAt = 0;
+  function checkVisits(): void {
+    const fr = friends();
+    if (!fr) return;
+    for (const q of fr.data().req.list) {
+      if (q.kind !== 'visit' || q.state !== 'open' || !q.place) continue;
+      const st = structure(q.place as StructureId);
+      const r = Math.max(st.size[0], st.size[1]) * 0.5 + 4;
+      if (Math.hypot(ctx.player.pos.x - st.x, ctx.player.pos.z - st.z) < r) fr.visited(q.place, ctx.valley.sky.hour);
+    }
   }
 
   /** finds in the player's basket (service 'wallet'): Bram buys them */
@@ -511,6 +582,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
         }
       }
       events.length = 0;
+      if (!offFriends) { const fr = friends(); if (fr) offFriends = fr.onChange(onFriends); }
+      if (time >= visitAt) { visitAt = time + 0.5; checkVisits(); }
       // plan at 4 Hz (cheap: a few comparisons per villager)
       if (time >= planAt) { planAt = time + 0.25; for (const f of folks) plan(f); }
       order.length = 0;
@@ -567,6 +640,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     },
     dispose() {
       offValley();
+      offFriends?.();
       for (const f of folks) { f.unreg(); f.lightOff(); }
       ctx.scene.remove(root);
       crowd.dispose();
