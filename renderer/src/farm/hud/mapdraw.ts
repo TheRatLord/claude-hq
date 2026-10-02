@@ -50,6 +50,8 @@ export interface MapExtras {
   festival: (XZ & { name: string; blurb: string }) | null;
   /** the chart's subtitle (season · festival · rank) */
   subtitle: string;
+  /** secret places the player has found (world/map.ts POIS with `hidden`: the grotto) */
+  found?: readonly string[];
 }
 
 export interface DrawOpts {
@@ -96,6 +98,7 @@ const POI_LOOK: Record<string, [Glyph, string]> = {
   rest: ['nook', 'A bench to catch your breath, halfway up'],
   bridge: ['bridge', 'A rope bridge over the gap'],
   lookout: ['peak', 'The whole valley from the top of the cliffs'],
+  grotto: ['cave', 'Behind the waterfall: crystals, a still pool and an old camp'],
 };
 const SERIF = 'Georgia, "DejaVu Serif", serif';
 const INK = '#3b2a1e';
@@ -298,9 +301,11 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
         put(`fish:${i}`, f, 'fish', PIN_COLOR.fish, `Fishing · ${f.name}`, [bites.length ? `Biting now: ${bites.join(', ')}` : 'Quiet right now', 'Look at open water, E to cast'].filter(Boolean));
       });
       for (const p of worldPois()) {
+        // a secret stays a "?" (no label) until the player has found it
+        if (p.hidden && !ex.found?.includes(p.id)) { put(`poi:${p.id}`, p, 'secret', PIN_COLOR.secret, '?', ['Locals say the falls hide something…']); continue; }
         const [k, line] = POI_LOOK[p.kind ?? ''] ?? POI_LOOK.lookout;
-        put(`poi:${p.id}`, p, k, PIN_COLOR.peak, p.name, [line]);
-        extraLabels.push({ text: p.name, x: p.x, z: p.z, off: 2.6, ink: '#7a2e20' });
+        put(`poi:${p.id}`, p, k, p.hidden ? PIN_COLOR.secret : PIN_COLOR.peak, p.name, [line]);
+        extraLabels.push({ text: p.name, x: p.x, z: p.z, off: 2.6, ink: p.hidden ? '#4a3a7a' : '#7a2e20' });
       }
     }
     if (ex.store) {

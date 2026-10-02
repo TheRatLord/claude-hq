@@ -118,6 +118,11 @@ export interface UiPort {
    */
   pet?(): void;
   /**
+   * The photo album (farm/albumstore.ts, hud/album.ts): the scrapbook grid, or one photo opened large (`id`, e.g. from a
+   * frame on the farmhouse photo wall). Optional for fakes.
+   */
+  album?(id?: string): void;
+  /**
    * A transient line, drawn as a speech bubble anchored to whoever said it: `o.from` (an interactable id), else the
    * interactable under the crosshair when it was said (most lines come from `use()`), else a small caption low on the
    * screen. `o.who` heads the bubble (the speaker's name) when it is pinned to the screen edge.
@@ -177,9 +182,10 @@ export interface SceneCtx {
   /**
    * comfort settings systems may read each frame (main.ts keeps it current from the browser-local prefs, model/prefs.ts):
    * `weatherFx` scales rain / snow / leaves / motes (0–1); `reducedMotion` asks for calmer motion (softer lightning
-   * flashes, fewer particles, no camera bob)
+   * flashes, fewer particles, no camera bob); `headBob` (Settings → Controls) also calms the held-item bob;
+   * `hands` = Settings → Interface → Show hands (the first-person paws, scene/viewmodel; absent = shown)
    */
-  comfort: { weatherFx: number; reducedMotion: boolean };
+  comfort: { weatherFx: number; reducedMotion: boolean; headBob?: boolean; hands?: boolean };
   /** debug flags (dev overlay, F-keys) */
   debug: Record<string, boolean>;
   /** systems publish lookups for each other here (e.g. 'farmers' → position of a farmer by id) */
@@ -212,6 +218,7 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'villagers'   VillagersService                  villagers package: the persistent villager cast (map pins, dev)
  *   'indoors'     IndoorSpace                       interior package: the walk-in farmhouse and barn (controller, engine, sky, audio read it)
  *   'gatherings'  GatherService (scene/gather)      evening gatherings: campfire, bandstand concert, market (farmers, villagers, audio read it)
+ *   'hands'       HandsPort (scene/viewmodel)      the first-person paws: held items, gestures, the lantern (forage, barn, seasons, HUD use it)
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
 export interface FarmerLocator {
@@ -363,8 +370,11 @@ export interface StructureSpots {
  */
 export interface IndoorSpace {
   readonly active: boolean;
-  /** which room you are in ('farmhouse' | 'barn'), null outdoors */
+  /** which room you are in ('farmhouse' | 'barn' | 'grotto'), null outdoors */
   readonly room?: string | null;
+  /** how much open sky reaches the room you are in and its tint (scene/interior/space.ts RoomDef.light; null = a room
+   *  with windows: the default warm fill) */
+  readonly light?: { sky: number; skyTint: number; groundTint: number; sun?: number } | null;
   /** world floor height at (x, z) inside the room for feet at world height y (a loft above, the floor below; omitted =
    *  the ground floor), null outside its walls (not walkable) */
   floor(x: number, z: number, y?: number): number | null;
@@ -379,4 +389,71 @@ export interface IndoorSpace {
   view?(name: string): boolean;
   /** where a pet that came in with you curls up (world; reused object), null when this room has no spot */
   petSpot?(): { x: number; y: number; z: number; yaw: number } | null;
+}
+
+/**
+ * Photo mode (farm/photo.ts), published as service 'photo'. `on` while the camera flies free and the HUD steps away:
+ * anything drawn in front of the camera for the player (the first-person viewmodel, held items) hides while it is on.
+ * `cheese()` is the "say cheese" cue: when the player focuses on someone (F in photo mode) or the self-timer runs,
+ * nearby farmers, villagers and your pet glance at the camera and pose for a moment (scene/cheese.ts `cheeseWeight`).
+ */
+export interface PhotoService {
+  readonly on: boolean;
+  /** the live cue, null when nobody is being asked to smile */
+  cheese(): CheeseCue | null;
+}
+export interface CheeseCue {
+  /** the camera (world) */
+  x: number; y: number; z: number;
+  /** the camera's horizontal look direction (unit) */
+  dx: number; dz: number;
+  /** when it started and ends (performance.now() ms: real time, works at timescale 0) */
+  from: number; until: number;
+  /** the subject in focus (farmer / helper / villager id, or 'pet'), who does a bigger pose; null = everyone in view */
+  focus: string | null;
+}
+
+/**
+ * The photo album's favourites for the farmhouse wall (farm/albumstore.ts), published as service 'album'. Images are
+ * small thumbnails (Blob); the reader makes and disposes its own textures.
+ */
+export interface AlbumWallSource {
+  /** the favourites to hang, latest first (at most `n`) */
+  wall(n: number): readonly { id: string; caption: string; thumb: Blob | null }[];
+  /** bumps whenever the wall's picks or their images change */
+  readonly wallVersion: number;
+}
+
+/** Something a paw holds (scene/viewmodel). Systems that own the thing claim it each frame (`HandsPort.carry`). */
+export type HandItem = 'none' | 'lantern' | 'basket' | 'rod' | 'hay' | 'grain' | 'brush' | 'coin';
+/** What a system can ask the paws to carry for it, renewed every frame while it lasts */
+export type HandCarry = 'hay' | 'grain' | 'brush' | 'snowball' | 'decor';
+/** One-shot paw gestures */
+export type HandGesture = 'grab' | 'pat' | 'wave' | 'cheer' | 'shield' | 'coin' | 'poke';
+/**
+ * The first-person paws (scene/viewmodel, service 'hands'). They draw in their own overlay (own field of view,
+ * depth squeezed in front of everything) and hold whatever you are doing: the rod, the barn's hay / grain scoop /
+ * brush, the lantern at night, the basket after a find; they row, skate, push a snowball, grip the summit viewer, and
+ * gesture (grab, pat, wave, cheer, shield, coin). Owners renew per-frame claims; a claim not renewed lapses.
+ */
+export interface HandsPort {
+  /** the paws are drawing this frame (Settings → Show hands on, no photo mode, no menu): hide your own held mesh */
+  readonly shown: boolean;
+  /** per frame while you hold it (barn chores, a snowball, yard decor): true when the paws show it for you */
+  carry(what: HandCarry): boolean;
+  /**
+   * per frame while fishing: the rod's tilt (radians forward, forage's `swing`); writes the rod tip's world position
+   * (where it shows on screen, for the line) into `tip` and returns true while the paws hold the rod
+   */
+  rod(swing: number, tip: THREE.Vector3): boolean;
+  /** per frame while rowing: the oar grips (world); the paws hold them */
+  oars(left: THREE.Vector3, right: THREE.Vector3): void;
+  /** play a gesture (dropped when no paw is free) */
+  gesture(g: HandGesture): void;
+  /** the player used an interactable (HUD, use / alt key): the matching gesture (pick up → grab, pet → pat, …) */
+  used(i: Pick<Interactable, 'kind' | 'verb' | 'id' | 'pos'>): void;
+  /** the lantern key: light it / put it away (back to automatic at the next dusk or dawn); true when now lit */
+  lantern(): boolean;
+  /** is the lantern lit right now */
+  readonly lanternLit: boolean;
 }

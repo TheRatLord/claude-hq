@@ -118,3 +118,34 @@ export function tagPainter(line1: string, line2: string, accent: number): Painte
     fitText(g, line2, 50, h * 0.72, w - 62, 22, '600');
   };
 }
+
+/** A long envelope (the whole slot, 2:1) with a wax seal and `↓n`: commits waiting upstream, pinned to the field sign. */
+export function mailPainter(n: number): Painter {
+  return (g, w, h) => {
+    g.fillStyle = '#f4ead2';
+    g.beginPath(); g.roundRect(3, 3, w - 6, h - 6, 8); g.fill();
+    g.strokeStyle = '#8a6a48'; g.lineWidth = 4; g.stroke();
+    // the flap
+    g.strokeStyle = 'rgba(120,90,60,0.55)'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(8, 8); g.lineTo(w / 2, h * 0.58); g.lineTo(w - 8, 8); g.stroke();
+    // a stamp in the corner
+    g.fillStyle = '#5a9fd0'; g.fillRect(w - 50, 14, 34, 40);
+    g.strokeStyle = '#f4ead2'; g.lineWidth = 3; g.setLineDash([4, 3]); g.strokeRect(w - 50, 14, 34, 40); g.setLineDash([]);
+    // wax seal
+    g.fillStyle = '#c83a32'; g.beginPath(); g.arc(w / 2, h * 0.58, 15, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#e8705a'; g.beginPath(); g.arc(w / 2 - 4, h * 0.58 - 4, 5, 0, Math.PI * 2); g.fill();
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = '#3a2616';
+    fitText(g, `↓${n > 99 ? '99+' : n}`, 18, h * 0.76, 90, 34);
+  };
+}
+
+/** A little chalk slate with `+n` (more crates waiting to ship than the stack shows). */
+export function chalkPainter(text: string): Painter {
+  return (g, w, h) => {
+    g.fillStyle = '#9a6a3a'; g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 12); g.fill();
+    g.fillStyle = '#34403c'; g.beginPath(); g.roundRect(14, 14, w - 28, h - 28, 6); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.06)'; for (let i = 0; i < 5; i++) g.fillRect(24 + i * 41, 22, 20, h - 44);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#f2f0e6';
+    fitText(g, text, w / 2, h / 2 + 3, w - 50, 72);
+  };
+}

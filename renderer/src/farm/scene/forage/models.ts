@@ -323,8 +323,22 @@ function crystal(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** the grotto's glow-caps (scene/grotto): a little clump of pale-stemmed mushrooms with sea-green caps on a moss tuft */
+function glowcap(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(partName(blob([0, 0.012, 0], [0.11, 0.025, 0.09], { paint: (f) => (f.ny > 0.5 ? C(0x5e8a4a) : C(0x3f6a3a)), sides: 9, rings: 3 }), 'moss'));
+  const caps: [number, number, number, number][] = [[0, 0, 0.11, 1], [0.05, 0.03, 0.075, 0.75], [-0.045, 0.025, 0.06, 0.6], [0.02, -0.05, 0.05, 0.5]];
+  for (const [x, z, h, s] of caps) {
+    parts.push(partName(stalk(x, z, 0.01, h, 0.009 * s + 0.004, C(0xe8f6ee), [x * 0.3, 0, z * 0.3]), 'stem'));
+    parts.push(partName(blob([x * 1.3, h, z * 1.3], [0.034 * s + 0.01, 0.022 * s + 0.008, 0.034 * s + 0.01], {
+      paint: (f) => (f.ny < -0.2 ? C(0xbff8e0) : (f.t * 7 + f.a) % 2 < 0.25 ? C(0xe8fff4) : C(0x7ff0c8)), sides: 9, rings: 3,
+    }), 'cap'));
+  }
+  return merge(parts);
+}
+
 const FORAGE_BUILD: Record<string, () => THREE.BufferGeometry> = {
-  morel, wildleek, violet, berries, feather, shell, skipstone, chanterelle, acorn, hazelnut, mapleleaf, holly, pinecone, crystal,
+  morel, wildleek, violet, berries, feather, shell, skipstone, chanterelle, acorn, hazelnut, mapleleaf, holly, pinecone, crystal, glowcap,
 };
 const forageCache = new Map<string, THREE.BufferGeometry>();
 /** a forageable's geometry (cached; base at y = 0) */
@@ -341,7 +355,7 @@ export function forageRadius(id: string): number {
 
 // ------------------------------------------------------------------------------------------------- fish
 
-interface Shape { len: number; depth: number; width: number; head: number; tail: number; dorsal: number; whiskers?: boolean; slender?: boolean }
+interface Shape { len: number; depth: number; width: number; head: number; tail: number; dorsal: number; whiskers?: boolean; slender?: boolean; blind?: boolean }
 const SHAPES: Record<string, Shape> = {
   minnow: { len: 0.2, depth: 0.045, width: 0.025, head: 0.3, tail: 0.06, dorsal: 0.4 },
   bluegill: { len: 0.24, depth: 0.12, width: 0.04, head: 0.35, tail: 0.08, dorsal: 1.2 },
@@ -355,6 +369,8 @@ const SHAPES: Record<string, Shape> = {
   koi: { len: 0.42, depth: 0.12, width: 0.07, head: 0.3, tail: 0.13, dorsal: 1.2, whiskers: true },
   stormbass: { len: 0.42, depth: 0.13, width: 0.07, head: 0.4, tail: 0.1, dorsal: 1.6 },
   char: { len: 0.36, depth: 0.085, width: 0.05, head: 0.3, tail: 0.1, dorsal: 0.8 },
+  // the grotto's blind cave fish (scene/grotto): small, translucent pink, no eyes
+  cavefish: { len: 0.17, depth: 0.04, width: 0.024, head: 0.32, tail: 0.06, dorsal: 0.5, blind: true },
 };
 
 /** a thin fin in the y-z plane (x = 0), given as [y, z] points, `t` thick; flat-shaded, both sides */
@@ -401,8 +417,10 @@ function fishBody(d: FishDef): THREE.BufferGeometry {
     parts.push(partName(pec.rotateY(sx * 0.6).translate(sx * W * 0.8, -D * 0.12, L * 0.18), 'fin'));
     // eye: white, then a dark pupil a hair further out
     const ex = sx * W * 0.62, ey = D * 0.12, ez = L / 2 - L * sh.head * 0.35;
-    parts.push(partName(blob([ex, ey, ez], [0.006, D * 0.11, D * 0.11], { paint: C(0xfff8ec), sides: 7, rings: 3 }), 'eye'));
-    parts.push(partName(blob([ex + sx * 0.004, ey, ez + 0.002], [0.004, D * 0.065, D * 0.065], { paint: C(0x1a1a1e), sides: 6, rings: 2 }), 'eye'));
+    if (!sh.blind) {
+      parts.push(partName(blob([ex, ey, ez], [0.006, D * 0.11, D * 0.11], { paint: C(0xfff8ec), sides: 7, rings: 3 }), 'eye'));
+      parts.push(partName(blob([ex + sx * 0.004, ey, ez + 0.002], [0.004, D * 0.065, D * 0.065], { paint: C(0x1a1a1e), sides: 6, rings: 2 }), 'eye'));
+    }
     if (sh.whiskers) parts.push(partName(loft([{ p: [sx * W * 0.4, -D * 0.05, L / 2 - 0.01], r: 0.004 }, { p: [sx * (W * 0.4 + 0.03), -D * 0.2, L / 2 + 0.01], r: 0.003 }, { p: [sx * (W * 0.4 + 0.05), -D * 0.35, L / 2 - 0.01], r: 0.002 }], { sides: 4, sub: 2, paint: acc }), 'whisker'));
   }
   return merge(parts);

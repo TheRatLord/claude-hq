@@ -58,7 +58,8 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 ## Poses, scenarios, URL parameters
 
 * **Poses** (`POSES` in `dev/api.ts`): `hub farmhouse square windmill pond barn river plots east trailhead trail bridge
-  summit dock ice`; also `pose=x,z[,yaw,pitch]` and `pose=inside[:view]` / `pose=barn-inside[:view]` ([interior.md](interior.md)).
+  summit dock ice falls curtain`; also `pose=x,z[,yaw,pitch]` and `pose=inside[:view]` / `pose=barn-inside[:view]` ([interior.md](interior.md)),
+  `pose=grotto[:view]` (the cave behind the falls, [grotto.md](grotto.md)). `curtain` (a cramped ledge) is never nudged.
   Named poses are picked with open ground in front in every season, but festival stalls, scarecrows and town upgrades
   come and go: a few frames after a named pose, `pose()` fans rays across the middle of the view and, if something solid
   is within 4.5 m, steps back / aside (never into a collider) to the first clear spot. `pose=x,z,…` is never nudged.
@@ -75,7 +76,9 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 * F3 perf overlay (fps, frame/cpu ms, draw calls, triangles, per-system ms, player position/yaw), F4 valley state
   inspector (farmers with raw vs smoothed job, plots with stage), F6 debug labels (`ctx.debug.labels`) (`dev/overlay.ts`).
 * **Photo mode (P)** (`farm/photo.ts`): the HUD steps away and the camera flies free (WASD along the view, Space / C,
-  Shift); the wheel zooms, [ ] scrub the clock, Enter saves a PNG; P or Esc puts the view and the clock back.
+  Shift); the wheel zooms, [ ] scrub the clock, 1–6 looks, V frames, G grid, N name tags, T timer, F say cheese,
+  Enter saves to the photo album (X: also a PNG), L opens the album; P or Esc puts the view and the clock back
+  ([album.md](album.md)).
 * HUD keys: [hud.md](hud.md#keys-hudhudts).
 
 ## Dev API
@@ -181,7 +184,7 @@ the town upgrades' geometry (`structures/upgrades.ts` dispose).
 
 Playwright (`playwright.config.ts`, specs in `browser-tests/`: `valley.spec.ts` (terminal routes and the power-user
 loop, see [hud.md](hud.md#every-terminal-is-a-menu-away)), `trail.spec.ts` (the valley viewer), `stamps.spec.ts` (the stamp
-book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
+book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `album.spec.ts` (photo mode's looks, frames, timer, say cheese, the album panel, the photo wall; saves the framed exports to its output folder, [album.md](album.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
 with the page open, a tab hidden for hours, a dropped socket under a terminal, long / unicode / emoji names, status
 flapping: all with a clean console), `settings.spec.ts` (Settings round-trips, rebinding, reduced motion, keyboard
 navigation, captions; [hud.md](hud.md#settings-pause-menu--settings-hudpausets)), `workbench.spec.ts`;

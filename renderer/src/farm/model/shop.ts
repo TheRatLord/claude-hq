@@ -116,6 +116,9 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
     { gift: true }),
   D('trophy-gold', 'Golden stamp cup', 600, 1, '#f2c33a', 'The golden cup, for a stamp book with every page inked. The Mayor made a speech. It was long.',
     { gift: true }),
+  // the hidden chest in the grotto behind the waterfall (scene/grotto): one per valley, for whoever is curious enough
+  D('geode', 'Grotto geode lamp', 400, 1, '#9a7cf0', 'A split geode on a stump of driftwood, its crystals still glowing faintly. Left in a chest behind the falls by an explorer who signed their journal "R."',
+    { gift: true, glow: true }),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));

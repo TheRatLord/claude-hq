@@ -17,7 +17,7 @@ adding a signal, changing how one is derived, or moving where one appears.
 | **model id** | transcripts | `model`, `modelTier` | `tier` (hat) + **`model`** ('Opus 5.5') | hat; **card + ledger kind line** |
 | **context tokens** | transcripts | `contextTokens` | **`context` against the real window**, `contextTokens`, `contextWindow` | **card bar + '82% · 164k of 200k', nameplate gauge** |
 | **todo list** | transcripts (TodoWrite) | `todos` | `todos` counts + **`items` checklist** | **card checklist**, noticeboard |
-| **git: branch, changed, ahead/behind, last commit** | **`enrich/git.ts` (new)** | **`git`** (rev 2) | **`FarmerView.git`, `HelperView.git`, `PlotView.git`** | **card, ledger group head, field sign, sign text** |
+| **git: branch, changed, ahead/behind, last commit** | **`enrich/git.ts` (new)** | **`git`** (rev 2) | **`FarmerView.git`, `HelperView.git`, `PlotView.git`** | **card, ledger group head, field sign + sign text; in the field: weeds, crates + push cart, sign pennant, upstream letter** |
 | **token spend today (+ USD estimate)** | **transcripts usage (new)** | **`usage`** (rev 2) | **`FarmerView.spend`, `ValleyState.spend`** | **card, ledger column + total, Almanac** |
 | commit subject | transcripts (git's `[branch sha] subject` / `-m`) | `commit` event `detail.msg/sha/branch` (rev 2) | letter body, timeline mark | mailbox, Today moments |
 | output tokens | transcripts | `outputTokens` | — | not shown (spend supersedes it) |
@@ -49,6 +49,26 @@ weigh double); `branches` counts distinct branches (worktrees). Shown: card `Bra
 second line `on feat/x` (crop name when not a repo); reading the sign: weeds (changed files) and crates waiting to
 ship (unpushed commits).
 
+**Git in the field** (`scene/plots/git.ts` `FieldGit`, driven by `PlotView.git` from `field.ts`; gallery `field-git`
+variants `feature | main | detached | cycle`, props `git-weed`, `git-pennant`):
+
+* *Changed files = weeds*: dandelion tufts (rosette, a flower, a seed clock) in the furrows between the rows (open ground
+  in pens / the orchard), front ones first, clear of every farmer spot, prop and plant (`gitWeedSpots`, seeded per
+  plot). Count `weedCount(dirty)` = 1 + ⌊2.2 log₂ dirty⌋, ≤ 10 (1 → 1, 4 → 5, 8 → 7, 23+ → 10). When `dirty` drops
+  (a commit) the extra weeds are pulled one after another: a tug, they pop out spinning with a dirt-and-leaf puff and
+  one `pop`. Other drops (field closing, harvest) just wilt them away.
+* *Unpushed commits = crates* stacked left of the field sign (one per commit, ≤ 5, popping in as commits land), past 5
+  a chalk slate `+N` leans on the front crate. When `ahead` drops (a push) a cart rolls in along the front, the
+  pushed crates (≤ 4) hop aboard and it trundles off toward the shipping bin's side, fading out; on arrival the bin's
+  lid pops (structures service `shippingBin.ship()`, a soft creak). `ahead` null (no upstream) shows no crates.
+* *Behind upstream = mail*: a sealed envelope `↓N` tucked under the sign's top beam.
+* *Branch = pennant* on the sign's top beam, coloured by `branchColor` (FNV hash of the name into 7 colours);
+  `main` / `master` fly the valley's own colour (Clawd terracotta, never used for other branches), a detached HEAD a
+  plain grey. The sign's hover tag reads `hq-core sign · feat/x`; reading the sign lists weeds, crates and letters.
+* Cost: two instanced batches (`plots:gitweed`, `plots:pennant`, no shadows) = +2 draw calls for every field; the
+  crates, cart and the two little cards (`git:mail:N`, `git:chalk:N`, shared atlas slots by count) ride existing
+  batches. No per-frame allocation (strings only when a count changes).
+
 **Spend** (`TranscriptState._usage/usage`, `shared/pricing.ts`). Each assistant `message.id` counts once (streamed
 repeats: the last usage block wins) on the local day its first line is stamped. Tokens = input + cache writes + cache
 reads + output; cost = list price per model (cache writes at 1.25 × input, reads per the table), an estimate, never a
@@ -74,11 +94,18 @@ presentation path handles `null`. The new View fields are optional on `FarmerVie
 and a last commit (`BRANCHES`, `COMMITS`); a task's first edit of a file adds a changed file, a commit clears them,
 sets the last commit and stacks one unpushed commit (every other commit "pushes"). Each Claude gets a morning of spend
 from its own seeded stream and grows it per tool step from the context it re-reads (`_spend`), so the schedule's random
-sequence is untouched. `demo.force {git}` sets the workspace's repo.
+sequence is untouched. Seeds go up to 7 unpushed commits (a `+N` slate) and are behind upstream one time in five.
+`demo.force {git}` sets the workspace's repo. Shot recipe (commit pulls the weeds at 3 s, a push ships the crates at
+7 s; `cam` = in front of the demo's `d1` gate):
+
+```sh
+F="window.F=(g)=>__valley.force(__valley.state().plots.d1.farmers[0],{git:Object.assign({root:'/w/claude-hq',branch:'main',head:'abc1234',dirty:12,untracked:2,ahead:8,behind:3,lastCommit:null},g)});F({})"
+npm run shoot -- --shot "name=git,hour=10,weather=clear,hud=0,wait=1500,frames=16,every=700,cam=-16.84;2.95;11.26;2.618;-0.290,eval=$F;setTimeout(()=>F({dirty:0,untracked:0,ahead:9}),3000);setTimeout(()=>F({dirty:0,ahead:0,behind:0}),7000)"
+```
 
 ## Tests
 
 `shared/pricing.test.ts`, `server/enrich/usage.test.ts` (spend, read-back, commit subject), `server/enrich/git.test.ts`
 (parsers, sweep grouping / caching / slow roots, a real scratch repo), `server/demo/world.test.ts` (rev-2 signals),
-`renderer/src/farm/model/signals.test.ts` (helpers + valley end to end), `hud/format.test.ts` (copy),
+`renderer/src/farm/model/signals.test.ts` (helpers + valley end to end), `scene/plots/git.test.ts` (weed count, pennant colours, weed spots), `hud/format.test.ts` (copy),
 `browser-tests/signals.spec.ts` (ledger, card, nameplate gauge).

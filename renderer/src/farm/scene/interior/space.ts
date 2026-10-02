@@ -76,6 +76,11 @@ export interface RoomDef {
   id: string;
   /** the structure it is inside (world/map.ts) */
   site: string;
+  /** a frame of its own instead of the structure's (the grotto: its mouth in the cliff behind the waterfall) */
+  origin?: { x: number; y: number; z: number; yaw: number };
+  /** how the open sky reaches in (sky.ts): `sky` scales the hemisphere fill (default 0.62: a room with windows), tinted
+   *  toward `skyTint` / `groundTint` (default warm plaster and planks); a cave keeps only a cool trickle */
+  light?: { sky: number; skyTint: number; groundTint: number; sun?: number };
   /** local: where you stand coming in, and outside the door going out */
   entry: Spot;
   exit: Spot;

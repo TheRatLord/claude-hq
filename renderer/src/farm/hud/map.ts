@@ -65,7 +65,9 @@ function gather(ctx: HudCtx, now: number): MapExtras | null {
   }
   const unread = s.letters.filter((l) => !l.read).length;
   const subtitle = [CAP(sky.season), fa?.name, s.almanac?.name].filter(Boolean).join(' · ');
-  return (extras = { season: sky.season, store, unread, requests, forage, forageLeft: forage.length, wildOut, wild, bites, festival, subtitle });
+  // secrets found (the grotto behind the waterfall: its "?" becomes a pin)
+  const found = svc<{ discovered?(): boolean }>('grotto')?.discovered?.() ? ['grotto'] : [];
+  return (extras = { season: sky.season, store, unread, requests, forage, forageLeft: forage.length, wildOut, wild, bites, festival, subtitle, found });
 }
 
 /** A legend swatch: the same pin the map draws, on a tiny canvas. */

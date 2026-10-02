@@ -10,7 +10,7 @@
  * Draws: the snowballs (1, instanced), all decorations merged (1, rebuilt on change), the trail (1, instanced).
  */
 import * as THREE from 'three';
-import type { Interactable } from '../context.ts';
+import type { HandsPort, Interactable } from '../context.ts';
 import type { WalletService } from '../../model/wallet.ts';
 import { dayKey } from '../../model/almanac.ts';
 import { WORLD, heightAt, normalAt } from '../../world/map.ts';
@@ -222,6 +222,8 @@ export function createSnow(sh: Shared): Pastime {
       verbIn -= dt;
       if (verbIn <= 0) { verbIn = 0.2; verbs(); }
       lyingK = ctx.valley.sky.trace.snow;
+      // the first-person paws (scene/viewmodel) push it
+      if (carry.on) (ctx.services.get('hands') as HandsPort | undefined)?.carry('snowball');
       // the ball in front of you: pushed along, rolling, growing in the snow, leaving a scraped trail
       if (carry.on) {
         const c = sh.controller();

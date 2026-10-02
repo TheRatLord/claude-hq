@@ -7,7 +7,7 @@ import {
 import { STATUSES } from '../../../../shared/protocol.ts';
 
 test('prefs: defaults keep the original behaviour (E / F / M / Tab / J, fov 62, bob on, 1x everything)', () => {
-  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ' });
+  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT' });
   assert.equal(DEFAULT_PREFS.fov, 62);
   assert.equal(DEFAULT_PREFS.headBob, true);
   assert.equal(DEFAULT_PREFS.mouseSens, 1);

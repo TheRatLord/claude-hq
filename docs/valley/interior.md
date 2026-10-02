@@ -22,7 +22,7 @@ Key sources (paths relative to `renderer/src/farm/`):
 
 ## The room system
 
-`ROOMS = [houseRoom, barnRoom]`. Each room is a `RoomDef`:
+`ROOMS = [houseRoom, barnRoom, grottoRoom]` (the grotto is a cave behind the waterfall: [grotto.md](grotto.md)). Each room is a `RoomDef`:
 
 * **Plan** (pure, room-local): `floor(lx, lz, ly?)`, `contains`, `pushOut(l, r, ly?)`, `entry` / `exit`, named
   `views`, a `pet` spot, a `roof` loudness and an optional outside `door`.
@@ -57,6 +57,8 @@ a plan, a builder and one entry in `ROOMS`.
   [pastimes.md](pastimes.md)) with the biggest catch mounted over the mantel, a fish tank swimming every species
   caught (one merged mesh, vertex-shader swim).
 * A CRT terminal desk (phosphor list of farmers, amber blink when one needs you; E → roster).
+* The photo wall over the bed: eight frames with the album's latest favourites (E opens one in the album;
+  `photowall.ts`, [album.md](album.md)).
 * Bed (E naps: time skips in demo, a cozy line live), Mochi's cat bed, grandfather clock on the real time (ticks),
   bookshelf, plants, rug, armchair.
 
@@ -176,7 +178,7 @@ outside door.
 
 **URL / shot poses**
 
-* Farmhouse: `pose=inside[:view]`. Views: door, room, hearth, shelf, desk, bed, tank, window, sun.
+* Farmhouse: `pose=inside[:view]`. Views: door, room, hearth, shelf, desk, bed, photos, tank, window, sun.
 * Barn: `pose=barn-inside[:view]`. Views: door, aisle, stalls, cow, donkey, hens, coop, sheep, panel, bench, loft,
   rafters, ladder.
 

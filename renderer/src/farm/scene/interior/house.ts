@@ -12,7 +12,7 @@
  * check the grandfather clock (the valley's clock), fluff Mochi's bed, look out of the window.
  */
 import * as THREE from 'three';
-import type { Interactable, LightEmitter } from '../context.ts';
+import type { AlbumWallSource, Interactable, LightEmitter } from '../context.ts';
 import type { Season } from '../../model/types.ts';
 import type { CollectionService } from '../../model/collection.ts';
 import { CATALOG } from '../../model/collection.ts';
@@ -21,7 +21,8 @@ import { buildRoom } from './room.ts';
 import { buildFinds, buildFire, buildPaper, buildPendulum, buildScreen, buildTank } from './pieces.ts';
 import { buildBeams, buildGlass, createCaptures, disposeCaptures, houseOpenings, renderCapture, setFallback } from './view.ts';
 import type { Capture } from './view.ts';
-import { DOOR, ENTRY, EXIT, FURN, INSIDE_VIEWS, ROOM, SHELF_IDS, TANK_IDS, WINDOWS, biggestCatch, clockText, onFloor, pushOut } from './layout.ts';
+import { buildPhotoWall } from './photowall.ts';
+import { DOOR, ENTRY, EXIT, FURN, INSIDE_VIEWS, PHOTO_WALL, ROOM, SHELF_IDS, TANK_IDS, WINDOWS, biggestCatch, clockText, onFloor, pushOut } from './layout.ts';
 import type { RoomBuilt, RoomDef, RoomHost } from './space.ts';
 
 const F = ROOM.floor;
@@ -68,7 +69,10 @@ function buildHouse(host: RoomHost, season: Season): RoomBuilt {
   const glow = glowMat ?? new THREE.MeshBasicMaterial();
   setGlass(glow, 0.38, 0.55);   // smoky amber glass by day (bright outdoor glass reads white in the room)
   const fire = buildFire(), pendulum = buildPendulum(), paper = buildPaper(), screen = buildScreen(), finds = buildFinds(), tank = buildTank(), glass = buildGlass(), beams = buildBeams(houseOpenings());
-  root.add(fire.mesh, pendulum, paper.mesh, screen.mesh, finds.mesh, tank.fish, tank.glass, glass.mesh, beams.mesh);
+  // the photo wall over the bed: the album's favourites (photowall.ts; service 'album')
+  const photos = buildPhotoWall();
+  const albumSrc = () => ctx.services.get('album') as AlbumWallSource | undefined;
+  root.add(fire.mesh, pendulum, paper.mesh, screen.mesh, finds.mesh, tank.fish, tank.glass, glass.mesh, beams.mesh, photos.mesh);
   // the window captures are placed in the world from the room's frame
   const placed = new THREE.Group();
   placed.position.set(frame.x, frame.y, frame.z);
@@ -153,6 +157,12 @@ function buildHouse(host: RoomHost, season: Season): RoomBuilt {
       I('catbed', 'Fluff', () => "Mochi's bed", [A.catBed.x, F + 0.2, A.catBed.z], () => { audio()?.play('purr', { volume: 0.4 }); say('Still warm. Mochi is out on the porch, supervising.'); }),
       I('bookshelf', 'Browse', () => 'Bookshelf', [A.bookshelf.x + 0.2, F + 1.3, A.bookshelf.z], () => { audio()?.play('page'); say(BOOK_LINES[Math.floor(Math.random() * BOOK_LINES.length)]); }),
       I('window', 'Look out of', () => 'Window', [WINDOWS[1].at, WINDOWS[1].y, ROOM.z1], () => say(windowLine())),
+      ...photos.slots.map((f, i) => I(`photo:${i}`, 'Look at', () => (photos.idAt(i) ? 'Favourite photo' : 'Empty frame'), [f.x, f.y, PHOTO_WALL.z + 0.05], () => {
+        const id = photos.idAt(i);
+        audio()?.play('page', { volume: 0.5 });
+        if (id && ctx.ui.album) ctx.ui.album(id);
+        else say('An empty frame. Take pictures in photo mode (P), then ♥ your favourites in the album (L): they hang here.');
+      }, { reach: 3.2, hint: () => photos.captionAt(i) || (photos.idAt(i) ? 'opens it in the album' : 'your favourite photos hang here') })),
     ];
   }
 
@@ -198,6 +208,7 @@ function buildHouse(host: RoomHost, season: Season): RoomBuilt {
       finds.update(cs?.data() ?? null, cs?.version ?? 0);
       tank.update(t, cs?.data() ?? null, cs?.version ?? 0);
       glass.update(t, L.wet, L.night);
+      photos.update(albumSrc());
       setGlow(glow, Math.max(L.night, 0.15));
       // sun (or moon) through each opening: how squarely it shines in, and how strong it is
       sunLocal.copy(L.sunDir).applyAxisAngle(THREE.Object3D.DEFAULT_UP, -frame.yaw);
@@ -219,6 +230,8 @@ function buildHouse(host: RoomHost, season: Season): RoomBuilt {
     dispose() {
       fireLoop?.stop(); fireLoop = null;
       disposeCaptures(caps);
+      photos.dispose();
+      root.remove(photos.mesh);
       disposeTree(root);
     },
   };

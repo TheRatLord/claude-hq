@@ -41,6 +41,9 @@
  *   __valley.boat(cmd?, a?)  skate(cmd?, a?)  snowman(cmd?, a?)   seasonal pastimes (scene/seasons): boat('in' | 'row' secs | 'turn' |
  *                                         'spin' | 'middle' | 'out'); skate('on' | 'eight' | 'glide' secs | 'off') (winter: the pond frozen);
  *                                         snowman('build' pieces? | 'roll' r? | 'place' | 'reset') (winter with lying snow); no cmd = the state
+ *   __valley.grotto(where?)               the secret grotto behind the waterfall (scene/grotto): grotto('ledge' | 'curtain' | 'mouth') stands you
+ *                                         outside; grotto('inside' | 'pool' | 'camp' | 'paintings' | 'chest' | 'cave' | 'mouth-in' …) in the cave;
+ *                                         grotto('reset') forgets it; grotto() → { discovered, inside, data }
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *                                         'barn' / 'barn:VIEW' (door aisle stalls loft hens panel bench …: scene/interior/barnLayout.ts) for the barn
  *   __valley.interact()                   use whatever is under the crosshair
@@ -66,6 +69,7 @@ import type { Newsroom } from '../newsroom.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
 import type { SeasonsService } from '../scene/seasons/seasons.ts';
+import type { GrottoHandle } from '../scene/grotto/grotto.ts';
 import { gatherViewpoint } from '../scene/gather/gather.ts';
 import type { CampfireSeg, GatherKind } from '../model/gatherings.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
@@ -92,6 +96,10 @@ export const POSES: Record<string, [number, number, number, number]> = {
   // south-west shore
   dock: [33.5, 46.5, -0.75, -0.15],
   ice: [31.0, 51.5, -0.97, -0.14],
+  // the secret grotto (scene/grotto): the falls from the pool's east bank; behind the curtain on the ledge, the mouth
+  // ahead on the left (pose=grotto[:view] stands you in the cave itself)
+  falls: [-19.6, -99.5, 0.42, 0.2],
+  curtain: [-28.6, -109.3, -1.05, 0.04],
 };
 
 export interface DevDeps {
@@ -199,6 +207,7 @@ export function installDevApi(d: DevDeps): void {
         if (--frames > 0) return;
         off();
         if (freeCam || Math.hypot(ctx.player.pos.x - p[0], ctx.player.pos.z - p[1]) > 0.5) return;   // moved on meanwhile
+        if (name === 'curtain') return;   // a cramped ledge behind the falls: rock all round is the point
         const [x, z] = clearView(p[0], p[1], p[2], p[3]);
         if (x !== p[0] || z !== p[1]) controller.teleport(x, z, p[2], p[3]);
       });
@@ -367,6 +376,14 @@ export function installDevApi(d: DevDeps): void {
     /** snowmen (winter, lying snow): snowman('build', pieces?) a whole one in front of you, snowman('roll', r?) start rolling a
      *  ball, snowman('place') set it down, snowman('reset') melt them all; snowman() → the state */
     snowman: (cmd?: string, a?: number) => (ctx.services.get('seasons') as SeasonsService | undefined)?.snowman(cmd, a) ?? null,
+    /** the secret grotto (scene/grotto): grotto('curtain') behind the falls, grotto('pool') in the cave, grotto('reset'), grotto() → state */
+    grotto(where?: string) {
+      const g = ctx.services.get('grotto') as GrottoHandle | undefined;
+      if (!g) return null;
+      if (where === 'reset') { g.reset(); return true; }
+      if (where) return g.go(where);
+      return { discovered: g.discovered(), inside: g.inside, data: g.data() };
+    },
     /** wild visitors (scene/life/wildlife.ts): wildlife() lists them; wildlife('deer') brings one out at its habitat and
      *  stands you in view of it; wildlife('owl', 'here') summons it in front of the camera instead; wildlife('deer', 'spook') startles it */
     wildlife(id?: string, mode?: 'here' | 'spook') {

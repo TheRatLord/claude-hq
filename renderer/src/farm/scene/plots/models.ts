@@ -271,7 +271,10 @@ export function exitRibbon(): THREE.BufferGeometry {
 
 type Parts = THREE.BufferGeometry[];
 
+/** the ground footprints of the hay bales placed by the current kindProps call (half the bale's diagonal) */
+let baleFeet: { x: number; z: number; r: number }[] | null = null;
 function hayBale(p: Parts, x: number, z: number, yaw: number, s = 1, y = 0): void {
+  baleFeet?.push({ x, z, r: 0.59 * s });
   p.push(S(box(1.0 * s, 0.55 * s, 0.6 * s, PAL.hay, { p: [x, y + 0.275 * s, z], r: [0, yaw, 0] }), 'hay', { scale: 0.8 }));
   for (const o of [-0.25, 0.25]) {
     const c = Math.cos(yaw), sn = Math.sin(yaw);
@@ -420,20 +423,28 @@ function wheelbarrow(p: Parts, x: number, z: number, yaw: number, load: number):
   for (let i = 0; i < 4; i++) p.push(ball(0.13, load, { p: at((i % 2 - 0.5) * 0.25, 0.64, (i < 2 ? -0.15 : 0.15)) }));
 }
 
-export interface KindProps { geo: Parts; /** solid footprints for animals + player colliders (local circles) */ solids: { x: number; z: number; r: number }[] }
+export interface KindProps {
+  geo: Parts;
+  /** solid footprints for animals + player colliders (local circles) */
+  solids: { x: number; z: number; r: number }[];
+  /** every prop's ground footprint, solid or not (hay bales, barrows, baskets …): small things placed later (git weeds) keep off them */
+  footprints: { x: number; z: number; r: number }[];
+}
 
 /**
  * Props for a kind, around the fixed spots (bench back-left, helpers right, ask/done by the gate). The gate posts +
  * pennant are added by the field.
  */
 export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season): KindProps {
-  const p: Parts = [], solids: KindProps['solids'] = [];
+  const p: Parts = [], solids: KindProps['solids'] = [], footprints: KindProps['footprints'] = [];
+  const foot = (x: number, z: number, r: number) => { footprints.push({ x, z, r }); };
+  baleFeet = footprints;
   // every field: the thinking bench (a hay bale) at the bench spot, a water pump by the back fence
   named(p, 'hayBale', () => hayBale(p, -hw + 1.8, -hd + 1.25, 0.1, 0.9));
   const crops = !['chickens', 'cows', 'sheep', 'pigs'].includes(kind);
   if (crops && kind !== 'bees') { named(p, 'wellPump', () => wellPump(p, -hw + 0.7, 0.8)); solids.push({ x: -hw + 0.7, z: 1.1, r: 0.5 }); }
   switch (kind) {
-    case 'pumpkins': named(p, 'wheelbarrow', () => wheelbarrow(p, -hw + 1.2, hd - 1.6, 0.6, PAL.pumpkin)); named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, -0.2, 0.8)); break;
+    case 'pumpkins': named(p, 'wheelbarrow', () => wheelbarrow(p, -hw + 1.2, hd - 1.6, 0.6, PAL.pumpkin)); foot(-hw + 1.2, hd - 1.6, 0.85); named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, -0.2, 0.8)); break;
     case 'wheat': named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, 0.25)); named(p, 'hayBale', () => hayBale(p, hw - 3.15, hd - 1.12, 0.3, 0.7, 0.55)); break; // the second bale is stacked on the first (it sat inside it)
     case 'orchard': {
       // ladder against nothing: a leaning ladder + baskets of apples near the gate
@@ -441,6 +452,8 @@ export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season
       for (const s of [-1, 1]) p.push(S(box(0.06, 2.0, 0.06, PAL.wood, { p: [-hw + 1.1 + s * 0.2, 0.95, hd - 1.2], r: [0.25, 0, 0] }), 'logs', { axis: 'y', scale: 0.4 }));
       for (let k = 0; k < 6; k++) p.push(S(box(0.4, 0.04, 0.05, PAL.woodDark, { p: [-hw + 1.1, 0.2 + k * 0.3, hd - 1.2 - 0.05 - k * 0.075] }), 'logs', { axis: 'x', scale: 0.4 }));
       });
+      foot(-hw + 1.1, hd - 1.5, 0.6);
+      for (const [bx, bz] of [[hw - 3.2, hd - 1.1], [hw - 2.5, hd - 0.8]]) foot(bx, bz, 0.35);
       for (const [bx, bz] of [[hw - 3.2, hd - 1.1], [hw - 2.5, hd - 0.8]]) named(p, 'appleBasket', () => {
         p.push(S(cyl(0.28, 0.22, 0.3, 8, PAL.woodLight, { p: [bx, 0.15, bz] }), 'thatch', { scale: 0.25 }));
         for (let i = 0; i < 5; i++) p.push(ball(0.09, PAL.apple, { p: [bx + Math.cos(i * 1.3) * 0.13, 0.32, bz + Math.sin(i * 1.3) * 0.13] }));
@@ -449,12 +462,12 @@ export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season
     }
     // the first row starts past the thinking-bench hay bale (it ran through the bale)
     case 'vineyard': for (const x of [-6.9, -3.6, 0, 3.6, 6.3]) named(p, 'trellisRow', () => trellisRow(p, x, -hd + (x < -6 ? 2.1 : 1.0), hd - 3.0, season)); break;
-    case 'berries': named(p, 'wheelbarrow', () => wheelbarrow(p, hw - 3.2, hd - 1.2, -0.5, PAL.berry)); break;
+    case 'berries': named(p, 'wheelbarrow', () => wheelbarrow(p, hw - 3.2, hd - 1.2, -0.5, PAL.berry)); foot(hw - 3.2, hd - 1.2, 0.85); break;
     case 'cabbages': named(p, 'hayBale', () => hayBale(p, hw - 3.2, hd - 1.1, 0.25, 0.8)); break;
     case 'sunflowers': break;
     case 'chickens':
       named(p, 'coop', () => coop(p, 0.6, -hd + 1.3, season)); solids.push({ x: 0.6, z: -hd + 1.3, r: 1.4 }, { x: -0.5, z: -hd + 1.3, r: 1.0 }, { x: 1.7, z: -hd + 1.3, r: 1.0 });
-      named(p, 'strawNest', () => strawNest(p, -3.4, -hd + 1.4, 0)); named(p, 'strawNest', () => strawNest(p, 3.6, -hd + 1.3, 0));
+      named(p, 'strawNest', () => strawNest(p, -3.4, -hd + 1.4, 0)); named(p, 'strawNest', () => strawNest(p, 3.6, -hd + 1.3, 0)); foot(-3.4, -hd + 1.4, 0.7); foot(3.6, -hd + 1.3, 0.7);
       named(p, 'trough', () => trough(p, -4.5, 1.2, Math.PI / 2, PAL.wheat, 1.4)); solids.push({ x: -4.5, z: 1.2, r: 0.8 });
       break;
     case 'cows':
@@ -469,11 +482,12 @@ export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season
       break;
     case 'pigs':
       named(p, 'sty', () => sty(p, 1.0, -hd + 1.3, season)); solids.push({ x: 0.4, z: -hd + 1.3, r: 1.1 }, { x: 1.6, z: -hd + 1.3, r: 1.1 });
-      named(p, 'mudPuddle', () => mudPuddle(p, -3.4, -0.6));
+      named(p, 'mudPuddle', () => mudPuddle(p, -3.4, -0.6)); foot(-3.4, -0.6, 1.6);
       named(p, 'trough', () => trough(p, 4.0, 1.0, Math.PI / 2, 0xa0803a, 1.6)); solids.push({ x: 4.0, z: 1.0, r: 0.9 });
       break;
     case 'bees': break;
   }
+  if (kind === 'bees') foot(hw - 3.4, hd - 1.1, 0.75);
   if (kind === 'bees') named(p, 'honeyStand', () => {
     // hives are added by the field (interactable); a bench + a honey stand
     p.push(S(box(1.0, 0.08, 0.6, PAL.plank, { p: [hw - 3.4, 0.8, hd - 1.1] }), 'planks', { axis: 'x', variant: 1, scale: 0.6 }));
@@ -483,7 +497,9 @@ export function kindProps(kind: PlotKind, hw: number, hd: number, season: Season
       p.push(cyl(0.11, 0.11, 0.05, 7, PAL.red, { p: [hw - 3.75 + i * 0.23, 1.06, hd - 1.1] }));
     }
   });
-  return { geo: p, solids };
+  baleFeet = null;
+  for (const s of solids) footprints.push(s);
+  return { geo: p, solids, footprints };
 }
 
 /** Hive for the bees field (a separate call so hives can be interactable positions; merged into props). */

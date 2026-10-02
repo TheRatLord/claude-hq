@@ -43,6 +43,9 @@ import type { TraceRow } from './traces.ts';
 import { workSpot } from '../../world/spots.ts';
 import type { ToolClass } from '../../../../../shared/protocol.ts';
 import type { GatherService } from '../gather/gather.ts';
+import type { RowboatService } from '../seasons/boat.ts';
+import { cheeseCue, cheeseFocus, cheeseWeight } from '../cheese.ts';
+import type { CheeseCue } from '../context.ts';
 
 export const PRODUCE: Readonly<Record<PlotKind, number>> = {
   wheat: PAL.wheat, pumpkins: PAL.pumpkin, cabbages: PAL.cabbage, sunflowers: PAL.sunflower, orchard: PAL.apple, vineyard: PAL.grape,
@@ -136,6 +139,8 @@ const frac = (x: number) => x - Math.floor(x);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const damp = (c: number, t: number, r: number, dt: number) => c + (t - c) * (1 - Math.exp(-r * dt));
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/** half the rowboat (scene/seasons BOAT.len 3.1) plus a margin: a float within this of the hull lands in it */
+const BOAT_CLEAR = 2.6;
 
 /** step a damped spring toward 0 with forcing (f*) — follow-through driven by acceleration */
 function spr(s: Spring2, fx: number, fz: number, fy: number, freq: number, zeta: number, dt: number) {
@@ -211,6 +216,15 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const gatherSvc = () => ctx.services.get('gatherings') as GatherService | undefined;
   /** while the campfire gathering is on, the fire's own leisure seats are the gathering's (others sit elsewhere) */
   const occTmp = new Map<number, string>();
+  /** the rowboat (scene/seasons) while you row it: a fishing seat whose line would land in or over the hull is off
+   *  until the boat moves on, and a farmer already fishing there reels in and goes elsewhere (the rod's float hangs
+   *  ~1.6 m out in front of the seat; you sit mid-boat, so the player's feet are the hull's centre) */
+  const rowboat = () => ctx.services.get('rowboat') as RowboatService | undefined;
+  const lineBlocked = (s: Seat | undefined): boolean => {
+    if (!s || s.kind !== 'fish' || !rowboat()?.aboard) return false;
+    const cx = s.x + Math.sin(s.yaw) * 1.6, cz = s.z + Math.cos(s.yaw) * 1.6;
+    return (cx - ctx.player.pos.x) ** 2 + (cz - ctx.player.pos.z) ** 2 < BOAT_CLEAR * BOAT_CLEAR;
+  };
   const surface = () => ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined;
   const ground = (x: number, z: number): number => {
     const s = surface()?.(x, z);
@@ -238,10 +252,11 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         const prev = a.mind.seat;
         if (prev >= 0 && occ.get(prev) === id) occ.delete(prev);
         let taken: ReadonlyMap<number, string> = occ;
-        if (gatherSvc()?.active()?.kind === 'campfire') {
+        const gathering = gatherSvc()?.active()?.kind === 'campfire', boatOut = !!rowboat()?.aboard;
+        if (gathering || boatOut) {
           occTmp.clear();
           for (const [k, v] of occ) occTmp.set(k, v);
-          seats.forEach((st, si) => { if (st.kind === 'fire') occTmp.set(si, '#gathering'); });
+          seats.forEach((st, si) => { if (gathering && st.kind === 'fire') occTmp.set(si, '#gathering'); else if (boatOut && lineBlocked(st)) occTmp.set(si, '#boat'); });
           taken = occTmp;
         }
         const i = pickSeat(seats, taken, id, kind, a.look.likes, a.look.chatty, seeded(`${id}:${a.mind.n}:${Math.floor(t)}`), prev, ctx.lighting.night, a.mv);
@@ -536,6 +551,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   const order: Actor[] = [];
   const _near: { a: Actor; d: number }[] = [];
 
+  /** photo mode's "say cheese" cue this frame (scene/cheese.ts) */
+  let cue: CheeseCue | null = null;
   function stepActor(a: Actor, dt: number) {
     const f = a.view;
     const mv = a.mv;
@@ -563,14 +580,20 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         }
       }
       cues.length = 0;
+      if (a.mind.seat >= 0 && a.mind.leaving === null && lineBlocked(seats[a.mind.seat])) {
+        if (occ.get(a.mind.seat) === a.id) occ.delete(a.mind.seat);
+        a.mind.seat = -1; a.nextPlan = 0;
+      }
       if (a.mind.seat >= 0 && f.job !== 'idle' && f.job !== 'away' && a.mind.leaving === null) {
         if (occ.get(a.mind.seat) === a.id) occ.delete(a.mind.seat);
         a.mind.seat = -1;
       }
     }
     const it = a.intent;
+    // say cheese (photo mode): the camera stands in for the player while they play to it
+    const cw = cheeseWeight(cue, mv.x, mv.z, a.id), posing = cw > 0.05 && cheeseFocus(cue, a.id);
     // player
-    const px = ctx.player.pos.x, pz = ctx.player.pos.z;
+    const px = cw > 0.05 ? cue!.x : ctx.player.pos.x, pz = cw > 0.05 ? cue!.z : ctx.player.pos.z;
     const pdx = px - mv.x, pdz = pz - mv.z;
     const pd = Math.hypot(pdx, pdz);
     const toPlayer = Math.atan2(pdx, pdz);
@@ -590,7 +613,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       a.callAt = time + 5 + a.k * 4;
       audio()?.voice(f.seed, { pos: a.pos, mood: 'question', syllables: 3 });
     }
-    const greeting = time < a.greetUntil;
+    const greeting = time < a.greetUntil || cw > 0.05;
     let yawT = it.yaw;
     if (!walking && !grounded && (greeting || (f.needsYou && pd < 25))) yawT = toPlayer;
     const moved = moveStep(mv, { key: it.key, x: it.x, z: it.z, yaw: yawT, gait: a.mind.leaving !== null && a.intent.key === 'exit' ? 'walk' : it.gait }, dt, routeFn);
@@ -617,7 +640,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (act === 'pigeon') { o[CH.prop] = a.tgt[CH.prop]; o[CH.pY] = a.tgt[CH.pY]; }
     gait(o, a.look.body, g, !!ACT_INFO[act].carryWalk);
     // wave overlay (greeting, done farmers when you pass)
-    const waveT = greeting || (f.job === 'done' && pd < 6 && f.unseenDone) ? 1 : 0;
+    const waveT = posing || (greeting && cw <= 0.05) || (f.job === 'done' && pd < 6 && f.unseenDone) ? 1 : 0;
     a.waveW = damp(a.waveW, waveT, 6, dt);
     if (a.waveW > 0.01 && act !== 'ask') {
       const w = a.waveW;
@@ -631,7 +654,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (wantLook) {
       const rel = wrap(toPlayer - mv.yaw);
       if (Math.abs(rel) < 2.2) { lx = clamp(rel * 1.1, -1, 1); tw = clamp(rel * 0.45, -0.45, 0.45) * (grounded ? 0.4 : 1); }
-      ly = clamp(Math.atan2(1.6 - 0.5, Math.max(0.5, pd)) * 1.2, -0.3, 0.9);
+      ly = clamp(Math.atan2((cw > 0.05 ? cue!.y - a.y - 0.9 : 1.6 - 0.5), Math.max(0.5, pd)) * 1.2, -0.3, 0.9);
     }
     a.lookX = damp(a.lookX, lx, 5, dt); a.lookY = damp(a.lookY, ly, 5, dt); a.lookTw = damp(a.lookTw, tw, 3, dt);
     const lw = Math.min(1, Math.abs(a.lookX) + Math.abs(a.lookY));
@@ -654,6 +677,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       if (f.mood === 'stuck' && (face === 'focused' || face === 'neutral')) face = 'stuck';
       if (f.needsYou) face = 'surprised';
       if (greeting) face = 'happy';
+      if (posing) face = 'sparkle';
       if (face === 'talk' && (act === 'chat' || act === 'sitchat') && Math.sin(time * 0.45 + (a.mind.seat % 2) * Math.PI) < 0) face = 'happy'; // listening
     }
     // blinks: personality timing, sometimes a double blink
@@ -866,6 +890,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
     update(fi: FrameInfo) {
       const dt = fi.dt;
       time += dt;
+      cue = cheeseCue(ctx.services.get('photo'));
       refreshSeats();
       for (const e of events.splice(0)) handleEvent(e);
       sync();

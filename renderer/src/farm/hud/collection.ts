@@ -21,7 +21,9 @@ export function collectIcon(d: CollectDef): string {
     const ry = deep ? 5.6 : d.id === 'pike' ? 3.2 : 4.2;
     return S(`<path d="M3 7.5l4 4.5-4 4.5z" fill="${fin}" ${ol}/><path d="M9 ${12 - ry}l3-2.2 3 2.2z" fill="${fin}" ${ol}/>`
       + `<ellipse cx="13" cy="12" rx="8.5" ry="${ry}" fill="${belly}" ${ol}/><path d="M4.6 12a8.5 ${ry} 0 0117 0z" fill="${back}"/>`
-      + `<ellipse cx="13" cy="12" rx="8.5" ry="${ry}" fill="none" ${ol}/><circle cx="18.2" cy="11" r="1.3" fill="#fff" ${ol}/><circle cx="18.4" cy="11" r=".55" fill="${INK}"/>`
+      + `<ellipse cx="13" cy="12" rx="8.5" ry="${ry}" fill="none" ${ol}/>`
+      // (the grotto's blind cave fish has no eyes at all)
+      + (d.id === 'cavefish' ? `<path d="M17.4 11.2c.6-.4 1.4-.4 2 0" fill="none" stroke="${fin}" stroke-width="1"/>` : `<circle cx="18.2" cy="11" r="1.3" fill="#fff" ${ol}/><circle cx="18.4" cy="11" r=".55" fill="${INK}"/>`)
       + (d.id === 'perch' ? `<path d="M10 8v8M13 7.5v9M16 8v7" stroke="${INK}" stroke-width="1.2" opacity=".55"/>` : '')
       + (d.id === 'trout' || d.id === 'salmon' ? `<path d="M5.5 12.5h13" stroke="${fin}" stroke-width="1.6"/>` : '')
       + (d.id === 'koi' ? `<circle cx="11" cy="10" r="2" fill="#fff"/><circle cx="15" cy="13.5" r="1.6" fill="#fff"/>` : '')
@@ -45,6 +47,7 @@ export function collectIcon(d: CollectDef): string {
     // barn produce (model/collection.ts PRODUCE)
     case 'egg': return S(`<path d="M3.5 15.5c1.5 4 15.5 4 17 0" fill="#c99a5a" ${ol}/><path d="M12 3c3.6 0 6 5 6 8.6S15.4 18 12 18s-6-2.8-6-6.4S8.4 3 12 3z" fill="${c}" ${ol}/><ellipse cx="10" cy="8" rx="1.3" ry="2" fill="#fff" opacity=".8"/>`);
     case 'milk': return S(`<path d="M6 7h12l-1.4 13.2a1.6 1.6 0 01-1.6 1.3H9a1.6 1.6 0 01-1.6-1.3z" fill="#b8c4cc" ${ol}/><ellipse cx="12" cy="7" rx="6" ry="1.8" fill="${c}" ${ol}/><path d="M6.5 7.5c0-4 11-4 11 0" fill="none" stroke="${INK}" stroke-width="1.3"/><path d="M7.4 12h9.2" stroke="#8a9aa6" stroke-width="1.2"/>`);
+    case 'glowcap': return S(`<path d="M3.5 21c3-2 14-2 17 0z" fill="#5a7a4a" ${ol}/><path d="M7.4 21l.6-6h1.6l.6 6zM14.4 21l.5-8h2l.5 8z" fill="#e8f6ee" ${ol}/><path d="M3.5 15.5c0-3 2.4-5 5.3-5s5.2 2 5.2 5z" fill="${c}" ${ol}/><path d="M10.5 13c0-4.4 3-7.5 5.8-7.5s5.2 3.1 5.2 7.5z" fill="${c}" ${ol}/><circle cx="14.6" cy="9.6" r="1" fill="#fff"/><circle cx="18" cy="8.6" r=".8" fill="#fff"/><circle cx="7" cy="13.4" r=".8" fill="#fff"/>`);
     case 'crystal': return S(`<path d="M3 20c2-3 16-3 18 0z" fill="#b7b0a3" ${ol}/><path d="M10 20V7l2.5-4.5L15 7v13z" fill="${c}" ${ol}/><path d="M6 20v-7l2-3 2 3v7zM15 20v-6l2-3 2 3v6z" fill="#cdeefa" ${ol}/><path d="M12.5 3v17" stroke="#fff" stroke-width="1" opacity=".7"/>`);
   }
   return S(`<circle cx="12" cy="12" r="8" fill="${c}" ${ol}/>`);

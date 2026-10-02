@@ -31,6 +31,7 @@ import type { Animal, HerdInput, SpeciesKey } from './animals.ts';
 import { Bees } from './bees.ts';
 import type { Fx } from './fx.ts';
 import { warmEmitter } from '../lights/emitters.ts';
+import { FieldGit, dandelion, gitWeedSpots, pennant } from './git.ts';
 
 export interface FieldHooks {
   interact?: Interactions;
@@ -61,6 +62,8 @@ export interface FieldEnv {
   barn: { x: number; z: number };
   /** a farmer's feet (world), refreshed a few times a second by the system; false when unknown */
   farmerPos?(id: string, out: THREE.Vector3): boolean;
+  /** a field's push cart reached the shipping bin (git.ts): the bin's lid pops */
+  shipped?(): void;
 }
 
 export const KIND_PRODUCE: Record<PlotKind, number> = {
@@ -152,11 +155,16 @@ export class Field {
   private lastStage = '';
   private sparkleT = 0;
   private cropHidden = false;
+  /** the repo drawn in the field: weeds, crates waiting to ship, the cart, the sign's pennant and mail (git.ts) */
+  private readonly git: FieldGit;
+  /** the sign's world matrix this frame (with its pop-in scale) and that scale */
+  private readonly signM = new THREE.Matrix4();
+  private signK = 0;
   private cropSig = -1;
   private groundSig = -1;
   private fenceSig = -1;
 
-  constructor(site: Site, plot: PlotView, season: Season, o: { fresh: boolean; hooks?: FieldHooks; barnLocal?: { x: number; z: number } }) {
+  constructor(site: Site, plot: PlotView, season: Season, o: { fresh: boolean; hooks?: FieldHooks; barnLocal?: { x: number; z: number }; binLocal?: { x: number; z: number } }) {
     this.site = site;
     this.plot = plot;
     this.kind = plot.kind;
@@ -324,6 +332,14 @@ export class Field {
       this.weeds.push({ x, z, yaw: r() * 6.28, s: 0.7 + r() * 0.7, th: r() });
     }
 
+    // git: weeds between the rows (changed files), crates by the sign (unpushed commits)
+    const rows = useTiles ? null : [...new Set(this.tiles.map((t) => t.x))].sort((a, b) => a - b);
+    const plants = this.layout.slots.filter((s) => s.parent < 0 && this.layout.parts[s.part].growth !== 'decor');
+    const signL = loc(signSpot(site));
+    this.git = new FieldGit(gitWeedSpots({ hw, hd, rows, clears: this.clears, props: kp.footprints, plants, key: plot.id }), {
+      hd, siteIndex: site.index, siteM: this.siteM, signX: signL.x, binSide: (o.binLocal ?? o.barnLocal ?? { x: -1 }).x >= 0 ? 1 : -1,
+    });
+
     // animals
     const sk = SPECIES_OF[this.kind];
     if (sk) {
@@ -342,7 +358,7 @@ export class Field {
     if (it) {
       const sp = loc(signSpot(site));
       this.offs.push(it.add({
-        id: `sign:${plot.id}`, kind: 'plot', verb: 'Read', label: () => `${this.plot.label} sign`, reach: 3.4,
+        id: `sign:${plot.id}`, kind: 'plot', verb: 'Read', label: () => `${this.plot.label} sign${this.plot.git ? ` · ${this.branchName()}` : ''}`, reach: 3.4,
         pos: (out) => out.set(sp.x, SIGN_TEXT.y, sp.z).applyMatrix4(this.siteM),
         enabled: () => !this.closing,
         use: () => this.hooks.ui?.say(this.describe(), 4200),
@@ -369,14 +385,21 @@ export class Field {
     return { x: dx * c - dz * s, z: dx * s + dz * c };
   }
 
+  private branchName(): string {
+    const g = this.plot.git;
+    return g?.branch ?? (g?.head ? `@${g.head}` : 'detached');
+  }
+
   private describe(): string {
     const p = this.plot;
     const n = p.farmers.length, h = p.helpers.length;
     const stage = { tilling: 'freshly tilled', thriving: 'thriving', growing: 'growing well', resting: 'resting in the sun', harvest: 'being harvested', fallow: 'fallow, resting' }[p.stage];
     const g = p.git;
-    const weeds = g?.dirty ? ` ${g.dirty} weed${g.dirty === 1 ? '' : 's'} (changed files)` : '';
-    const crates = g?.ahead ? `${weeds ? ',' : ''} ${g.ahead} crate${g.ahead === 1 ? '' : 's'} waiting to ship (unpushed)` : '';
-    const repo = g ? ` Branch ${g.branch ?? 'detached'} of ${g.repo}.${weeds || crates ? `${weeds}${crates}.` : ' All tidy.'}` : '';
+    const bits: string[] = [];
+    if (g?.dirty) bits.push(`${g.dirty} weed${g.dirty === 1 ? '' : 's'} (changed files)`);
+    if (g?.ahead) bits.push(`${g.ahead} crate${g.ahead === 1 ? '' : 's'} waiting to ship (unpushed)`);
+    if (g?.behind) bits.push(`${g.behind} letter${g.behind === 1 ? '' : 's'} from upstream (behind)`);
+    const repo = g ? ` Pennant: ${this.branchName()} of ${g.repo}.${bits.length ? ` ${bits.join(', ')}.` : ' All tidy.'}` : '';
     return `${p.label} — ${KIND_NAME[this.kind]}, ${stage}. ${n} farmer${n === 1 ? '' : 's'}${h ? `, ${h} scarecrow${h === 1 ? '' : 's'}` : ''}.${repo}`;
   }
 
@@ -443,6 +466,9 @@ export class Field {
 
     this.drawStatic(env);
     this.drawSign(env);
+    const b = this.batchesFor(env);
+    this.git.update(env, p.git, !this.closing && this.tillP >= 1 && p.stage !== 'harvest' && p.stage !== 'fallow',
+      { weed: b.gitWeed, pennant: b.pennant, crate: b.crate, cart: b.cart, text: b.text }, this.signM, this.signK);
     this.drawStatus(env);
     this.drawHelpers(env);
     this.drawCritters(env);
@@ -673,9 +699,9 @@ export class Field {
       sign: B.get(`sign:${this.season}`, () => ({ geo: signBoard(this.season), mat: lit, cap: 48, shadow: true })),
       text: B.get('signtext', () => ({ geo: textQuad().clone(), mat: atlasMaterial(env.atlas.tex), cap: 160, rect: true })),
       flag: B.get('flag', () => ({ geo: flag(), mat: lit, cap: 24, shadow: true })),
-      crate: B.get('crate', () => ({ geo: crate(), mat: lit, cap: 80, shadow: true })),
+      crate: B.get('crate', () => ({ geo: crate(), mat: lit, cap: 192, shadow: true })),
       sack: B.get('sack', () => ({ geo: sack(), mat: lit, cap: 96, shadow: true })),
-      cart: B.get('cart', () => ({ geo: cart(), mat: lit, cap: 12, shadow: true })),
+      cart: B.get('cart', () => ({ geo: cart(), mat: lit, cap: 24, shadow: true })),
       heap: B.get('cartheap', () => ({ geo: cartHeap(), mat: lit, cap: 12 })),
       scarecrow: B.get(`scarecrow:${this.season}`, () => ({ geo: scarecrow(this.season), mat: lit, cap: 48, shadow: true })),
       lantern: B.get('lantern', () => ({ geo: lanternCore(), mat: warmEmitter(new THREE.MeshBasicMaterial({ color: 0xffffff })), cap: 48 })),
@@ -686,6 +712,8 @@ export class Field {
       fenceRibbon: B.get('fenceribbon', () => ({ geo: fenceRibbon(), mat: lit, cap: 1000 })),
       clod: B.get(`clod:${this.season}`, () => ({ geo: clod(this.season), mat: lit, cap: 3200 })),
       tile: B.get('pentile', () => ({ geo: penTile(), mat: lit, cap: 2400 })),
+      gitWeed: B.get('gitweed', () => ({ geo: dandelion(), mat: lit, cap: 160 })),
+      pennant: B.get('pennant', () => ({ geo: pennant(), mat: lit, cap: 24 })),
       decor: B.get(`decor:${this.season}`, () => ({ geo: singleSided(decorClump(this.season)), mat: env.weedMat, cap: 7000 })),
     };
   }
@@ -713,12 +741,14 @@ export class Field {
     }
     let k = bounce(clamp01((this.tillP - 0.5) / 0.12));
     if (this.closing) k *= 1 - smooth01((this.closeP - 0.4) / 0.3);
+    this.signK = fallow ? 0 : k;
     if (k < 0.002) return;
     const sp = this.toLocal(signSpot(this.site).x, signSpot(this.site).z);
     const wob = Math.sin(env.time * 1.3 + this.site.index) * 0.015 + (1 - clamp01((this.tillP - 0.5) / 0.3)) * Math.sin(env.time * 20) * 0.08;
     _q.setFromEuler(_e.set(0, wob, fallow ? 0.06 : 0, 'YXZ'));
     _m.compose(_v.set(sp.x, 0, sp.z), _q, _s.set(k, k, k)).premultiply(this.siteM);
     b.sign.push(_m);
+    this.signM.copy(_m);
     _m2.compose(_v.set(0, SIGN_TEXT.y, SIGN_TEXT.z), _q.identity(), _s.set(SIGN_TEXT.w, SIGN_TEXT.h, 1));
     b.text.push(_m2.premultiply(_m), null, this.signRect!);
   }
@@ -1043,13 +1073,14 @@ export class Field {
     for (const f of this.offs) f();
     for (const st of this.helpers.values()) { st.off?.(); st.lightOff?.(); if (st.key) atlas?.release(st.key); }
     if (this.signKey) atlas?.release(this.signKey);
+    this.git.dispose(atlas);
     this.root.removeFromParent();
     this.props.geometry.dispose();
     for (const m of this.cropMeshes) if (m) { m.dispose(); (m.material as THREE.Material).dispose(); m.customDepthMaterial?.dispose(); }
   }
 
-  stats(): { crops: number; tiles: number; fence: number } {
-    return { crops: this.layout.slots.length, tiles: this.tiles.length, fence: this.segs.length };
+  stats(): { crops: number; tiles: number; fence: number; git: ReturnType<FieldGit['stats']> } {
+    return { crops: this.layout.slots.length, tiles: this.tiles.length, fence: this.segs.length, git: this.git.stats() };
   }
 }
 

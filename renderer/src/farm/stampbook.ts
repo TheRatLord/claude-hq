@@ -81,6 +81,8 @@ export function installStampBook(d: StampBookDeps): StampsService {
         festival: !!fc && near(fc[0], fc[2], FESTIVAL_R),
         concert: !!stage && near(stage.x, stage.z, CONCERT_R),
         campfire: gather?.kind === 'campfire' && controller.seated,
+        // in the grotto behind the waterfall (scene/grotto: a walk-in room of the interior system)
+        grotto: (svc.get('indoors') as IndoorSpace | undefined)?.room === 'grotto',
       },
       sky: {
         rainbow: outdoors && rainbow > 0.4,

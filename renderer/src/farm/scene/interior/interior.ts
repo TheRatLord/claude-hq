@@ -25,11 +25,12 @@ import { frameOf } from './space.ts';
 import type { Frame, RoomBuilt, RoomDef, RoomHost } from './space.ts';
 import { houseRoom } from './house.ts';
 import { barnRoom } from './barn.ts';
+import { grottoRoom } from '../grotto/room.ts';
 
 interface Controllerish { teleport(x: number, z: number, yaw?: number, pitch?: number): void }
 
 /** every walk-in room; the first is the default for `enter()` and bare view names */
-export const ROOMS: readonly RoomDef[] = [houseRoom, barnRoom];
+export const ROOMS: readonly RoomDef[] = [houseRoom, barnRoom, grottoRoom];
 
 const FADE_OUT = 0.32, FADE_IN = 0.45;
 
@@ -72,8 +73,7 @@ export const interiorSystem: SystemFactory = (ctx: SceneCtx) => {
   function showOutdoors(): void { for (const o of hidden) o.visible = true; hidden.clear(); }
 
   const slots: Slot[] = ROOMS.map((def) => {
-    const s = structure(def.site as StructureId);
-    const frame = frameOf(s);
+    const frame = frameOf(def.origin ?? structure(def.site as StructureId));
     const holder = new THREE.Group();
     holder.name = `interior:${def.id}`;
     const slot: Slot = { def, frame, holder, built: null, season: null, host: null as unknown as RoomHost };
@@ -155,6 +155,7 @@ export const interiorSystem: SystemFactory = (ctx: SceneCtx) => {
   const space: IndoorSpace = {
     get active() { return cur !== null; },
     get room() { return cur?.def.id ?? null; },
+    get light() { return cur?.def.light ?? null; },
     floor(x, z, y) {
       if (!cur) return null;
       const l = cur.frame.toLocal(x, z, tmpL);

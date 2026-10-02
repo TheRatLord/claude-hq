@@ -50,6 +50,7 @@ export function createPause(ctx: HudCtx): Panel {
       big('Mailbox', ICONS.mail, keyLabel(ctx.prefs.keys.mail), () => ctx.panels.open('mailbox')),
       big('Noticeboard', ICONS.board, 'B', () => ctx.panels.open('noticeboard')),
       big('Almanac (system stats)', ICONS.stats, '', () => ctx.panels.open('stats')),
+      big('Photo album', ICONS.camera, 'L', () => ctx.panels.open('album')),
       big('Settings', ICONS.gear, '', () => setTab('settings')),
       big('Controls', ICONS.keyboard, '?', () => setTab('controls')),
       ctx.b?.onboarding ? big('Replay the welcome', ICONS.mail, '', () => replayWelcome(ctx)) : null);
@@ -128,7 +129,7 @@ export function createPause(ctx: HudCtx): Panel {
         return h('div.vh-set', null, h('span', { text: ACTION_LABEL[a] }), b);
       }),
       h('div.vh-set', null, h('span.vh-muted', { text: 'Walking (WASD, arrows), Space, Shift, Esc and the panel keys stay fixed.' }),
-        h('button.vh-btn.small', { type: 'button', 'data-testid': 'bind-reset', onclick: () => { P.keys = { ...DEFAULT_KEYS }; capturing = null; bindMsg = 'Keys back to E / F / M / Tab / J'; savePref(); render(); } }, 'Reset keys')),
+        h('button.vh-btn.small', { type: 'button', 'data-testid': 'bind-reset', onclick: () => { P.keys = { ...DEFAULT_KEYS }; capturing = null; bindMsg = 'Keys back to E / F / M / Tab / J, Z / T'; savePref(); render(); } }, 'Reset keys')),
       h('div.vh-setmsg', { 'aria-live': 'polite', 'data-testid': 'bind-msg', text: bindMsg }),
     ],
     graphics: () => {
@@ -162,6 +163,7 @@ export function createPause(ctx: HudCtx): Panel {
       choose('Clock', [['24h', '24-hour (16:30)'], ['12h', '12-hour (4:30 pm)']] as const, () => P.clock, (v) => { P.clock = v; savePref(); }, 'set-clock'),
       pref('Corner minimap (N)', 'minimap'), pref('Pop-up toasts', 'toasts'), pref('Fold the needs-you list (Alt+0)', 'compactStrip'),
       pref('Tuck an unanswered ask away to its chip after a while', 'needsDoze'),
+      pref('Show hands (your paws, the lantern, what you hold)', 'hands', 'set-hands'),
       tipsRow(),
     ],
     access: () => {
@@ -249,6 +251,7 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['Click'], 'look around (capture mouse)'), ...row(['W', 'A', 'S', 'D'], 'walk'),
       ...row(['Shift'], 'sprint'), ...row(['Space'], 'hop'),
       ...row([K('use')], 'talk / use'), ...row([K('alt')], "terminal of the farmer you're facing"),
+      ...row([K('wave')], 'wave (at a villager: they chirp back)'), ...row([K('lantern')], 'light / put away your lantern (it lights itself after dusk)'),
       ...row([K('map')], 'map (click a farmer → terminal)'), ...row(['N'], 'toggle minimap'),
       head('Your agents'),
       ...row([K('ledger')], 'farm ledger: everyone at a glance'), ...row([K('mail')], 'mailbox (Needs you first)'),
@@ -268,7 +271,8 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['B'], 'noticeboard'), ...row(['H'], 'valley almanac'),
       ...row(['K'], 'collections book'), ...row(['G'], 'the Valley Gazette'), ...row(['Q'], "today's requests: keep open / tuck away"), ...row(['I'], 'your basket & the shop'),
       ...row(['F'], 'facing a villager: give a gift from your basket (1…9 picks)'),
-      ...row(['P'], 'photo mode (fly, [ ] time, Enter saves a PNG)'),
+      ...row(['P'], 'photo mode: fly, [ ] time, 1–6 looks, V frames, F say cheese, Enter snaps'),
+      ...row(['L'], 'the photo album (also from photo mode)'),
       ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'),
       head('In any panel'),
       ...row(['Tab', 'Shift+Tab'], 'next / previous control (the ledger: Tab closes it while Tab is its key)'), ...row(['←', '→'], 'switch tabs'),

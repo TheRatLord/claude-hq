@@ -37,6 +37,8 @@ import { FURN, ROOM } from '../interior/layout.ts';
 import { SLOTS, WEST_GAP, inYard } from '../yard/layout.ts';
 import { localJson } from '../../storage.ts';
 import { PetBody, petInput } from './petBody.ts';
+import { cheeseCue, cheeseFocus, cheeseWeight } from '../cheese.ts';
+import type { CheeseCue } from '../context.ts';
 import type { PetInput, PetPose } from './petBody.ts';
 import { Affection, LookTilt } from './mood.ts';
 import { SPECIES_K, basketMesh, companionModel, familyOf, stickMesh } from './companionModels.ts';
@@ -455,8 +457,14 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     else if (c.kind === 'dev') { if (!model.data().pet) { despawn(); showBasket(true); } }
   });
 
+  const whereOut = { x: 0, y: 0, z: 0, name: '' };
   const service: CompanionService = {
     model,
+    where() {
+      if (!body || state === 'off' || !body.root.visible) return null;
+      whereOut.x = m.x; whereOut.y = m.y; whereOut.z = m.z; whereOut.name = name;
+      return whereOut;
+    },
     offer: () => ({ ...offerFor(fernHearts()), coins: wallet()?.coins() ?? 0 }),
     adopt(sp, coat, nm): AdoptResult {
       const w = wallet();
@@ -511,6 +519,8 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     return (fxv * dx + fyv * dy + fzv * dz) / Math.hypot(dx, dy, dz) > Math.cos(0.2 + 0.25 / d);
   };
 
+  /** photo mode's "say cheese" cue this frame (scene/cheese.ts) */
+  let cue: CheeseCue | null = null;
   function lookAround(): void {
     // greet: a villager or Biscuit / Mochi close to both of you; a find within sniffing range
     greetIn = 2 + rnd();
@@ -551,6 +561,7 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
   }
 
   function brain(dt: number): number {
+    cue = cheeseCue(ctx.services.get('photo'));
     t -= dt; greetIn -= dt; findIn -= dt; sniffIn -= dt;
     aff.update(dt);
     const pd = Math.hypot(player.x - m.x, player.z - m.z);
@@ -591,6 +602,14 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     // lost: far behind (a teleport, a swim, a stuck corner) → catches up out of sight
     if ((awayOk || state === 'greet' || state === 'find') && (pd > 45 || (m.stuck > 3 && pd > 8))) { if (snapNear()) { setState('follow'); bark(1); } }
 
+    // say cheese (photo mode): stop, sit up facing the lens, ears up; a head tilt (a kitten: a slow blink) in focus
+    if (cue && !moving && (state === 'rest' || state === 'follow' || state === 'greet' || state === 'sniff') && cheeseWeight(cue, m.x, m.z, 'pet') > 0.05) {
+      halt(dt); face(cue.x, cue.z, dt, 6);
+      inp.pose = 'sit'; inp.joy = 1; inp.ears = 1;
+      inp.lookPitch = clamp(Math.atan2(cue.y - m.y - 0.35, Math.max(0.5, Math.hypot(cue.x - m.x, cue.z - m.z))), -0.3, 0.6);
+      if (cheeseFocus(cue, 'pet')) { if (kitten()) inp.slowBlink = true; else inp.tilt = 1; }
+      return 0;
+    }
     switch (state) {
       case 'off': return 0;
       case 'arrive': {

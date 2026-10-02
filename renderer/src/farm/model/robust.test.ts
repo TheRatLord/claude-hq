@@ -13,6 +13,7 @@ import { createFriends } from './friends.ts';
 import { createOnboarding } from './onboarding.ts';
 import { createStamps } from './stamps.ts';
 import { createPetModel } from './pet.ts';
+import { createGrotto } from './grotto.ts';
 import { createTimeline, demoDay, keyMoments, rollDay, summarize } from './timeline.ts';
 import { composeIssue, createGazette, demoInput, gatherFacts } from './gazette.ts';
 
@@ -177,5 +178,16 @@ test('robust: the gazette loads any stored value', () => {
     s.note({ k: 'find', at: NOW, item: 'acorn' });
     s.due();
     return s.data().issues.map((i) => composeIssue(i.facts));
+  });
+});
+
+test('robust: the grotto loads any stored value', () => {
+  const st = port(null);
+  const g = createGrotto(st, now);
+  g.visit(); g.openChest(); g.readPage(); g.readPage();
+  fuzz('grotto', st.saved, (raw) => {
+    const x = createGrotto(port(raw), now);
+    x.visit(); x.readPage(); x.openChest();
+    return { ...x.data(), found: x.discovered(), open: x.chestOpen };
   });
 });

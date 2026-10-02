@@ -20,7 +20,7 @@ type W = { __valley: V; __hud: { open(id: string, arg?: unknown): void; close():
 
 test.describe.configure({ timeout: 150_000 });
 
-const KEYS = ['almanac', 'timeline', 'collection', 'wallet', 'friends', 'onboarding', 'stamps', 'pet', 'summit'].map((k) => `claude-valley.${k}.v1`)
+const KEYS = ['almanac', 'timeline', 'collection', 'wallet', 'friends', 'onboarding', 'stamps', 'pet', 'summit', 'grotto'].map((k) => `claude-valley.${k}.v1`)
   .concat(['valley.hud.prefs', 'valley.hud.mapLayers', 'valley.hud.greeted', 'valley.hud.read', 'valley.hud.quests', 'valley.hud.mapKey']);
 const PANELS = ['map', 'mailbox', 'roster', 'almanac', 'collection', 'noticeboard', 'stats', 'friends', 'pet', 'pause'];
 

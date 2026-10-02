@@ -176,7 +176,8 @@ export function ambientLevels(a: AmbientIn, out: AmbientLevels = emptyLevels()):
   out.storm = k === 'storm' ? clamp(0.5 + 0.5 * a.intensity, 0, 1) : 0;
   out.wind = clamp(0.12 + a.wind / 14 + out.storm * 0.35 + snow * 0.1 + clamp(a.altitude / 25, 0, 0.3) + (k === 'fog' ? -0.06 : 0), 0.04, 1);
   out.river = proximity(a.dRiver, 5, 48);
-  out.waterfall = proximity(a.dWaterfall, 10, 120);
+  // right up against the falls (the grotto's ledge runs behind the curtain) the roar swells past the usual peak
+  out.waterfall = proximity(a.dWaterfall, 10, 120) * (1 + 0.3 * proximity(a.dWaterfall, 3, 9));
   out.pond = proximity(a.dPond, 10.5, 32) * (1 - snow * 0.5);
   const quietWeather = 1 - 0.85 * out.rain - 0.5 * snow - (k === 'fog' ? 0.3 : 0);
   out.birds = clamp((a.daylight * 0.55 + dawn(a.hour) * 0.65 + dusk(a.hour) * 0.15 * a.daylight) * quietWeather * (cold ? 0.45 : 1), 0, 1);

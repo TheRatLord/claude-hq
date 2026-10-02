@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ENTRY, FURN, INSIDE_VIEWS, ROOM, SHELF_IDS, SOLIDS, TANK_IDS, WINDOWS, biggestCatch, clockHands, clockText, onFloor, pushOut, shelfSlots } from './layout.ts';
+import { ENTRY, FURN, INSIDE_VIEWS, PHOTO_WALL, ROOM, photoWallSlots, SHELF_IDS, SOLIDS, TANK_IDS, WINDOWS, biggestCatch, clockHands, clockText, onFloor, pushOut, shelfSlots } from './layout.ts';
 import { CATALOG } from '../../model/collection.ts';
 
 const R = 0.35;
@@ -79,4 +79,25 @@ test('the clock reads the hour', () => {
   const h = clockHands(15.5);
   assert.ok(Math.abs(h.h - (3.5 / 12) * Math.PI * 2) < 1e-9);
   assert.ok(Math.abs(h.m - Math.PI) < 1e-9);
+});
+
+test('the photo wall: eight frames on the north wall over the bed, inside the wall, clear of each other and the headboard', () => {
+  const slots = photoWallSlots();
+  assert.equal(slots.length, 8);
+  const pad = PHOTO_WALL.border + PHOTO_WALL.mat;
+  const box = (f: (typeof slots)[number]) => ({ x0: f.x - f.w / 2 - pad, x1: f.x + f.w / 2 + pad, y0: f.y - f.h / 2 - pad, y1: f.y + f.h / 2 + pad });
+  const bedX0 = FURN.bed.x - FURN.bed.w / 2, bedX1 = FURN.bed.x + FURN.bed.w / 2;
+  for (const f of slots) {
+    const b = box(f);
+    assert.ok(b.x0 >= ROOM.x0 + 0.05 && b.x1 <= FURN.shelf.x - FURN.shelf.w / 2 - 0.05, `x ${JSON.stringify(f)}`);
+    assert.ok(b.y0 > ROOM.floor + 1.2 && b.y1 < ROOM.ceil - 0.15, `y ${JSON.stringify(f)}`);
+    assert.ok(f.x > bedX0 - 0.1 && f.x < bedX1 + 0.1, 'over the bed');
+  }
+  for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) {
+    const a = box(slots[i]), b = box(slots[j]);
+    assert.ok(a.x1 <= b.x0 + 1e-6 || b.x1 <= a.x0 + 1e-6 || a.y1 <= b.y0 + 1e-6 || b.y1 <= a.y0 + 1e-6, `frames ${i} and ${j} overlap`);
+  }
+  // the first slots (the newest favourites) are the biggest
+  const area = (f: (typeof slots)[number]) => f.w * f.h;
+  assert.ok(area(slots[0]) >= Math.max(...slots.slice(2).map(area)));
 });

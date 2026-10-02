@@ -18,6 +18,7 @@
 import { fbm } from './noise.ts';
 import { buildTrail, carveTrail, trailDist, trailLine, TRAIL_WIDTH } from './trail.ts';
 import type { Trail } from './trail.ts';
+import { LEDGE, LEDGE_HW, MOUTH, carveGrotto, ledgeAt } from './grotto.ts';
 
 export const WORLD = Object.freeze({
   /** half extent of the terrain mesh */
@@ -226,6 +227,11 @@ function carve(x: number, z: number, h: number): number {
  * included) stays exactly level over all of them.
  */
 export function heightAt(x: number, z: number): number {
+  return carveGrotto(x, z, heightBeforeGrotto(x, z));
+}
+
+/** The land before the grotto's ledge (world/grotto.ts) is cut behind the waterfall: the falling sheet is traced on it. */
+export function heightBeforeGrotto(x: number, z: number): number {
   const h = padHeight(x, z);
   return trail ? carveTrail(trail, x, z, h) : h;
 }
@@ -317,7 +323,7 @@ export const SITES: readonly Site[] = SITE_XZ.map(([x, z], index) => {
     for (const t of pads) if (t.top && t.y === was && (t === q || corners(t).some((k) => rectSdf(k.x, k.z, q) < 0) || corners(q).some((k) => rectSdf(k.x, k.z, t) < 0))) t.y = f.y;
   }
 }
-for (const s of STRUCTURES) (s as { y: number }).y = heightAt(s.x, s.z);
+for (const s of STRUCTURES) (s as { y: number }).y = padHeight(s.x, s.z);
 export const HUB_Y = hubPad.y;
 
 /**
@@ -331,12 +337,18 @@ const anyKind = () => true;
 /** Map data (hud/mapdraw.ts can draw these): walking trails beyond the roads, and named points of interest. */
 export interface TrailLine { id: string; name: string; points: readonly XZ[]; width: number }
 export const TRAILS: readonly TrailLine[] = [{ id: 'summit', name: 'Summit trail', points: trailLine(TRAIL), width: TRAIL_WIDTH }];
-export interface Poi extends XZ { id: string; name: string; /** a one-glyph map symbol */ glyph: string; kind: 'trailhead' | 'lookout' | 'rest' | 'bridge' }
+export interface Poi extends XZ {
+  id: string; name: string; /** a one-glyph map symbol */ glyph: string; kind: 'trailhead' | 'lookout' | 'rest' | 'bridge' | 'grotto';
+  /** a secret: the map shows a "?" until the player has found it (the 'grotto' service's `discovered()`) */
+  hidden?: boolean;
+}
 export const POIS: readonly Poi[] = [
   { id: 'trailhead', name: 'Trailhead', glyph: '⛰', kind: 'trailhead', x: TRAIL.anchors.trailhead.x, z: TRAIL.anchors.trailhead.z },
   { id: 'trail:bench', name: 'Halfway bench', glyph: '⌂', kind: 'rest', x: TRAIL.anchors.bench.x, z: TRAIL.anchors.bench.z },
   { id: 'trail:bridge', name: 'Rope bridge', glyph: '≈', kind: 'bridge', x: (TRAIL.anchors.bridge.a.x + TRAIL.anchors.bridge.b.x) / 2, z: (TRAIL.anchors.bridge.a.z + TRAIL.anchors.bridge.b.z) / 2 },
   { id: 'summit', name: 'Summit lookout', glyph: '▲', kind: 'lookout', x: TRAIL.anchors.summit.x, z: TRAIL.anchors.summit.z },
+  // the secret grotto behind the waterfall (world/grotto.ts): pinned a little east of the falls' own tile so both read
+  { id: 'grotto', name: 'Hidden grotto', glyph: '◆', kind: 'grotto', hidden: true, x: MOUTH.x + 6.5, z: MOUTH.z - 1.5 },
 ];
 
 const BRIDGE: [XZ, XZ] = [{ x: -46, z: 7 }, { x: -66, z: 5.5 }];
@@ -518,6 +530,8 @@ export function pathAt(x: number, z: number): number {
   }
   const dt = trailDist(TRAIL, x, z, onTread);
   if (dt < TRAIL_WIDTH) best = Math.max(best, 1 - smooth(TRAIL_WIDTH * 0.35, TRAIL_WIDTH * 0.75, dt));
+  // the grotto's ledge behind the falls (world/grotto.ts): worn rock, not grass
+  if (x < -20 && x > -37 && z < -93 && z > -116) best = Math.max(best, 1 - smooth(LEDGE_HW * 0.6, LEDGE_HW * 1.3, ledgeAt(x, z).d));
   const dh = rectSdf(x, z, { x: HUB.x, z: HUB.z + 1, hw: 12, hd: 10, yaw: 0 });
   return Math.max(best, 1 - smooth(-1, 2, dh));
 }
@@ -541,6 +555,8 @@ export function clearance(x: number, z: number): number {
     d = Math.min(d, dt - TRAIL_WIDTH / 2);
     for (const l of TRAIL.landings) d = Math.min(d, Math.hypot(x - l.x, z - l.z) - l.r);
   }
+  // the grotto's ledge behind the falls
+  if (x < -18 && x > -40 && z < -90 && z > -120) d = Math.min(d, distToPolyline(x, z, LEDGE) - LEDGE_HW);
   return d;
 }
 

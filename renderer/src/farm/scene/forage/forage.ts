@@ -16,7 +16,7 @@
  * allocation: matrices, vectors and the line buffer are reused.
  */
 import * as THREE from 'three';
-import type { AudioService, Interactable, SceneCtx, SystemFactory } from '../context.ts';
+import type { AudioService, HandsPort, Interactable, SceneCtx, SystemFactory } from '../context.ts';
 import { biteDelay, collectDef, forageDay, rand, rollFish } from '../../model/collection.ts';
 import type { CollectionService, FindResult, ForageDef, ForageSpawn, WaterKind } from '../../model/collection.ts';
 import { dayKey } from '../../model/almanac.ts';
@@ -299,6 +299,9 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
     else if (ph === 'reel') tilt = 0.7 + Math.sin(st.t * 22) * 0.04;
     else if (ph === 'show') tilt = 0.6;
     st.swing += (tilt - st.swing) * Math.min(1, dt * 14 || 1);
+    // the first-person paws (scene/viewmodel) hold the rod while they are shown: one rod, the line leaves its tip
+    if ((ctx.services.get('hands') as HandsPort | undefined)?.rod(st.swing, st.tip)) { rod.visible = false; return; }
+    rod.visible = true;
     _e.set(-st.swing, 0, side, 'YXZ');
     rod.quaternion.setFromEuler(_e);
     rig.updateMatrixWorld(true);

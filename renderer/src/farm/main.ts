@@ -7,7 +7,8 @@
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high (beats Settings), ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  *             ?timeline=0 (demo: no seeded morning on the farmers' day timelines, model/timeline.ts)
- *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior), ?pose=barn-inside[:VIEW] (the barn)
+ *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior), ?pose=barn-inside[:VIEW] (the barn), ?pose=grotto[:VIEW] (the cave behind the falls)
+ *             ?album=memory (the photo album in memory only, not IndexedDB)
  *             ?welcome=1 (open the first-run welcome tour, fresh; automated browsers skip it otherwise) | ?welcome=0 (never)
  */
 import './hud/base.css';
@@ -26,6 +27,7 @@ import type { FriendLetter } from './model/friends.ts';
 import { createOnboarding, shouldWelcome, tipsAllowed, parseOnboarding, emptyOnboarding } from './model/onboarding.ts';
 import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
+import { createAlbumStore } from './albumstore.ts';
 import { installStampBook, watchPhotos } from './stampbook.ts';
 import { installNewsroom } from './newsroom.ts';
 import { localJson } from './storage.ts';
@@ -116,6 +118,8 @@ const applyPrefs = () => {
   engine.setShadows(p.shadows);
   engine.ctx.comfort.weatherFx = p.weatherFx;
   engine.ctx.comfort.reducedMotion = reducedMotion(p.reducedMotion, !!motionQuery?.matches, settings.get('reducedMotion'));
+  engine.ctx.comfort.headBob = p.headBob;
+  engine.ctx.comfort.hands = p.hands;
   applyCap();
 };
 prefs.onChange(applyPrefs);
@@ -235,7 +239,11 @@ installDevApi({
   demoScenario: (name, seed) => call({ t: R2S.DEMO_SCENARIO, name, ...(seed !== undefined ? { seed } : {}) }),
 });
 installOverlay(engine);
-const photo = installPhotoMode(engine, controller, valley, canvas);
+// the photo album (farm/albumstore.ts: IndexedDB, browser-local; ?album=memory keeps it in memory): photo mode fills
+// it, hud/album.ts shows it, the farmhouse photo wall (scene/interior/photowall.ts) hangs the favourites
+const album = createAlbumStore({ memory: params.get('album') === 'memory' });
+engine.ctx.services.set('album', album);
+const photo = installPhotoMode(engine, controller, valley, canvas, { album, openAlbum: () => hud.ui.album?.() });
 engine.ctx.services.set('photo', photo);
 watchPhotos(stamps, photo, valley);
 const ts = Number(params.get('timescale'));
@@ -250,6 +258,8 @@ if (pose) {
   else if (/^inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(pose.split(':')[1] || 'door');
   // pose=barn-inside (or barn-inside:loft, :stalls … see BARN_VIEWS in scene/interior/barnLayout.ts): the barn interior
   else if (/^barn-inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(`barn:${pose.split(':')[1] || 'door'}`);
+  // pose=grotto (or grotto:pool, :camp, :paintings, :chest, :mouth, :bats … see GROTTO_VIEWS in scene/grotto/room.ts): the cave behind the falls
+  else if (/^grotto(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(`grotto:${pose.split(':')[1] || 'cave'}`);
 }
 
 engine.start();

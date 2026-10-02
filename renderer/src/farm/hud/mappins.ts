@@ -13,11 +13,13 @@ import { POND, STRUCTURES, YARD, type StructureId, type XZ } from '../world/map.
 
 export type Glyph =
   | 'store' | 'mail' | 'yard' | 'fish' | 'nook' | 'heart' | 'festival' | 'paw' | 'leaf' | 'peak' | 'door' | 'bridge' | 'boot'
-  | 'pergola' | 'picnic' | 'lookout' | 'hotspring' | 'orchard' | 'stones' | 'haymeadow' | 'swingtree' | 'waterfall';
+  | 'pergola' | 'picnic' | 'lookout' | 'hotspring' | 'orchard' | 'stones' | 'haymeadow' | 'swingtree' | 'waterfall'
+  // the secret grotto behind the waterfall: a "?" until found, then a cave mouth
+  | 'secret' | 'cave';
 
 export const PIN_COLOR = Object.freeze({
   store: '#3f8a5a', mail: '#c0453a', yard: '#8a6a3a', fish: '#3a78ad', nook: '#5f8a3e', heart: '#e0526b', heartReady: '#f0a72c',
-  festival: '#e0a526', paw: '#8a5a36', leaf: '#6f9a3a', peak: '#9a3b2a', door: '#b8743a',
+  festival: '#e0a526', paw: '#8a5a36', leaf: '#6f9a3a', peak: '#9a3b2a', door: '#b8743a', secret: '#6a5aa8',
 });
 const INK = '#3b2a1e';
 
@@ -132,6 +134,19 @@ function symbol(g: CanvasRenderingContext2D, k: Glyph, r: number): void {
     case 'waterfall': {
       for (const x of [-0.5, 0, 0.5]) { g.beginPath(); g.moveTo(x * s, -s * 0.85); g.lineTo(x * s, s * 0.5); g.stroke(); }
       g.beginPath(); g.ellipse(0, s * 0.72, s * 0.85, s * 0.22, 0, 0, Math.PI * 2); g.fill();
+      break;
+    }
+    case 'secret': {
+      g.font = `900 ${Math.round(s * 2.1)}px Georgia, "DejaVu Serif", serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('?', 0, s * 0.08);
+      break;
+    }
+    case 'cave': {
+      // a dark arch in the rock, a crystal glinting inside
+      g.beginPath(); g.moveTo(-s, s * 0.85); g.quadraticCurveTo(-s * 0.95, -s * 0.9, 0, -s * 0.9); g.quadraticCurveTo(s * 0.95, -s * 0.9, s, s * 0.85); g.closePath(); g.fill();
+      g.fillStyle = '#2a2240';
+      g.beginPath(); g.moveTo(-s * 0.55, s * 0.85); g.quadraticCurveTo(-s * 0.5, -s * 0.35, 0, -s * 0.38); g.quadraticCurveTo(s * 0.5, -s * 0.35, s * 0.55, s * 0.85); g.closePath(); g.fill();
+      g.fillStyle = '#7ff0e0'; g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.22, s * 0.1); g.lineTo(s * 0.34, s * 0.75); g.closePath(); g.fill();
       break;
     }
     case 'heart': case 'festival': break;

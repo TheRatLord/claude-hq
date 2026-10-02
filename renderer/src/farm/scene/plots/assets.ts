@@ -21,6 +21,8 @@ import { cart, cartHeap, crate, fenceRibbon, fenceSegment, flag, hiveGeo, lanter
 import { Herd, SPECIES } from './animals.ts';
 import type { HerdInput, Pen, Script, SpeciesKey } from './animals.ts';
 import { Bees } from './bees.ts';
+import { dandelion, pennant } from './git.ts';
+import type { PlotRepoView } from '../../model/signals.ts';
 import { merge as mergeGeo } from './geo.ts';
 
 const SITE: Site = { index: 0, x: 0, z: 0, w: 18, d: 14, yaw: 0, y: 0, gate: { x: 0, z: 8.5 } };
@@ -107,6 +109,34 @@ for (const kind of PLOT_KINDS) {
     build: (o) => buildField(kind, o), animate: animateField,
   });
 }
+
+// a field in a git repo (git.ts): weeds = changed files, crates by the sign = unpushed commits, the sign's pennant =
+// the branch, an envelope = behind upstream; 'cycle' loops edit → commit (weeds pulled) → push (the cart ships them)
+const repo = (o: Partial<PlotRepoView>): PlotRepoView => ({ repo: 'claude-hq', branch: 'main', head: 'a1b2c3d', dirty: 0, untracked: 0, ahead: 0, behind: 0, lastCommit: null, panes: 2, branches: 1, ...o });
+const GIT_VARIANTS: Record<string, (t: number) => PlotRepoView> = {
+  feature: () => repo({ branch: 'feat/valley-signals', dirty: 8, ahead: 3, behind: 2 }),
+  main: () => repo({ dirty: 2, ahead: 7 }),
+  detached: () => repo({ branch: null, dirty: 1, ahead: null, behind: null }),
+  cycle: (t) => { const c = t % 18; return repo({ branch: 'fix/reconnect-backoff', dirty: c < 6 ? 1 + Math.floor(c * 2) : 0, ahead: c < 6 ? 2 : c < 11 ? 3 : 0, behind: c < 11 ? 1 : 0 }); },
+};
+defineAsset({
+  name: 'field-git', group: 'crop', variants: Object.keys(GIT_VARIANTS),
+  note: 'a cabbage field in a git repo: weeds = changed files, crates = unpushed commits (+N slate past 5), pennant = branch, envelope = behind; cycle: commit pulls the weeds, push ships the crates',
+  build: (o) => {
+    const g = buildField('cabbages', { ...o, variant: 'thriving' });
+    const rig = g.userData.rig as FieldRig;
+    const v = GIT_VARIANTS[o.variant ?? 'feature'] ?? GIT_VARIANTS.feature;
+    rig.plot.git = v(0);
+    g.userData.git = v;
+    for (let k = 0; k < 30; k++) animateField(g, 4 + k * 0.1, 0.1, 0.8);
+    return g;
+  },
+  animate: (obj, t, dt, p) => {
+    const rig = obj.userData.rig as FieldRig | undefined, v = obj.userData.git as ((t: number) => PlotRepoView) | undefined;
+    if (rig && v) rig.plot.git = v(clock(obj, t, 0));
+    animateField(obj, t, dt, p);
+  },
+});
 
 // ---------------------------------------------------------------------------------------------------------------
 // Single crops (param = growth → scale)
@@ -300,6 +330,8 @@ prop('produce-crate', 'crate of produce (stacks by the gate when farmers are don
 prop('blocked-flag', 'bouncing red flag by the sign when the plot needs you', () => mesh(flag()), (obj, t) => { obj.position.y = Math.abs(Math.sin(t * 5.5)) * 0.25; obj.rotation.y = Math.sin(t * 7) * 0.35; });
 prop('soil-clod', 'tilled soil ridge (flips over when a field is tilled)', (o) => { const g = new THREE.Group(); for (let i = 0; i < 3; i++) { const m = mesh(clod(o.season)); m.position.x = i * 1.2; g.add(m); } return g; },
   (obj, t) => obj.children.forEach((c, i) => { c.rotation.z = Math.PI * (1 - Math.min(1, Math.max(0, ((t % 4) - i * 0.3) / 0.6))); }));
+prop('git-weed', 'dandelion tuft: a changed file not yet committed (pulled out when a commit lands)', () => mesh(dandelion()));
+prop('git-pennant', 'branch pennant on the field sign (white: tinted by the branch name; main = Clawd terracotta)', () => mesh(pennant(), toon(0xd97757, { vertexColors: true })));
 prop('fallow-weed', 'weed tuft creeping into fallow soil', () => mesh(weed()));
 prop('plot-meadow', 'wild meadow + "Plot for rent" sign on a free site', (o) => {
   const g = new THREE.Group();

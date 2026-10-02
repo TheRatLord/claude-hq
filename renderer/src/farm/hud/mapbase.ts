@@ -44,7 +44,7 @@ function rng(seed: number): () => number {
 
 /** Optional trail / point-of-interest data in world/map.ts (TRAILS, POIS): read duck-typed so the map draws them once they exist. */
 export interface TrailLine { points: readonly XZ[]; width?: number }
-export interface Poi { id: string; name: string; x: number; z: number; kind?: string }
+export interface Poi { id: string; name: string; x: number; z: number; kind?: string; /** a secret: a "?" until found (MapExtras.found) */ hidden?: boolean }
 const W = WorldMap as unknown as Record<string, unknown>;
 const isXZ = (p: unknown): p is XZ => !!p && typeof (p as XZ).x === 'number' && typeof (p as XZ).z === 'number';
 export const worldTrails = (): TrailLine[] => parseTrails(W.TRAILS ?? W.TRAIL);
@@ -66,7 +66,7 @@ export function parsePois(raw: unknown): Poi[] {
   for (const p of list as Record<string, unknown>[]) {
     if (!isXZ(p)) continue;
     const name = String(p.name ?? p.label ?? p.title ?? p.id ?? 'Lookout');
-    out.push({ id: String(p.id ?? name), name, x: p.x as number, z: p.z as number, kind: typeof p.kind === 'string' ? p.kind : undefined });
+    out.push({ id: String(p.id ?? name), name, x: p.x as number, z: p.z as number, kind: typeof p.kind === 'string' ? p.kind : undefined, ...(p.hidden === true ? { hidden: true } : {}) });
   }
   return out;
 }

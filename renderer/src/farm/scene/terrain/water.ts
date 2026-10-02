@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import type { SceneCtx, SystemFactory } from '../context.ts';
 import type { Season } from '../../model/types.ts';
-import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, heightAt, structure } from '../../world/map.ts';
+import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, heightAt, heightBeforeGrotto, structure } from '../../world/map.ts';
 import { TRICKLES, WATER_STONES } from './features.ts';
 import { buildShore } from './shore.ts';
 
@@ -376,18 +376,20 @@ function waterMaterial(data: THREE.Texture, lanes: THREE.Texture, u: WaterUnifor
 }
 
 /** The waterfall's falling sheet: traced down the cliff face so it never cuts into the rock. */
-function buildFall(): { geo: THREE.BufferGeometry; top: THREE.Vector3; base: THREE.Vector3 } {
+export function buildFall(): { geo: THREE.BufferGeometry; top: THREE.Vector3; base: THREE.Vector3 } {
   const s = structure('waterfall');
+  // traced on the land before the grotto's ledge is cut in behind it (world/grotto.ts): the water falls where it always
+  // did, and the cut opens a walkable gap behind the curtain
   const cx = s.x;
   // find the lip: walking north from the pool, the first point where the cliff levels off
-  let zLip = s.z, yLip = heightAt(cx, zLip);
+  let zLip = s.z, yLip = heightBeforeGrotto(cx, zLip);
   for (let z = s.z + 4; z > s.z - 16; z -= 0.25) {
-    const h = heightAt(cx, z);
+    const h = heightBeforeGrotto(cx, z);
     if (h > yLip) { yLip = h; zLip = z; }
-    if (heightAt(cx, z - 1) - h < 0.4 && h > 20) break;
+    if (heightBeforeGrotto(cx, z - 1) - h < 0.4 && h > 20) break;
   }
   // front of the rock face at height y (searching from the pool toward the cliff)
-  const faceZ = (y: number) => { for (let z = s.z + 8; z > zLip - 2; z -= 0.2) if (heightAt(cx, z) >= y) return z; return zLip; };
+  const faceZ = (y: number) => { for (let z = s.z + 8; z > zLip - 2; z -= 0.2) if (heightBeforeGrotto(cx, z) >= y) return z; return zLip; };
   const rows = 26, cols = 7;
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
   const yBot = WORLD.water - 0.2;
@@ -402,7 +404,7 @@ function buildFall(): { geo: THREE.BufferGeometry; top: THREE.Vector3; base: THR
       const w = 6.2 + v * 3.6;
       const x = cx + (u - 0.5) * w;
       const zz = z + Math.cos((u - 0.5) * Math.PI) * 0.6 * (0.3 + v) ;
-      pos.push(x, y, Math.max(zz, faceZ(y) + 0.7 + (heightAt(x, zz) > y ? 1 : 0)));
+      pos.push(x, y, Math.max(zz, faceZ(y) + 0.7 + (heightBeforeGrotto(x, zz) > y ? 1 : 0)));
       uv.push(u, v);
     }
   }

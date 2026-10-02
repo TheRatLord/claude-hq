@@ -93,7 +93,7 @@ Two stores, on purpose:
 | section | pref | what it does |
 |---|---|---|
 | Controls | `mouseSens` (×0.2–3), `invertY`, `fov` (50–90°, default 62), `headBob`, `sprintToggle` | read live by `player/controller.ts` (fov by main.ts on the camera) |
-| Controls | `keys` | rebind use / alt / map / ledger / mail (defaults E F M Tab J). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
+| Controls | `keys` | rebind use / alt / map / ledger / mail / wave / lantern (defaults E F M Tab J Z T). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
 | Graphics | `quality` (low / medium / high) | systems size pools at start, so it applies **on reload** (a *Reload now* button); `?quality=` wins and the note says so |
 | Graphics | `renderScale` (50–100 %), `shadows`, `weatherFx` (0–100 %) | live: `engine.setRenderScale` (× the quality's own scale), `engine.setShadows` (castShadow off on every light, re-applied after systems start), `ctx.comfort.weatherFx` (weather.ts scales rain / snow / leaves / motes) |
 | Graphics | `fpsCap` (display / 60 / 30) and `idleMin` (off / 2 / 5 / 10 / 30 min, default 10) | `engine.setFpsCap(effectiveFpsCap(…))`: after `idleMin` minutes with no key / mouse / wheel / touch the valley runs at `IDLE_FPS` (15) until the next input. Hidden tabs already stop rendering (core/loop.ts). Automated browsers (`navigator.webdriver`) never idle-throttle |
@@ -101,6 +101,7 @@ Two stores, on purpose:
 | Interface | `nameplates` (always / near ≤ 14 m / off) | `anchors.ts` drops nameplates, signboards and duckling labels (`nameplateShown`); bubbles and asks always show |
 | Interface | `toastK` (short / normal / long / very long), `clock` (24 h / 12 h) | toast lifetimes × k (captions too); `clockText` in the status sign and noticeboard |
 | Interface | `minimap`, `toasts`, `compactStrip`, `needsDoze`, valley tips | as before |
+| Interface | `hands` (Show hands) | `ctx.comfort.hands`: the first-person paws and what they hold ([viewmodel.md](viewmodel.md)) |
 | Accessibility | `reducedMotion` (follow the system / on / off) | `reducedMotion(pref, prefers-reduced-motion, server reducedMotion)` → `.vh-layer.reduced` (every HUD animation and transition off), `ctx.comfort.reducedMotion` (head bob ×0.25, weather particles ×0.5, lightning flashes ×0.3), map / minimap rings stop pulsing (`DrawOpts.still`). *Off* adds `.motion-ok`, which also overrides the OS media query in hud.css |
 | Accessibility | `colorSafe` | `.vh-layer.cb`: Okabe–Ito status colours (`STATUS_PALETTE.safe`) **and** a shape per status everywhere status shows: needs you ▲, working ●, done ■, idle ◆ (`STATUS_SHAPE` / `STATUS_GLYPH`) on map pins and the minimap (`statusMark` in mapdraw.ts, the map key redraws), list dots (`.vh-dot`), every status pill (ledger, card, map tips) and farmer nameplates (`data-st` set by anchors.ts from `statusOf`) |
 | Accessibility | `highContrast` | `.vh-layer.hc`: black ink, near-white paper, black borders, solid hints bar, white nameplates / bubbles / interaction tag, a black + gold focus ring |
@@ -129,6 +130,7 @@ toggle), Tab containment, arrow-key tabs, captions and the live region.
 | H | the Valley Almanac ([almanac.md](almanac.md)) |
 | K | the Collections book ([pastimes.md](pastimes.md)) |
 | G | The Valley Gazette: today's paper and the back issues ([gazette.md](gazette.md)) |
+| Z / T | wave / light or put away your lantern ([viewmodel.md](viewmodel.md)); rebindable |
 | I | your pockets (shop panel, basket; 1/2/3 tabs; [economy.md](economy.md)) |
 | Q | keep the request tracker open ([friends.md](friends.md)) |
 | N | toggle the corner minimap |
@@ -137,7 +139,8 @@ toggle), Tab containment, arrow-key tabs, captions and the live region.
 | Ctrl+` (leader) | terminals |
 | ? | the pause menu's Controls tab |
 | Esc | the pause menu (also on losing pointer lock) |
-| P | photo mode ([tools.md](tools.md#in-game-keys)) |
+| P | photo mode ([album.md](album.md)) |
+| L | the photo album ([album.md](album.md)) |
 | F3 / F4 / F6 | dev overlays ([tools.md](tools.md#in-game-keys)) |
 
 ## HUD layout: calm by default, informative on demand

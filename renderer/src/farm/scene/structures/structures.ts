@@ -371,6 +371,8 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
     if (e.kind === 'blocked') ringBell();
     if (e.kind === 'ship') { P('shippingBin').rig?.poke?.('ship'); audio()?.play('creak', { pos: vec('shippingBin', 0, 0.9, 0)(new THREE.Vector3()), volume: 0.7 }); }
   });
+  // a field's push cart (scene/plots/git.ts) delivers its crates: the lid pops as for a commit, a softer creak
+  ctx.services.set('shippingBin', { ship: () => { P('shippingBin').rig?.poke?.('ship'); audio()?.play('creak', { pos: vec('shippingBin', 0, 0.9, 0)(new THREE.Vector3()), volume: 0.4 }); } });
 
   // ---- walkable tops ----
   const walk = (x: number, z: number): number | null => {
@@ -465,6 +467,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
       for (const r of interact) r();
       ctx.services.delete('walkSurface');
       ctx.services.delete('structureSpots');
+      ctx.services.delete('shippingBin');
       disposeAll();
       ctx.scene.remove(group);
     },

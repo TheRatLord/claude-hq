@@ -208,11 +208,15 @@ export const skySystem: SystemFactory = (ctx) => {
       if (sky.season === 'winter') hemi.groundColor.lerp(tmpC.setHex(0x9aa6b8), 0.35);
       hemi.intensity = hemiI;
       // under a roof (scene/interior): only the windows' share of the sky reaches in, bounced warm off the room
-      const indoor = (ctx.services.get('indoors') as IndoorSpace | undefined)?.active ? 1 : 0;
-      if (indoor) {
-        hemi.intensity = hemiI * 0.62;
-        hemi.color.lerp(ROOM_SKY, 0.35);
-        hemi.groundColor.lerp(ROOM_GROUND, 0.6);
+      const room = ctx.services.get('indoors') as IndoorSpace | undefined;
+      if (room?.active) {
+        // a room may ask for its own fill (the grotto: a cool trickle from its mouth, rock all round)
+        const rl = room.light;
+        hemi.intensity = hemiI * (rl ? rl.sky : 0.62);
+        hemi.color.lerp(rl ? tmpC.setHex(rl.skyTint) : ROOM_SKY, 0.35);
+        hemi.groundColor.lerp(rl ? tmpC.setHex(rl.groundTint) : ROOM_GROUND, 0.6);
+        // …and may shut the key light out entirely (deep in rock)
+        if (rl?.sun !== undefined) key.intensity = keyI * rl.sun;
       }
 
       // shadow camera: centred a little ahead of the player, snapped to shadow texels in light space (no shimmer)
@@ -351,7 +355,7 @@ export const skySystem: SystemFactory = (ctx) => {
         a.rays = ease(a.rays, raysT, a.snap ? 1000 : dt, 4);
       }
       // no cloud shadows or valley mist drifting through the farmhouse
-      if (indoor) { a.cloudShadow = 0; a.mist = 0; a.banks = 0; a.rays = 0; g.vignette += 0.06; }
+      if (room?.active) { a.cloudShadow = 0; a.mist = 0; a.banks = 0; a.rays = 0; g.vignette += 0.06; }
     },
     stats: () => ({ hour: +ctx.valley.sky.hour.toFixed(2), moon: +a.moonPhase.toFixed(2), sunI: +key.intensity.toFixed(2), night: +L.night.toFixed(2) }),
     dispose() {

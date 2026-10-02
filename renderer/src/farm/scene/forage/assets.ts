@@ -8,7 +8,9 @@ import { bobberGeometry, catchGeometry, forageGeometry, rodGeometry } from './mo
 /** shared materials: the forageables / catch (vertex colours), the frost crystal (a cold inner glow) */
 export const forageMaterial = (): THREE.MeshToonMaterial => toon(0xffffff, { vertexColors: true });
 export const crystalMaterial = (): THREE.MeshToonMaterial => toon(0xffffff, { vertexColors: true, emissive: 0x2a6a8a, emissiveIntensity: 0.6 });
-export const materialFor = (id: string): THREE.MeshToonMaterial => (id === 'crystal' ? crystalMaterial() : forageMaterial());
+/** the grotto's glow-cap (scene/grotto): a soft sea-green glow of its own */
+export const glowcapMaterial = (): THREE.MeshToonMaterial => toon(0xffffff, { vertexColors: true, emissive: 0x2fb88a, emissiveIntensity: 0.85 });
+export const materialFor = (id: string): THREE.MeshToonMaterial => (id === 'crystal' ? crystalMaterial() : id === 'glowcap' ? glowcapMaterial() : forageMaterial());
 
 defineAsset({
   name: 'forage', group: 'prop', note: 'the season\'s forageables (pick up with E; Collections book K)',

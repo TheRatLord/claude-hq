@@ -15,7 +15,7 @@
  * E on the dial board opens the system stats.
  */
 import * as THREE from 'three';
-import type { Interactable, LightEmitter } from '../context.ts';
+import type { HandsPort, Interactable, LightEmitter } from '../context.ts';
 import type { Season } from '../../model/types.ts';
 import type { WalletService } from '../../model/wallet.ts';
 import { createBarn } from '../../model/barn.ts';
@@ -345,6 +345,8 @@ function buildBarn(host: RoomHost, season: Season): RoomBuilt {
       }
       // ---- what you carry, in front of the camera
       carried.place(ctx.camera, t, Math.min(1, ctx.player.speed / 4));
+      // the first-person paws (scene/viewmodel) carry it when they are shown: then this copy hides
+      carried.mesh.visible = !(carry && (ctx.services.get('hands') as HandsPort | undefined)?.carry(carry));
       if (Math.floor(hour()) !== lastHour) lastHour = Math.floor(hour());
     },
     dispose() {

@@ -1,6 +1,6 @@
 # The stamp book
 
-Long-term goals that tie the valley's systems together: 46 stamps, each earned once and for good, inked into a book on
+Long-term goals that tie the valley's systems together: 48 stamps, each earned once and for good, inked into a book on
 the Almanac panel's **Stamps** tab. They read the other systems' state; they never keep a copy of it.
 
 Key sources: `model/stamps.ts` (the book, pure + `stamps.test.ts`: `STAMPS`, `StampWorld`, `observe`, `passes`,
@@ -16,7 +16,7 @@ services, created by `main.ts`), `hud/stamps.ts` + `stamps.css` (canvas-drawn st
 | **Work** (real agent work) | first crate shipped · 100 commits · a 7-day Almanac streak · 10 green test runs in a day · 50 asks answered · five farmers working at once · a field that lived a full week · *midnight oil* (a commit between midnight and four) |
 | **Pastimes** | first fish · every fish of one season · a 60 cm catch · 10 forage kinds · the whole field guide · a rainbow (held 3 s) · *odd boot* · first row (the rowboat, [seasons.md](seasons.md)) · *pen pal* (the bottle) |
 | **Village** | 2 ♥ with everyone · a 10 ♥ friend · a first request · 20 requests · sat down at a campfire · a bandstand concert (within 30 m, 12 s) · *perfect presents* (a known loved gift for all six) |
-| **Explorer** | the summit lookout · 7 cairn stones · out under a meteor-shower night (clear, dark, 20 s) · every leisure nook · a photo-mode picture · *summit by starlight* |
+| **Explorer** | the summit lookout · 7 cairn stones · out under a meteor-shower night (clear, dark, 20 s) · every leisure nook · a photo-mode picture · *summit by starlight* · *behind the curtain* (step into the grotto behind the falls, [grotto.md](grotto.md)) |
 | **Seasons & festivals** | one per festival (be within 22 m of its centrepiece while it is on) · first snow · a figure eight on the ice · a snow friend (a dressed snowman) · all four seasons |
 | **Home** | first decor bought · a rank-gated piece · a full yard · the welcome sign · *keepsake* (a 10 ♥ portrait) |
 

@@ -39,6 +39,8 @@ import { askLine, closeLine, doneLine, giftLine, giftedLine, remindLine, thanksL
 import type { FriendsChange, FriendsService } from '../../model/friends.ts';
 import type { GatherService } from '../gather/gather.ts';
 import type { GatherSpot } from '../farmers/brain.ts';
+import { cheeseCue, cheeseFocus, cheeseWeight } from '../cheese.ts';
+import type { CheeseCue } from '../context.ts';
 
 /** Height of the role hat above the body top (labels and emotes clear it). */
 const HAT_TOP: Readonly<Record<Villager['hat'], number>> = { postcap: 0.28, eyeshade: 0.18, millcap: 0.3, tophat: 0.45, ranger: 0.34, souwester: 0.34 };
@@ -402,6 +404,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     }
   }
 
+  /** photo mode's "say cheese" cue this frame (scene/cheese.ts) */
+  let cue: CheeseCue | null = null;
   function stepFolk(f: Folk, dt: number, night: number): void {
     const mv = f.mv;
     const at = f.placeKey;
@@ -437,8 +441,10 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       if (er.arrived && time > er.until) { f.errand = null; f.beatUntil = 0; }
     }
 
+    // say cheese (photo mode): the camera stands in for the player while they play to it
+    const cw = cheeseWeight(cue, mv.x, mv.z, f.v.id), cheesy = cw > 0.05, posing = cheesy && cheeseFocus(cue, f.v.id);
     // player
-    const px = ctx.player.pos.x, pz = ctx.player.pos.z;
+    const px = cheesy ? cue!.x : ctx.player.pos.x, pz = cheesy ? cue!.z : ctx.player.pos.z;
     const pdx = px - mv.x, pdz = pz - mv.z, pd = Math.hypot(pdx, pdz), toPlayer = Math.atan2(pdx, pdz);
     const talking = time < f.talkUntil;
     // walked up to and looked at: they pause for you, so E finds them where you are looking (a short grace once you look
@@ -471,7 +477,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       f.greeted = true; f.greetCool = time + 25; f.greetUntil = time + 2.4;
       audio()?.voice(f.v.id, { pos: f.pos, mood: 'happy', syllables: 2 + Math.floor(f.k * 3) });
     }
-    const greeting = time < f.greetUntil;
+    const greeting = time < f.greetUntil || cheesy;
     const beckon = time < f.lineUntil && f.emote === 'mail';
 
     // where to stand
@@ -486,8 +492,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     target.gait = f.place.amble && !er ? 'amble' : 'walk';
     const walking0 = !mv.arrived;
     if (!walking0 && (talking || greeting || beckon || held)) target.yaw = toPlayer;
-    // stop and talk when spoken to; stand still while you walk up and look at them
-    if (talking || held) { target.key = mv.key; target.x = mv.x; target.z = mv.z; }
+    // stop and talk when spoken to; stand still while you walk up and look at them (or hold still for a photo)
+    if (talking || held || posing) { target.key = mv.key; target.x = mv.x; target.z = mv.z; }
     const moved = moveStep(mv, target, dt, routeFn);
     const walking = !mv.arrived;
     if (walking && Math.hypot(mv.goal.x - mv.x, mv.goal.z - mv.z) > 1.5) ctx.colliders.resolve(mv, 0.3);
@@ -513,7 +519,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     const o = f.out;
     gait(o, 'clawd', g, false);
     // wave (greeting, beckoning)
-    const waveT = (greeting || (beckon && Math.sin(time * 1.4) > -0.3)) && !ACT_INFO[act].grounded ? 1 : 0;
+    const waveT = (posing || (greeting && !cheesy) || (beckon && Math.sin(time * 1.4) > -0.3)) && !ACT_INFO[act].grounded ? 1 : 0;
     f.waveW = damp(f.waveW, waveT, 6, dt);
     if (f.waveW > 0.01) {
       const w = f.waveW;
@@ -527,7 +533,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (wantLook) {
       const rel = wrap(toPlayer - mv.yaw);
       if (Math.abs(rel) < 2.2) { lx = clamp(rel * 1.1, -1, 1); tw = clamp(rel * 0.45, -0.45, 0.45); }
-      ly = clamp(Math.atan2(1.1, Math.max(0.5, pd)) * 1.2, -0.3, 0.9);
+      ly = clamp(Math.atan2(cheesy ? cue!.y - f.pos.y - 0.9 : 1.1, Math.max(0.5, pd)) * 1.2, -0.3, 0.9);
     }
     f.lookX = damp(f.lookX, lx, 5, dt); f.lookY = damp(f.lookY, ly, 5, dt); f.lookTw = damp(f.lookTw, tw, 3, dt);
     const lw = Math.min(1, Math.abs(f.lookX) + Math.abs(f.lookY));
@@ -545,6 +551,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     let face: Face = react?.face ?? ACT_INFO[act].face ?? 'neutral';
     if (f.where === 'shelter' && !talking) face = 'worried';
     if (greeting || beckon) face = 'happy';
+    if (posing) face = 'sparkle';
     if (talking && Math.sin(time * 5) < 0) face = 'talk';
     if (time > f.blinkAt) { f.blinkT = 0; f.blinkAt = time + f.look.blinkEvery * (0.5 + hash01(f.key, time)); }
     f.blinkT += dt;
@@ -613,6 +620,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     update(fi: FrameInfo) {
       const dt = fi.dt;
       time += dt;
+      cue = cheeseCue(ctx.services.get('photo'));
       const night = ctx.lighting.night;
       // the clerk cheers every crate that ships
       for (let i = 0; i < events.length; i++) {

@@ -15,6 +15,7 @@ export const ITEM_OUTLINE = `stroke="${INK}" stroke-width="1.3" stroke-linejoin=
 
 export const ICONS = {
   // ---- UI ----
+  camera: S(`<path d="M3 8.5a2 2 0 012-2h2.5l1.5-2.5h6l1.5 2.5H19a2 2 0 012 2V18a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="#c98a4b" ${ol}/><circle cx="12" cy="13" r="4.2" fill="#3a4a5e" ${ol}/><circle cx="12" cy="13" r="2.2" fill="#7fb6e0"/><circle cx="11.2" cy="12.2" r=".7" fill="#fff"/><rect x="16.5" y="8.2" width="2.5" height="1.6" rx=".5" fill="#ffe39a"/>`),
   mail: S(`<rect x="2.5" y="5.5" width="19" height="13" rx="2" fill="#fff6e0" ${ol}/><path d="M3 7l9 6.5L21 7" fill="none" ${ol}/><circle cx="12" cy="13" r="2" fill="#d9534f" stroke="${INK}" stroke-width="1"/>`),
   map: S(`<path d="M3 6l6-2.5 6 2.5 6-2.5v14.5l-6 2.5-6-2.5-6 2.5z" fill="#f3dfae" ${ol}/><path d="M9 3.5v14.5M15 6v14.5" fill="none" stroke="${INK}" stroke-width="1" opacity=".5"/><path d="M5 14c2-1 3 1 5-1s3-3 5-2 3 0 4-2" fill="none" stroke="#3f95d8" stroke-width="1.4"/><circle cx="16.5" cy="9" r="1.6" fill="#d9534f"/>`),
   book: S(`<path d="M4 4.5h6.5a2 2 0 012 2V20a2 2 0 00-2-2H4z" fill="#c9573f" ${ol}/><path d="M20 4.5h-6.5a1 1 0 00-1 1V20a2 2 0 012-2H20z" fill="#e0764f" ${ol}/><path d="M6.5 8h3.5M6.5 11h3.5M15 8h3M15 11h3" stroke="#fff3d6" stroke-width="1.2" stroke-linecap="round"/>`),

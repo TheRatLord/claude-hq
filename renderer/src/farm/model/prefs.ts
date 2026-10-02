@@ -12,13 +12,13 @@ import type { Status } from '../../../../shared/protocol.ts';
 import type { ValleyEventKind } from './types.ts';
 import { pickTyped } from '../storage.ts';
 
-/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J) */
-export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail'] as const);
+/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J, plus the paws: Z waves, T the lantern) */
+export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail', 'wave', 'lantern'] as const);
 export type Action = (typeof ACTIONS)[number];
 export type KeyBindings = Record<Action, string>;
-export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ' });
+export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT' });
 export const ACTION_LABEL: Readonly<Record<Action, string>> = Object.freeze({
-  use: 'Talk / use', alt: 'Terminal / alt action', map: 'Map', ledger: 'Farm ledger', mail: 'Mailbox',
+  use: 'Talk / use', alt: 'Terminal / alt action', map: 'Map', ledger: 'Farm ledger', mail: 'Mailbox', wave: 'Wave', lantern: 'Lantern',
 });
 
 /**
@@ -28,7 +28,7 @@ export const ACTION_LABEL: Readonly<Record<Action, string>> = Object.freeze({
 export const RESERVED_KEYS: Readonly<Record<string, string>> = Object.freeze({
   KeyW: 'walk', KeyA: 'walk', KeyS: 'walk', KeyD: 'walk', ArrowUp: 'walk', ArrowDown: 'walk', ArrowLeft: 'walk', ArrowRight: 'walk',
   Space: 'hop', ShiftLeft: 'sprint', ShiftRight: 'sprint', Escape: 'menu', Enter: 'confirm',
-  KeyB: 'noticeboard', KeyH: 'almanac', KeyK: 'collections', KeyI: 'pockets', KeyQ: 'requests', KeyN: 'minimap', KeyP: 'photo mode',
+  KeyB: 'noticeboard', KeyH: 'almanac', KeyK: 'collections', KeyI: 'pockets', KeyQ: 'requests', KeyN: 'minimap', KeyP: 'photo mode', KeyL: 'photo album',
   KeyC: 'fly down (photo mode)', Slash: 'all keys (?)', F3: 'performance overlay', F4: 'dev overlay', F6: 'dev overlay',
   Digit1: 'answers', Digit2: 'answers', Digit3: 'answers', Digit4: 'answers', Digit5: 'answers', Digit6: 'answers', Digit7: 'answers',
   Digit8: 'answers', Digit9: 'answers', Digit0: 'answers', ControlLeft: 'modifier', ControlRight: 'modifier', AltLeft: 'modifier',
@@ -83,6 +83,8 @@ export interface Prefs {
   /** toast lifetime multiplier (0.5–3) */
   toastK: number;
   clock: ClockPref;
+  /** the first-person paws and what they hold (scene/viewmodel) */
+  hands: boolean;
   // ---- accessibility
   reducedMotion: MotionPref;
   /** colour-blind-safe status palette, plus a shape on every status mark */
@@ -97,7 +99,7 @@ export const DEFAULT_PREFS: Readonly<Prefs> = Object.freeze({
   minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true,
   mouseSens: 1, invertY: false, fov: 62, headBob: true, sprintToggle: false, keys: DEFAULT_KEYS,
   quality: 'high', renderScale: 1, shadows: true, weatherFx: 1, fpsCap: 0, idleMin: 10,
-  uiScale: 1, nameplates: 'always', toastK: 1, clock: '24h',
+  uiScale: 1, nameplates: 'always', toastK: 1, clock: '24h', hands: true,
   reducedMotion: 'system', colorSafe: false, highContrast: false, largeText: false, captions: false,
 } satisfies Prefs);
 

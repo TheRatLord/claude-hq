@@ -5,6 +5,7 @@
 import { seeded } from '../../../core/rng.ts';
 import { POND, RIVER, RIVER_HALF_WIDTH, WORLD, clearance, distToPolyline, heightAt, normalAt, slopeAt, structure } from '../../world/map.ts';
 import type { XZ } from '../../world/map.ts';
+import { ledgeAt } from '../../world/grotto.ts';
 
 /** Height of a river-rock geometry above its base per unit radius (rocks.ts, flat 0.62). */
 const STONE_H = 1.25;
@@ -83,6 +84,7 @@ export const BANK_PEBBLES: readonly Stone[] = (() => {
     }
     const h = heightAt(x, z);
     if (h < WORLD.water - 0.25 || h > WORLD.water + 1.2 || nearBridge({ x, z })) continue;
+    if (x < -28 && x > -36 && z < -94 && z > -100 && ledgeAt(x, z).d < 3) continue;   // the grotto ledge's foot (its own slabs)
     if (clearance(x, z) < -1.2 && distToPolyline(x, z, RIVER) > RIVER_HALF_WIDTH + 1.6 && Math.hypot(x - POND.x, z - POND.z) > POND.r + 1.6) continue;
     const big = r() < 0.12;
     out.push({ x, z, y: h, r: big ? 0.35 + r() * 0.3 : 0.1 + r() * 0.16, yaw: r() * 6.28, seed: 200 + (i % 12), hy: 0.6 + r() * 0.6 });

@@ -34,8 +34,11 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [festivals.md](valley/festivals.md) | changing the festival calendar or festival dressing |
 | [stamps.md](valley/stamps.md) | changing the stamp book: achievements across every system, their rewards and trophies, the Almanac's Stamps tab |
 | [gazette.md](valley/gazette.md) | changing The Valley Gazette: the weekly / morning editions, where its facts come from, the weekly roll-up, delivery, back issues, the newspaper page |
+| [album.md](valley/album.md) | changing photo mode's looks, frames, timer or "say cheese", the photo album (IndexedDB, limits, the panel) or the farmhouse photo wall |
 | [interior.md](valley/interior.md) | changing the walk-in rooms (farmhouse, barn: chores, machine room) |
+| [grotto.md](valley/grotto.md) | changing the secret grotto behind the waterfall: the ledge cut, the cave room, its secrets (glow-caps, cave fish, the chest, the stamp), the map's "?" |
 | [trail.md](valley/trail.md) | changing the summit trail, its decks, the lookout or the valley viewer |
+| [viewmodel.md](valley/viewmodel.md) | changing your first-person paws: what they hold, gestures, the lantern, their overlay drawing, the `hands` service |
 | [tools.md](valley/tools.md) | taking screenshots, benchmarking, auditing placement, running browser tests, or using URL params, debug keys and the `__valley` / `__hud` dev API |
 
 ## Layers (enforced by `renderer/src/farm/layers.test.ts`)
@@ -103,7 +106,7 @@ the lead.
 | **trail** | `scene/trail/*` (route + cut in `world/trail.ts`) | the summit trail's dressing, staircase / bridge / deck `walkSurface`s (wrapping structures'), the valley viewer, the summit cairn, service `trail` |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
-Not assigned a row: `scene/seasons/*` (system `seasons`: rowboat, ice, snowmen; [seasons.md](valley/seasons.md)), `scene/forage/*` (system `forage`), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
+Not assigned a row: `scene/seasons/*` (system `seasons`: rowboat, ice, snowmen; [seasons.md](valley/seasons.md)), `scene/forage/*` (system `forage`), `scene/viewmodel/*` (system `viewmodel`, service `hands`; [viewmodel.md](valley/viewmodel.md)), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
 (system `yard`, service `wallet`) — ask the lead before editing them; `scene/sculpt.ts` and `scene/parts.ts` are shared
 helpers.
 
@@ -112,7 +115,7 @@ helpers.
 1600×900 on the Radeon 780M iGPU, 12–16 agents, `mixed` demo:
 
 * 60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it),
-  life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), trail ≤ 8, interior ≤ 40 (only while
+  life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), trail ≤ 8, viewmodel ≤ 4, interior ≤ 40 (only while
   inside), seasons ≤ 8 (rowboat 3–4, winter ice 1 + snowmen 3), atmosphere ≤ 30 + post.
 * One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 * Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the

@@ -42,7 +42,7 @@ export const MOTIFS = Object.freeze([
   'mountain', 'cairn', 'meteor', 'compass', 'camera', 'star',
   'blossom', 'lantern', 'cake', 'pumpkin', 'jack', 'tree', 'firework', 'snowflake', 'leaf',
   'fence', 'lamp', 'gnome', 'portrait', 'house',
-  'boat', 'skates', 'snowman', 'egg',
+  'boat', 'skates', 'snowman', 'egg', 'cave',
 ] as const);
 export type Motif = (typeof MOTIFS)[number];
 
@@ -77,7 +77,7 @@ export interface StampWorld {
   /** days with every barn animal fed (model/barn.ts) */
   chores: number;
   /** where the player is */
-  at: { summit: boolean; nook: string | null; festival: boolean; concert: boolean; campfire: boolean };
+  at: { summit: boolean; nook: string | null; festival: boolean; concert: boolean; campfire: boolean; /** in the grotto behind the waterfall */ grotto?: boolean };
   /** a rainbow in the sky / a meteor shower over a clear night sky, while you're out under it */
   sky: { rainbow: boolean; shower: boolean };
 }
@@ -138,7 +138,8 @@ const SEASONS: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
 function bestSeasonFish(w: StampWorld): Progress {
   let best = pr(0, 1);
   for (const s of SEASONS) {
-    const all = FISHES.filter((d) => !d.junk && d.seasons.includes(s));
+    // (the grotto's blind cave fish is a secret of its own, not part of any season's creel)
+    const all = FISHES.filter((d) => !d.junk && d.seasons.includes(s) && !d.water.includes('cave'));
     const got = all.filter((d) => w.collection?.found[d.id]).length;
     if (got / all.length > best.have / best.need) best = pr(got, all.length);
   }
@@ -263,6 +264,9 @@ export const STAMPS: readonly StampDef[] = Object.freeze([
   S('summit-night', 'explorer', 'Summit by starlight', 'star', 'A secret: a view few people see.',
     'The summit after dark, the lantern lit and every farmhouse glowing below.',
     (w) => w.at.summit && night(w.hour), { secret: true }),
+  S('grotto', 'explorer', 'Behind the curtain', 'cave', 'A secret: where does the river begin?',
+    'A ledge behind the falling water, and a cave full of crystals on the other side. Fern really should have told you.',
+    (w) => !!w.at.grotto, { secret: true }),
 
   // ---- Seasons & festivals
   ...FESTIVALS.map((f) => S(`fest-${f.id}`, 'seasons', f.name, FEST_MOTIF[f.id], `Join in the ${f.name} on the square.`, FEST_BLURB[f.id],

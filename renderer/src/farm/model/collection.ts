@@ -12,9 +12,11 @@ import { dayKey } from './almanac.ts';
 import { mulberry32 } from '../../../../shared/identity.ts';
 
 export type CollectKind = 'forage' | 'fish';
-/** where a forageable grows: open meadow, under / beside trees, the water's edge, the foot of the cliffs */
-export type Habitat = 'meadow' | 'wood' | 'shore' | 'cliff';
-export type WaterKind = 'pond' | 'river';
+/** where a forageable grows: open meadow, under / beside trees, the water's edge, the foot of the cliffs, or only in the
+ *  secret grotto behind the waterfall (scene/grotto: never in the day's valley batch) */
+export type Habitat = 'meadow' | 'wood' | 'shore' | 'cliff' | 'grotto';
+/** 'cave': the still pool in the grotto behind the waterfall (scene/grotto) */
+export type WaterKind = 'pond' | 'river' | 'cave';
 /** when a fish bites: any time, daylight only, dark only, around dawn and dusk */
 export type FishTime = 'any' | 'day' | 'night' | 'twilight';
 /** weather a fish needs: any, rain (or storm) only, clear skies only */
@@ -82,6 +84,8 @@ export const CATALOG: readonly CollectDef[] = Object.freeze([
     'Closes up tight when rain is coming. A better forecaster than some we could name.'),
   F('crystal', 'Frost crystal', ['winter'], 'cliff', 1, '#9fd8f0',
     'A clear quartz point from the foot of the cliffs. The standing stones hum when you carry one past.', true),
+  F('glowcap', 'Glow-cap', ALL, 'grotto', 1, '#7ff0c8',
+    'A little mushroom that glows sea-green in the dark, found only in the grotto behind the falls. Hold one up and the bats lean in to read by it.', true),
 
   FISH('minnow', 'Minnow', { seasons: ALL, water: ['pond', 'river'], time: 'any', weather: 'any', weight: 5, cm: [4, 9], color: '#a9b8b8', look: ['#8fa3a6', '#e8eee8', '#c7d2cc'],
     blurb: 'Small, silver and in a tremendous hurry. Everybody\'s first catch.' }),
@@ -107,6 +111,8 @@ export const CATALOG: readonly CollectDef[] = Object.freeze([
     blurb: 'Only bites when the rain is really coming down. Looks personally offended by the weather.' }),
   FISH('char', 'Moonlit char', { seasons: ['winter'], water: ['river', 'pond'], time: 'night', weather: 'clear', weight: 2, cm: [25, 50], color: '#c8d8f0', look: ['#8aa0c8', '#f8f4ec', '#e86a4a'], rare: true,
     blurb: 'Pale as moonlight and cold as the stream it came from. Only bites on clear winter nights.' }),
+  FISH('cavefish', 'Blind cave fish', { seasons: ALL, water: ['cave'], time: 'any', weather: 'any', weight: 1, cm: [6, 14], color: '#f2d8dc', look: ['#f0d6d8', '#fbeef0', '#e8a8b4'], rare: true,
+    blurb: 'Pale pink, no eyes and no worries at all. It has lived in the dark so long it finds the rest of us a bit much.' }),
   FISH('boot', 'Old boot', { seasons: ALL, water: ['pond', 'river'], time: 'any', weather: 'any', weight: 1, cm: [0, 0], junk: true, color: '#6e4a2a', look: ['#6e4a2a', '#a0703f', '#3b2a1e'],
     blurb: 'Size eleven, left foot. If you ever find the right one, Posy will happily post the pair home.' }),
   FISH('bottle', 'Message in a bottle', { seasons: ALL, water: ['river'], time: 'any', weather: 'any', weight: 0.4, cm: [0, 0], junk: true, rare: true, color: '#7fc3a0', look: ['#8fd0b0', '#fff6e0', '#a0703f'],
@@ -212,7 +218,8 @@ export interface ForageSpawn {
   seed: number;
 }
 
-export const forageFor = (season: Season): ForageDef[] => FORAGE.filter((d) => d.seasons.includes(season));
+/** what can turn up in the valley today (the grotto's own finds never join the day's batch) */
+export const forageFor = (season: Season): ForageDef[] => FORAGE.filter((d) => d.seasons.includes(season) && d.habitat !== 'grotto');
 
 /** Today's forageables: 8–12 of the season's kinds, every kind at least once, deterministic per date + season. */
 export function forageDay(day: string, season: Season): ForageSpawn[] {
@@ -445,10 +452,10 @@ export function collectionView(data: CollectionData, season: Season, nowMs: numb
 export function whereText(d: CollectDef): string {
   const seasons = d.seasons.length === 4 ? 'all year' : d.seasons.join(' & ');
   if (d.kind === 'forage') {
-    const where = { meadow: 'in the meadows', wood: 'under the trees', shore: 'along the water\'s edge', cliff: 'at the foot of the cliffs' }[d.habitat];
+    const where = { meadow: 'in the meadows', wood: 'under the trees', shore: 'along the water\'s edge', cliff: 'at the foot of the cliffs', grotto: 'somewhere secret, where the river begins' }[d.habitat];
     return `${where}, ${seasons}`;
   }
-  const water = d.water.length === 2 ? 'pond or river' : `the ${d.water[0]}`;
+  const water = d.water.includes('cave') ? 'a still pool, somewhere very dark' : d.water.length === 2 ? 'pond or river' : `the ${d.water[0]}`;
   const time = { any: '', day: ', by day', night: ', at night', twilight: ', at dawn and dusk' }[d.time];
   const weather = { any: '', rain: ', in the rain', clear: ', under clear skies' }[d.weather];
   return `${water}, ${seasons}${time}${weather}`;

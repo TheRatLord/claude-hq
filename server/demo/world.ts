@@ -422,13 +422,14 @@ export class DemoWorld extends HerdrSource {
     return id;
   }
 
-  /** A workspace's repo as the morning left it: a branch, a few changed files, maybe commits waiting to be pushed. */
+  /** A workspace's repo as the morning left it: a branch, a few changed files, maybe commits waiting to be pushed (up to 7, so a
+   *  field can show more crates than its stack holds), sometimes behind its upstream. */
   _seedGit(R: Rng, root: string): GitInfo {
     const branch = R.pick(BRANCHES);
     const untracked = R.int(0, 2);
     return {
       root, branch, head: hashHex(`${root}:${R.next()}`).slice(0, 7), dirty: R.int(0, 6) + untracked, untracked,
-      ahead: branch === 'spike/webgpu' ? null : R.chance(0.5) ? R.int(1, 3) : 0, behind: R.chance(0.2) ? R.int(1, 4) : 0,
+      ahead: branch === 'spike/webgpu' ? null : R.chance(0.5) ? R.int(1, 7) : 0, behind: R.chance(0.2) ? R.int(1, 4) : 0,
       lastCommit: { subject: R.pick(COMMITS), at: this.clock.now() - R.int(4, 240) * MIN },
     };
   }

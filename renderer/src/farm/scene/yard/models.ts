@@ -30,6 +30,8 @@ export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   'keep-posy': 0.4, 'keep-bram': 0.4, 'keep-hazel': 0.4, 'keep-marigold': 0.4, 'keep-fern': 0.4, 'keep-nimbus': 0.4,
   // the stamp book's trophies (model/stamps.ts)
   'trophy-bronze': 0.35, 'trophy-silver': 0.35, 'trophy-gold': 0.4,
+  // the grotto's hidden chest (scene/grotto)
+  geode: 0.4,
 });
 
 /** keepsake portraits: the villager's body colour, role hat colour and the canvas backdrop */
@@ -425,6 +427,20 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
         k.ball(0.07, i % 2 ? PAL.leaf : PAL.leafDark, { x, y: 0.23, z: 0.1, s: [1, 0.8, 1] });
         k.ball(0.04, fl[i % fl.length], { x, y: 0.3, z: 0.12 + (i % 2) * 0.03 });
       }
+      break;
+    }
+    case 'geode': {
+      // the grotto's hidden chest (scene/grotto): a split geode on a driftwood stump, its crystals glowing after dark
+      k.cyl(0.24, 0.34, PAL.woodDark, { y: 0.17 }, 7, 0.19);
+      k.cyl(0.2, 0.03, PAL.woodLight, { y: 0.345 }, 7);
+      k.ball(0.3, PAL.rockDark, { y: 0.56, z: -0.06, s: [1, 0.82, 0.7] }, 1);
+      k.ball(0.22, 0x3a2c58, { y: 0.58, z: 0.04, s: [0.95, 0.8, 0.55] }, 1);
+      const cr = [0xb79cff, 0x7ff0e0, 0xd8b0ff, 0x9ad8ff, 0xc39cff];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2, r = 0.05 + (i % 3) * 0.045;
+        bk.cone(0.035 + (i % 2) * 0.012, 0.13 + (i % 3) * 0.04, cr[i % cr.length], { x: Math.cos(a) * r, y: 0.6 + Math.sin(a) * r * 0.8, z: 0.13, rx: Math.PI / 2 - 0.3, rz: Math.cos(a) * 0.4 }, 5);
+      }
+      out.lights.push({ x: 0, y: 0.6, z: 0.25, kind: 'candle' });
       break;
     }
     default:

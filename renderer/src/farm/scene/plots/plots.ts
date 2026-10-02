@@ -46,7 +46,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
   root.add(meadow.group);
   const fields = new Map<string, Field>();
   let closing: Field[] = [];
-  const barn = structure('barn');
+  const barn = structure('barn'), bin = structure('shippingBin');
   const hooks = { interact: ctx.interact, colliders: ctx.colliders, ui: ctx.ui, agents: ctx.agents, lights: ctx.services.get('lights') as LightsService | undefined };
   const audio = () => ctx.services.get('audio') as AudioService | undefined;
   const sndPos = new THREE.Vector3();
@@ -73,10 +73,12 @@ export const plotsSystem: SystemFactory = (ctx) => {
     sound: (name, x, y, z, volume) => { try { audio()?.play(name, { pos: sndPos.set(x, y, z), volume }); } catch { /* audio is optional */ } },
     barn: { x: 0, z: 0 },
     farmerPos: (id, out) => { const p = feet.get(id); if (!p) return false; out.copy(p); return true; },
+    // a push cart (git.ts) reached the bin: its lid pops (structures publishes 'shippingBin')
+    shipped: () => { try { (ctx.services.get('shippingBin') as { ship?(): void } | undefined)?.ship?.(); } catch { /* optional */ } },
   };
 
-  const barnLocal = (site: Site) => {
-    const dx = barn.x - site.gate.x, dz = barn.z - site.gate.z, l = Math.hypot(dx, dz) || 1;
+  const barnLocal = (site: Site, to: { x: number; z: number } = barn) => {
+    const dx = to.x - site.gate.x, dz = to.z - site.gate.z, l = Math.hypot(dx, dz) || 1;
     const c = Math.cos(site.yaw), s = Math.sin(site.yaw);
     const x = dx / l, z = dz / l;
     return { x: x * c - z * s, z: x * s + z * c };
@@ -162,7 +164,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
           if (!site) continue;
           // a new workspace reclaims a site: whatever still stands there dissolves right away
           for (const [id, other] of fields) if (other.site.index === site.index) { other.close(); closing.push(other); fields.delete(id); }
-          field = new Field(site, plot, season, { fresh: plot.stage === 'tilling', hooks, barnLocal: barnLocal(site) });
+          field = new Field(site, plot, season, { fresh: plot.stage === 'tilling', hooks, barnLocal: barnLocal(site), binLocal: barnLocal(site, bin) });
           root.add(field.root);
           fields.set(plot.id, field);
         }

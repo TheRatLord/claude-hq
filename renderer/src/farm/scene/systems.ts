@@ -20,7 +20,9 @@ import { trailSystem } from './trail/trail.ts';
 import { yardSystem } from './yard/yard.ts';
 import { weatherSystem } from './weather/weather.ts';
 import { interiorSystem } from './interior/interior.ts';
+import { grottoSystem } from './grotto/grotto.ts';
 import { seasonsSystem } from './seasons/seasons.ts';
+import { viewmodelSystem } from './viewmodel/viewmodel.ts';
 import { audioSystem } from '../audio/audio.ts';
 import { postSystem } from './post/post.ts';
 
@@ -42,6 +44,10 @@ export const SYSTEMS: readonly SystemFactory[] = [
   seasonsSystem,
   weatherSystem,
   interiorSystem,
+  // the secret grotto behind the waterfall (its cave is a room of the interior system above)
+  grottoSystem,
+  // the first-person paws: after everything that moves the camera or claims an item this frame
+  viewmodelSystem,
   audioSystem,
   postSystem,
 ];

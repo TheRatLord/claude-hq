@@ -13,7 +13,7 @@ import './hud.css';
 import type { AgentPort, Letter, ValleyEvent, ValleyState } from '../model/types.ts';
 import { unreadCount } from '../model/valley.ts';
 import type { Camera } from 'three';
-import type { FrameInfo, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
+import type { FrameInfo, HandsPort, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
 import { createPanels, displayName, h, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
 import { createPrefsStore } from '../prefs.ts';
@@ -47,6 +47,7 @@ import { createNotifier } from './notify.ts';
 import { createOnboarding } from './onboarding.ts';
 import { createPetPanel } from './pet.ts';
 import { createGazettePanel } from './gazette.ts';
+import { createAlbumPanel } from './album.ts';
 import type { GazetteView } from './gazette.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
 import type { StampsService } from '../model/stamps.ts';
@@ -189,7 +190,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createPause(ctx), drawer, tour.panel]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -208,7 +209,7 @@ export function createHud(d: HudDeps): Hud {
     dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')), quests.el);
   const leaderKbd = h('kbd.vh-k');
   // key caps that follow Settings → Controls (rebindable keys)
-  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [] };
+  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [], wave: [], lantern: [] };
   const kc = (a: Action) => { const k = h('kbd.vh-k'); kcap[a].push(k); return k; };
   const syncKeys = () => {
     for (const a of Object.keys(kcap) as Action[]) for (const k of kcap[a]) k.textContent = keyLabel(prefs.keys[a]);
@@ -283,6 +284,8 @@ export function createHud(d: HudDeps): Hud {
     return matchCombo(e, leader);
   };
   const handled = (e: KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); };
+  /** the first-person paws (scene service 'hands'; HandsPort is a scene/context.ts type) */
+  const paws = (): HandsPort | undefined => { try { return b?.service?.('hands') as HandsPort | undefined; } catch { return undefined; } };
   // photo mode (farm/photo.ts) owns the keyboard while it is on
   const inPhoto = () => document.body.classList.contains('photo-mode');
   const photoJustLeft = () => performance.now() - ((window as unknown as { __photoLeftAt?: () => number }).__photoLeftAt?.() ?? -1e9) < 400;
@@ -334,6 +337,7 @@ export function createHud(d: HudDeps): Hud {
       if (e.code === 'KeyH') { handled(e); panels.toggle('almanac'); return; }
       if (e.code === 'KeyK') { handled(e); panels.toggle('collection'); return; }
       if (e.code === 'KeyG') { handled(e); panels.toggle('gazette'); return; }
+      if (e.code === 'KeyL') { handled(e); panels.toggle('album'); return; }
       if (e.code === 'KeyI') { handled(e); panels.toggle('shop', { tab: 'sell', at: 'pocket' }); return; }
       if (e.code === K.use && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
@@ -343,15 +347,19 @@ export function createHud(d: HudDeps): Hud {
     // ? (Shift+/ on most layouts): every key, grouped (the pause menu's Controls tab)
     if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
     // the rebindable actions (Settings → Controls; defaults E / F / M / Tab / J)
-    if (e.code === K.use) { const f = prompt.focused(); if (f) { handled(e); if (f.kind === 'villager') tour.signal('talk'); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
+    if (e.code === K.use) { const f = prompt.focused(); if (f) { handled(e); if (f.kind === 'villager') tour.signal('talk'); paws()?.used(f); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
     if (e.code === K.alt) {
       const f = prompt.focused();
       if (!f) return;
       handled(e);
       if (f.kind === 'villager') tour.signal('talk');
+      if (f.alt) paws()?.used({ kind: f.kind, verb: f.alt.verb, id: f.id, pos: f.pos });
       try { if (f.alt) f.alt.use(); else if (f.kind === 'farmer' || f.kind === 'helper') openTerminal(f.id); } catch (err) { console.warn('[hud] alt.use() threw', err); }
       return;
     }
+    // the first-person paws (scene/viewmodel): wave (Z), the lantern (T); rebindable
+    if (e.code === K.wave && !e.repeat) { const h = paws(); if (h) { handled(e); h.gesture('wave'); } return; }
+    if (e.code === K.lantern && !e.repeat) { const h = paws(); if (h) { handled(e); anchors.say(h.lantern() ? 'Lantern lit' : prefs.hands ? 'Lantern away' : 'Lantern: Settings → Interface → Show hands is off', 1100, undefined, 'screen'); } return; }
     if (e.code === K.mail) { handled(e); panels.open('mailbox'); return; }
     if (e.code === K.map) { handled(e); panels.open('map'); return; }
     if (e.code === K.ledger) { handled(e); panels.open('roster'); return; }
@@ -360,6 +368,7 @@ export function createHud(d: HudDeps): Hud {
       case 'KeyH': handled(e); panels.open('almanac'); return;
       case 'KeyK': handled(e); panels.open('collection'); return;
       case 'KeyG': handled(e); panels.open('gazette'); return;
+      case 'KeyL': handled(e); panels.open('album'); return;
       case 'KeyI': handled(e); panels.open('shop', { tab: 'sell', at: 'pocket' }); return;
       case 'KeyQ': if (quests.toggle()) handled(e); return;
       case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; store.save(); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
@@ -492,6 +501,7 @@ export function createHud(d: HudDeps): Hud {
       shop: (tab, at) => panels.open('shop', { tab: tab ?? 'buy', at: at ?? (tab === 'yard' ? 'pocket' : 'store') }),
       friends: (o) => panels.open('friends', o),
       pet: () => panels.open('pet'),
+      album: (id) => panels.open('album', id),
       say: (t, ms, o) => anchors.say(t, ms, o),
       tag: (t) => anchors.submit(t),
     },

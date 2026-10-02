@@ -335,4 +335,7 @@ export interface CompanionService {
   /** dev / tests: `dev('puppy' | 'kitten' | 'fox', coat?, name?)` adopts free and brings it to you; 'fetch', 'find',
    *  'pet', 'home', 'sniff', 'reset' (forget the pet), 'state' */
   dev(cmd?: string, a?: string, b?: string): unknown;
+  /** where your pet is (feet, world) and its name, null without one or while it is out of the world (photo mode's
+   *  "who's in frame", farm/photo.ts); the object is reused */
+  where?(): { x: number; y: number; z: number; name: string } | null;
 }

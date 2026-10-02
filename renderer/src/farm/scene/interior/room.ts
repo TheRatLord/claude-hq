@@ -10,7 +10,7 @@ import { PAL } from '../toon.ts';
 import { Kit } from '../structures/kit.ts';
 import type { Xf } from '../structures/kit.ts';
 import { flowerColors } from '../structures/props.ts';
-import { DOOR, FURN, ROOM, SHELF_ROWS, WINDOWS } from './layout.ts';
+import { DOOR, FURN, PHOTO_WALL, ROOM, SHELF_ROWS, WINDOWS, photoWallSlots } from './layout.ts';
 import { tankDressing } from './pieces.ts';
 
 export interface RoomOpts { season: Season; seed?: number; /** gallery: leave out the ceiling and the front and east walls */ cutaway?: boolean }
@@ -434,16 +434,17 @@ export function buildRoom(o: RoomOpts): THREE.Group {
     k.add(new THREE.TorusGeometry(0.025, 0.004, 4, 8), PAL.ink, { x: 0.1, y: 0.6, z: 0.12, rx: Math.PI / 2 });
     k.add(new THREE.TorusGeometry(0.025, 0.004, 4, 8), PAL.ink, { x: 0.16, y: 0.6, z: 0.12, rx: Math.PI / 2 });
   }));
-  // a stitched sampler over the bed
-  k.part('sampler', () => k.at({ x: B.x + 0.1, y: F + 1.65, z: z0 + 0.03 }, () => {
-    k.box(0.9, 0.55, 0.04, PAL.woodDark);
-    k.box(0.8, 0.45, 0.042, 0xf0e2c0, { z: 0.003 });
-    // "home" in cross-stitch blocks, a heart, a little house
-    k.ball(0.06, PAL.red, { x: -0.25, y: 0.02, z: 0.03, s: [1, 1, 0.3] });
-    k.box(0.16, 0.1, 0.01, 0x5a86b8, { x: 0.18, y: -0.05, z: 0.026 });
-    k.prism([[-0.1, 0], [0.1, 0], [0, 0.08]], 0.01, PAL.roofRed, { x: 0.18, y: 0.0, z: 0.026 });
-    for (let i = 0; i < 9; i++) k.box(0.03, 0.03, 0.01, QUILT[i % QUILT.length], { x: -0.32 + i * 0.08, y: -0.17, z: 0.026 });
-  }));
+  // the photo wall over the bed: eight frames for the album's favourites (the photos go in at runtime: photowall.ts)
+  k.part('photowall', () => {
+    const pad = PHOTO_WALL.border + PHOTO_WALL.mat;
+    for (const f of photoWallSlots()) {
+      k.at({ x: f.x, y: f.y, z: PHOTO_WALL.z }, () => {
+        k.box(f.w + pad * 2, f.h + pad * 2, 0.03, f.wood);
+        k.box(f.w + PHOTO_WALL.mat * 2, f.h + PHOTO_WALL.mat * 2, 0.034, 0xf6efdc, { z: 0.002 });
+        k.ball(0.012, 0xc9963a, { y: f.h / 2 + pad + 0.035, z: 0.0 });
+      });
+    }
+  });
 
   // ---------------------------------------------------------------- the bookshelf (west wall)
   const BS = FURN.bookshelf;

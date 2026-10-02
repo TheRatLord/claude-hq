@@ -75,7 +75,9 @@ bare. Gallery `field-traces`; dev `__valley.ctx.services.get('farmers').react(id
 * *Personality:* burlap **yield sacks** fill the front-right corner (one per log step of lines changed in the workspace
   since the valley loaded, banked across tasks from `FarmerView.work`, 6 at ~1000).
 * *The sign knows the branch:* a field in a git repo paints `on <branch>` under its name, and reading the sign tells
-  its weeds (changed files) and the crates waiting to ship (unpushed commits). A farmer's water can running low is the
+  its weeds (changed files) and the crates waiting to ship (unpushed commits). The field shows them too: dandelions
+  between the rows that get pulled when a commit lands, crates by the sign that a cart carries off to the shipping bin
+  on a push, a branch-coloured pennant on the sign and an envelope from upstream when behind. A farmer's water can running low is the
   context window filling: the nameplate grows a gauge from 65 % (red near compaction). Copy and derivations:
   [signals.md](signals.md).
 
@@ -98,6 +100,9 @@ fireside toasting and chatting; reading on a bench; checkers turns with a partne
 * Restless or chatty farmers sometimes leave their seat for an outing: a stroll to a view, the mailbox, their own
   field, visiting a friend, or petting the village dog/cat (service `pets`) or one of their field's animals
   (`plots.petAnimal`).
+
+While you row the boat, a fishing seat whose float would land within 2.6 m of it is off (`lineBlocked` in
+`scene/farmers/farmers.ts`); a farmer already fishing there gets up and picks another seat.
 
 Seat changes are checked by the placement audit's `--sitters` pass ([tools.md](tools.md#placement-audit-npm-run-auditplacement)).
 

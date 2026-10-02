@@ -10,7 +10,7 @@
  * Draws: hull + lantern glass (2), the oars (1, instanced), wake rings (1, only while any are alive).
  */
 import * as THREE from 'three';
-import type { Interactable, LightEmitter, LightsService } from '../context.ts';
+import type { HandsPort, Interactable, LightEmitter, LightsService } from '../context.ts';
 import type { RideInput, RideOut, Rider } from '../../player/controller.ts';
 import { POND, WORLD, heightAt } from '../../world/map.ts';
 import { solidMat, setGlow } from '../structures/kit.ts';
@@ -119,6 +119,8 @@ export function createBoat(sh: Shared): Pastime {
   const pl = { sweep: 0, lift: 0 }, pr = { sweep: 0, lift: 0 };
   const blade = [new THREE.Vector3(), new THREE.Vector3()];
   const BLADE = new THREE.Vector3(1.7, 0, 0);
+  /** the oar's handle grip (oar space: the dark wrap inboard of the lock) and where it is now (port, starboard) */
+  const GRIP = new THREE.Vector3(-0.5, 0, 0), grip = [new THREE.Vector3(), new THREE.Vector3()];
   function writeOars(): void {
     oars.visible = mode !== 'winter';
     if (glow) glow.visible = mode !== 'winter';
@@ -134,8 +136,11 @@ export function createBoat(sh: Shared): Pastime {
       mtx.compose(lock, q, one).premultiply(root.matrixWorld);
       oars.setMatrixAt(i, mtx);
       blade[i].copy(BLADE).applyMatrix4(mtx);
+      grip[i].copy(GRIP).applyMatrix4(mtx);
     }
     oars.instanceMatrix.needsUpdate = true;
+    // aboard: the first-person paws (scene/viewmodel) hold the grips
+    if (mode === 'aboard') (ctx.services.get('hands') as HandsPort | undefined)?.oars(grip[0], grip[1]);
   }
 
   // ------------------------------------------------------------------ the lantern

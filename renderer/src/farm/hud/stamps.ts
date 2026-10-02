@@ -157,6 +157,13 @@ const M: Record<Motif, (g: C2) => void> = {
     g.beginPath(); g.rect(-0.24, -0.38, 0.48, 0.09); g.fill(); line(g, 0.15, -0.3, 0.22, 0.0);
   },
   egg: (g) => { g.beginPath(); g.ellipse(0, 0.05, 0.5, 0.68, 0, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-0.95, 0.55); g.quadraticCurveTo(0, 1.05, 0.95, 0.55); g.stroke(); line(g, -0.75, 0.62, -0.95, 0.85); line(g, 0.75, 0.62, 0.95, 0.85); g.beginPath(); g.ellipse(-0.18, -0.22, 0.09, 0.16, 0.3, 0, Math.PI * 2); g.fill(); },
+  // a cave mouth behind a curtain of falling water, a crystal glinting inside
+  cave: (g) => {
+    g.beginPath(); g.moveTo(-0.95, 0.85); g.quadraticCurveTo(-0.9, -0.85, 0, -0.85); g.quadraticCurveTo(0.9, -0.85, 0.95, 0.85); g.stroke();
+    for (const x of [-0.55, -0.2, 0.15, 0.5]) line(g, x, -0.95, x + 0.05, 0.75);
+    g.beginPath(); g.moveTo(0.62, 0.8); g.lineTo(0.72, 0.3); g.lineTo(0.82, 0.8); g.closePath(); g.fill();
+    line(g, -1, 0.88, 1, 0.88);
+  },
   house: (g) => { g.beginPath(); g.moveTo(-0.95, -0.05); g.lineTo(0, -0.85); g.lineTo(0.95, -0.05); g.stroke(); box(g, -0.7, -0.15, 1.4, 1.0); g.beginPath(); g.rect(-0.2, 0.3, 0.4, 0.55); g.fill(); box(g, 0.35, 0.05, 0.25, 0.22); box(g, 0.45, -0.8, 0.2, 0.35); },
 };
 

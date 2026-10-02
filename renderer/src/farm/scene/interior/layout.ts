@@ -139,10 +139,44 @@ export const INSIDE_VIEWS: Readonly<Record<string, { x: number; z: number; tx: n
   shelf: { x: 0.2, z: -2.15, tx: 0, ty: 1.55, tz: -4.25 },
   desk: { x: -1.6, z: -0.3, tx: -3.6, ty: 1.15, tz: 1.0 },
   bed: { x: -1.6, z: -0.7, tx: -3.6, ty: 0.9, tz: -3.8 },
+  photos: { x: -2.9, z: -2.0, tx: -3.25, ty: 2.15, tz: -4.25 },
   tank: { x: 1.9, z: -2.6, tx: 2.6, ty: 1.4, tz: -4.2 },
   window: { x: 0.9, z: -0.6, tx: 2.7, ty: 1.9, tz: 1.85 },
   sun: { x: 3.0, z: -2.9, tx: -0.6, ty: 0.9, tz: 1.2 },
 });
+
+// ---------------------------------------------------------------------------------------------
+// The photo wall over the bed (north wall, west end): eight little frames for the album's favourites, hung salon
+// style in two rows above the headboard (photowall.ts puts the photos in them, room.ts builds the frames).
+
+export interface WallFrame {
+  /** photo centre (room-local x, absolute local y) and the photo's size (m); the frame adds border + mat round it */
+  x: number; y: number; w: number; h: number;
+  /** frame wood colour */
+  wood: number;
+}
+export const PHOTO_WALL = Object.freeze({ z: ROOM.z0 + 0.035, border: 0.035, mat: 0.028, x0: -4.22, x1: -2.26, gap: 0.035 });
+const FRAME_WOODS = [0x6e4a2a, 0xc9963a, 0x8a5a36, 0x3f2a1c, 0xb07a4a, 0x5a3a24, 0xd8b26a, 0x7a3a28];
+/** The eight frames, in hanging order: the first slots (the newest favourites) are the biggest, in the middle. */
+export function photoWallSlots(): WallFrame[] {
+  const pad = PHOTO_WALL.border + PHOTO_WALL.mat;
+  const rows: { y: number; ws: number[]; hs: number[]; dy: number[] }[] = [
+    { y: ROOM.floor + 2.18, ws: [0.34, 0.42, 0.32, 0.3], hs: [0.26, 0.32, 0.32, 0.38], dy: [0.02, 0, 0.015, -0.01] },
+    { y: ROOM.floor + 1.63, ws: [0.28, 0.42, 0.34, 0.3], hs: [0.36, 0.3, 0.26, 0.3], dy: [0, -0.015, 0.02, 0] },
+  ];
+  const out: WallFrame[] = [];
+  rows.forEach((r, ri) => {
+    const total = r.ws.reduce((a, w) => a + w + pad * 2, 0) + PHOTO_WALL.gap * (r.ws.length - 1);
+    let x = (PHOTO_WALL.x0 + PHOTO_WALL.x1) / 2 - total / 2;
+    r.ws.forEach((w, i) => {
+      x += pad + w / 2;
+      out.push({ x, y: r.y + r.dy[i], w, h: r.hs[i], wood: FRAME_WOODS[(ri * 4 + i) % FRAME_WOODS.length] });
+      x += w / 2 + pad + PHOTO_WALL.gap;
+    });
+  });
+  // hanging order: the big middle ones first, then outwards
+  return [1, 5, 2, 6, 0, 4, 3, 7].map((i) => out[i]);
+}
 
 // ---------------------------------------------------------------------------------------------
 // The Collections shelf: 3 display rows × 6, forage in book order then the junk from the river (boot, bottle).
