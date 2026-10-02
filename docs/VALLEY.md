@@ -60,6 +60,19 @@ the lead.
   of **sprouts** on its left, one per test run / error: green and perky for a pass, wilted brown for a fail (newest 6).
   A busy field bristles; a quiet one is bare. Gallery `field-traces`; dev `__valley.ctx.services.get('farmers').react(id,
   'celebrate' | 'oops')`.
+* **Fields read at a glance** (plots package, `scene/plots/`). *Farmers stay visible in tall crops:* wheat leaves a
+  **tramline** from each back-row work spot to the headland (`cropLayout(…, lanes)`), and the crop shader **parts**
+  round whoever stands in it (`uPart`: per-field world points for the field's farmers, fed ~7×/s from the `farmers`
+  locator, plus the player; stalks within ~1.7 m duck to ~40 % and lean away; `PartDef.part` opts a crop in, wheat
+  only). *Lifecycle:* harvested annuals leave dry **stubble** in the fallow soil (`PartDef.stubble`: wheat straw,
+  withered vines, cabbage stumps, sunflower stalks) while **perennials** (`PartDef.perennial`: orchard trees, vines,
+  berry bushes) stay put and only their fruit flies to the cart. *Seasons:* spring fruit sets small and green; winter
+  wheat is short green shoots in the snow, pumpkin vines die back to a brown mat on straw with a few pumpkins left
+  to cure, sunflowers stand as dry stalks with hanging seed heads; seedlings start larger so a new field shows its kind
+  from across the valley. *Small life:* **crows** settle on the back-fence posts while a farmer struggles (struggle + 1
+  of them; circling as before at ≥ 2), one when the field rests, and three glean the fallow stubble; they flush when you
+  come close and drift back. *Personality:* burlap **yield sacks** fill the front-right corner (one per log step of
+  lines changed in the workspace since the valley loaded, banked across tasks from `FarmerView.work`, 6 at ~1000).
 * **Idle = leisure.** An idle farmer (no job for 4 s) picks a seat weighted by its `likes`, the hour and distance,
   and runs a varied activity loop there (`scene/farmers/idle.ts`, pure + `idle.test.ts`): fishing casts, reels and
   sometimes lands a catch; fireside toasting and chatting; reading on a bench; checkers turns with a partner. Four
@@ -189,6 +202,36 @@ the lead.
   'spook')` startles it; service `wildlife`. Gallery: `deer` (graze walk alert bound fawn lie), `fox` (trot walk sniff
   alert run), `heron` (stand hunt wade fly takeoff), `owl` (perch watch hoot fly), `hedgehog` (snuffle walk curl),
   `goose` (fly glide).
+* **The summit trail: the valley is not a bowl you can't leave.** A hiking trail climbs the terraced south wall to a
+  lookout on the rim (route + cut: `world/trail.ts`, pure, fed `padHeight` by `world/map.ts`; dressing + viewer:
+  `scene/trail/`, system `trail`, service `trail`). A meadow footpath leaves the south road between fields 9 and 10 to
+  the **trailhead** (signpost: length and climb, a lantern, a bin of walking sticks; E reads it), then four legs
+  switchback up the strata: each leg follows the contour of one riser (half cut into the face, half built out), each
+  hairpin crosses the shelf above it as a little level landing. The tread is cut into `heightAt` itself (`carveTrail`: a
+  2.1 m flat core blended into the slope with pad-style weights, so two legs of a hairpin keep their own level treads),
+  so the terrain mesh, scatter, forage, `clearance()` (the trail and its landings are reserved) and the player agree;
+  `pathAt` paints it as dirt (and footsteps crunch). Max grade ≈ 0.45 (the controller climbs to ≈ 1.4); **log steps**
+  bed across the steeper legs, **rope railings** run along the outer edge wherever it drops more than ~1.4 m, **cairns**
+  mark the hairpins and the saddle, the **halfway bench** sits on the second hairpin (E: rest). From the saddle between
+  two knobs a **wooden staircase** (0.24 m risers) climbs the east knob and a **rope bridge** (sagging plank deck on
+  cables, hand ropes) crosses back over the saddle, 7 m up, to the summit knob: both are `walkSurface`s the trail system
+  publishes by wrapping the structures' function (a deck more than 0.6 m above you is not your floor, so you can walk
+  under the bridge), and the controller treats a reachable deck as walkable whatever is under it. The **summit
+  lookout** (≈ 40 m above the trailhead, 44 m above the square's level): a deck with a railing on the valley side, a
+  bench facing north over the whole valley to the waterfall and the far ranges, a lantern (a real `LightEmitter`), a
+  Claude-orange swallow-tail flag that streams with the wind, a windswept pine and the **summit cairn** (E: leave a
+  stone, once a real day; the count is kept per browser profile in `claude-valley.summit.v1` and the pile grows, one
+  InstancedMesh). **The valley viewer** (a teal coin-op binocular viewer; "free for valley folk"): E zooms the camera
+  onto a farmer down in the valley, framed ≈ 5 m wide, through a binocular mask, with their tag and what they're doing
+  (`needs you: …` first); ← / → cycle farmers (needs-you first, then working, then the rest), ↑ / ↓ zoom, the mouse
+  nudges the view; E, Esc, any walking key or a panel steps back. The view steers the player's own yaw / pitch (lights,
+  culling and labels see the real view) and looks from the viewer's eyepieces, leaning out past the rail. Map data:
+  `TRAILS` (polyline, for the map) and `POIS` (trailhead, halfway bench, rope bridge, summit) in `world/map.ts`. Budget:
+  6 draws when in view (1 baked solid + 1 glow, the sign, the viewer head, the flag, the offered stones; +1 mask while
+  viewing), ~0.02 ms a frame. Dev: poses `trailhead trail bridge summit`; `__valley.ctx.services.get('trail')`:
+  `view(i)` (stand at the viewer and look at farmer i), `leave()`, `stones()`, `route()`, `hike()` (walks the whole
+  route holding W, resolves `{ done, at, of, secs }`: a regression check for walkability); gallery assets
+  `summit-lookout`, `rope-bridge`, `trail-stairs`, `trailhead`, `trail-cairn`, `windswept-pine`.
 * **Bits, the General store and your yard (I).** The valley's little economy (pure + tested `model/shop.ts` catalogue
   and prices, `model/wallet.ts` purse/basket/yard; `scene/yard/`, system `yard`, service `wallet`; HUD `hud/shop.ts`,
   panel `shop`). The coin is the **bit** (a copper coin stamped with a sprout), shown on the status sign's coin chip.
@@ -234,6 +277,26 @@ the lead.
   on an easel (`keep-<id>`, `DecorDef.keepsake`, never sold) given into your yard with a last letter. Letters are kept in
   the friends data and re-posted to the mailbox on load (`Valley.post`, kind `news`). Dev: `__valley.hearts(id?, n?)`,
   `requests()` / `requests('ready')` / `requests('YYYY-MM-DD')` (that date's set, as today's), `gift(id, item)`.
+* **Evening gatherings: the valley is a community** (pure + tested `model/gatherings.ts` schedule and stories,
+  `scene/gather/` system + service `gatherings`, slot maths in `slots.ts`). The calendar (`scheduleFor`, seeded per day):
+  **campfire evenings** on most clear nights (~86 %, about 19:30–22:00; rain and storms cancel, light snow or fog
+  don't); a **bandstand concert** 18:30–20:15 on Saturdays, Sundays and festival nights once the bandstand upgrade is
+  in (everyone then moves on to the fire); a **market morning** on Saturdays 8:00–11:30 once the stalls are up.
+  *Gatherings never hide state:* only `idle` / `done` farmers that don't need you attend (`canAttend`); a farmer that
+  starts work or gets blocked leaves at once (the brain's `World.gather()` is asked every plan, so needs-you still runs
+  to the gate). Villagers come on their evening slot (~78 %, regulars always; market browsing is a seeded ~40-minute
+  visit from their post). **Campfire:** farmers take the logs and the stool, villagers the grass ring; a 4-minute cycle
+  (`CAMPFIRE_CYCLE`) of a **story** (the teller, chosen among the settled, says one line every ~10 s in a speech bubble,
+  built from ValleyState / almanac only by `storyLines`: crates shipped, green test runs, who planted what, a stubborn
+  bug, a finished task title, the streak, the next rank; first person for the teller's own deeds), **laughter**
+  ("ha!" emotes, a chuckle chorus), **toasting marshmallows** (held prop), a **sing-along** (the music plays the
+  `campfire` waltz, notes over heads) and chat. **Concert:** three farmers climb the steps and play fiddle, banjo and
+  flute (props + strum / bow / blow poses, a warm lamp under the roof after dark), the crowd arcs out front dancing and
+  clapping, applause between songs; the music plays the `concert` piece *live* from the stage. **Market:** villagers
+  browse the counters and gossip between the stalls. **Join in:** E on a free log bench ("Sit on") sits you down
+  (`controller.sit`, the eye lowers to 0.98 m and turns to the fire; any move key stands you up) and, once a day, every
+  villager present gains friendship (`friends.gathered`, +30 pts each). Props and acts reuse the farmer Crowd's
+  vgroup variants (no extra draw calls); the system ticks at 4 Hz and allocates nothing per frame.
 * **The farmhouse has a walk-in interior** (`scene/interior/`, system `interior`, service `indoors` = `IndoorSpace`).
   E on the front door ("Go inside") fades (real-time, works at timescale 0) into one warm room built in place in the
   farmhouse's own frame (`layout.ts` is pure + tested: room box, windows, furniture anchors, colliders, viewpoints).
@@ -382,6 +445,33 @@ the lead.
     clicking opens that terminal (several asks: the mailbox). `__hud.notify()` shows the last copy and the icon badge.
   * *Every key.* `?` opens the pause menu's Controls tab from anywhere outside a terminal: grouped (getting around,
     agents, mailbox, ledger, card & terminal, the valley). Add new keys there and to the hints bar's budget sparingly.
+* **The map (M) and the minimap** (`hud/map.ts` panel + minimap + layer toggles, `hud/mapdraw.ts` live layers and chart
+  furniture, `hud/mapbase.ts` the painted base, `hud/mappins.ts` pin glyphs + place data, `hud/map.css`). A hand-drawn
+  parchment chart, **painted once** in idle time (`warmBase`, ~5 px/m over the whole 300 m world, repainted only when the
+  season changes; the minimap blits a half-res copy and never forces the build): a watercolour wash (meadow mosaic,
+  groves, the forest ring, mossy shelves, ochre rock, pale peaks, faded to bare paper at the world's edge), paper grain
+  and tea stains, **hachures** down every steep slope (the cliff strata read as inked bands), the river with inked banks
+  and flow dashes, the pond with ripple rings, beach and lily pads, the waterfall and the four cascades, roads as inked
+  double lines (ruts on the big ones), footpaths dashed, **trails** (`world/map.ts` `TRAILS`) as red dots, hedgerows,
+  stamped trees (round / pine / willow, seasonal; the map re-plays flora/scatter.ts's noise, hud never imports scene
+  systems), the square's cobbles, the yard's picket fence, the garden, and every landmark as a little drawing with a
+  cast shadow. Per frame (only while open; the minimap at ≤ 30 Hz) it blits the visible part and draws the live layers:
+  fields, hint washes, place tiles, the festival, request hearts, scarecrows, villagers, farmers, labels (greedy, never
+  over a pin, sign or the furniture), the player arrow + view cone, then the cached furniture: compass rose (top right),
+  title cartouche "Claude Valley · season · festival · rank" (bottom right, shrinks on laptops), scale bar, deckled edge.
+  **Pin language** (`mappins.ts`; the side panel's *Key* draws the same pins): circles = farmers (status colour, gold
+  pulsing ring = needs you), houses = villagers, crosses = scarecrows, rounded **tiles** = places (store, mailbox +
+  unread count, your yard, the farmhouse door, nooks, fishing spots with what bites now, trail stops from `POIS`:
+  trailhead / bench / rope bridge / summit), **hearts** = today's requests (on the villager, or on the place to visit;
+  gold + pulsing when ready), the **rosette** = the festival centrepiece (`festivals.where().center`). Hover any pin for
+  a tooltip; only farmers / scarecrows (and fields, Shift) act on a click. **Layers** (toggle chips over the key,
+  remembered in `valley.hud.mapLayers`; `data-testid="map-layer-<id>"`): *Places* and *Requests* on by default,
+  *Forage* (soft washes nudged off today's unpicked spots: the area, never the spot) and *Wildlife* (habitat washes
+  with the species' paw tile and when, "out now!" + a pulse while one is about, dimmed out of season; text from
+  `SIGHTINGS`). Live data comes through `HudBindings.service(name)` (forage, wildlife, festivals, yard → the store),
+  `friends`, `collection`, gathered ≤ 3×/s. The key starts folded on screens ≤ 860 px tall (toggle remembered).
+  **Minimap:** the same art; fields, villagers, hearts, the store and festival, farmers; a farmer who needs you is
+  bigger with a gold halo and, when off the minimap, waits on the rim with a pointer toward them.
 * **First-run welcome + tips** (pure + tested `model/onboarding.ts`, HUD `hud/onboarding.ts` + `onboarding.css`, panel
   `welcome`, service wired in `main.ts`, persisted per profile in `claude-valley.onboarding.v1`). On a profile's first
   visit **Posy the postmaster** hands you a letter (airmail-edged, her stamp): agents are farmers, fields are workspaces,
@@ -487,6 +577,11 @@ the lead.
   Harvest barn-dance oom-pah, Hallowtide minor celesta + pizzicato, Starlight jingle bells + sleigh shaker, New Year
   auld lang syne on a soft horn), auto-harmonized (`harmonizeTune`). Tunes are seeded per real day. Ducks to 25 % under
   notifications and to 60 % while someone near you talks.
+* **Gathering music** (`GATHER_SCENES` in `musicPlan.ts`; `MusicIn.gathering` from the `gatherings` service's
+  `music(listener)`): near a campfire sing-along (≤ 80 m) the piece is the `campfire` waltz (84 bpm 3/4, reed + guitar,
+  the `CAMPFIRE_SONG` motif); near a concert (≤ 115 m) the `concert` piece (100–116 bpm, strings / guitar / flute,
+  percussion, short rests between songs). Starting one fades the current piece; while it plays the music bus is
+  **placed** at the fire / stage (`music.place(pan, gain)`: spatial pan × 0.75, distance gain floored at 0.22).
 * **Footsteps** (`steps.ts` pure + tested, `STEP_RECIPES` in `sfx.ts`): the controller's grass / water / wood is refined
   from where you stand: paved square = stone, roads (`pathAt` > 0.55) = dirt crunch, decks (bridge, dock, porch) = hollow
   wood, the farmhouse = floorboards (one creaks now and then), lying snow (`sky.trace.snow`) or winter above the snow
@@ -532,11 +627,12 @@ the lead.
 | **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), wild visitors, services `audio`, `pets`, `wildlife` |
 | **hud** | `hud/*` | every DOM overlay, terminal drawer, `UiPort` |
 | **interior** | `scene/interior/*` | the walk-in farmhouse room, service `indoors` (`IndoorSpace`) |
+| **trail** | `scene/trail/*` (route + cut in `world/trail.ts`) | the summit trail's dressing, staircase / bridge / deck `walkSurface`s (wrapping structures'), the valley viewer, the summit cairn, service `trail` |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
 ## Budgets (1600×900 on the Radeon 780M iGPU, 12–16 agents, `mixed` demo)
 
-60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), interior ≤ 40 (only while inside),
+60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it), life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), trail ≤ 8, interior ≤ 40 (only while inside),
 atmosphere ≤ 30 + post. One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the
 top view (`npm run bench`; ≈ 7–8 ms today), CPU frame (`cpu`) ≲ 8 ms with `crowd40`.
@@ -577,6 +673,7 @@ npm run shoot -- --shot name=f,goto=d1:p2           # stand in front of a farmer
 npm run shoot -- --shot 'name=top,cam=0;90;70;0;-0.95'  # free camera x;y;z;yaw;pitch (quote: ';')
 npm run shoot -- --shot 'name=w,gallery=dog,variant=run,frames=12,every=70,clip=400;100;900;700'  # flipbook: N frames tiled into one PNG
 npm run shoot -- --shot name=m,pose=hub,panel=map    # HUD panel (map mailbox roster …); hud=0 hides the HUD; term=ID opens a terminal
+npm run shoot -- --shot "name=mw,pose=hub,hour=19,panel=map,eval=setTimeout(()=>{dispatchEvent(new KeyboardEvent('keydown',{key:'9'}));document.querySelector('[data-testid=map-layer-wildlife]').click()},1500)"  # whole valley + wildlife layer
 npm run shoot -- --url 'http://127.0.0.1:PORT/?t=TOKEN' --shot name=live,pose=hub   # a running backend (live herdr; npm run build first)
 npm run shoot -- --shot name=g,gallery=windmill,param=0.8   # one asset in the gallery
 npm run shoot -- --shot name=g,grid=structure        # every asset of a group
@@ -601,6 +698,15 @@ npm run shoot -- --shot "name=fs,hour=22,eval=__valley.requests('2026-10-06');__
 npm run shoot -- --shot name=w,pose=hub,hour=10,welcome=1,wait=3000   # the first-run welcome letter (Posy)
 npm run shoot -- --shot "name=wl,pose=hub,welcome=1,eval=setTimeout(()=>{document.querySelector('[data-testid=welcome-go]').click();__hud.tour.signal('map')},1800)"  # the tour checklist
 npm run shoot -- --shot name=i,pose=inside,hour=10          # farmhouse interior (inside:hearth|shelf|desk|bed|tank|window|sun|room)
+npm run shoot -- --shot name=s,pose=summit,hour=18.6         # the summit lookout at dusk (poses trailhead trail bridge summit)
+npm run shoot -- --shot "name=v,pose=summit,hour=10,eval=__valley.ctx.services.get('trail').view(0),wait=2500"   # the valley viewer on farmer 0
+npm run shoot -- --shot "name=h,pose=trailhead,eval=__valley.ctx.services.get('trail').hike().then(r=>window.__h=r),wait=40000,log=JSON.stringify(window.__h)"  # hike it: done=true
+
+npm run shoot -- --scenario longIdle --shot "name=g,hour=20.6,weather=clear,eval=__valley.gather('campfire'),wait=80000"  # campfire evening from the viewpoint (farmers walk ~60–80 s)
+npm run shoot -- --scenario longIdle --shot "name=gs,hour=20.6,weather=clear,eval=__valley.gather(...'campfire|sing'.split('|')),wait=80000,frames=6,every=600"  # jump to a segment (story laugh toast sing chat)
+npm run shoot -- --scenario longIdle --shot "name=c,hour=19.2,weather=clear,eval=__valley.gather('concert'),wait=75000"   # the band + dancing crowd (auto-unlocks the bandstand)
+npm run shoot -- --scenario longIdle --shot "name=mk,hour=9.5,weather=clear,eval=__valley.gather('market'),wait=40000"   # market morning
+# __valley.gather() → debug state; gather(null) back to the calendar; 3rd arg stay=true keeps a free cam= (no commas in eval: split a '|' string)
 npm run shoot -- --shot "name=ir,pose=inside:hearth,hour=21,weather=rain,eval=__valley.collect(28)"  # night, rain on the glass, full shelf
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
@@ -617,7 +723,7 @@ npm run shoot -- --shot "name=fr,cam=0;2.2;14;0;-0.35,hour=7.6,weather=clear,eva
 ```
 
 Read the PNGs you produce (they are the ground truth), compare against the art direction, iterate. Poses:
-`hub farmhouse square windmill pond barn river plots east` (`dev/api.ts`). The in-page API `window.__valley`
+`hub farmhouse square windmill pond barn river plots east trailhead trail bridge summit` (`dev/api.ts`). The in-page API `window.__valley`
 (`dev/api.ts`) also offers `setHour`, `setWeather`, `setSeason`, `timeScale`, `villagers()` / `villager(id)` (pins / what one is doing; `goTo('villager:posy')`
 walks up to one, then `interact()` talks), `force(id, patch)` (demo entity
 patch), `scenario(name)`, `debug(flag)`, `state()`. Demo scenarios: `mixed allStates crowd40 trio longIdle queue churn

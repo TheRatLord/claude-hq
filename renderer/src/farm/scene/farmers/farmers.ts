@@ -42,6 +42,7 @@ import { Traces, TRACE_MAX, newTraceRow, plantedStakes, pushSprout, tracePos } f
 import type { TraceRow } from './traces.ts';
 import { workSpot } from '../../world/spots.ts';
 import type { ToolClass } from '../../../../../shared/protocol.ts';
+import type { GatherService } from '../gather/gather.ts';
 
 export const PRODUCE: Readonly<Record<PlotKind, number>> = {
   wheat: PAL.wheat, pumpkins: PAL.pumpkin, cabbages: PAL.cabbage, sunflowers: PAL.sunflower, orchard: PAL.apple, vineyard: PAL.grape,
@@ -62,6 +63,9 @@ const LEISURE_EMOTE: Partial<Record<Act, readonly [EmoteName, number, boolean]>>
   telescope: ['star', 6, true], stargaze: ['star', 5, true], ponder: ['thought', 6, false], checkers: ['bulb', 9, false],
   soak: ['note', 8, false], picnic: ['heart', 9, false], toast: ['heart', 8, false], gaze: ['note', 10, false], pet: ['heart', 2.2, false],
   reel: ['sweat', 1.2, false], sitread: ['dots', 11, false],
+  // evening gatherings (scene/gather): laughter round the fire, the sing-along, the band and the crowd
+  laugh: ['haha', 2.1, false], sing: ['note', 2.3, false], fiddle: ['note', 1.7, false], banjo: ['note', 1.9, false], flute: ['note', 1.5, false],
+  dance: ['note', 3.1, false], clap: ['sparkle', 3.6, false],
 };
 
 const MOOD_FACE: Readonly<Record<Mood, Face>> = { happy: 'happy', focused: 'focused', stuck: 'stuck', sleepy: 'sleepy', proud: 'proud', worried: 'worried' };
@@ -203,6 +207,10 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
   let time = 0;
   const cues: string[] = [];
   const audio = () => ctx.services.get('audio') as AudioService | undefined;
+  /** evening gatherings (scene/gather): a spot for an idle / finished farmer, the storyteller's lines */
+  const gatherSvc = () => ctx.services.get('gatherings') as GatherService | undefined;
+  /** while the campfire gathering is on, the fire's own leisure seats are the gathering's (others sit elsewhere) */
+  const occTmp = new Map<number, string>();
   const surface = () => ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined;
   const ground = (x: number, z: number): number => {
     const s = surface()?.(x, z);
@@ -229,7 +237,14 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       claim: (id, kind, t) => {
         const prev = a.mind.seat;
         if (prev >= 0 && occ.get(prev) === id) occ.delete(prev);
-        const i = pickSeat(seats, occ, id, kind, a.look.likes, a.look.chatty, seeded(`${id}:${a.mind.n}:${Math.floor(t)}`), prev, ctx.lighting.night, a.mv);
+        let taken: ReadonlyMap<number, string> = occ;
+        if (gatherSvc()?.active()?.kind === 'campfire') {
+          occTmp.clear();
+          for (const [k, v] of occ) occTmp.set(k, v);
+          seats.forEach((st, si) => { if (st.kind === 'fire') occTmp.set(si, '#gathering'); });
+          taken = occTmp;
+        }
+        const i = pickSeat(seats, taken, id, kind, a.look.likes, a.look.chatty, seeded(`${id}:${a.mind.n}:${Math.floor(t)}`), prev, ctx.lighting.night, a.mv);
         occ.set(i, id);
         return i;
       },
@@ -241,6 +256,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       critters: () => critters(a),
       friends: () => friends(a),
       views: views(),
+      gather: () => gatherSvc()?.farmer(a.id) ?? null,
     };
   };
 
@@ -870,7 +886,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (let i = 0; i < order.length; i++) {
         const a = order[i];
         a.mv.x = sepPts[i].x; a.mv.z = sepPts[i].z;
-        if (!a.mv.arrived && Math.hypot(a.mv.goal.x - a.mv.x, a.mv.goal.z - a.mv.z) > 1.5) ctx.colliders.resolve(a.mv, 0.3);
+        // (the band's last leg, from the bandstand steps up onto the stage, walks through the stand's collider)
+        if (!a.mv.arrived && Math.hypot(a.mv.goal.x - a.mv.x, a.mv.goal.z - a.mv.z) > 1.5 && !(a.intent.seatY !== undefined && a.intent.key.startsWith('gather:concert:'))) ctx.colliders.resolve(a.mv, 0.3);
         unwedge(a);
       }
       // leaving: vanish at the exit
@@ -932,6 +949,7 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       labels.begin(dt);
       _near.length = 0;
       const focused = ctx.interact.focused();
+      const gather = gatherSvc();
       for (const a of actors.values()) {
         fx(a, camPos);
         const d = camPos.distanceTo(a.head);
@@ -945,13 +963,13 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
       for (let i = 0; i < _near.length && i < (ctx.debug.labels ? 8 : 4); i++) {
         const { a } = _near[i];
         const f = a.view;
-        const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}${f.tool ? ` · ${f.tool}` : ''}` : (a.mind.job === f.job && a.mind.tool && TOOL_VERB[a.mind.tool]) || JOB_VERB[f.job];
+        const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}${f.tool ? ` · ${f.tool}` : ''}` : (a.mind.job === f.job && a.mind.tool && TOOL_VERB[a.mind.tool]) || (f.job === 'idle' && gather?.label(a.id)) || JOB_VERB[f.job];
         const sub = f.detail && !f.needsYou && f.job !== 'idle' && f.job !== 'away' ? `${verb} · ${f.detail}` : verb;
         tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
         labels.show(a.id, a.id, 'name', f.tag, sub, tmpV, a.nameA);
       }
-      // speech bubbles: talkers you can hear, and farmers asking for you
-      const talkers = [...actors.values()].filter((a) => a.mind.leaving === null && ((a.view.job === 'talk' && a.view.said) || (a.view.needsYou && a.view.question)))
+      // speech bubbles: talkers you can hear, farmers asking for you, and the campfire's storyteller
+      const talkers = [...actors.values()].filter((a) => a.mind.leaving === null && ((a.view.job === 'talk' && a.view.said) || (a.view.needsYou && a.view.question) || !!gather?.line(a.id)))
         .map((a) => ({ a, d: camPos.distanceTo(a.head) })).filter((x) => x.d < (x.a.view.needsYou ? 14 : 20)).sort((x, y) => x.d - y.d);
       const said = new Set<Actor>();
       for (const { a, d } of talkers) {
@@ -962,7 +980,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         const ask = a.view.needsYou;
         // same anchor as the nameplate: the HUD stacks the bubble above it
         tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
-        labels.show(a.sayKey, a.id, ask ? 'ask' : 'speech', ask ? (a.view.question ?? '') : spoken(a, a.view.said), ask ? a.view.tag : '', tmpV, a.bubbleA * clamp(((ask ? 14 : 20) - d) / 4, 0, 1));
+        const told = ask ? null : gather?.line(a.id) ?? null;
+        labels.show(a.sayKey, a.id, ask ? 'ask' : 'speech', ask ? (a.view.question ?? '') : told ?? spoken(a, a.view.said), ask ? a.view.tag : '', tmpV, a.bubbleA * clamp(((ask ? 14 : 20) - d) / 4, 0, 1));
       }
       for (const a of actors.values()) if (!said.has(a)) a.bubbleA = damp(a.bubbleA, 0, 8, dt);
       // duckling labels on hover: the one closest to the crosshair

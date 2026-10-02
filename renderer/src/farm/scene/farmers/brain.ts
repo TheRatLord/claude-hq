@@ -51,6 +51,21 @@ export interface Seat extends XZ {
   loop?: string;
 }
 
+/**
+ * A place at an evening gathering (scene/gather: the campfire, the bandstand), handed to an attending farmer through
+ * `World.gather`. The gather system mutates it in place (the act follows the evening: story, laughter, the band…).
+ */
+export interface GatherSpot extends XZ {
+  key: string;
+  yaw: number;
+  act: Act;
+  prop: Prop | null;
+  /** absolute seat / floor height (a log bench, the bandstand's stage) */
+  y?: number;
+  /** pass here first (the bandstand's steps), so nobody climbs the rail */
+  via?: XZ | null;
+}
+
 export interface Errand { kind: 'haul' | 'fetch'; leg: 0 | 1 | 2 | 3; t: number; dest: 'bin' | 'mailbox' | 'well'; once: boolean }
 
 export interface Mind {
@@ -73,6 +88,8 @@ export interface Mind {
   /** the job's tool flavour on show (FarmerView.tool, held for TOOL_DWELL_S so tool churn never flickers the act) */
   tool: ToolClass | null;
   toolT: number;
+  /** at a gathering: passed its `via` waypoint */
+  gvia: boolean;
 }
 
 /** A shown tool flavour stays at least this long before a newer one replaces it (same job). */
@@ -80,7 +97,7 @@ export const TOOL_DWELL_S = 8;
 /** Web / network fetches arrive by carrier pigeon at the work spot; MCP and the rest walk to the mailbox / well. */
 export const pigeonPost = (tool: ToolClass | null): boolean => tool === 'web' || tool === 'net';
 
-export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false, beat: -1, beatUntil: 0, beatAct: null, trip: null, tool: null, toolT: -1e9 });
+export const newMind = (job: Job, t: number, k: number): Mind => ({ job, jobT: t, errand: null, seat: -1, seatUntil: 0, n: 0, k, leaving: null, arriving: false, beat: -1, beatUntil: 0, beatAct: null, trip: null, tool: null, toolT: -1e9, gvia: false });
 
 export interface World {
   site: Site | null;
@@ -112,6 +129,8 @@ export interface World {
   /** personality 0..1: how often an outing beats sitting on, how much it likes company */
   restless?: number;
   chatty?: number;
+  /** an evening gathering wants this farmer (scene/gather): only asked of idle / finished farmers */
+  gather?(): GatherSpot | null;
 }
 
 const faceYaw = (from: XZ, to: XZ) => Math.atan2(to.x - from.x, to.z - from.z);
@@ -146,7 +165,7 @@ export function workAct(job: Job, kind: PlotKind | null, t: number, k: number, t
 const PROP_OF: Partial<Record<Act, Prop>> = {
   plant: 'trowel', hoe: 'hoe', feed: 'basket', brush: 'brush', inspect: 'magnifier', almanac: 'book', water: 'can', hammer: 'hammer',
   saw: 'saw', carry: 'crate', read: 'letter', plan: 'notebook', sweep: 'broom', done: 'basket', fish: 'rod', bindle: 'bindle',
-  rummage: 'sack', pigeon: 'pigeon',
+  rummage: 'sack', pigeon: 'pigeon', toast: 'marshmallow', fiddle: 'fiddle', banjo: 'banjo', flute: 'flute',
 };
 export const propOf = (a: Act): Prop | null => PROP_OF[a] ?? null;
 
@@ -242,6 +261,25 @@ export function plan(m: Mind, f: FarmerView, w: World, pos: XZ, arrived: boolean
         }
       }
     }
+  }
+
+  // evening gatherings (the campfire, the bandstand): only farmers with nothing on go; one that needs you never does
+  if ((m.job === 'idle' || m.job === 'done') && !f.needsYou) {
+    const g = w.gather?.() ?? null;
+    if (g) {
+      if (m.seat >= 0) { w.release?.(f.id); m.seat = -1; }
+      m.trip = null;
+      m.beat = -1;
+      if (g.via && !m.gvia) {
+        if (Math.hypot(pos.x - g.via.x, pos.z - g.via.z) < 0.7 || Math.hypot(pos.x - g.x, pos.z - g.z) < 1.4) m.gvia = true;
+        else return base(`${g.key}:via`, { x: g.via.x, z: g.via.z, yaw: faceYaw(g.via, g) }, 'stand', 'walk');
+      }
+      const i = base(g.key, g, g.act, 'walk');
+      i.prop = g.prop;
+      if (g.y !== undefined) i.seatY = g.y;
+      return i;
+    }
+    m.gvia = false;
   }
 
   switch (m.job) {

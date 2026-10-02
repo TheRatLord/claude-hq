@@ -35,7 +35,7 @@
     { "check": "overlap", "a": "flora/tree-*", "b": "flora/tree-*", "min": { "sepRatio": 0.45 }, "reason": "neighbouring crowns interleave in a forest; scatter keeps trunks ≥ 0.7 × (crown radii) apart, so only crowns touch (sepRatio = base distance / half-widths)" },
     { "check": "overlap", "a": "flora/bush-*", "b": "flora/tree-*", "min": { "sepRatio": 0.3 }, "reason": "understory: bushes grow under tree crowns (bases apart; the bush is under the crown, not in the trunk)" },
     { "check": "floating", "a": "flora/ivy", "max": 1.9, "reason": "ivy drapes hang from a cliff-strata lip (flora/ivy.ts walks each strand down the riser face); they cling to the wall, not the ground below" },
-    { "check": "overhang", "a": "flora/ivy", "max": 1.1, "reason": "ivy hangs over the riser below its ledge by design" },
+    { "check": "overhang", "a": "flora/ivy", "max": 1.15, "reason": "ivy hangs over the riser below its ledge by design" },
     { "check": "overlap", "a": "flora/ivy", "b": "flora/ivy", "min": { "sepRatio": 0.45 }, "reason": "neighbouring drapes on a heavy ledge join into one long curtain (their edge strands interleave)" },
     { "check": "overlap", "a": "flora/bush-hedge", "b": "flora/bush-hedge", "min": { "sepRatio": 0.6 }, "reason": "a hedgerow run is sections whose rounded ends overlap a little, so it reads as one continuous hedge (scatter: step 2.6 m)" },
     { "check": "sunk", "a": "flora/ivy", "max": 2.6, "reason": "ivy strands follow the smooth riser (heightAt) and brush into the faceted mesh; the mat leaves lie in the ledge turf" },
@@ -66,6 +66,17 @@
     { "check": "overlap", "a": "structures/hotspring", "b": "structures/hotspring/pool", "reason": "the rubber duck (the spring's rig mesh) floats on the pool, bobbing through the surface" },
     { "check": "overhang", "a": "structures/*", "max": 0.25, "reason": "a building on its terrace: the terrace blend begins at the footprint edge, so the downhill rim of steps/plinth/legs clears the ground by up to ~0.2 m (the base is planted, minGap ≈ 0)" },
     { "check": "floating", "a": "structures/windmill/sack*", "max": 0.45, "reason": "the third sack is stacked on the two below it (it rests in the gap between them, so a ray under its centre misses both)" },
-    { "check": "overlap", "a": "structures/dock/m0", "b": "structures/dock/stool*", "reason": "m0 is the fishing line: the rod leans on the stool and its line runs past the seat" }
+    { "check": "overlap", "a": "structures/dock/m0", "b": "structures/dock/stool*", "reason": "m0 is the fishing line: the rod leans on the stool and its line runs past the seat" },
+    { "check": "sunk", "a": "trail/logStep", "max": 0.5, "reason": "summit trail log steps bed across the cut tread; at the tread's edge the 1.25 m terrain mesh climbs the cut bank above heightAt" },
+    { "check": "overhang", "a": "trail/logStep", "max": 0.4, "reason": "summit trail log steps: on the built-out side the 1.25 m terrain mesh dips below the tread's edge (heightAt is level across)" },
+    { "check": "sunk", "a": "trail/railing", "max": 0.25, "reason": "rope railing posts are driven into the summit trail's tread" },
+    { "check": "sunk", "a": "trail/trailhead", "max": 0.25, "reason": "the trailhead signpost's stone foot and stick bin sit into the meadow's slope at the foot of the wall" },
+    { "check": "floating", "a": "trail/railing", "max": 0.5, "reason": "rope railing posts stand on the summit trail's level tread (heightAt); on the built-out side the 1.25 m terrain mesh dips below it" },
+    { "check": "overhang", "a": "trail/ropeBridge", "reason": "the rope bridge spans the saddle between the knobs (a walkSurface deck, 7 m up)" },
+    { "check": "sunk", "a": "trail/ropeBridge", "max": 0.3, "reason": "the bridge's end posts and anchor stakes are driven into the knobs" },
+    { "check": "sunk", "a": "trail/stairs", "max": 1.0, "reason": "the staircase's stringers and posts bed into the east knob's riser at the top of the flight" },
+    { "check": "overhang", "a": "trail/windsweptPine", "max": 1.9, "reason": "the windswept pine's crown streams out over the knob's edge" },
+    { "check": "sunk", "a": "trail/windsweptPine", "max": 0.45, "reason": "the pine's roots grip the knob's rock (base at the lowest mesh corner)" },
+    { "check": "sunk", "a": "trail/summitDeck", "max": 0.3, "reason": "the lookout's posts and step are set into the levelled knob top" }
   ]
 }

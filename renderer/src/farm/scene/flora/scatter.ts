@@ -230,6 +230,7 @@ export function scatter(): Scatter {
     if (R < 92 || R > 150) continue;
     const h = heightAt(px, pz);
     if (h < 8 || h > 42 || slopeAt(px, pz) > 0.22 || trickleDist(px, pz) < 2.5 || Math.hypot(px - FALL.x, pz - FALL.z) < 22) continue;
+    if (clearance(px, pz) < 1.2) continue; // the summit trail's tread and landings (world/trail.ts)
     // outward (up the wall) and inward (toward the valley): a shelf has a riser behind it and/or a drop in front
     const ox = px / Math.hypot(px, pz), oz = pz / Math.hypot(px, pz);
     const behind = heightAt(px + ox * 3, pz + oz * 3) - h;
@@ -245,7 +246,7 @@ export function scatter(): Scatter {
       // never a lone speck: even an outlier is a proper curtain, and the heavy ledges carry long, wide runs
       const w = 1.9 + rl() * 1.4 + heavy * 2.4;
       const len = Math.min(drop * 0.92, 1.9 + rl() * 1.3 + heavy * 2);
-      if (trickleDist(px, pz) < 1.5 + w * 0.5 || stoneDist(px, pz) < 1 + w * 0.5 || !spaced(px, pz, 0.8 + w * 0.3) || bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < b.r + w * 0.45)
+      if (trickleDist(px, pz) < 1.5 + w * 0.5 || clearance(px, pz) < 1 + w * 0.5 || stoneDist(px, pz) < 1 + w * 0.5 || !spaced(px, pz, 0.8 + w * 0.3) || bushAt.some((b) => Math.hypot(b.x - px, b.z - pz) < b.r + w * 0.45)
         || out.ivy.some((q) => Math.hypot(q.x - px, q.z - pz) < (q.w + w) * 0.42)) continue;
       out.ivy.push({ x: px, z: pz, dx: -ox, dz: -oz, w, len, seed: Math.floor(rl() * 1e6) });
       continue;

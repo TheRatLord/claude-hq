@@ -5,6 +5,8 @@
  * Indoors (service 'indoors', the farmhouse interior): its floor and furniture replace the terrain and colliders.
  * Fly mode (photo mode): the camera leaves the body and flies freely (WASD along the view, Space up, C down, Shift
  * fast, no collision); leaving it snaps the view back to where you stood.
+ * Sitting (`sit`, the campfire's log benches at an evening gathering): the body eases onto the seat and the eye lowers
+ * to a seated height; the mouse still looks around, and any move key or Space stands you up again.
  */
 import * as THREE from 'three';
 import type { FrameInfo, IndoorSpace, SceneCtx } from '../scene/context.ts';
@@ -13,6 +15,8 @@ import { bobAdvance, bobShape, stepIndex } from '../../player/feel.ts';
 import { damp, dampAngle } from '../../core/math.ts';
 
 const EYE = 1.62;
+/** eye height above a seat's surface when sitting */
+const SIT_EYE = 0.98;
 const RADIUS = 0.35;
 const WALK = 4.6, SPRINT = 8.2, ACCEL = 10, JUMP_V = 5.2, GRAVITY = 16;
 const MAX_SLOPE = 0.42; // 1 − normal.y above which ground is a wall
@@ -29,6 +33,10 @@ export interface Controller {
   /** detach the camera and fly it freely (photo mode); false returns to the body */
   fly(on: boolean): void;
   readonly flying: boolean;
+  /** sit on a seat (world x / z, seat surface height y, facing yaw in model convention: front = (sin, cos)); null
+   *  stands up. `onStand` runs when the player gets up (a move key, Space, or `sit(null)`). */
+  sit(at: { x: number; z: number; y: number; yaw: number } | null, onStand?: () => void): void;
+  readonly seated: boolean;
   dispose(): void;
 }
 
@@ -42,6 +50,15 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   let flying = false;
   const flyPos = new THREE.Vector3(), flyVel = new THREE.Vector3(), body = { yaw: 0, pitch: 0 };
   const flyDir = new THREE.Vector3();
+  let seat: { x: number; z: number; y: number; yaw: number } | null = null, onStand: (() => void) | null = null, sitK = 0;
+  const sitFrom = new THREE.Vector3();
+  const stand = () => {
+    if (!seat) return;
+    const fn = onStand;
+    seat = null; onStand = null;
+    vel.set(0, 0, 0);
+    fn?.();
+  };
 
   const onKey = (e: KeyboardEvent, down: boolean) => {
     if (p.frozen && down) return;
@@ -68,6 +85,9 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   const walkable = (x: number, z: number): boolean => {
     const room = indoors();
     if (room) return room.floor(x, z) !== null;
+    // a deck you can step onto carries you over anything (the summit trail's staircase and rope bridge, docks)
+    const deck = (ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined)?.(x, z);
+    if (deck != null && deck < p.pos.y + 0.65) return true;
     if (Math.hypot(x, z) > MAX_R) return false;
     const h = heightAt(x, z);
     if (h < WORLD.water - 0.75) return false; // deep water
@@ -111,6 +131,21 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
         ctx.camera.rotation.set(p.pitch, p.yaw, 0);
         p.speed = 0;
         return;
+      }
+      if (seat) {
+        // seated: ease onto the seat; any move key or Space stands up
+        if (fwd || side || keys.has('Space')) { keys.delete('Space'); stand(); }
+        else {
+          sitK = Math.min(1, sitK + dt / 0.55);
+          const e = sitK * sitK * (3 - 2 * sitK);
+          const gy = heightAt(seat.x, seat.z);
+          p.pos.set(sitFrom.x + (seat.x - sitFrom.x) * e, gy, sitFrom.z + (seat.z - sitFrom.z) * e);
+          p.eye.set(p.pos.x, sitFrom.y + EYE + (seat.y + SIT_EYE - sitFrom.y - EYE) * e, p.pos.z);
+          p.speed = 0;
+          ctx.camera.position.copy(p.eye);
+          ctx.camera.rotation.set(p.pitch, p.yaw, 0);
+          return;
+        }
       }
       const room = indoors();
       const h0 = heightAt(p.pos.x, p.pos.z);
@@ -164,6 +199,7 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       ctx.camera.rotation.set(p.pitch, p.yaw, 0);
     },
     teleport(x, z, yaw, pitch) {
+      stand();
       p.pos.set(x, indoors()?.floor(x, z) ?? heightAt(x, z), z);
       if (yaw !== undefined) p.yaw = yaw;
       if (pitch !== undefined) p.pitch = pitch;
@@ -184,6 +220,16 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       else { p.yaw = body.yaw; p.pitch = body.pitch; place(); }
     },
     get flying() { return flying; },
+    sit(at, fn) {
+      if (!at) { stand(); return; }
+      if (seat) { const old = onStand; onStand = null; old?.(); }
+      seat = { ...at }; onStand = fn ?? null; sitK = 0;
+      sitFrom.copy(p.pos);
+      vel.set(0, 0, 0); vy = 0; grounded = true;
+      // turn to face the way the seat faces, eyes a touch down (into the fire)
+      look = { yaw: Math.atan2(-Math.sin(at.yaw), -Math.cos(at.yaw)), pitch: -0.16 };
+    },
+    get seated() { return seat !== null; },
     dispose() {
       removeEventListener('keydown', kd); removeEventListener('keyup', ku); removeEventListener('blur', blur);
       removeEventListener('mousemove', mm); canvas.removeEventListener('click', click);

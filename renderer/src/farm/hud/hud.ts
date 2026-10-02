@@ -75,6 +75,8 @@ export interface HudBindings {
   friends?(): FriendsService;
   /** optional: the first-run welcome tour + one-time tips (model/onboarding.ts, hud/onboarding.ts) */
   onboarding?(): OnboardingService;
+  /** optional: a scene service by name (ctx.services), duck-typed by the reader: the map reads 'forage', 'wildlife', 'festivals', 'yard' */
+  service?(name: string): unknown;
 }
 
 export interface Hud {
@@ -437,7 +439,7 @@ export function createHud(d: HudDeps): Hud {
         });
       } catch { /* optional */ }
       tick();
-      warmBase();
+      warmBase(() => b?.valley().sky.season ?? 'summer');
       if (pendingOpen) { const p = pendingOpen; pendingOpen = null; openTerminal(p.id, p.enterAt); }
     },
     update(f) {

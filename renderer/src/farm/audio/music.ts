@@ -3,8 +3,10 @@
  * rests in silence before the next one so it never drones. Going indoors / out or a storm rolling in fades the
  * current piece out within ~1 s and the next one suits the new place; a change of hour or rain lets the piece finish.
  * Ducks under notifications and voices. Output: `dest` (the music bus) plus a reverb send.
+ * A gathering's live music (the campfire sing-along, the band: `isGatherScene`) cuts in within a few seconds, and is
+ * placed in the world (`place`: pan + distance gain from the campfire / bandstand, set by audio.ts).
  */
-import { FIRST_REST, barSeconds, musicScene, planBar, planPiece } from './musicPlan.ts';
+import { FIRST_REST, barSeconds, isGatherScene, musicScene, planBar, planPiece } from './musicPlan.ts';
 import type { MusicIn, MusicScene, Piece, Role } from './musicPlan.ts';
 import { playNote } from './instruments.ts';
 
@@ -19,6 +21,10 @@ export interface Music {
   /** soften the music to `depth` (0..1 of full) for `seconds`, then recover */
   duck(seconds?: number, depth?: number): void;
   setOn(on: boolean): void;
+  /** place the live music in the world: stereo pan −1..1 and a distance gain 0..1 (0 / 1 = everywhere) */
+  place(pan: number, gain: number): void;
+  /** the scene of the piece playing now, null while resting */
+  playing(): MusicScene | null;
   /** dev: end the current piece / rest now */
   skip(): void;
   readonly on: boolean;
@@ -26,9 +32,11 @@ export interface Music {
 }
 
 export function createMusic(c: BaseAudioContext, dest: AudioNode, send: AudioNode | null = null, seed = 7): Music {
-  const out = c.createGain(), fade = c.createGain(), duckG = c.createGain();
+  const out = c.createGain(), fade = c.createGain(), duckG = c.createGain(), placeG = c.createGain();
+  const pan = c.createStereoPanner();
   out.gain.value = 0;
-  out.connect(fade).connect(duckG).connect(dest);
+  out.connect(fade).connect(duckG).connect(pan).connect(placeG).connect(dest);
+  let lastPan = 0, lastPlace = 1;
   const sendG = c.createGain();
   sendG.gain.value = 0.3;
   if (send) duckG.connect(sendG).connect(send);
@@ -50,6 +58,11 @@ export function createMusic(c: BaseAudioContext, dest: AudioNode, send: AudioNod
   return {
     get on() { return on; },
     setOn(v) { on = v; },
+    place(p, g) {
+      if (Math.abs(p - lastPan) > 0.01) { lastPan = p; pan.pan.setTargetAtTime(p, c.currentTime, 0.12); }
+      if (Math.abs(g - lastPlace) > 0.01) { lastPlace = g; placeG.gain.setTargetAtTime(g, c.currentTime, 0.25); }
+    },
+    playing: () => (phase === 'play' && piece ? piece.scene : null),
     skip() { if (phase === 'play') { fadeOut(c.currentTime, 0.4); phase = 'rest'; } restUntil = c.currentTime + 1; },
     duck(seconds = 3, depth = 0.25) {
       const t = c.currentTime;
@@ -73,11 +86,11 @@ export function createMusic(c: BaseAudioContext, dest: AudioNode, send: AudioNod
       }
       const scene = musicScene(input);
       if (phase === 'play' && piece) {
-        // a new place (in / out) or a storm: fade this piece away now
-        if (scene !== piece.scene && (scene === null || scene === 'indoors' || piece.scene === 'indoors')) {
+        // a new place (in / out), a storm, or a gathering striking up: fade this piece away now
+        if (scene !== piece.scene && (scene === null || scene === 'indoors' || piece.scene === 'indoors' || isGatherScene(scene))) {
           fadeOut(now, 0.35);
           phase = 'rest';
-          restUntil = now + (scene === 'indoors' ? 2.5 : scene === null ? 8 : 5);
+          restUntil = now + (scene === 'indoors' || isGatherScene(scene) ? 2.5 : scene === null ? 8 : 5);
           return;
         }
         if (nextBar < now - 0.5) nextBar = now + 0.05; // the tab slept: pick up from here
@@ -96,6 +109,8 @@ export function createMusic(c: BaseAudioContext, dest: AudioNode, send: AudioNod
         }
         return;
       }
+      // a gathering's music doesn't wait out a long rest (but a song just sung keeps its rest)
+      if (isGatherScene(scene) && piece?.scene !== scene) restUntil = Math.min(restUntil, now + 2.5);
       if (scene && now >= restUntil) start(now, scene, input);
     },
   };

@@ -37,6 +37,8 @@ export const PROPS = [
   'sack', 'pigeon',
   // geometry-only variants (the rig swaps them in while the pigeon flies: wings up / down); no act holds them
   'pigeonup', 'pigeondown',
+  // evening gatherings (scene/gather): a marshmallow on a stick at the campfire, the band's instruments on the bandstand
+  'marshmallow', 'fiddle', 'banjo', 'flute',
 ] as const;
 export type Prop = (typeof PROPS)[number];
 export type Hold = 'L' | 'R' | 'both' | 'over';
@@ -54,6 +56,8 @@ export const ACTS = [
   'reel', 'catch', 'toast', 'sitread', 'sitchat', 'picnic', 'stargaze', 'telescope', 'checkers', 'ponder', 'soak', 'gaze',
   // work flavours: search = rummage in the seed sack; web fetch = a carrier pigeon flies in to the raised nub
   'rummage', 'pigeon',
+  // evening gatherings (scene/gather): laughing and singing round the fire, the band, the crowd
+  'laugh', 'sing', 'fiddle', 'banjo', 'flute', 'dance', 'clap',
 ] as const;
 export type Act = (typeof ACTS)[number];
 
@@ -111,7 +115,7 @@ export const ACT_INFO: Readonly<Record<Act, ActInfo>> = {
   sit: { prop: null, face: 'happy', grounded: true },
   reel: { prop: 'rod', hold: 'R', face: 'surprised', grounded: true },
   catch: { prop: 'rod', hold: 'R', face: 'sparkle', grounded: true },
-  toast: { prop: null, face: 'happy', grounded: true },
+  toast: { prop: 'marshmallow', hold: 'R', face: 'happy', grounded: true },
   sitread: { prop: 'book', hold: 'both', face: 'focused', grounded: true },
   sitchat: { prop: null, face: 'talk', grounded: true },
   picnic: { prop: null, face: 'happy', grounded: true },
@@ -123,6 +127,13 @@ export const ACT_INFO: Readonly<Record<Act, ActInfo>> = {
   gaze: { prop: null, face: 'happy' },
   rummage: { prop: 'sack', hold: 'L', face: 'focused' },
   pigeon: { prop: 'pigeon', hold: 'R', face: 'happy' },
+  laugh: { prop: null, face: 'sparkle', grounded: true },
+  sing: { prop: null, face: 'whistle', grounded: true },
+  fiddle: { prop: 'fiddle', hold: 'L', face: 'happy' },
+  banjo: { prop: 'banjo', hold: 'R', face: 'happy' },
+  flute: { prop: 'flute', hold: 'R', face: 'focused' },
+  dance: { prop: null, face: 'happy' },
+  clap: { prop: null, face: 'sparkle' },
 };
 
 /** Carrier pigeon timing (s, on the act's local clock): flies in, perches, flies off. `pigeonFly` is 1 far … 0 perched. */
@@ -142,7 +153,9 @@ export const holdOf = (act: Act): Hold => ACT_INFO[act].hold ?? 'R';
  * the root there minus this, so the body lands on the log / bale / dock.
  */
 export const SEAT_H: Readonly<Partial<Record<Act, number>>> = { plan: 0, campfire: 0, fish: 0, nap: 0, sitground: 0, lie: 0, sit: 0,
-  reel: 0, catch: 0, toast: 0, sitread: 0, sitchat: 0, picnic: 0, stargaze: 0, checkers: 0, ponder: 0, soak: 0 };
+  reel: 0, catch: 0, toast: 0, sitread: 0, sitchat: 0, picnic: 0, stargaze: 0, checkers: 0, ponder: 0, soak: 0,
+  // gatherings: seated round the fire; the band stands on the bandstand's floor (seatY = the stage)
+  laugh: 0, sing: 0, fiddle: 0, banjo: 0, flute: 0, wave: 0 };
 
 const S = Math.sin, C = Math.cos, TAU = Math.PI * 2, PI = Math.PI;
 const fract = (x: number) => x - Math.floor(x);
@@ -670,6 +683,81 @@ export function actPose(act: Act, t: number, k: number, tempo: number, o: Pose, 
       arms(o, -0.5, -0.5, -0.5, -0.5);
       o[CH.eyeY] = 0.2 + sigh * 0.2;
       legs(o, -1.1 + S(T * 1.1) * 0.18 + kick * S(T * 12) * 0.35, -1.1 + S(T * 1.1 + 2) * 0.18 - kick * S(T * 12) * 0.35, -1.1, -1.1);
+      break;
+    }
+    // ---- evening gatherings (scene/gather) ----
+    case 'laugh': {
+      // a belly laugh round the fire: nubs on the tummy, rocking back, legs kicking
+      seated(o);
+      const shake = S(T * 15), rock = S(T * 2.3);
+      o[CH.lean] = -0.22 + rock * 0.06; o[CH.roll] = S(T * 1.7 + k * 3) * 0.08;
+      arms(o, 1.45, -0.5 + Math.abs(shake) * 0.08, 1.45, -0.5 + Math.abs(shake) * 0.08);
+      o[CH.sq] += Math.abs(shake) * 0.05; o[CH.bob] = Math.abs(shake) * 0.015; o[CH.jig] = Math.abs(shake) * 0.6;
+      o[CH.eyeY] = 0.35;
+      legs(o, 0.3 + S(T * 9) * 0.3, 0.3 - S(T * 9) * 0.3, 0, 0);
+      break;
+    }
+    case 'sing': {
+      // the sing-along: swaying side to side with the neighbours, nubs out, chin up
+      seated(o);
+      const sw = S(T * 1.4);
+      o[CH.roll] = sw * 0.13; o[CH.twist] = sw * 0.08; o[CH.lean] = -0.1;
+      arms(o, 0.15, 0.25 + sw * 0.18, 0.15, 0.25 - sw * 0.18);
+      o[CH.sq] += Math.abs(S(T * 2.8)) * 0.025; o[CH.eyeY] = 0.35; o[CH.eyeX] = sw * 0.2;
+      legs(o, S(T * 1.4) * 0.25, S(T * 1.4 + PI) * 0.25, 0, 0);
+      break;
+    }
+    case 'fiddle': {
+      // fiddle tucked under the chin on the left nub, the right nub saws the bow; the body sways with the tune
+      const bow = S(T * 4.6), sw = S(T * 1.5);
+      o[CH.aLy] = 0.95; o[CH.aLz] = 0.8; o[CH.aLe] = -0.1;
+      o[CH.aRy] = 0.85 + bow * 0.32; o[CH.aRz] = 0.5 + bow * 0.08; o[CH.aRe] = 0.15;
+      o[CH.pY] = 0.55; o[CH.pP] = -0.15 + sw * 0.05; o[CH.prop] = 0.5 + bow * 0.5;
+      o[CH.roll] = sw * 0.07 - 0.05; o[CH.lean] = -0.05 + Math.abs(bow) * 0.03; o[CH.twist] = sw * 0.12;
+      o[CH.eyeY] = -0.1; o[CH.eyeX] = -0.35;
+      o[CH.bob] = Math.abs(S(T * 2.3)) * 0.015;
+      legs(o, Math.max(0, S(T * 4.6)) * 0.25, 0, 0, 0);
+      break;
+    }
+    case 'banjo': {
+      // the banjo across the body: the right nub strums at the drum, the left reaches up the neck; a bounce on the beat
+      const strum = S(T * 8.5), beat = Math.abs(S(T * 3.4));
+      o[CH.aRy] = 1.3; o[CH.aRz] = -0.15 + strum * 0.12; o[CH.aRe] = -0.1;
+      o[CH.aLy] = 1.05; o[CH.aLz] = 0.42; o[CH.aLe] = 0.4; o[CH.aLx] = S(T * 3.4) * 0.15;
+      o[CH.pP] = 0; o[CH.prop] = 0.5 + strum * 0.5;
+      o[CH.bob] = beat * 0.025; o[CH.sq] += beat * 0.02; o[CH.roll] = S(T * 1.7) * 0.05; o[CH.lean] = 0.04;
+      o[CH.eyeY] = -0.3; o[CH.eyeX] = 0.4;
+      legs(o, beat * 0.3, 0, 0, 0);
+      break;
+    }
+    case 'flute': {
+      // both nubs up to the mouth, fingers dancing on the flute, the body leaning into the long notes
+      const sw = S(T * 1.2), fing = S(T * 9);
+      o[CH.aRy] = 1.25; o[CH.aRz] = 0.62; o[CH.aRe] = -0.05;
+      o[CH.aLy] = 1.3; o[CH.aLz] = 0.6; o[CH.aLe] = 0.15; o[CH.aLx] = fing * 0.2;
+      o[CH.pP] = 0; o[CH.pY] = 0; o[CH.prop] = 0.5 + fing * 0.5;
+      o[CH.twist] = sw * 0.16; o[CH.lean] = -0.04 + S(T * 0.6) * 0.06; o[CH.roll] = sw * 0.04;
+      o[CH.eyeY] = -0.15; o[CH.eyeX] = 0.5;
+      legs(o, 0, Math.max(0, S(T * 2.4)) * 0.2, 0, 0);
+      break;
+    }
+    case 'dance': {
+      // a jig: hop from foot to foot, nubs up in turn, a spin of the hips
+      const b = S(T * 3.2), hop = Math.abs(b);
+      o[CH.bob] = hop * 0.07; o[CH.sq] += hop * 0.05 - 0.02; o[CH.roll] = S(T * 1.6) * 0.14; o[CH.twist] = S(T * 0.8 + k * 6) * 0.38;
+      o[CH.aLy] = 0.35; o[CH.aLz] = 0.85 + b * 0.45; o[CH.aRy] = 0.35; o[CH.aRz] = 0.85 - b * 0.45;
+      o[CH.aLe] = 0.2; o[CH.aRe] = 0.2;
+      o[CH.eyeY] = 0.2; o[CH.jig] = hop;
+      legs(o, b * 0.45, -b * 0.45, -b * 0.3, b * 0.3);
+      break;
+    }
+    case 'clap': {
+      // clapping along / applause: nubs forward meeting in the middle, a little bounce, eyes on the stage
+      const ph = fract(T * 1.8 + k), hit = bump(ph, 0.3, 0.55);
+      arms(o, 1.2 + hit * 0.42, 0.35 + hit * 0.05, 1.2 + hit * 0.42, 0.35 + hit * 0.05);
+      o[CH.bob] = Math.abs(S(T * 1.8 * PI)) * 0.012; o[CH.sq] += hit * 0.02; o[CH.eyeY] = 0.3;
+      o[CH.roll] = S(T * 0.9) * 0.04;
+      legs(o, Math.max(0, S(T * 3.6)) * 0.2, 0, 0, 0);
       break;
     }
     case 'gaze': {

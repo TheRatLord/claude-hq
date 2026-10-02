@@ -66,7 +66,7 @@ interface Item extends ItemRef {
   mesh: THREE.Mesh;
 }
 
-const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots', 'forage', 'yard', 'sitters'];
+const SYSTEMS = ['terrain', 'water', 'flora', 'structures', 'plots', 'forage', 'yard', 'trail', 'sitters'];
 /** ground cover and foliage: grounding checks only, never an overlap (grass through a fence is fine) */
 const SOFT = /grass|flowers-|clover|meadow|pebbles|reeds|cattails|lily-(pads|flowers)|paver#|soilBed#|\/ground$|\/(clod|pentile|decor|weed)#/;
 
@@ -211,6 +211,7 @@ function collect(ctx: SceneCtx, state: ValleyState, only?: string): Item[] {
       if (sys === 'terrain' && name.startsWith('terrain:')) return;
       if (sys === 'water' && !names.includes('shore')) return;
       if (sys === 'flora' && name === 'drifters') return;
+      if (sys === 'trail' && /^trail:(flag|sign)$/.test(name)) return; // the flag flies off its pole, the lettering sits on its boards
       if (sys === 'plots' && /^plots:(fx|beast|signtext|lantern|exitribbon|fenceribbon)/.test(name)) return;
       const g = mesh.geometry;
       const total = g.index ? g.index.count : (g.attributes.position?.count ?? 0);

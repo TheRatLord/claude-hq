@@ -177,6 +177,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     loop,
     critter,
     indoors(k) { indoorK = Math.max(0, Math.min(1, k)); eng.setIndoor(indoorK); },
+    musicNow: () => ({ on: !!music && music.on && eng.ac?.state === 'running', scene: music?.playing() ?? null }),
     _debug: {
       unlock: () => eng.unlock(),
       stats: () => ({
@@ -208,12 +209,18 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     const dest = eng.bus('music');
     if (dest) music = createMusic(ac, dest, eng.send, 7 + ctx.valley.sky.dayOfYear * 31);
   });
-  const musicIn: MusicIn = { hour: 12, season: 'summer', weather: 'clear', intensity: 0, indoors: false, festival: null };
+  const musicIn: MusicIn = { hour: 12, season: 'summer', weather: 'clear', intensity: 0, indoors: false, festival: null, gathering: null };
+  /** evening gatherings (scene/gather, service 'gatherings'): whose live music is within earshot, and where it plays */
+  type GatherAudio = { music(x: number, z: number): 'campfire' | 'concert' | null; stage(): { x: number; y: number; z: number } | null };
+  const gatherSvc = () => ctx.services.get('gatherings') as GatherAudio | undefined;
+  const LIVE: SpatialOpts = { ref: 9, max: 170 };
+  const live = { gain: 0, pan: 0, cutoff: 20000 };
   const readMusicIn = (): MusicIn => {
     const sky = ctx.valley.sky;
     musicIn.hour = sky.hour; musicIn.season = sky.season; musicIn.weather = sky.weather.kind; musicIn.intensity = sky.weather.intensity;
     musicIn.indoors = indoorK > 0.5;
     musicIn.festival = (sky.festival?.active?.id ?? null) as FestivalName | null;
+    musicIn.gathering = musicIn.indoors ? null : gatherSvc()?.music(eng.listener.x, eng.listener.z) ?? null;
     return musicIn;
   };
 
@@ -336,6 +343,16 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       music?.update(t, readMusicIn(), amb.levels.music);
       const aimNow = t - lastAim > 0.066;
       if (aimNow) lastAim = t;
+      // a gathering's live music comes from the campfire / the bandstand: panned, quieter from afar (never silent)
+      if (music && aimNow) {
+        const sc = music.playing();
+        const st = sc === 'campfire' || sc === 'concert' ? gatherSvc()?.stage() : null;
+        if (st) {
+          const L = eng.listener;
+          spatial(st.x - L.x, st.y - L.y, st.z - L.z, L.rx, L.rz, LIVE, live);
+          music.place(live.pan * 0.75, Math.max(0.22, live.gain));
+        } else music.place(0, 1);
+      }
       for (const l of loops) if (l.voice) {
         if (l.chain && l.pos && aimNow) eng.aim(l.chain, l.pos.x, l.pos.y, l.pos.z, l.vol, SPATIAL.sfx, true, 0.1);
         l.voice.tick(t, 0.3, Math.min(1, l.vol));

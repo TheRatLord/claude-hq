@@ -6,7 +6,7 @@ import { createWallet, shopView, emptyWallet } from './wallet.ts';
 import {
   FRIENDS, FRIEND_IDS, HEART, MAX_HEARTS, MILESTONES, PTS, claimMilestones, createFriends, deliver, emptyFriends, ensureDay, friendDef,
   giveGift, heartsOf, inWindow, itemText, milestoneLetter, parseFriends, progress, caughtHit, visitHit, eventHit, requestText, requestView,
-  requestsFor, talkTo, tierOf,
+  requestsFor, talkTo, tierOf, gatherWith,
 } from './friends.ts';
 import type { FriendsChange, FriendsData } from './friends.ts';
 
@@ -241,4 +241,24 @@ test('the live service: talk, gift from the basket, deliver pays, milestones pos
   now = at(2026, 10, 2, 10);
   assert.ok(fr.requests().every((x) => !x.done));
   assert.ok(changes.some((c) => c.kind === 'day'));
+});
+
+test('friends: sitting together at an evening gathering counts once a day each (old saves without it parse)', () => {
+  const d = emptyFriends();
+  const t = at(2026, 10, 1, 20);
+  assert.equal(gatherWith(d, 'villager:fern', t), PTS.gather);
+  assert.equal(gatherWith(d, 'villager:fern', t + 1800_000), 0);
+  assert.equal(gatherWith(d, 'villager:fern', at(2026, 10, 2, 20)), PTS.gather);
+  assert.equal(gatherWith(d, 'villager:nobody', t), 0);
+  const old = JSON.parse(JSON.stringify(d));
+  delete old.gathered;
+  assert.deepEqual(parseFriends(old)?.gathered, {});
+  assert.equal(parseFriends(JSON.parse(JSON.stringify(d)))?.gathered['villager:fern'], day(at(2026, 10, 2, 20)));
+  const now = at(2026, 10, 1, 21);
+  const fr = createFriends(undefined, { now: () => now, season: () => 'autumn' });
+  const changes: FriendsChange[] = [];
+  fr.onChange((c) => changes.push(c));
+  assert.equal(fr.gathered(['villager:fern', 'bram', 'villager:nobody']), PTS.gather * 2);
+  assert.equal(fr.gathered(['villager:fern', 'villager:bram']), 0);
+  assert.deepEqual(changes.filter((c) => c.kind === 'gather').map((c) => (c as { who: string }).who), ['villager:fern', 'villager:bram']);
 });

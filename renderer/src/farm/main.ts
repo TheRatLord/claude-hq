@@ -184,6 +184,7 @@ hud.bind({
   friends: () => friends,
   onboarding: () => onboarding,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
+  service: (name) => engine.ctx.services.get(name),
 });
 engine.onFrame((f) => hud.update(f));
 

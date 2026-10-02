@@ -24,6 +24,9 @@
  *   __valley.hearts(id?, n?)  requests(step?)  gift(id, item)   friendship (model/friends.ts): set a villager's hearts (milestones
  *                                         fire), today's requests (requests('ready') completes them, requests('YYYY-MM-DD') rolls that
  *                                         day's set), give a gift (stashed first if the basket lacks it)
+ *   __valley.gather(kind?, seg?, stay?)   evening gatherings (scene/gather): gather('campfire' | 'concert' | 'market') puts one on now and
+ *                                         stands you there (stay=true: don't move); seg jumps the campfire to 'story' | 'laugh' |
+ *                                         'toast' | 'sing' | 'chat'; gather(null) back to the calendar; gather() → what's going on
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
@@ -43,6 +46,9 @@ import type { WildId } from '../scene/life/wild.ts';
 import type { WalletService } from '../model/wallet.ts';
 import type { FriendsService } from '../model/friends.ts';
 import type { YardService } from '../scene/yard/yard.ts';
+import type { GatherService } from '../scene/gather/gather.ts';
+import { gatherViewpoint } from '../scene/gather/gather.ts';
+import type { CampfireSeg, GatherKind } from '../model/gatherings.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
 import type { StructureId } from '../world/map.ts';
 
@@ -57,6 +63,11 @@ export const POSES: Record<string, [number, number, number, number]> = {
   river: [-44, 12, 1.6, -0.05],
   plots: [0, 24, Math.PI, -0.1],
   east: [40, 16, -1.75, 0.02],
+  // the summit trail (world/trail.ts): its foot, halfway up, the rope bridge, the lookout facing the valley
+  trailhead: [-1, 72, -2.75, 0.14],
+  trail: [-6, 106.8, -1.47, 0.02],
+  bridge: [14.2, 119.9, 1.91, -0.1],
+  summit: [-2.2, 127.0, 0.04, -0.16],
 };
 
 export interface DevDeps {
@@ -195,6 +206,19 @@ export function installDevApi(d: DevDeps): void {
       if (!home) return false;
       if (view === false) { home.leave(true); return true; }
       return home.view?.(view) ?? false;
+    },
+    /** evening gatherings (scene/gather): force one now (the bandstand / market get unlocked if the almanac lacks them) */
+    gather(kind?: GatherKind | null, seg?: CampfireSeg, stay = false) {
+      const gs = ctx.services.get('gatherings') as GatherService | undefined;
+      if (!gs) return null;
+      if (kind === undefined) return gs.debug();
+      if (kind === null) { gs.force(null); return gs.debug(); }
+      const need = kind === 'concert' ? 'bandstand' : kind === 'market' ? 'market' : null;
+      if (need && !valley.state.almanac.unlocked.includes(need as never)) valley.setAlmanac(Math.max(valley.state.almanac.points, need === 'bandstand' ? 1200 : 500));
+      gs.force(kind, seg);
+      const v = !stay ? gatherViewpoint(kind) : null;
+      if (v) api.teleport(v.x, v.z, Math.atan2(-(v.look.x - v.x), -(v.look.z - v.z)), -0.2);
+      return gs.debug();
     },
     villagers: () => (ctx.services.get('villagers') as VillagersService | undefined)?.list().map((p) => ({ ...p })) ?? [],
     villager: (id: string) => (ctx.services.get('villagers') as VillagersService | undefined)?.debug(id.startsWith('villager:') ? id : `villager:${id}`) ?? null,

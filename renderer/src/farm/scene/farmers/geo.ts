@@ -178,6 +178,45 @@ function propVox(p: Prop, g: number): Vox {
       B(-0.06, -0.2, 0.162, 0.06, 0.06, 0.012, 0x6e8a3a); // a stitched patch
       break;
     }
+    case 'marshmallow':
+      // a toasting stick with a marshmallow, golden on top (the campfire)
+      B(0, 0, 0.34, 0.022, 0.022, 0.7, 0xc9a26a);
+      B(0, 0, 0.74, 0.09, 0.09, 0.1, 0xf6efe2);
+      B(0, 0.035, 0.74, 0.075, 0.03, 0.085, 0xd9a35a);
+      break;
+    case 'fiddle': {
+      // a fiddle under the chin (left nub), neck forward, the bow resting across the strings
+      const F = 0xa8552c, F_D = 0x6e3418;
+      B(0, 0, 0.06, 0.2, 0.06, 0.14, F); // lower bout
+      B(0, 0, 0.17, 0.13, 0.06, 0.08, F); // waist
+      B(0, 0, 0.25, 0.18, 0.06, 0.1, F); // upper bout
+      B(0, 0.033, 0.13, 0.05, 0.012, 0.05, 0x2a1a12); // chinrest / tailpiece
+      B(0, 0.01, 0.42, 0.045, 0.04, 0.24, F_D); // neck
+      B(0, 0.025, 0.56, 0.05, 0.07, 0.05, F_D); // scroll
+      B(0, 0.036, 0.3, 0.03, 0.006, 0.5, 0xeeeeee); // strings
+      B(-0.12, 0.07, 0.2, 0.62, 0.016, 0.016, 0x5a3a20); // bow stick
+      B(-0.12, 0.055, 0.2, 0.58, 0.008, 0.024, 0xf2ecd8); // bow hair
+      break;
+    }
+    case 'banjo': {
+      // a banjo across the body: the drum at the strumming nub, the neck up to the left
+      const RIM = 0x8a6a48, HEAD = 0xf2e8d0;
+      B(0.08, 0, -0.012, 0.36, 0.26, 0.05, RIM);
+      B(0.08, 0, -0.012, 0.26, 0.36, 0.05, RIM);
+      B(0.08, 0, 0.004, 0.3, 0.22, 0.04, HEAD);
+      B(0.08, 0, 0.004, 0.22, 0.3, 0.04, HEAD);
+      B(0.08, -0.04, 0.03, 0.05, 0.03, 0.012, 0x3a2f28); // bridge
+      for (let i = 0; i < 6; i++) B(0.26 + i * 0.075, 0.05 + i * 0.045, 0.004, 0.085, 0.045, 0.04, WOOD); // neck, stair-stepped
+      B(0.72, 0.34, 0.004, 0.09, 0.11, 0.05, WOOD_D); // peghead
+      break;
+    }
+    case 'flute':
+      // a silver flute along the lips, out to the right
+      B(-0.14, 0, 0, 0.6, 0.036, 0.036, 0xc9cfd6);
+      B(0.14, 0, 0, 0.05, 0.044, 0.044, 0x9aa3ad); // head joint cap
+      for (let i = 0; i < 5; i++) B(-0.06 - i * 0.07, 0.02, 0, 0.022, 0.008, 0.022, METAL_D);
+      B(0.07, 0.02, 0, 0.03, 0.008, 0.02, 0x2a2a30); // embouchure hole
+      break;
     case 'pigeon': case 'pigeonup': case 'pigeondown': {
       // a carrier pigeon standing on the nub (feet at y 0, facing +z), a letter in its beak
       const G = 0xa9b2c2, G_D = 0x7d8798, NECK = 0x6fa58f, WHITE = 0xf4f2ee;

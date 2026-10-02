@@ -15,6 +15,8 @@ export const EMOTE = {
   mail: 17,
   /** thinking: a thought cloud with turning cogs; planning a todo list: a cloud with a checklist */
   gears: 18, list: 19,
+  /** evening gatherings: laughter round the campfire */
+  haha: 20,
 } as const;
 export type EmoteName = keyof typeof EMOTE;
 
@@ -154,6 +156,13 @@ function drawEmote(g: CanvasRenderingContext2D, name: EmoteName) {
           g.strokeStyle = '#9a9aa8'; g.beginPath(); g.moveTo(65, y); g.lineTo(80, y); g.stroke();
         }
       }
+      break;
+    }
+    case 'haha': {
+      // a little burst with "ha!" in it
+      outlined(() => { g.beginPath(); for (let i = 0; i < 14; i++) { const r = i % 2 ? 40 : 56, a = (i * Math.PI) / 7; g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r * 0.82); } g.closePath(); }, '#fff3c4', '#7a4a10', 7);
+      g.font = 'bold 46px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#7a3a10'; g.fillText('ha!', 64, 67);
       break;
     }
     case 'egg': {

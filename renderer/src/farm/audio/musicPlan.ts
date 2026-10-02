@@ -12,8 +12,14 @@
  */
 import { hash32, mulberry32 } from '../../../../shared/identity.ts';
 
-export type MusicScene = 'morning' | 'afternoon' | 'evening' | 'night' | 'rain' | 'indoors';
-export const MUSIC_SCENES: readonly MusicScene[] = ['morning', 'afternoon', 'evening', 'night', 'rain', 'indoors'];
+/** the moment's music (the clock, the weather, the door) */
+export type MomentScene = 'morning' | 'afternoon' | 'evening' | 'night' | 'rain' | 'indoors';
+/** live music at an evening gathering (scene/gather): the campfire sing-along, the band on the bandstand */
+export type GatherScene = 'campfire' | 'concert';
+export type MusicScene = MomentScene | GatherScene;
+export const MUSIC_SCENES: readonly MomentScene[] = ['morning', 'afternoon', 'evening', 'night', 'rain', 'indoors'];
+export const GATHER_SCENES: readonly GatherScene[] = ['campfire', 'concert'];
+export const isGatherScene = (s: MusicScene | null): s is GatherScene => s === 'campfire' || s === 'concert';
 export type SeasonName = 'spring' | 'summer' | 'autumn' | 'winter';
 export type FestivalName = 'blossom' | 'lantern' | 'founders' | 'harvest' | 'hallowtide' | 'starlight' | 'newyear';
 export type WeatherName = 'clear' | 'cloudy' | 'rain' | 'storm' | 'fog' | 'snow';
@@ -84,6 +90,8 @@ export interface MusicIn {
   intensity: number;
   indoors: boolean;
   festival: FestivalName | null;
+  /** a gathering's live music is within earshot (scene/gather decides: the sing-along near the fire, the band) */
+  gathering?: GatherScene | null;
 }
 
 /** What kind of music suits the moment; null = none (a fierce thunderstorm is music enough). */
@@ -92,6 +100,7 @@ export function musicScene(m: MusicIn): MusicScene | null {
   // a fierce storm is music enough; an ordinary one gets the rain pieces (quieter: ambientLevels.music)
   if (m.weather === 'storm') return m.intensity > 0.85 ? null : 'rain';
   if (m.weather === 'rain' && m.intensity > 0.15) return 'rain';
+  if (m.gathering) return m.gathering;
   const h = ((m.hour % 24) + 24) % 24;
   if (h >= 5 && h < 11) return 'morning';
   if (h >= 11 && h < 17) return 'afternoon';
@@ -121,7 +130,7 @@ function snap(deg: number, ok: (d7: number) => boolean): number {
 // ---------------------------------------------------------------------------------------------------------------
 // Festival leitmotifs: 4 bars each, [step, degree, length] in eighths (the last two are traditional tunes)
 
-interface FestivalSpec {
+export interface FestivalSpec {
   mode: Mode; beats: 3 | 4; bpm: number; tonic: number;
   lead: Instrument; comp: Instrument; compStyle: CompStyle; perc: Instrument | null; bass: Instrument; counter: Instrument | null;
   motif: readonly (readonly [number, number, number])[];
@@ -182,9 +191,15 @@ const SCENES: Readonly<Record<MusicScene, SceneSpec>> = {
     compStyle: () => 'block', bass: true, pad: true, perc: false, sevenths: true, reverb: 0.4, rest: [30, 60] },
   indoors: { bpm: [68, 80], beats: (r) => (r() < 0.7 ? 3 : 4), modes: ['major', 'major', 'dorian'], tonics: [65, 67, 60], sectionBars: 8, forms: ['iAABAo', 'iABAo'], density: 0.42,
     compStyle: (b) => (b === 3 ? 'waltz' : 'arp'), bass: true, pad: true, perc: false, sevenths: true, reverb: 0.12, rest: [14, 32] },
+  // the campfire sing-along: the valley's own campfire song (CAMPFIRE_SONG), once per sing-along
+  campfire: { bpm: [84, 84], beats: () => 3, modes: ['major'], tonics: [62], sectionBars: 8, forms: ['iAABAo'], density: 0.5,
+    compStyle: () => 'waltz', bass: true, pad: false, perc: false, sevenths: false, reverb: 0.2, rest: [24, 32] },
+  // the band on the bandstand: fiddle, banjo and flute reels back to back, a breath for applause between
+  concert: { bpm: [100, 116], beats: (r) => (r() < 0.3 ? 3 : 4), modes: ['major', 'mixolydian', 'dorian'], tonics: [62, 67, 69], sectionBars: 8, forms: ['iAABAo', 'iABAo'], density: 0.62,
+    compStyle: (b) => (b === 3 ? 'waltz' : 'strum'), bass: true, pad: false, perc: true, sevenths: false, reverb: 0.2, rest: [5, 8] },
 };
 type Kit = { lead: Instrument; comp: Instrument; counter: Instrument | null };
-const KITS: Readonly<Record<SeasonName, Readonly<Record<MusicScene, Kit>>>> = {
+const KITS: Readonly<Record<SeasonName, Readonly<Record<MomentScene, Kit>>>> = {
   spring: {
     morning: { lead: 'flute', comp: 'kalimba', counter: null },
     afternoon: { lead: 'kalimba', comp: 'guitar', counter: 'flute' },
@@ -218,6 +233,18 @@ const KITS: Readonly<Record<SeasonName, Readonly<Record<MusicScene, Kit>>>> = {
     indoors: { lead: 'musicbox', comp: 'epiano', counter: null },
   },
 };
+/** Live music at the gatherings plays the instruments you see: harmonica and guitar round the fire, the band's fiddle
+ * (strings), banjo (guitar) and flute, whatever the season. */
+const GATHER_KITS: Readonly<Record<GatherScene, Kit>> = {
+  campfire: { lead: 'reed', comp: 'guitar', counter: null },
+  concert: { lead: 'strings', comp: 'guitar', counter: 'flute' },
+};
+/** The valley's campfire song: a folk waltz everybody knows the words to (4 bars of 3/4, like the festival tunes). */
+export const CAMPFIRE_SONG: FestivalSpec = {
+  mode: 'major', beats: 3, bpm: 84, tonic: 62, lead: 'reed', comp: 'guitar', compStyle: 'waltz', perc: null, bass: 'bass', counter: null,
+  motif: [[0, 0, 2], [2, 2, 2], [4, 4, 2], [6, 5, 4], [10, 4, 2], [12, 3, 2], [14, 2, 2], [16, 1, 2], [18, 2, 2], [20, 4, 2], [22, 1, 1]],
+};
+
 /** Night-friendly festivals also get a piece after dark. */
 const NIGHT_FESTIVALS: readonly FestivalName[] = ['lantern', 'newyear', 'starlight', 'hallowtide'];
 
@@ -366,7 +393,7 @@ export const barSeconds = (p: Pick<Piece, 'bpm' | 'beats'>): number => (60 / p.b
 
 /** Should the n-th piece of a festival day be the festival's own? (every other one, outdoors, not in the rain) */
 export function festivalTurn(scene: MusicScene, festival: FestivalName | null, n: number): boolean {
-  if (!festival || scene === 'indoors' || scene === 'rain') return false;
+  if (!festival || scene === 'indoors' || scene === 'rain' || scene === 'campfire') return false;
   if (scene === 'night' && !NIGHT_FESTIVALS.includes(festival)) return false;
   return n % 2 === 0;
 }
@@ -375,9 +402,9 @@ export function festivalTurn(scene: MusicScene, festival: FestivalName | null, n
 export function planPiece(scene: MusicScene, m: Pick<MusicIn, 'season' | 'festival'>, seed = 1, n = 0): Piece {
   const r = mulberry32(hash32(`piece:${seed}:${scene}:${m.season}:${m.festival ?? '-'}:${n}`));
   const S = SCENES[scene];
-  const kit = KITS[m.season][scene];
+  const kit = isGatherScene(scene) ? GATHER_KITS[scene] : KITS[m.season][scene];
   const fest = festivalTurn(scene, m.festival, n) ? m.festival : null;
-  const F = fest ? FESTIVAL_MUSIC[fest] : null;
+  const F = fest ? FESTIVAL_MUSIC[fest] : scene === 'campfire' ? CAMPFIRE_SONG : null;
   const mode: Mode = F ? F.mode : pick(r, S.modes);
   const beats: 3 | 4 = F ? F.beats : S.beats(r);
   const bpm = F ? F.bpm : Math.round(S.bpm[0] + r() * (S.bpm[1] - S.bpm[0]));
@@ -425,7 +452,7 @@ export function planPiece(scene: MusicScene, m: Pick<MusicIn, 'season' | 'festiv
     compStyle,
     bass: S.bass ? (F ? F.bass : 'bass') : null,
     pad: S.pad || (F !== null && F.compStyle === 'waltz') ? (scene === 'rain' || scene === 'evening' ? 'strings' : 'pad') : null,
-    perc: F ? F.perc : S.perc && (m.season === 'summer' || m.season === 'spring') ? 'shaker' : null,
+    perc: F ? F.perc : S.perc && (scene === 'concert' || m.season === 'summer' || m.season === 'spring') ? 'shaker' : null,
     sevenths: S.sevenths && !F,
     reverb: S.reverb,
     bars,

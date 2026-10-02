@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import type { PlotKind, Season } from '../../model/types.ts';
 import { PAL } from '../toon.ts';
-import { ball, cached, cone, cyl, jitter, leaf, merge, octa, paint, rng, rod, S } from './geo.ts';
+import { ball, box, cached, cone, cyl, jitter, leaf, merge, octa, paint, rng, rod, S } from './geo.ts';
 import { foliageBlob } from '../surface/index.ts';
 import type { FoliageColors } from '../surface/index.ts';
 
@@ -16,6 +16,7 @@ const col = (a: number, b: number, t: number) => new THREE.Color(a).lerp(new THR
 // Plant models (origin on the ground, +y up)
 
 export function wheatClump(season: Season): THREE.BufferGeometry {
+  if (season === 'winter') return winterWheat();
   return cached(`wheat:${season}`, () => {
     const r = rng('wheat');
     const p: THREE.BufferGeometry[] = [];
@@ -31,6 +32,23 @@ export function wheatClump(season: Season): THREE.BufferGeometry {
     }
     for (let i = 0; i < 3; i++) p.push(leaf(0.45, 0.07, col(PAL.grassDry, PAL.grass, 0.5), { p: [0, 0.1, 0], r: [-0.7, (i / 3) * Math.PI * 2 + 0.5, 0] }, 0.3));
     return jitter(merge(p), 0.04, 31);
+  });
+}
+
+/** Winter wheat: a tuft of short, bright green shoots in the cold soil (snow settles on them), a few old straws. */
+function winterWheat(): THREE.BufferGeometry {
+  return cached('wheat:winter', () => {
+    const r = rng('wheatw');
+    const p: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + r() * 0.5;
+      p.push(leaf(0.4 + r() * 0.2, 0.07, i % 3 ? 0x5fb03c : 0x86cc50, { p: [Math.cos(a) * 0.05, 0, Math.sin(a) * 0.05], r: [-0.25 - r() * 0.35, a + Math.PI / 2, 0] }, 0.3));
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = r() * 6.28, d = 0.12 + r() * 0.08;
+      p.push(rod([Math.cos(a) * d, 0, Math.sin(a) * d], [Math.cos(a) * d * 1.3, 0.16 + r() * 0.08, Math.sin(a) * d * 1.3], 0.016, 0.012, 3, col(PAL.grassDry, PAL.wheat, 0.5)));
+    }
+    return jitter(merge(p), 0.03, 33);
   });
 }
 
@@ -68,14 +86,21 @@ export function pumpkinVine(season: Season): THREE.BufferGeometry {
   return cached(`vine:${season}`, () => {
     const r = rng('vine');
     const p: THREE.BufferGeometry[] = [];
-    const lc = season === 'autumn' ? col(PAL.leaf, PAL.grassDry, 0.35) : PAL.leaf;
-    p.push(rod([0, 0.05, -0.7], [0.1, 0.06, 0.7], 0.03, 0.03, 4, 0x6a8a2a));
+    // winter: the vine has died back to a frost-bitten brown mat over straw mulch
+    const dead = season === 'winter';
+    const lc = season === 'autumn' ? col(PAL.leaf, PAL.grassDry, 0.35) : dead ? 0x8a6a3a : PAL.leaf;
+    const ld = dead ? 0x6e5430 : PAL.leafDark;
+    if (dead) for (let i = 0; i < 4; i++) p.push(S(box(0.5, 0.05, 0.4, PAL.hay, { p: [(r() - 0.5) * 0.3, 0.03, -0.5 + i * 0.34], r: [0, r(), 0] }), 'hay', { scale: 0.4 }));
+    p.push(rod([0, 0.05, -0.7], [0.1, 0.06, 0.7], 0.03, 0.03, 4, dead ? 0x7a6038 : 0x6a8a2a));
     for (let i = 0; i < 6; i++) {
       const z = -0.6 + i * 0.24, side = i % 2 ? 1 : -1;
-      p.push(rod([0.05, 0.1, z], [0.05 + side * 0.15, 0.22 + r() * 0.12, z + 0.05], 0.018, 0.014, 3, 0x6a8a2a));
-      p.push(leaf(0.5 + r() * 0.15, 0.52, i % 3 === 0 ? PAL.leafDark : lc, { p: [0.05 + side * 0.15, 0.24 + r() * 0.1, z + 0.05], r: [-0.15 - r() * 0.3, side * (1.2 + r() * 0.6), 0] }, 0.18));
+      const lift = dead ? 0.45 : 1;
+      p.push(rod([0.05, 0.1 * lift, z], [0.05 + side * 0.15, (0.22 + r() * 0.12) * lift, z + 0.05], 0.018, 0.014, 3, dead ? 0x7a6038 : 0x6a8a2a));
+      p.push(leaf((0.5 + r() * 0.15) * (dead ? 0.8 : 1), 0.52, i % 3 === 0 ? ld : lc, { p: [0.05 + side * 0.15, (0.24 + r() * 0.1) * lift, z + 0.05], r: [-0.15 - r() * 0.3 + (dead ? 0.5 : 0), side * (1.2 + r() * 0.6), 0] }, dead ? 0.45 : 0.18));
     }
-    for (let i = 0; i < 3; i++) p.push(octa(0.05, PAL.yellow, { p: [(r() - 0.5) * 0.5, 0.18, (r() - 0.5) * 1.2] }));
+    // flowers: spring and summer are full of them, autumn has a few, winter none
+    const nf = season === 'spring' ? 6 : season === 'summer' ? 4 : season === 'autumn' ? 2 : 0;
+    for (let i = 0; i < nf; i++) p.push(octa(0.06, PAL.yellow, { p: [(r() - 0.5) * 0.5, 0.2, (r() - 0.5) * 1.2], s: [1.2, 0.6, 1.2] }));
     return jitter(merge(p), 0.05, 43);
   });
 }
@@ -95,23 +120,37 @@ export function sunflowerPlant(season: Season): THREE.BufferGeometry {
   return cached(`sunplant:${season}`, () => {
     const r = rng('sunflower');
     const p: THREE.BufferGeometry[] = [];
-    const lc = season === 'autumn' ? col(PAL.leaf, PAL.grassDry, 0.4) : PAL.leaf;
-    p.push(rod([0, 0, 0], [0, SUN_STEM, 0], 0.045, 0.03, 5, col(PAL.leaf, PAL.grassDry, 0.25)));
+    // winter: a dry, brown stalk, its leaves hanging shrivelled (the seed heads are left for the birds)
+    const dry = season === 'winter';
+    const lc = season === 'autumn' ? col(PAL.leaf, PAL.grassDry, 0.4) : dry ? 0x7a5a32 : PAL.leaf;
+    p.push(rod([0, 0, 0], [0, SUN_STEM, 0], 0.045, 0.03, 5, dry ? 0x8a6c42 : col(PAL.leaf, PAL.grassDry, 0.25)));
     for (let i = 0; i < 6; i++) {
       const y = 0.35 + i * 0.25, yaw = i * 2.4 + r() * 0.5;
-      p.push(leaf(0.34 - i * 0.03, 0.3 - i * 0.025, i % 2 ? PAL.leafDark : lc, { p: [0, y, 0], r: [0.1 + r() * 0.2, yaw, 0] }, 0.3));
+      p.push(leaf((0.34 - i * 0.03) * (dry ? 0.75 : 1), 0.3 - i * 0.025, i % 2 ? (dry ? 0x5e4426 : PAL.leafDark) : lc, { p: [0, y, 0], r: [0.1 + r() * 0.2 + (dry ? 1.0 : 0), yaw, 0] }, dry ? 0.5 : 0.3));
     }
     return jitter(merge(p), 0.04, 61);
   });
 }
 
 /** Sunflower head, facing +z, origin at its centre (attached to the stem top). */
-export function sunflowerHead(): THREE.BufferGeometry {
-  return cached('sunhead', () => {
+export function sunflowerHead(season: Season = 'summer'): THREE.BufferGeometry {
+  const dry = season === 'winter';
+  return cached(dry ? 'sunhead:dry' : 'sunhead', () => {
     const p: THREE.BufferGeometry[] = [];
-    p.push(paint(cyl(0.2, 0.21, 0.08, 10, PAL.sunflowerCore, { p: [0, 0, 0.03], r: [Math.PI / 2, 0, 0] }), 'seeds'));
-    p.push(paint(cyl(0.12, 0.12, 0.03, 8, 0x4a2a14, { p: [0, 0, 0.075], r: [Math.PI / 2, 0, 0] }), 'seeds'));
-    p.push(cone(0.2, 0.14, 8, PAL.leafDark, { p: [0, 0, -0.06], r: [-Math.PI / 2, 0, 0] }));
+    p.push(paint(cyl(0.2, 0.21, 0.08, 10, dry ? 0x4a3420 : PAL.sunflowerCore, { p: [0, 0, 0.03], r: [Math.PI / 2, 0, 0] }), 'seeds'));
+    p.push(paint(cyl(0.12, 0.12, 0.03, 8, dry ? 0x2e2014 : 0x4a2a14, { p: [0, 0, 0.075], r: [Math.PI / 2, 0, 0] }), 'seeds'));
+    p.push(cone(0.2, 0.14, 8, dry ? 0x6a5030 : PAL.leafDark, { p: [0, 0, -0.06], r: [-Math.PI / 2, 0, 0] }));
+    // dry: a ragged ring of curled brown petals
+    if (dry) {
+      for (let i = 0; i < 11; i++) {
+        const pet = leaf(0.11, 0.07, i % 2 ? 0x9a7038 : 0x7a5428, undefined, 0.5);
+        pet.rotateX(-Math.PI / 2 - 0.6);
+        pet.translate(0, 0.18, -0.02);
+        pet.rotateZ((i / 11) * Math.PI * 2);
+        p.push(pet);
+      }
+      return jitter(merge(p), 0.03, 64);
+    }
     for (let ring = 0; ring < 2; ring++) {
       const n = 13;
       for (let i = 0; i < n; i++) {
@@ -359,6 +398,12 @@ export interface PartDef {
   ripens?: boolean;
   /** hide in winter (fruit) */
   noWinter?: boolean;
+  /** 0..1 how much the crop parts round a farmer / the player standing in it (tall crops only) */
+  part?: number;
+  /** stays in the ground at harvest (trees, vines, bushes): only its fruit goes to the cart; fallow leaves it bare and dry */
+  perennial?: boolean;
+  /** what an annual leaves standing in fallow soil: [height, width] scale of the plant as stubble (0 = cleared) */
+  stubble?: [number, number];
 }
 
 export interface Slot {
@@ -386,20 +431,24 @@ const P = (key: string, geo: (s: Season) => THREE.BufferGeometry, o: Partial<Par
   ({ key, geo, bend: 0.06, droop: 0.4, shadow: true, growth: 'grow', ...o });
 
 const PARTS: Partial<Record<PlotKind, PartDef[]>> = {
-  wheat: [P('wheat', wheatClump, { bend: 0.16, droop: 0.35, ripens: true, min: 0.42 })],
-  pumpkins: [P('vine', pumpkinVine, { bend: 0.05, droop: 0.2, min: 0.55, shadow: false }), P('pumpkin', () => pumpkin(), { bend: 0, droop: 0, growth: 'fruit', ripens: true })],
-  cabbages: [P('cabbage', () => cabbage(), { bend: 0.04, droop: 0.4, min: 0.5, shadow: false })],
-  sunflowers: [P('sunplant', sunflowerPlant, { bend: 0.008, droop: 0.012, min: 0.35 }), P('sunhead', () => sunflowerHead(), { bend: 0, droop: 0, growth: 'head', ripens: true })],
-  orchard: [P('tree', fruitTree, { bend: 0.004, droop: 0.01, min: 0.45 }), P('apple', () => apple(), { bend: 0.004, droop: 0, growth: 'fruit', ripens: true, noWinter: true })],
-  vineyard: [P('vineblob', vineBlob, { bend: 0.035, droop: 0.1, min: 0.55 }), P('grapes', () => grapes(), { bend: 0.03, droop: 0, growth: 'fruit', ripens: true, noWinter: true })],
-  berries: [P('bush', berryBush, { bend: 0.05, droop: 0.15, min: 0.5 }), P('berries', () => berries(), { bend: 0.05, droop: 0.15, growth: 'fruit', ripens: true, noWinter: true })],
-  bees: [P('lavender', () => lavender(), { bend: 0.3, droop: 0.4, min: 0.45, shadow: false }), P('daisies', () => daisies(), { bend: 0.3, droop: 0.4, min: 0.45, shadow: false }), P('cosmos', () => cosmos(), { bend: 0.3, droop: 0.4, min: 0.45, shadow: false })],
+  wheat: [P('wheat', wheatClump, { bend: 0.16, droop: 0.35, ripens: true, min: 0.5, part: 1, stubble: [0.16, 0.9] })],
+  pumpkins: [P('vine', pumpkinVine, { bend: 0.05, droop: 0.2, min: 0.72, shadow: false, stubble: [0.35, 0.7] }), P('pumpkin', () => pumpkin(), { bend: 0, droop: 0, growth: 'fruit', ripens: true })],
+  cabbages: [P('cabbage', () => cabbage(), { bend: 0.04, droop: 0.4, min: 0.68, shadow: false, stubble: [0.3, 0.55] })],
+  sunflowers: [P('sunplant', sunflowerPlant, { bend: 0.008, droop: 0.012, min: 0.45, stubble: [0.22, 1] }), P('sunhead', sunflowerHead, { bend: 0, droop: 0, growth: 'head', ripens: true })],
+  orchard: [P('tree', fruitTree, { bend: 0.004, droop: 0.01, min: 0.45, perennial: true }), P('apple', () => apple(), { bend: 0.004, droop: 0, growth: 'fruit', ripens: true, noWinter: true })],
+  vineyard: [P('vineblob', vineBlob, { bend: 0.035, droop: 0.1, min: 0.7, perennial: true }), P('grapes', () => grapes(), { bend: 0.03, droop: 0, growth: 'fruit', ripens: true, noWinter: true })],
+  berries: [P('bush', berryBush, { bend: 0.05, droop: 0.15, min: 0.62, perennial: true }), P('berries', () => berries(), { bend: 0.05, droop: 0.15, growth: 'fruit', ripens: true, noWinter: true })],
+  bees: [P('lavender', () => lavender(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false }), P('daisies', () => daisies(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false }), P('cosmos', () => cosmos(), { bend: 0.3, droop: 0.4, min: 0.6, shadow: false })],
 };
 
 export const hasCrops = (k: PlotKind) => !!PARTS[k];
 const DECOR = P('decor', decorClump, { bend: 0.25, droop: 0.3, shadow: false, growth: 'decor' });
 
-export function cropLayout(kind: PlotKind, hw: number, hd: number, clears: Clear[], seed: string): CropLayout {
+/**
+ * `lanes`: work lanes (site-local x of each work-spot column, z where the lane starts): tall crops leave a tramline
+ * from there to the headland so a farmer at work, and on the way there, is never buried in the crop.
+ */
+export function cropLayout(kind: PlotKind, hw: number, hd: number, clears: Clear[], seed: string, lanes: { x: number; z: number }[] = []): CropLayout {
   const parts = [...(PARTS[kind] ?? []), DECOR];
   const decor = parts.length - 1;
   const slots: Slot[] = [];
@@ -426,14 +475,16 @@ export function cropLayout(kind: PlotKind, hw: number, hd: number, clears: Clear
   const along = (x: number, step: number, jit: number, f: (z: number) => void) => { for (let z = z0; z <= z1 + 1e-3; z += step) f(z + (r() - 0.5) * jit); };
 
   switch (kind) {
-    case 'wheat':
-      for (const x of rows(1.2, 0.3)) along(x, 0.3, 0.12, (z) => { const px = x + (r() - 0.5) * 0.25; if (free(px, z, 0.25)) add(0, px, z); });
+    case 'wheat': {
+      const lane = (x: number, z: number) => lanes.some((l) => Math.abs(x - l.x) < 0.5 && z > l.z - 0.6);
+      for (const x of rows(1.2, 0.3)) along(x, 0.3, 0.12, (z) => { const px = x + (r() - 0.5) * 0.25; if (free(px, z, 0.25) && !lane(px, z)) add(0, px, z); });
       // a second, offset pass so the field reads as a dense golden carpet between the furrows
-      for (const x of rows(1.2, 0.3)) along(x, 0.45, 0.2, (z) => { const px = x + (r() < 0.5 ? -0.28 : 0.28); if (free(px, z, 0.25)) add(0, px, z, { s: 0.75 + r() * 0.25 }); });
+      for (const x of rows(1.2, 0.3)) along(x, 0.45, 0.2, (z) => { const px = x + (r() < 0.5 ? -0.28 : 0.28); if (free(px, z, 0.25) && !lane(px, z)) add(0, px, z, { s: 0.75 + r() * 0.25 }); });
       break;
+    }
     case 'pumpkins':
       rows(1.2, 0.3).forEach((x, i) => {
-        along(x, 1.0, 0.25, (z) => { if (free(x, z, 0.4)) add(0, x + (r() - 0.5) * 0.2, z, { yaw: (r() - 0.5) * 0.6 + (r() < 0.5 ? Math.PI : 0) }); });
+        along(x, 1.0, 0.25, (z) => { if (free(x, z, 0.4) && z > z0 + 0.3) add(0, x + (r() - 0.5) * 0.2, z, { yaw: (r() - 0.5) * 0.6 + (r() < 0.5 ? Math.PI : 0) }); });
         if (i % 2) return;
         along(x, 1.25, 0.4, (z) => {
           const px = x + (r() - 0.5) * 0.5;

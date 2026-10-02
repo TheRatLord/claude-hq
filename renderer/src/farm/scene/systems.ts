@@ -13,8 +13,10 @@ import { structuresSystem } from './structures/structures.ts';
 import { plotsSystem } from './plots/plots.ts';
 import { farmersSystem } from './farmers/farmers.ts';
 import { villagersSystem } from './villagers/villagers.ts';
+import { gatherSystem } from './gather/gather.ts';
 import { lifeSystem } from './life/life.ts';
 import { forageSystem } from './forage/forage.ts';
+import { trailSystem } from './trail/trail.ts';
 import { yardSystem } from './yard/yard.ts';
 import { weatherSystem } from './weather/weather.ts';
 import { interiorSystem } from './interior/interior.ts';
@@ -31,8 +33,10 @@ export const SYSTEMS: readonly SystemFactory[] = [
   plotsSystem,
   farmersSystem,
   villagersSystem,
+  gatherSystem,
   lifeSystem,
   forageSystem,
+  trailSystem,
   yardSystem,
   weatherSystem,
   interiorSystem,

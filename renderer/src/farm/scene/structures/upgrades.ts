@@ -382,6 +382,7 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
     stalls.push({ ...first, yaw: faceRoad(first.x, first.z) });
     const second = findSpot(first.x - 1.5, first.z + 4.5, 1.9);
     stalls.push({ ...second, yaw: faceRoad(second.x, second.z) });
+    marketAt = stalls.map((q) => ({ ...q, y: gy(q.x, q.z) }));
     const awning = [[PAL.red, PAL.white], [PAL.green, 0xfff3d6]];
     const produce = [[PAL.apple, PAL.pumpkin, PAL.cabbage], [PAL.wheat, PAL.grape, PAL.strawberry]];
     stalls.forEach((s, si) => k.part('marketStall', () => k.at({ x: s.x, y: gy(s.x, s.z), z: s.z, ry: s.yaw }, () => {
@@ -532,7 +533,7 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
         vane.rotation.y = vy;
       },
     });
-    bandstandAt = { x: s.x, z: s.z, y: y0 };
+    bandstandAt = { x: s.x, z: s.z, y: y0, yaw, r: R8, floor: y0 + 0.7 };
   }
 
   // ---- the hot-air balloon over the south meadow ----
@@ -779,6 +780,10 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
   };
 }
 
-let bandstandAt: { x: number; z: number; y: number } | null = null;
-/** where the bandstand stands (for the farmers' / villagers' outings later), null until built */
+let bandstandAt: { x: number; z: number; y: number; yaw: number; r: number; floor: number } | null = null;
+/** where the bandstand stands (front = +z local, toward the road; `r` its radius, `floor` the stage's height), null until
+ * built: the evening concerts (scene/gather) put the band on it */
 export const bandstandSpot = () => bandstandAt;
+let marketAt: { x: number; z: number; y: number; yaw: number }[] | null = null;
+/** the market stalls (front = +z local, the counter side), null until built: market mornings (scene/gather) */
+export const marketSpots = () => marketAt;

@@ -198,6 +198,7 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'pets'        PetsService                       life package: the village dog and cat (idle farmers pet them)
  *   'villagers'   VillagersService                  villagers package: the persistent villager cast (map pins, dev)
  *   'indoors'     IndoorSpace                       interior package: the walk-in farmhouse (controller, engine, sky, audio read it)
+ *   'gatherings'  GatherService (scene/gather)      evening gatherings: campfire, bandstand concert, market (farmers, villagers, audio read it)
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
 export interface FarmerLocator {
@@ -267,6 +268,9 @@ export interface AudioService {
   loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
   /** 0 outdoors … 1 indoors: the valley's ambience goes muffled behind walls, rain drums on the roof (optional) */
   indoors?(k: number): void;
+  /** what the music is doing (optional): `on` = it can be heard at all (unlocked, enabled, not silenced); `scene` = the
+   *  piece playing now (musicPlan.ts MusicScene: 'campfire' / 'concert' at a gathering), null while it rests */
+  musicNow?(): { on: boolean; scene: string | null };
 }
 
 /**

@@ -16,6 +16,8 @@
  *             ╱            9  10        11
  */
 import { fbm } from './noise.ts';
+import { buildTrail, carveTrail, trailDist, trailLine, TRAIL_WIDTH } from './trail.ts';
+import type { Trail } from './trail.ts';
 
 export const WORLD = Object.freeze({
   /** half extent of the terrain mesh */
@@ -183,6 +185,8 @@ function terraceHeight(x: number, z: number, h: number): number {
 
 interface Pad { x: number; z: number; hw: number; hd: number; yaw: number; y: number; blend: number; /** landmark terraces sit on top of the plaza */ top?: boolean; /** a field: its core (fence and all) wins over everything */ field?: boolean }
 const pads: Pad[] = [];
+/** the summit trail once built (below): heightAt cuts it into the land */
+let trail: Trail | null = null;
 const padOf = (x: number, z: number, w: number, d: number, yaw: number, blend: number, y?: number): Pad =>
   ({ x, z, hw: w / 2, hd: d / 2, yaw, blend, y: y ?? Math.max(WORLD.water + 1.2, landHeight(x, z)) });
 
@@ -222,6 +226,12 @@ function carve(x: number, z: number, h: number): number {
  * included) stays exactly level over all of them.
  */
 export function heightAt(x: number, z: number): number {
+  const h = padHeight(x, z);
+  return trail ? carveTrail(trail, x, z, h) : h;
+}
+
+/** The land with river, pond and pads, before the summit trail is cut into it. */
+function padHeight(x: number, z: number): number {
   const h = carve(x, z, landHeight(x, z));
   let wsum = 1, hsum = h, tw = 0, th = 0, tk = 0, fk = 0, fy = 0;
   for (const p of pads) {
@@ -309,6 +319,25 @@ export const SITES: readonly Site[] = SITE_XZ.map(([x, z], index) => {
 }
 for (const s of STRUCTURES) (s as { y: number }).y = heightAt(s.x, s.z);
 export const HUB_Y = hubPad.y;
+
+/**
+ * The summit trail (world/trail.ts): a footpath from the south road to a trailhead at the wall's foot, then switchbacks
+ * cut into the terraced cliff, a wooden staircase and a rope bridge up to a lookout on the rim. Cut into `heightAt`.
+ */
+export const TRAIL: Trail = (trail = buildTrail(padHeight));
+const onTread = (k: string) => k !== 'stairs' && k !== 'bridge';
+const anyKind = () => true;
+
+/** Map data (hud/mapdraw.ts can draw these): walking trails beyond the roads, and named points of interest. */
+export interface TrailLine { id: string; name: string; points: readonly XZ[]; width: number }
+export const TRAILS: readonly TrailLine[] = [{ id: 'summit', name: 'Summit trail', points: trailLine(TRAIL), width: TRAIL_WIDTH }];
+export interface Poi extends XZ { id: string; name: string; /** a one-glyph map symbol */ glyph: string; kind: 'trailhead' | 'lookout' | 'rest' | 'bridge' }
+export const POIS: readonly Poi[] = [
+  { id: 'trailhead', name: 'Trailhead', glyph: '⛰', kind: 'trailhead', x: TRAIL.anchors.trailhead.x, z: TRAIL.anchors.trailhead.z },
+  { id: 'trail:bench', name: 'Halfway bench', glyph: '⌂', kind: 'rest', x: TRAIL.anchors.bench.x, z: TRAIL.anchors.bench.z },
+  { id: 'trail:bridge', name: 'Rope bridge', glyph: '≈', kind: 'bridge', x: (TRAIL.anchors.bridge.a.x + TRAIL.anchors.bridge.b.x) / 2, z: (TRAIL.anchors.bridge.a.z + TRAIL.anchors.bridge.b.z) / 2 },
+  { id: 'summit', name: 'Summit lookout', glyph: '▲', kind: 'lookout', x: TRAIL.anchors.summit.x, z: TRAIL.anchors.summit.z },
+];
 
 const BRIDGE: [XZ, XZ] = [{ x: -46, z: 7 }, { x: -66, z: 5.5 }];
 
@@ -487,6 +516,8 @@ export function pathAt(x: number, z: number): number {
     const v = 1 - smooth(p.width * 0.35, p.width * 0.75, d);
     if (v > best) best = v;
   }
+  const dt = trailDist(TRAIL, x, z, onTread);
+  if (dt < TRAIL_WIDTH) best = Math.max(best, 1 - smooth(TRAIL_WIDTH * 0.35, TRAIL_WIDTH * 0.75, dt));
   const dh = rectSdf(x, z, { x: HUB.x, z: HUB.z + 1, hw: 12, hd: 10, yaw: 0 });
   return Math.max(best, 1 - smooth(-1, 2, dh));
 }
@@ -504,6 +535,12 @@ export function clearance(x: number, z: number): number {
   for (const s of SITES) d = Math.min(d, rectSdf(x, z, { x: s.x, z: s.z, hw: s.w / 2 + 0.5, hd: s.d / 2 + 0.5, yaw: s.yaw }));
   for (const p of PATHS) d = Math.min(d, distToPolyline(x, z, p.points) - p.width / 2);
   d = Math.min(d, distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH - 1.5, Math.hypot(x - POND.x, z - POND.z) - POND.r - 1.5);
+  // the summit trail: its tread, the staircase, the bridge and the landings (the lookout's knob top)
+  const dt = trailDist(TRAIL, x, z, anyKind);
+  if (dt < Infinity) {
+    d = Math.min(d, dt - TRAIL_WIDTH / 2);
+    for (const l of TRAIL.landings) d = Math.min(d, Math.hypot(x - l.x, z - l.z) - l.r);
+  }
   return d;
 }
 

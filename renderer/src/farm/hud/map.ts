@@ -5,9 +5,83 @@
  */
 import type { FrameInfo } from '../scene/context.ts';
 import { ICONS, KIND_ICON, icon } from './icons.ts';
-import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_LABEL, STATUS_RANK } from './format.ts';
-import { drawValley, fitContent, fitView, hitTest, toWorld, type Hit, type View } from './mapdraw.ts';
+import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_COLOR, STATUS_LABEL, STATUS_RANK } from './format.ts';
+import { DEFAULT_LAYERS, drawValley, fitContent, fitView, hitTest, toWorld, villagerPin, type Hit, type MapExtras, type MapLayers, type View } from './mapdraw.ts';
+import { heart, PIN_COLOR, rosette, tile, type Glyph } from './mappins.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
+import { fishOdds, SIGHTINGS } from '../model/collection.ts';
+import { PLACE_NAME, type VisitPlace } from '../model/friends.ts';
+import type { Status } from '../../../../shared/protocol.ts';
+import './map.css';
+
+// ---------------------------------------------------------------------------------------------- layers + extras
+
+const LAYERS_KEY = 'valley.hud.mapLayers';
+function loadLayers(): MapLayers {
+  try { const raw = localStorage.getItem(LAYERS_KEY); if (raw) return { ...DEFAULT_LAYERS, ...(JSON.parse(raw) as Partial<MapLayers>) }; } catch { /* storage blocked */ }
+  return { ...DEFAULT_LAYERS };
+}
+/** shared by the panel and the minimap (one object: a toggle in the panel shows on the minimap at once) */
+const layers: MapLayers = loadLayers();
+const saveLayers = () => { try { localStorage.setItem(LAYERS_KEY, JSON.stringify(layers)); } catch { /* storage blocked */ } };
+
+const CAP = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+let extrasAt = -1;
+let extras: MapExtras | null = null;
+/** What the map shows besides the valley state, gathered from the bindings at most ~3 times a second. */
+function gather(ctx: HudCtx, now: number): MapExtras | null {
+  if (extras && now - extrasAt < 0.33 && now >= extrasAt) return extras;
+  extrasAt = now;
+  const s = ctx.state(), b = ctx.b;
+  if (!s || !b) return (extras = null);
+  const svc = <T>(n: string): T | undefined => { try { return b.service?.(n) as T | undefined; } catch { return undefined; } };
+  const yard = svc<{ store?: { x: number; z: number; yaw: number } }>('yard');
+  const store = yard?.store && Number.isFinite(yard.store.x) ? { x: yard.store.x, z: yard.store.z, yaw: yard.store.yaw } : null;
+  let requests: MapExtras['requests'] = [];
+  try {
+    requests = (b.friends?.().requests() ?? []).filter((r) => !r.done).map((r) => ({
+      id: r.req.id, who: r.req.who, place: r.req.kind === 'visit' ? r.req.place : undefined,
+      placeName: r.req.place ? PLACE_NAME[r.req.place as VisitPlace] : undefined,
+      name: r.friend.name, text: r.text, next: r.next, ready: r.ready,
+    }));
+  } catch { /* optional */ }
+  const items = svc<{ items(): { key: string; x: number; z: number; habitat: string; picked: boolean }[] }>('forage')?.items?.() ?? [];
+  const forage = items.filter((f) => !f.picked);
+  const wildOut: Record<string, boolean> = {};
+  try { for (const w of svc<{ list(): { id: string; on: boolean }[] }>('wildlife')?.list?.() ?? []) wildOut[w.id] = !!w.on; } catch { /* optional */ }
+  const seen = b.collection?.().data().seen ?? {};
+  const sky = s.sky;
+  const wild = SIGHTINGS.map((d) => ({ id: d.id, name: d.name, color: d.color, time: d.time, where: CAP(d.place), tip: d.tip, inSeason: d.seasons.includes(sky.season), seen: !!seen[d.id] }));
+  const bites = { pond: [] as string[], river: [] as string[] };
+  for (const water of ['pond', 'river'] as const) {
+    bites[water] = fishOdds({ season: sky.season, hour: sky.hour, weather: sky.weather.kind, water }).filter((o) => !o.def.junk).sort((a, c) => c.weight - a.weight).slice(0, 3).map((o) => o.def.name);
+  }
+  let festival: MapExtras['festival'] = null;
+  const fa = sky.festival.active;
+  if (fa) {
+    const c = svc<{ where(): Record<string, [number, number, number]> }>('festivals')?.where?.().center;
+    festival = { x: c?.[0] ?? -6, z: c?.[2] ?? -6, name: fa.name, blurb: fa.blurb };
+  }
+  const unread = s.letters.filter((l) => !l.read).length;
+  const subtitle = [CAP(sky.season), fa?.name, s.almanac?.name].filter(Boolean).join(' · ');
+  return (extras = { season: sky.season, store, unread, requests, forage, forageLeft: forage.length, wildOut, wild, bites, festival, subtitle });
+}
+
+/** A legend swatch: the same pin the map draws, on a tiny canvas. */
+function swatch(draw: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+  const k = Math.min(2, window.devicePixelRatio || 1), n = 22;
+  const c = h('canvas.sw') as HTMLCanvasElement;
+  c.width = c.height = n * k;
+  const g = c.getContext('2d');
+  if (g) { g.scale(k, k); g.translate(n / 2, n / 2); draw(g); }
+  return c;
+}
+const dotSw = (st: Status, mark = '') => swatch((g) => {
+  g.fillStyle = STATUS_COLOR[st]; g.strokeStyle = '#3b2a1e'; g.lineWidth = 1.6; g.beginPath(); g.arc(0, 0, 7, 0, Math.PI * 2); g.fill(); g.stroke();
+  if (mark) { g.fillStyle = st === 'blocked' ? '#3a2400' : '#fff'; g.font = '800 10px ui-rounded, "DejaVu Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(mark, 0, 0.5); }
+  if (st === 'blocked') { g.strokeStyle = '#f0a72c'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 9.6, 0, Math.PI * 2); g.stroke(); }
+});
+const tileSw = (k: Glyph, c: string) => swatch((g) => tile(g, 0, 0, 7.5, k, c));
 
 function sizeCanvas(cv: HTMLCanvasElement, w: number, hgt: number): CanvasRenderingContext2D {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -25,18 +99,45 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const canvas = h('canvas.vh-mapcanvas', { 'data-testid': 'map-canvas', 'aria-label': 'Map of the valley. Click a farmer to open their terminal.' });
   const tip = h('div.vh-tip');
   const wrap = h('div.vh-mapwrap', null, canvas, tip);
-  const legend = h('div.vh-legend', null,
-    ...(['blocked', 'working', 'done', 'idle'] as const).map((s) => h('span', null, h(`i.vh-dot.st-${s}`), STATUS_LABEL[s])),
-    h('span', null, h('i.vh-dot', { style: { background: '#d0584a', borderRadius: '2px', transform: 'rotate(45deg)' } }), 'You'),
-    h('span', null, h('i.vh-dot', { style: { background: '#ffd23f' } }), 'Scarecrow'),
-    h('span', null, h('i.vh-dot', { style: { background: '#3f6a4e', borderRadius: '3px 3px 1px 1px', clipPath: 'polygon(50% 0, 100% 40%, 100% 100%, 0 100%, 0 40%)' } }), 'Villager'));
+  const key = (sw: HTMLCanvasElement, label: string, title?: string) => h('span', title ? { title } : null, sw, label);
+  const legend = h('div.vh-legend.vh-mapkey', { 'data-testid': 'map-legend' },
+    key(dotSw('blocked', '!'), STATUS_LABEL.blocked), key(dotSw('working'), STATUS_LABEL.working), key(dotSw('done', '✓'), STATUS_LABEL.done), key(dotSw('idle'), STATUS_LABEL.idle),
+    key(swatch((g) => { g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 6.5); g.lineTo(0, 3.5); g.lineTo(-6, 6.5); g.closePath(); g.fillStyle = '#d0584a'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.stroke(); }), 'You'),
+    key(swatch((g) => { g.strokeStyle = '#6e4a2a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-5, -1); g.lineTo(5, -1); g.moveTo(0, -6); g.lineTo(0, 8); g.stroke(); g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, -6, 3, 0, Math.PI * 2); g.fill(); g.stroke(); }), 'Scarecrow'),
+    key(swatch((g) => villagerPin(g, 0, 1, 7, '#3f6a4e', 1, null)), 'Villager'),
+    key(swatch((g) => heart(g, 0, 0, 7.5, false, 0)), 'Request', 'Today\'s villager requests (gold when ready to hand over)'),
+    key(tileSw('store', PIN_COLOR.store), 'Store', 'The General store cart: buy decor, sell your basket'),
+    key(tileSw('mail', PIN_COLOR.mail), 'Mailbox'),
+    key(tileSw('yard', PIN_COLOR.yard), 'Your yard'),
+    key(tileSw('door', PIN_COLOR.door), 'Go inside', 'The farmhouse door'),
+    key(tileSw('nook', PIN_COLOR.nook), 'Nook', 'Leisure nooks: pergola, picnic, knoll, hot spring, orchard, stones, hay meadow, swing tree'),
+    key(tileSw('fish', PIN_COLOR.fish), 'Fishing'),
+    key(swatch((g) => rosette(g, 0, -1, 7, 0)), 'Festival'),
+    key(tileSw('peak', PIN_COLOR.peak), 'Trail stop', 'The cliff trail (red dots): trailhead, bench, rope bridge, summit lookout'));
+  const layerBtn = (id: keyof MapLayers, label: string, sw: HTMLCanvasElement, title: string) => {
+    const btn = h('button.vh-maplayer', { type: 'button', title, 'data-testid': `map-layer-${id}`, 'aria-pressed': String(layers[id]) }, sw, h('span.l', { text: label }), h('span.n'));
+    btn.addEventListener('click', () => { layers[id] = !layers[id]; saveLayers(); btn.setAttribute('aria-pressed', String(layers[id])); extrasAt = -1; draw(); });
+    return btn;
+  };
+  const layerBtns = {
+    places: layerBtn('places', 'Places', tileSw('nook', PIN_COLOR.nook), 'Store, mailbox, yard, nooks, fishing spots, the festival'),
+    requests: layerBtn('requests', 'Requests', swatch((g) => heart(g, 0, 0, 7.5, false, 0)), 'Hearts on the villagers with a request today'),
+    forage: layerBtn('forage', 'Forage', tileSw('leaf', PIN_COLOR.leaf), 'Roughly where today\'s forageables lie (never the exact spot)'),
+    wildlife: layerBtn('wildlife', 'Wildlife', tileSw('paw', PIN_COLOR.paw), 'Where and when the shy visitors come out'),
+  };
+  const layerRow = h('div.vh-maplayers', { role: 'group', 'aria-label': 'Map layers' }, layerBtns.places, layerBtns.requests, layerBtns.forage, layerBtns.wildlife);
   const list = h('div.list.vh-scroll', { 'data-testid': 'map-list' });
   const foot = h('div.vh-foot', null,
     h('span', null, 'Click a farmer: ', h('b', { text: 'terminal' })),
     h('span', null, h('kbd.vh-k', { text: 'Shift' }), '+click / right-click: walk'),
     h('span', null, h('kbd.vh-k', { text: '↑' }), h('kbd.vh-k', { text: '↓' }), 'pick', h('kbd.vh-k', { text: 'Enter' }), 'terminal'),
     h('span', null, 'Wheel zoom · drag pan · ', h('kbd.vh-k', { text: '0' }), ' reset'));
-  const side = h('div.vh-mapside', null, h('div.vh-h3', null, icon(ICONS.book), 'Farmers'), legend, list, foot);
+  // the key starts open on tall screens (laptops keep the room for the farmer list); a toggle is remembered
+  let keyOpen = innerHeight > 860;
+  try { const k = localStorage.getItem('valley.hud.mapKey'); if (k) keyOpen = k === 'open'; } catch { /* storage blocked */ }
+  const keyBox = h('details.vh-mapkeybox', { open: keyOpen }, h('summary', { text: 'Key' }), legend);
+  keyBox.addEventListener('toggle', () => { try { localStorage.setItem('valley.hud.mapKey', keyBox.open ? 'open' : 'closed'); } catch { /* storage blocked */ } });
+  const side = h('div.vh-mapside', null, layerRow, keyBox, h('div.vh-h3', null, icon(ICONS.book), 'Farmers'), list, foot);
   body.append(wrap, side);
 
   let g: CanvasRenderingContext2D | null = null;
@@ -59,7 +160,14 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const draw = () => {
     if (!g || !view) return;
     const s = ctx.state();
-    hits = drawValley(g, view, s, { time: t, locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover, villagers: ctx.b?.villagers?.() });
+    const ex = gather(ctx, t);
+    hits = drawValley(g, view, s, { time: t, locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover, villagers: ctx.b?.villagers?.(), layers, extra: ex });
+    if (ex) {
+      const n = (b: HTMLElement, v: string) => { const el = b.querySelector('.n') as HTMLElement; if (el.textContent !== v) el.textContent = v; };
+      n(layerBtns.requests, ex.requests.length ? String(ex.requests.length) : '');
+      n(layerBtns.forage, ex.forageLeft ? String(ex.forageLeft) : '');
+      n(layerBtns.wildlife, String(Object.values(ex.wildOut).filter(Boolean).length || ''));
+    }
   };
   const pos = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
@@ -79,6 +187,9 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
       const hp = s.helpers.get(hit.id);
       if (!hp) return;
       tip.append(h('b', { text: `${shortName(hp)} (scarecrow)` }), h('div', { text: `${HELPER_LABEL[hp.activity]}${hp.label ? ` · ${hp.label}` : ''}` }), h('div.k', { text: 'Click: open shell · Shift+click: walk there' }));
+    } else if (hit.kind === 'place') {
+      if (!hit.tip) return;
+      tip.append(h('b', { text: hit.tip.title }), ...hit.tip.lines.map((l, i) => h(i ? 'div.vh-muted' : 'div', { text: l })));
     } else {
       const p = s.plots.get(hit.id);
       if (!p) return;
@@ -101,14 +212,14 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     }
     const hit = hitTest(hits, p.x, p.y);
     hover = hit?.id ?? null;
-    canvas.classList.toggle('hot', !!hit && hit.kind !== 'plot');
+    canvas.classList.toggle('hot', !!hit && (hit.kind === 'farmer' || hit.kind === 'helper'));
     showTip(hit, p.x, p.y);
   });
   canvas.addEventListener('mouseleave', () => { hover = null; tip.classList.remove('show'); drag = null; });
   canvas.addEventListener('mousedown', (e) => { if (e.button !== 0 || !view) return; const p = pos(e); drag = { x: p.x, y: p.y, cx: view.cx, cz: view.cz, moved: false }; });
   addEventListener('mouseup', () => { setTimeout(() => { drag = null; }, 0); });
   const act = (hit: Hit | null, walk: boolean) => {
-    if (!hit) return;
+    if (!hit || hit.kind === 'place') return;
     if (walk) { ctx.travel(hit.id); ctx.panels.close(); return; }
     if (hit.kind === 'farmer' || hit.kind === 'helper') ctx.openTerminal(hit.id);
   };
@@ -212,7 +323,11 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   };
 }
 
-/** Corner minimap: north-up, centred on the player, farmers as status dots. Click opens the big map. */
+/**
+ * Corner minimap: north-up, centred on the player, the same painted chart (a half-resolution copy of the base) with
+ * fields, villagers, request hearts, the store and the festival; farmers as status dots. A farmer who needs you pops
+ * (bigger, gold) and, when off the map, waits on the rim pointing the way. Click opens the big map.
+ */
 export function createMinimap(ctx: HudCtx): { el: HTMLElement; frame(f: FrameInfo): void; refresh(): void } {
   const canvas = h('canvas');
   const el = h('div.vh-mini.vh-wood', { title: 'Open the map (M) · toggle minimap (N)', 'data-testid': 'minimap', role: 'button', 'aria-label': 'Minimap' }, canvas, h('div.n', { text: 'N' }));
@@ -235,7 +350,7 @@ export function createMinimap(ctx: HudCtx): { el: HTMLElement; frame(f: FrameInf
     const view: View = { cx: player.x, cz: player.z, scale: sz / 90, w: sz, h: sz };
     g.save();
     g.beginPath(); g.arc(sz / 2, sz / 2, sz / 2, 0, Math.PI * 2); g.clip();
-    drawValley(g, view, s, { time, locate: ctx.b?.locate, player, mini: true, villagers: ctx.b?.villagers?.() });
+    drawValley(g, view, s, { time, locate: ctx.b?.locate, player, mini: true, villagers: ctx.b?.villagers?.(), layers, extra: gather(ctx, time) });
     g.restore();
   }
   return {

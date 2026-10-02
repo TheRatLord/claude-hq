@@ -16,7 +16,7 @@ import { PAL, WORKSPACE_COLORS, toon } from '../toon.ts';
 import type { Batches } from './batch.ts';
 import type { TextAtlas } from './atlas.ts';
 import { signPainter, tagPainter } from './atlas.ts';
-import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial, propMaterial } from './materials.ts';
+import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial, partPoints, propMaterial, PART_N } from './materials.ts';
 import type { CropUniforms } from './materials.ts';
 import { cropLayout, decorClump, SUN_STEM } from './crops.ts';
 import type { Clear, CropLayout, Slot } from './crops.ts';
@@ -24,7 +24,7 @@ import { bounce, clamp01, damp, lerp, merge, rng, singleSided, smooth01 } from '
 import { partName } from '../parts.ts';
 import {
   cart, cartHeap, clod, crate, exitRibbon, fenceRibbon, fenceSegment, flag, gatePosts, hiveGeo, kindProps, lanternCore, LANTERN, penTile, scarecrow,
-  SIGN_TEXT, signBoard, soilBed, sprinkler, textQuad, weed,
+  SACK_STACK, SIGN_TEXT, sack, signBoard, soilBed, sprinkler, textQuad, weed,
 } from './models.ts';
 import { Herd, penFor } from './animals.ts';
 import type { Animal, HerdInput, SpeciesKey } from './animals.ts';
@@ -59,6 +59,8 @@ export interface FieldEnv {
   sound(name: SfxName, x: number, y: number, z: number, volume?: number): void;
   /** direction (world xz) toward the barn */
   barn: { x: number; z: number };
+  /** a farmer's feet (world), refreshed a few times a second by the system; false when unknown */
+  farmerPos?(id: string, out: THREE.Vector3): boolean;
 }
 
 export const KIND_PRODUCE: Record<PlotKind, number> = {
@@ -95,6 +97,8 @@ export class Field {
   private readonly clears: Clear[] = [];
 
   private readonly segs: FenceSeg[] = [];
+  /** the back fence's posts (crows perch there) */
+  private readonly backSegs: number[] = [];
   private readonly fenceArr: Float32Array;
   private readonly ribbonCol: Float32Array;
   private readonly tiles: GroundTile[] = [];
@@ -109,6 +113,9 @@ export class Field {
   private readonly cropMeshes: (THREE.InstancedMesh | null)[] = [];
   private readonly cropU: CropUniforms[] = [];
   private readonly slotIndex: number[] = [];
+  /** world parting points shared by every crop part's uniforms (farmers standing in the crop, the player) */
+  private readonly partPts = partPoints();
+  private readonly partsCrop: boolean;
   private readonly sprinklerAt: { x: number; z: number } | null;
   private readonly hives: { x: number; z: number }[] = [];
   private readonly weeds: Weed[] = [];
@@ -132,6 +139,12 @@ export class Field {
   private thriveK = 0;
   private blockK = 0;
   private cratesK: number[] = [0, 0, 0, 0, 0, 0];
+  private sacksK: number[] = [0, 0, 0, 0, 0, 0];
+  private readonly workLast = new Map<string, number>();
+  private banked = 0;
+  /** perched / gleaning crows: 0 sitting … 1 flushed into the air (the player came close) */
+  private crowUp: number[] = [0, 0, 0, 0];
+  private crowK: number[] = [0, 0, 0, 0];
   private signKey = '';
   private signRect: number[] | null = null;
   private groundDirty = true;
@@ -171,6 +184,8 @@ export class Field {
     for (let i = 0; i < 3; i++) this.clears.push({ ...loc(benchSpot(site, i)), r: SPOT_CLEAR });
     for (let i = 0; i < 5; i++) this.clears.push({ ...loc(helperSpot(site, i)), r: SPOT_CLEAR });
     for (let z = hd - 3.2; z < hd; z += 0.8) this.clears.push({ x: 0, z, r: 1.0 });
+    // the yield sacks in the front-right corner
+    this.clears.push({ x: hw - 1.3, z: hd - 1.0, r: 1.0 });
 
     // props
     const kp = kindProps(this.kind, hw, hd, season);
@@ -211,6 +226,7 @@ export class Field {
     run(-hw, -hd, 1, 0, hw * 2);
     run(hw, -hd, 0, 1, hd * 2);
     run(hw, hd, -1, 0, hw - GATE_HW);
+    this.segs.forEach((sg, i) => { if (Math.abs(sg.z + hd) < 0.01 && sg.x > -hw + 0.5) this.backSegs.push(i); });
     this.fenceArr = new Float32Array(this.segs.length * 16);
     this.ribbonCol = new Float32Array(this.segs.length * 3);
     _c.set(this.color);
@@ -255,7 +271,10 @@ export class Field {
     }
 
     // crops
-    this.layout = cropLayout(this.kind, hw, hd, this.clears, plot.id);
+    // work lanes: a tramline from each back-row work spot to the headland (tall crops only plant beside it)
+    const lanes = [0, 1, 2, 3].map((i) => { const w = loc(workSpot(site, i)); return { x: w.x, z: w.z }; });
+    this.layout = cropLayout(this.kind, hw, hd, this.clears, plot.id, lanes);
+    this.partsCrop = this.layout.parts.some((pt) => (pt.part ?? 0) > 0);
     // crops stand on a ridge crest; where no ridge was laid (kept clear round the benches and the gate lane) they stand on the flat soil bed
     if (!useTiles) {
       for (const s of this.layout.slots) {
@@ -275,6 +294,8 @@ export class Field {
     this.decorArr = new Float32Array(this.decorN * 16);
     this.layout.parts.forEach((part, i) => {
       const u = cropUniforms(part.bend);
+      u.uPart.value = this.partPts;
+      u.uPartK.value = part.part ?? 0;
       if (part.growth === 'decor') { this.cropMeshes.push(null); this.cropU.push(u); return; }
       const mesh = new THREE.InstancedMesh(singleSided(part.geo(season)), cropMaterial(u, { side: THREE.DoubleSide }), Math.max(1, counts[i]));
       mesh.count = counts[i];
@@ -406,6 +427,7 @@ export class Field {
     this.thriveK = damp(this.thriveK, p.stage === 'thriving' || p.stage === 'tilling' ? 1 : 0, 1, dt);
     this.blockK = damp(this.blockK, p.status === 'blocked' && !this.closing ? 1 : 0, 4, dt);
 
+    this.updateParting(env);
     this.updateCrops(env);
     this.writeGround();
     this.writeFence(false);
@@ -429,13 +451,41 @@ export class Field {
   private growScale(slot: Slot): number {
     const part = this.layout.parts[slot.part];
     const gn = clamp01((this.gVis - 0.25) / 0.75);
-    const boost = this.kind === 'pumpkins' && slot.part === 1 && this.season === 'autumn' ? 1.3 : 1;
+    const boost = this.kind === 'pumpkins' && slot.part === 1 && this.season === 'autumn' ? 1.3 : this.season === 'spring' && part.growth === 'fruit' ? 0.7 : 1;
+    // winter: a few pumpkins left to cure in the straw, the rest are in the store
+    if (this.kind === 'pumpkins' && slot.part === 1 && this.season === 'winter' && slot.th > 0.22) return 0;
     if (part.growth === 'grow') return slot.s * lerp(part.min ?? 0.25, 1, Math.pow(gn, 0.7));
     if (part.growth === 'head') return slot.s * lerp(0.45, 1, gn);
     if (part.growth === 'decor') return slot.s;
     if (part.noWinter && this.season === 'winter') return 0;
     const th = slot.th * 1.05 - 0.3;
     return slot.s * boost * lerp(0.45, 1, gn) * smooth01((gn - th) / 0.18);
+  }
+
+  /** tall crops part round whoever stands in them: farmers of this field (slots 0..N-2) and the player (last slot) */
+  private updateParting(env: FieldEnv): void {
+    if (!this.partsCrop) return;
+    const pts = this.partPts, ids = this.plot.farmers, dt = env.dt;
+    const c = Math.cos(this.site.yaw), sn = Math.sin(this.site.yaw);
+    const inside = (wx: number, wz: number) => {
+      const dx = wx - this.site.x, dz = wz - this.site.z;
+      return Math.abs(dx * c - dz * sn) < this.hw + 0.5 && Math.abs(dx * sn + dz * c) < this.hd + 0.5;
+    };
+    const live = !this.closing && this.harvestP < 1;
+    for (let i = 0; i < PART_N; i++) {
+      const pt = pts[i];
+      let on = false, x = 0, z = 0, rad = 1.7;
+      if (live && i < PART_N - 1) {
+        if (i < ids.length && env.farmerPos?.(ids[i], _p) && inside(_p.x, _p.z)) { on = true; x = _p.x; z = _p.z; }
+      } else if (live && env.player && inside(env.player.x, env.player.z)) { on = true; x = env.player.x; z = env.player.z; rad = 1.4; }
+      if (on) {
+        if (pt.w < 0.02 || (pt.x - x) ** 2 + (pt.y - z) ** 2 > 9) { pt.x = x; pt.y = z; }
+        else { pt.x = damp(pt.x, x, 10, dt); pt.y = damp(pt.y, z, 10, dt); }
+        pt.z = rad;
+      }
+      pt.w = damp(pt.w, on ? 1 : 0, on ? 5 : 2.5, dt);
+      if (pt.w < 0.005) pt.w = 0;
+    }
   }
 
   private updateCrops(env: FieldEnv): void {
@@ -448,22 +498,31 @@ export class Field {
       u.uTime.value = env.time;
       (u.uWind.value as THREE.Vector2).set(env.wind.x * 0.45, env.wind.z * 0.45);
       u.uDroop.value = this.dryK * part.droop;
-      u.uDry.value = this.dryK * 0.8;
-      u.uGreen.value = part.ripens ? (1 - smooth01((gn - 0.05) / 0.55)) * 0.85 + (this.season === 'spring' ? 0.12 : 0) : 0;
+      // harvested annuals stand as dry straw stubble in the fallow soil
+      u.uDry.value = this.harvestP >= 1 && !part.perennial ? 1 : this.dryK * 0.8;
+      // spring fruit sets small and green (apples, grapes, berries, pumpkins); it ripens over the summer
+      const spring = this.season === 'spring';
+      // (young fruit only half green, so a new pumpkin patch / orchard still shows its colour from across the valley)
+      u.uGreen.value = part.ripens ? Math.max((1 - smooth01((gn - 0.05) / 0.55)) * (part.growth === 'fruit' ? 0.5 : 0.85) + (spring ? 0.12 : 0), spring && part.growth === 'fruit' ? 0.7 : 0) : 0;
       u.uSat.value = 1 + 0.16 * this.thriveK - 0.04 * this.dryK;
-      u.uSnow.value = this.season === 'winter' ? 0.55 : 0;
+      // winter wheat's shoots stay green through the snow (the reason it is sown in autumn)
+      u.uSnow.value = this.season === 'winter' ? (this.kind === 'wheat' ? 0.2 : 0.55) : 0;
     });
     const sig = this.tillP * 3 + this.harvestP * 7 + this.closeP * 11;
     const animating = sig !== this.cropSig || this.tillP < 1 || (this.harvestP > 0 && this.harvestP < 1) || this.closing;
     this.cropSig = sig;
     const heads = this.kind === 'sunflowers';
     const gDirty = Math.abs(this.gVis - this.lastG) > 0.002;
-    const hidden = this.harvestP >= 1 || (this.closing && this.plot.stage !== 'harvest');
+    // harvested: annuals leave stubble (or nothing), perennials (trees, vines, bushes) stay without their fruit;
+    // closing a field that was never harvested clears it at once
+    const harvested = this.harvestP >= 1;
+    const hidden = harvested || (this.closing && this.plot.stage !== 'harvest');
     const wasHidden = this.cropHidden;
     this.cropHidden = hidden;
     if (!animating && !gDirty && !heads && this.lastG >= 0 && hidden === wasHidden) return;
     this.lastG = this.gVis;
-    for (const m of this.cropMeshes) if (m) m.visible = !hidden;
+    const cleared = this.closing && !harvested && this.plot.stage !== 'harvest';
+    this.cropMeshes.forEach((m, i) => { if (m) m.visible = !cleared && (!harvested || !!L.parts[i].perennial || !!L.parts[i].stubble); });
     if (hidden && !animating && wasHidden) return;
     // sun direction in site-local space
     const sy = -this.site.yaw;
@@ -477,7 +536,7 @@ export class Field {
       const part = L.parts[s.part];
       if (onlyHeads && part.growth !== 'head') continue;
       const sprout = smooth01((this.tillP - 0.55 - s.sow * 0.38) / 0.08);
-      let sc = 0, x = s.x, y = s.y, z = s.z, yaw = s.yaw, pitch = s.tilt;
+      let sc = 0, x = s.x, y = s.y, z = s.z, yaw = s.yaw, pitch = s.tilt, sh = 1, sw = 1;
       if (s.parent >= 0) {
         const ps = slots[s.parent];
         const pScale = this.growScale(ps);
@@ -490,17 +549,22 @@ export class Field {
           const night = env.night;
           const t = env.time * 0.7 + s.sow * 20;
           const toSun = sunYaw + Math.sin(t) * 0.08;
-          yaw = night > 0.6 ? Math.PI * 0.5 : toSun;
-          pitch = night > 0.6 ? 0.9 : -Math.min(0.9, Math.max(0, sunUp) * 0.8) + 0.1 + Math.sin(t * 1.3) * 0.04;
+          // winter: dry seed heads hang, left for the birds
+          const hang = night > 0.6 || this.season === 'winter';
+          yaw = hang ? Math.PI * 0.5 + (this.season === 'winter' ? s.sow * 3 : 0) : toSun;
+          pitch = hang ? (this.season === 'winter' ? 1.15 : 0.9) : -Math.min(0.9, Math.max(0, sunUp) * 0.8) + 0.1 + Math.sin(t * 1.3) * 0.04;
           pitch += this.dryK * 0.85;
           y = ps.y + SUN_STEM * pScale;
         }
       } else sc = this.growScale(s);
       sc *= sprout;
-      // harvest: pop up and arc into the cart (field-edge grass stays)
-      if (this.harvestP > 0 && part.growth !== 'decor') {
+      // harvest: pop up and arc into the cart (field-edge grass and perennial plants stay; annuals leave stubble)
+      if (this.harvestP > 0 && part.growth !== 'decor' && !part.perennial) {
         const hv = clamp01((this.harvestP - s.reap * 0.55) / 0.3);
-        if (hv >= 1) sc = 0;
+        if (hv >= 1) {
+          if (part.stubble && s.parent < 0) { sw = part.stubble[1]; sh = part.stubble[0]; pitch = 0; }
+          else sc = 0;
+        }
         else if (hv > 0) {
           const e = smooth01(hv);
           x = lerp(x, cart.x, e); z = lerp(z, cart.z, e); y = lerp(y, cart.y, e) + Math.sin(Math.PI * e) * 2.2;
@@ -514,7 +578,7 @@ export class Field {
       }
       if (this.closing) sc *= 1 - this.closeP;
       _q.setFromEuler(_e.set(pitch, yaw, 0, 'YXZ'));
-      _m.compose(_v.set(x, y, z), _q, _s.set(sc, sc, sc));
+      _m.compose(_v.set(x, y, z), _q, _s.set(sc * sw, sc * sh, sc * sw));
       const mesh = this.cropMeshes[s.part];
       if (mesh) mesh.setMatrixAt(this.slotIndex[k], _m);
       else _m.premultiply(this.siteM).toArray(this.decorArr, this.slotIndex[k] * 16);
@@ -606,6 +670,7 @@ export class Field {
       text: B.get('signtext', () => ({ geo: textQuad().clone(), mat: atlasMaterial(env.atlas.tex), cap: 160, rect: true })),
       flag: B.get('flag', () => ({ geo: flag(), mat: lit, cap: 24, shadow: true })),
       crate: B.get('crate', () => ({ geo: crate(), mat: lit, cap: 80, shadow: true })),
+      sack: B.get('sack', () => ({ geo: sack(), mat: lit, cap: 96, shadow: true })),
       cart: B.get('cart', () => ({ geo: cart(), mat: lit, cap: 12, shadow: true })),
       heap: B.get('cartheap', () => ({ geo: cartHeap(), mat: lit, cap: 12 })),
       scarecrow: B.get(`scarecrow:${this.season}`, () => ({ geo: scarecrow(this.season), mat: lit, cap: 48, shadow: true })),
@@ -666,6 +731,7 @@ export class Field {
     // done: produce crates stacked by the gate
     let done = 0;
     for (const id of this.plot.farmers) { const f = env.farmer(id); if (f && (f.job === 'done' || f.unseenDone)) done++; }
+    // (upper crates sit on the rims of the ones below; the produce in a crate stays under its rim)
     const stack = [[0, 0, 0], [0.66, 0, 0.05], [0.33, 0.43, 0.02], [1.32, 0, -0.02], [0.99, 0.43, 0.0], [0.66, 0.86, 0.02]];
     for (let i = 0; i < stack.length; i++) {
       this.cratesK[i] = damp(this.cratesK[i], !this.closing && i < Math.min(6, done * 2) ? 1 : 0, 5, env.dt);
@@ -676,6 +742,27 @@ export class Field {
       _m.compose(_v.set(2.7 + x, y + (1 - bounce(k)) * 1.5, this.hd + 1.2 + z), _q, _s.set(k, k, k)).premultiply(this.siteM);
       b.crate.push(_m);
     }
+    // the field's yield: a burlap sack per step of work done in the workspace since the valley loaded (lines changed,
+    // banked across tasks, log scale: 1 line … 1000+ lines = 6 sacks)
+    for (const id of this.plot.farmers) {
+      const f = env.farmer(id);
+      if (!f?.work) continue;
+      const v = f.work.added + f.work.removed, last = this.workLast.get(id);
+      if (last === undefined) this.banked += v;
+      else if (v !== last) this.banked += v > last ? v - last : v; // a new task restarts the count
+      if (v !== last) this.workLast.set(id, v);
+    }
+    const nSacks = this.banked > 0 ? Math.ceil(6 * clamp01(Math.log10(1 + this.banked) / 3)) : 0;
+    for (let i = 0; i < SACK_STACK.length; i++) {
+      this.sacksK[i] = damp(this.sacksK[i], !this.closing && this.tillP >= 1 && i < nSacks ? 1 : 0, 4, env.dt);
+      const k = this.sacksK[i];
+      if (k < 0.01) continue;
+      const [x, y, z] = SACK_STACK[i];
+      _q.setFromAxisAngle(_v.set(0, 1, 0), i * 1.7 + this.site.index);
+      _m.compose(_v.set(this.hw + x, y + (1 - bounce(k)) * 1.2, this.hd + z), _q, _s.set(k, k * (0.9 + (i % 3) * 0.07), k)).premultiply(this.siteM);
+      b.sack.push(_m);
+    }
+    this.drawCrows(env);
     // struggle: crows circling the field
     let worst = 0;
     for (const id of this.plot.farmers) { const f = env.farmer(id); if (f && f.struggle > worst) worst = f.struggle; }
@@ -688,6 +775,49 @@ export class Field {
         _m.compose(_v.set(Math.cos(a) * rad, 6.5 + i * 0.6 + Math.sin(env.time * 1.3 + i) * 0.4, -Math.sin(a) * rad), _q, _s.set(flap * 1.6, 1.6, 1.6)).premultiply(this.siteM);
         env.fx.put('crow', _m);
       }
+    }
+  }
+
+  /**
+   * Crows that settle on the field: on the back fence posts while a farmer struggles (more the worse it gets) or the
+   * field rests, and gleaning the stubble in fallow. They flush into the air when the player comes close and drift
+   * back once you have gone.
+   */
+  private drawCrows(env: FieldEnv): void {
+    let worst = 0;
+    for (const id of this.plot.farmers) { const f = env.farmer(id); if (f && f.struggle > worst) worst = f.struggle; }
+    const st = this.plot.stage;
+    const fallow = st === 'fallow' && this.fallowT > 4;
+    const want = this.closing || this.tillP < 1 || env.night > 0.6 ? 0 : worst >= 1 ? Math.min(4, worst + 1) : fallow ? 3 : st === 'resting' ? 1 : 0;
+    const back = this.backSegs;
+    for (let i = 0; i < 4; i++) {
+      this.crowK[i] = damp(this.crowK[i], i < want ? 1 : 0, 1.2, env.dt);
+      const k = this.crowK[i];
+      if (k < 0.02) continue;
+      // perch: a back-fence post (fallow: a spot in the stubble, from the weed spots that keep the paths clear)
+      const glean = fallow && worst < 1 && this.weeds.length > i;
+      let x: number, y: number, z: number;
+      if (glean) { const w = this.weeds[(i * 7 + this.site.index) % this.weeds.length]; x = w.x; y = 0.14; z = w.z; }
+      else { const sg = this.segs[back[(i * 2 + this.site.index) % back.length]]; x = sg.x; y = 1.27; z = sg.z; }
+      let near = false;
+      if (env.player) {
+        const w = this.world(x, y, z, _p);
+        near = (env.player.x - w.x) ** 2 + (env.player.z - w.z) ** 2 < (env.player.speed > 3 ? 64 : 30);
+      }
+      this.crowUp[i] = damp(this.crowUp[i], near ? 1 : 0, near ? 3 : 0.25, env.dt);
+      const up = smooth01(this.crowUp[i]);
+      const t = env.time + i * 1.7 + this.site.index;
+      // sitting: a slow look about, a hop now and then, pecking when gleaning
+      const hop = Math.max(0, Math.sin(t * 0.9) - 0.94) * 4;
+      const peck = glean ? Math.max(0, Math.sin(t * 3.1)) * 0.7 : 0;
+      const look = Math.sin(t * 0.7) * 0.9 + Math.sin(t * 0.23) * 0.6;
+      const fly = 0.35 + 0.65 * Math.abs(Math.sin(env.time * 9 + i));
+      const fx = up * Math.cos(i * 1.9) * 5, fz = up * Math.sin(i * 1.9) * 5;
+      _q.setFromEuler(_e.set(-0.25 * (1 - up) + peck, look * (1 - up) + i * 1.9 * up, 0, 'YXZ'));
+      const flapW = lerp(0.28, fly * 1.4, up);
+      const sc = 1.25 * smooth01(k);
+      _m.compose(_v.set(x + fx, y + hop * 0.12 + up * 5.5, z + fz), _q, _s.set(sc * flapW, sc, sc)).premultiply(this.siteM);
+      env.fx.put('crow', _m);
     }
   }
 

@@ -74,7 +74,7 @@ export const HEART = 100;
 export const MAX_HEARTS = 10;
 const MAX_PTS = HEART * MAX_HEARTS;
 /** friendship points: the day's first chat, a gift by how much they like it, a finished request */
-export const PTS = Object.freeze({ talk: 20, love: 80, like: 45, neutral: 20, dislike: -25, request: 60 });
+export const PTS = Object.freeze({ talk: 20, love: 80, like: 45, neutral: 20, dislike: -25, request: 60, gather: 30 });
 
 export function tierOf(f: FriendDef, item: string): Tier {
   if (f.loves.includes(item)) return 'love';
@@ -320,6 +320,8 @@ export interface FriendsData {
   /** the last day (YYYY-MM-DD) you chatted / gave a gift, per villager */
   talked: Record<string, string>;
   gifted: Record<string, string>;
+  /** the last day you sat with them at an evening gathering (scene/gather: once a day, optional in old saves) */
+  gathered: Record<string, string>;
   /** what you've learned they think of things, per villager per item */
   known: Record<string, Record<string, Tier>>;
   /** the highest milestone (hearts) already rewarded, per villager */
@@ -331,7 +333,7 @@ export interface FriendsData {
   total: { gifts: number; requests: number };
 }
 
-export const emptyFriends = (): FriendsData => ({ v: 1, pts: {}, talked: {}, gifted: {}, known: {}, got: {}, letters: [], req: { day: '', list: [] }, total: { gifts: 0, requests: 0 } });
+export const emptyFriends = (): FriendsData => ({ v: 1, pts: {}, talked: {}, gifted: {}, gathered: {}, known: {}, got: {}, letters: [], req: { day: '', list: [] }, total: { gifts: 0, requests: 0 } });
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIERS: readonly Tier[] = ['love', 'like', 'neutral', 'dislike'];
@@ -370,6 +372,7 @@ export function parseFriends(raw: unknown): FriendsData | null {
   each(o.pts, (id, v) => { const n = int(v, 0, MAX_PTS); if (n !== null) d.pts[id] = n; });
   each(o.talked, (id, v) => { if (typeof v === 'string' && DAY_RE.test(v)) d.talked[id] = v; });
   each(o.gifted, (id, v) => { if (typeof v === 'string' && DAY_RE.test(v)) d.gifted[id] = v; });
+  each(o.gathered, (id, v) => { if (typeof v === 'string' && DAY_RE.test(v)) d.gathered[id] = v; });
   each(o.got, (id, v) => { const n = int(v, 0, MAX_HEARTS); if (n) d.got[id] = n; });
   each(o.known, (id, v) => {
     if (!v || typeof v !== 'object') return;
@@ -421,6 +424,15 @@ export function talkTo(d: FriendsData, id: string, nowMs: number): number {
   d.talked[id] = day;
   addPoints(d, id, PTS.talk);
   return PTS.talk;
+}
+
+/** Sitting with them at an evening gathering (the campfire): points once a day. Returns points gained. */
+export function gatherWith(d: FriendsData, id: string, nowMs: number): number {
+  const day = dayKey(nowMs);
+  if (!BY_ID.has(id) || d.gathered[id] === day) return 0;
+  d.gathered[id] = day;
+  addPoints(d, id, PTS.gather);
+  return PTS.gather;
 }
 
 export type GiftResult = { ok: true; tier: Tier; gained: number; first: boolean } | { ok: false; reason: 'unknown' | 'gifted' };
@@ -523,6 +535,7 @@ export interface FriendsStore { load(): unknown; save(d: FriendsData): void }
 
 export type FriendsChange =
   | { kind: 'talk'; who: FriendId; gained: number }
+  | { kind: 'gather'; who: FriendId; gained: number }
   | { kind: 'gift'; who: FriendId; item: string; tier: Tier; gained: number; first: boolean }
   | { kind: 'heart'; who: FriendId; hearts: number; up: boolean }
   | { kind: 'milestone'; who: FriendId; hearts: number; unlock: Unlock; letter: FriendLetter | null; decor: string | null }
@@ -552,6 +565,8 @@ export interface FriendsService {
   requests(): RequestView[];
   /** the day's first chat counts (+points once a day) */
   talk(id: string): number;
+  /** you sat down with them at an evening gathering: points once a day each; returns the total gained */
+  gathered(ids: readonly string[]): number;
   give(id: string, item: string): GiftResult | { ok: false; reason: 'none' };
   /** hand over a ready request; null if nothing's ready */
   deliver(id: string): DeliverResult | null;
@@ -619,6 +634,22 @@ export function createFriends(st: FriendsStore | undefined, o: FriendsPorts = {}
       settle(f.id, before);
       save();
       return g;
+    },
+    gathered(ids) {
+      day();
+      let total = 0;
+      for (const id of ids) {
+        const f = friendDef(id);
+        if (!f) continue;
+        const before = heartsIn(d, f.id);
+        const g = gatherWith(d, f.id, now());
+        if (!g) continue;
+        total += g;
+        emit({ kind: 'gather', who: f.id, gained: g });
+        settle(f.id, before);
+      }
+      if (total) save();
+      return total;
     },
     give(id, item) {
       const f = friendDef(id);

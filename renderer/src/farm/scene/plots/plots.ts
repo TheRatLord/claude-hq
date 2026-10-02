@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import type { PlotStage, Season } from '../../model/types.ts';
 import { SITES, heightAt, inSite, structure } from '../../world/map.ts';
 import type { Site } from '../../world/map.ts';
-import type { AudioService, LightsService, SystemFactory } from '../context.ts';
+import type { AudioService, FarmerLocator, LightsService, SystemFactory } from '../context.ts';
 import { TextAtlas } from './atlas.ts';
 import { Batches } from './batch.ts';
 import { Field } from './field.ts';
@@ -51,6 +51,20 @@ export const plotsSystem: SystemFactory = (ctx) => {
   const audio = () => ctx.services.get('audio') as AudioService | undefined;
   const sndPos = new THREE.Vector3();
   const covers = new Float32Array(SITES.length);
+  // farmer feet for crop parting, refreshed ~7× a second (the locator hands out clones: not every frame)
+  const feet = new Map<string, THREE.Vector3>();
+  let feetT = 0;
+  const refreshFeet = () => {
+    const loc = ctx.services.get('farmers') as FarmerLocator | undefined;
+    for (const id of feet.keys()) if (!ctx.valley.farmers.has(id)) feet.delete(id);
+    if (!loc) return;
+    for (const id of ctx.valley.farmers.keys()) {
+      const p = loc.position(id);
+      if (!p) { feet.delete(id); continue; }
+      const v = feet.get(id);
+      if (v) v.copy(p); else feet.set(id, p);
+    }
+  };
 
   const env: FieldEnv = {
     time: 0, dt: 0, now: 0, season, night: 0, sunDir: ctx.lighting.sunDir, wind: ctx.lighting.wind, camQuat: ctx.camera.quaternion,
@@ -58,6 +72,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
     farmer: (id) => ctx.valley.farmers.get(id), helper: (id) => ctx.valley.helpers.get(id),
     sound: (name, x, y, z, volume) => { try { audio()?.play(name, { pos: sndPos.set(x, y, z), volume }); } catch { /* audio is optional */ } },
     barn: { x: 0, z: 0 },
+    farmerPos: (id, out) => { const p = feet.get(id); if (!p) return false; out.copy(p); return true; },
   };
 
   const barnLocal = (site: Site) => {
@@ -132,6 +147,7 @@ export const plotsSystem: SystemFactory = (ctx) => {
       const pl = env.player!;
       pl.x = ctx.player.pos.x; pl.y = ctx.player.pos.y; pl.z = ctx.player.pos.z; pl.speed = ctx.player.speed;
       fx.camQuat = ctx.camera.quaternion;
+      if ((feetT -= f.dt) <= 0) { feetT = 0.14; refreshFeet(); }
       weedU.uTime.value = f.time;
       (weedU.uWind.value as THREE.Vector2).set(ctx.lighting.wind.x * 0.5, ctx.lighting.wind.z * 0.5);
       weedU.uSnow.value = season === 'winter' ? 0.6 : 0;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FESTIVAL_MUSIC, MUSIC_SCENES, barSeconds, chordDegs, degMidi, festivalTurn, inKey, musicScene, planBar, planPiece, sectionAt,
+  CAMPFIRE_SONG, FESTIVAL_MUSIC, GATHER_SCENES, MUSIC_SCENES, barSeconds, chordDegs, degMidi, festivalTurn, inKey, musicScene, planBar, planPiece, sectionAt,
 } from './musicPlan.ts';
 import type { FestivalName, MusicIn, MusicScene, Piece, SeasonName } from './musicPlan.ts';
 
@@ -127,4 +127,34 @@ test('degree arithmetic', () => {
   assert.equal(degMidi(60, 'minor', 2), 63);
   assert.deepEqual(chordDegs(4), [4, 6, 1]);
   assert.ok(inKey(62, 'dorian', 71) && !inKey(62, 'minor', 71));
+});
+
+test('gatherings: the campfire sing-along and the band take over the music, never through the rain or the door', () => {
+  assert.equal(musicScene({ ...base, hour: 20.5, gathering: 'campfire' }), 'campfire');
+  assert.equal(musicScene({ ...base, hour: 19, gathering: 'concert' }), 'concert');
+  assert.equal(musicScene({ ...base, hour: 20.5, gathering: null }), 'evening');
+  assert.equal(musicScene({ ...base, gathering: 'campfire', indoors: true }), 'indoors');
+  assert.equal(musicScene({ ...base, gathering: 'concert', weather: 'rain', intensity: 0.6 }), 'rain');
+  for (const scene of GATHER_SCENES) for (const season of SEASONS) for (let n = 0; n < 4; n++) {
+    const p = planPiece(scene, { season, festival: null }, 13, n);
+    const len = p.bars * barSeconds(p);
+    assert.ok(len > 40 && len < 135, `${p.id} lasts ${len.toFixed(0)} s`);
+    assert.equal(p.scene, scene);
+    for (const b of allBars(p)) for (const x of b.notes) if (x.inst !== 'shaker') assert.ok(inKey(p.tonic, p.mode, x.midi), `${p.id} in key`);
+    if (scene === 'concert') {
+      assert.ok(p.restAfter >= 4 && p.restAfter <= 9, 'a breath for applause between songs');
+      assert.equal(p.lead, 'strings', 'the fiddle leads');
+      assert.equal(p.comp, 'guitar', 'the banjo strums');
+      assert.ok(p.perc, 'a shaker keeps time, any season');
+    } else {
+      assert.ok(p.restAfter >= 20, 'one song per sing-along');
+      assert.equal(p.lead, 'reed');
+      // the campfire song itself, every time
+      for (const [step, deg] of CAMPFIRE_SONG.motif) assert.ok(p.melody.A.some((m) => m.step === step && m.deg === deg), `campfire song note at ${step}`);
+      assert.equal(p.beats, 3);
+    }
+  }
+  // the concert plays the festival's tune on festival nights; the campfire keeps its own song
+  assert.equal(planPiece('concert', { season: 'autumn', festival: 'harvest' }, 2, 0).festival, 'harvest');
+  assert.equal(planPiece('campfire', { season: 'autumn', festival: 'harvest' }, 2, 0).festival, null);
 });

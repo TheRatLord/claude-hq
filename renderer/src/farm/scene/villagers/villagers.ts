@@ -37,9 +37,15 @@ import type { Where } from './schedule.ts';
 import { brief, callOut, lineFor, shipLine } from './lines.ts';
 import { askLine, closeLine, doneLine, giftLine, giftedLine, remindLine, thanksLine } from './friendlines.ts';
 import type { FriendsChange, FriendsService } from '../../model/friends.ts';
+import type { GatherService } from '../gather/gather.ts';
+import type { GatherSpot } from '../farmers/brain.ts';
 
 /** Height of the role hat above the body top (labels and emotes clear it). */
 const HAT_TOP: Readonly<Record<Villager['hat'], number>> = { postcap: 0.28, eyeshade: 0.18, millcap: 0.3, tophat: 0.45, ranger: 0.34, souwester: 0.34 };
+/** acts at an evening gathering (scene/gather) that float a little emote now and then: [emote, period s] */
+const GATHER_EMOTE: Partial<Record<Act, readonly [EmoteName, number]>> = {
+  laugh: ['haha', 2.3], sing: ['note', 2.5], dance: ['note', 3.3], clap: ['sparkle', 3.8], toast: ['heart', 9],
+};
 
 interface Spot { x: number; z: number; yaw: number; via?: { x: number; z: number } }
 interface Errand { kind: 'chat' | 'pet'; target: string; x: number; z: number; yaw: number; until: number; arrived: boolean; done: boolean }
@@ -82,6 +88,9 @@ interface Folk {
   pos: THREE.Vector3; head: THREE.Vector3; hand: THREE.Vector3;
   light: LightEmitter; lightOff: () => void;
   unreg: () => void;
+  /** at an evening gathering (scene/gather): the spot handed out (its act follows the evening), and the place / spot
+   *  objects reused for it */
+  gather: GatherSpot | null; gPlace: Place; gSpot: Spot;
 }
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
@@ -179,6 +188,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       pos: new THREE.Vector3(), head: new THREE.Vector3(), hand: new THREE.Vector3(),
       light, lightOff: lights ? lights.add(light) : () => {},
       unreg: () => {},
+      gather: null, gPlace: { at: 'xz', x: 0, z: 0, face: 0, loop: [{ act: 'stand', min: 30, max: 60 }], amble: true }, gSpot: { x: 0, z: 0, yaw: 0 },
     };
     // start where the clock says, already settled (the valley was here before you)
     const s = sky();
@@ -367,10 +377,23 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   /** the longest a villager pauses for you while you stand looking at them (s) */
   const HOLD_S = 12;
 
+  /** evening gatherings (scene/gather): a spot at the campfire / the concert / the market on their time off */
+  const gatherSvc = () => ctx.services.get('gatherings') as GatherService | undefined;
   function plan(f: Folk): void {
     const s = sky();
     const { slot, entry } = whereAt(f.v.day, s.hour, s.weather.kind, s.weather.intensity, s.dayOfYear, f.key, !!f.v.places.home.indoors);
-    const p = placeOf(f, slot, s.hour, entry);
+    const gs = gatherSvc();
+    f.gather = gs?.villager(f.v.id, slot, f.v.places.evening.at === 'campfire') ?? null;
+    let p: { key: string; place: Place; spot: Spot };
+    if (f.gather) {
+      const g = f.gather;
+      f.gPlace.x = g.x; f.gPlace.z = g.z; f.gPlace.face = g.yaw;
+      f.gSpot.x = g.x; f.gSpot.z = g.z; f.gSpot.yaw = g.yaw;
+      p = { key: g.key, place: f.gPlace, spot: f.gSpot };
+      // the campfire's storyteller
+      const told = gs?.line(f.v.id);
+      if (told) { f.line = told; f.lineUntil = time + 0.7; }
+    } else p = placeOf(f, slot, s.hour, entry);
     if (p.key !== f.placeKey) {
       f.where = slot; f.placeKey = p.key; f.place = p.place; f.spot = p.spot; f.beat = -1; f.beatUntil = 0; f.viaDone = !p.spot.via;
       if (f.errand) { if (f.errand.kind === 'pet') pets()?.hold(f.errand.target as 'dog' | 'cat', f.v.id, 0); f.errand = null; }
@@ -474,7 +497,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
 
     // act
     const react = f.react && time < f.react.until ? f.react : null;
-    let act: Act = walking ? 'stand' : react?.act ?? (talking ? 'talk' : er?.arrived ? (er.kind === 'chat' ? 'chat' : 'pet') : f.beatAct);
+    let act: Act = walking ? 'stand' : react?.act ?? (talking ? 'talk' : er?.arrived ? (er.kind === 'chat' ? 'chat' : 'pet') : f.gather && settled ? f.gather.act : f.beatAct);
     if (!walking && !react && !talking && Math.abs(wrap(target.yaw - mv.yaw)) > 0.6 && !ACT_INFO[act].grounded) act = 'stand';
     if (act !== f.act) { f.act = act; f.actSince = time; }
 
@@ -514,7 +537,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     // props: the act's tool by day, the lantern after dark (not when sitting by the fire or asleep)
     const grounded = !!ACT_INFO[act].grounded;
     let want: Prop | null = propOf(act);
-    if (night > 0.45 && !grounded && !want && act !== 'oops') want = 'lantern';
+    if (night > 0.45 && !grounded && !want && act !== 'oops' && act !== 'clap') want = 'lantern';
     if (f.prop !== want) { f.propS -= dt / 0.18; if (f.propS <= 0) { f.propS = 0; f.prop = want; } }
     else f.propS = Math.min(1, f.propS + dt / 0.3);
 
@@ -630,6 +653,10 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
         } else if (f.act === 'nap') {
           const c = (time * 0.3 + f.k) % 1;
           bills.push(hp.x + 0.15 + c * 0.3, hp.y + 0.1 + c * 0.5, hp.z, 0.4 + c * 0.2, EMOTE.zzz, far * Math.sin(c * Math.PI), 1);
+        } else if (GATHER_EMOTE[f.act] && f.mv.arrived) {
+          const [em, every] = GATHER_EMOTE[f.act]!;
+          const c = (time / every + f.k) % 1;
+          if (c < 0.3) bills.push(hp.x + 0.3 + c * 0.2, top + c * 0.5, hp.z, 0.32, EMOTE[em], far * Math.sin((c / 0.3) * Math.PI), 1.15);
         } else if (f.act === 'chat' && f.mv.arrived) {
           const c = (time * 0.4 + f.k) % 1;
           if (c < 0.3) bills.push(hp.x + 0.3, top, hp.z, 0.34, EMOTE.dots, far * Math.sin((c / 0.3) * Math.PI), 1);

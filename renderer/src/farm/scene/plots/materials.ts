@@ -30,17 +30,29 @@ export interface CropUniforms {
   uSat: { value: number };
   /** 0..1 frost/snow on upward faces */
   uSnow: { value: number };
+  /**
+   * Parting: up to PART_N world points (x, z, radius, strength) that tall crops bend away from and duck under — a
+   * farmer (or the player) standing in wheat stays visible. Shared per field; `uPartK` = how much this part parts.
+   */
+  uPart: { value: THREE.Vector4[] };
+  uPartK: { value: number };
 }
+
+/** parting points per field (farmers in the field + the player) */
+export const PART_N = 6;
+export const partPoints = (): THREE.Vector4[] => Array.from({ length: PART_N }, () => new THREE.Vector4(0, 0, 0, 0));
+const NO_PART = partPoints();
 
 export function cropUniforms(bend = 0.12): CropUniforms {
   return {
     uTime: { value: 0 }, uWind: { value: new THREE.Vector2(0.8, 0.3) }, uBend: { value: bend }, uDroop: { value: 0 },
-    uDry: { value: 0 }, uGreen: { value: 0 }, uSat: { value: 1 }, uSnow: { value: 0 },
+    uDry: { value: 0 }, uGreen: { value: 0 }, uSat: { value: 1 }, uSnow: { value: 0 }, uPart: { value: NO_PART }, uPartK: { value: 0 },
   };
 }
 
 const VERT_HEAD = /* glsl */ `
 uniform float uTime; uniform vec2 uWind; uniform float uBend; uniform float uDroop;
+uniform vec4 uPart[${PART_N}]; uniform float uPartK;
 varying float vUp;
 `;
 const VERT_BODY = /* glsl */ `
@@ -67,6 +79,25 @@ const VERT_BODY = /* glsl */ `
   float dk = hgt * hgt * uDroop * 0.35;
   transformed.x += dk;
   transformed.y -= dk * 0.6;
+  // parting: stalks near a farmer duck to ~40 % and lean away from them (a trampled, parted patch)
+  if (uPartK > 0.0) {
+    float duck = 0.0;
+    vec2 away = vec2(0.0);
+    for (int i = 0; i < ${PART_N}; i++) {
+      vec4 pp = uPart[i];
+      if (pp.w <= 0.0) continue;
+      vec2 d = wp.xz - pp.xy;
+      float l = length(d);
+      float k = pp.w * (1.0 - smoothstep(pp.z * 0.45, pp.z, l));
+      if (k > duck) { duck = k; away = d / max(l, 0.05); }
+    }
+    duck *= uPartK;
+    if (duck > 0.0) {
+      vec3 al = transpose(toWorld) * vec3(away.x, 0.0, away.y) / sc2;
+      transformed.y *= 1.0 - 0.6 * duck;
+      transformed.xz += al.xz * hgt * hgt * 0.55 * duck;
+    }
+  }
   vUp = normalize(toWorld * objectNormal).y;
 }
 `;

@@ -174,6 +174,21 @@ export function cartHeap(): THREE.BufferGeometry {
   });
 }
 
+/** A burlap sack of the field's yield (work done in the workspace), tied at the neck, grain peeking out of the mouth. */
+export function sack(): THREE.BufferGeometry {
+  return cached('sack', () => {
+    const p: THREE.BufferGeometry[] = [];
+    p.push(S(sphere(0.25, 9, 6, 0xc9a774, { p: [0, 0.25, 0], s: [1, 1.05, 0.85] }), 'fabric', { scale: 0.35 }));
+    p.push(S(cyl(0.11, 0.17, 0.14, 8, 0xc9a774, { p: [0, 0.54, 0] }), 'fabric', { scale: 0.3 }));
+    p.push(cyl(0.12, 0.12, 0.04, 8, 0x8a6a40, { p: [0, 0.5, 0] }));
+    p.push(S(cyl(0.16, 0.12, 0.1, 8, 0xc9a774, { p: [0, 0.64, 0] }), 'fabric', { scale: 0.3 }));
+    for (let i = 0; i < 3; i++) p.push(ball(0.07, PAL.hay, { p: [Math.cos(i * 2.1) * 0.06, 0.7, Math.sin(i * 2.1) * 0.06] }));
+    return jitter(merge(p), 0.03, 5);
+  });
+}
+/** Where the sacks stand: inside the front-right corner (site-local offsets from the corner), filling front row first. */
+export const SACK_STACK: readonly [number, number, number][] = [[-0.7, 0, -0.68], [-1.26, 0, -0.72], [-0.74, 0, -1.25], [-1.82, 0, -0.68], [-1.3, 0, -1.28], [-1.86, 0, -1.24]];
+
 export function crate(): THREE.BufferGeometry {
   return cached('crate', () => {
     const p: THREE.BufferGeometry[] = [S(box(0.62, 0.42, 0.46, PAL.plank, { p: [0, 0.21, 0] }), 'planks', { axis: 'h', variant: 1, scale: 0.55 })];
@@ -181,7 +196,7 @@ export function crate(): THREE.BufferGeometry {
       p.push(S(box(0.66, 0.07, 0.03, PAL.woodDark, { p: [0, 0.12, s * 0.24] }), 'logs', { axis: 'x', scale: 0.4 }), S(box(0.66, 0.07, 0.03, PAL.woodDark, { p: [0, 0.32, s * 0.24] }), 'logs', { axis: 'x', scale: 0.4 }));
     }
     const r = rng('crate');
-    for (let i = 0; i < 7; i++) p.push(ball(0.09, [PAL.apple, PAL.pumpkin, PAL.cabbage, PAL.yellow, PAL.grape][i % 5], { p: [(r() - 0.5) * 0.4, 0.44, (r() - 0.5) * 0.3] }));
+    for (let i = 0; i < 7; i++) p.push(ball(0.09, [PAL.apple, PAL.pumpkin, PAL.cabbage, PAL.yellow, PAL.grape][i % 5], { p: [(r() - 0.5) * 0.4, 0.35, (r() - 0.5) * 0.3] }));
     return jitter(merge(p), 0.04, 5);
   });
 }
