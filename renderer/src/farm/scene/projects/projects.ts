@@ -425,6 +425,7 @@ export const projectsSystem: SystemFactory = (ctx: SceneCtx) => {
             const seat = siteLocal(s, SCOPE.x, SCOPE.z + 0.75);
             const look = siteLocal(s, SCOPE.x, SCOPE.z - 30);
             stargaze.on = true;
+            audio()?.play('scope', { pos: at('observatory', SCOPE.x, 1.4, SCOPE.z, new THREE.Vector3()), volume: 0.8 });
             controller()?.sit({ x: seat.x, z: seat.z, y: y + 0.53, yaw: s.yaw + Math.PI }, () => { stargaze.on = false; });
             controller()?.lookAt(look.x, y + 26, look.z);
             say(ctx.lighting.night > 0.5 ? 'The stars jump close: the Plough, a smudge of the Milky Way, and a satellite ticking over. Move to stand up.' : 'Just sky and a passing cloud for now. It\'s best after dark. Move to stand up.', 'Telescope');
@@ -480,7 +481,7 @@ export const projectsSystem: SystemFactory = (ctx: SceneCtx) => {
             const p = at('halt', HALT_BELL.x + 0.42, HALT.platY + 1.8, HALT_BELL.z, new THREE.Vector3());
             audio()?.play('bell', { pos: p, volume: 0.9 });
             setTimeout(() => audio()?.play('bell', { pos: p, volume: 0.7, pitch: 1.02 }), 380);
-            setTimeout(() => { audio()?.play('whistle', { pos: at('halt', HALT.trackLen / 2 + 25, 3, HALT.trackZ, new THREE.Vector3()), volume: 0.8, pitch: 0.8 }); say(ctx.lighting.night > 0.3 || ctx.valley.sky.hour >= 17 ? 'Far off down the line, the evening train whistles back. Toot toot!' : 'A faint whistle comes back from somewhere far down the line. The evening train will be along later.', 'The halt'); }, 2200);
+            setTimeout(() => { audio()?.play('train', { pos: at('halt', HALT.trackLen / 2 + 25, 3, HALT.trackZ, new THREE.Vector3()), volume: 0.9 }); say(ctx.lighting.night > 0.3 || ctx.valley.sky.hour >= 17 ? 'Far off down the line, the evening train whistles back. Toot toot!' : 'A faint whistle comes back from somewhere far down the line. The evening train will be along later.', 'The halt'); }, 2200);
           },
         }));
         offs.push(interact({
@@ -711,7 +712,7 @@ export const projectsSystem: SystemFactory = (ctx: SceneCtx) => {
       if (wheel && wheelOn && (wheel.parent?.parent as THREE.Object3D | null)?.visible !== false) wheel.rotation.z -= f.dt * 0.9;
       // the millrace's chatter while the wheel turns (the audio system builds after this one: start it lazily)
       const near = wheelOn ? Math.max(0, 1 - Math.hypot(p.x - millSite.x, p.z - millSite.z) / 40) : 0;
-      if (near > 0 && !millLoop) millLoop = audio()?.loop('river', at('millwheel', 0, 0, MILL.wheelZ, new THREE.Vector3())) ?? null;
+      if (near > 0 && !millLoop) millLoop = audio()?.loop('millwheel', at('millwheel', 0, 0, MILL.wheelZ, new THREE.Vector3())) ?? null;
       if (millLoop) { if (near > 0) millLoop.setVolume(0.5 * near); else { millLoop.stop(); millLoop = null; } }
       // stargazing: the view narrows while you sit at the telescope
       const ctl = controller();

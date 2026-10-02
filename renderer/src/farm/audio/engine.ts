@@ -51,6 +51,10 @@ export interface AudioEngine {
   dry(): GainNode | null;
   /** 0 outdoors … 1 indoors: muffle the outdoor ambience (low-pass, quieter, less valley reverb) */
   setIndoor(k: number): void;
+  /** 0..1 the snow hush (mix.ts `hush`): the outdoor beds lose their top end */
+  setHush(k: number): void;
+  /** 0..1 in the grotto: a short slap-back echo off the cave walls on effects and voices (built on first use) */
+  setCave(k: number): void;
   /** reverb send input (null until unlocked) */
   readonly send: GainNode | null;
   readonly listener: Listener;
@@ -72,11 +76,13 @@ export function createAudioEngine(settings: Settings | undefined): AudioEngine {
   let ac: AudioContext | null = null;
   const buses: Partial<Record<EngineBus, GainNode>> = {};
   let master: GainNode | null = null, duck: GainNode | null = null, send: GainNode | null = null;
-  let outdoor: GainNode | null = null, muffle: BiquadFilterNode | null = null, muffleGain: GainNode | null = null, indoor = 0;
+  let outdoor: GainNode | null = null, muffle: BiquadFilterNode | null = null, muffleGain: GainNode | null = null, indoor = 0, hush = 0;
+  let echoIn: GainNode | null = null, cave = 0;
   const applyIndoor = () => {
     if (!ac || !muffle || !muffleGain || !send) return;
     const t = ac.currentTime;
-    muffle.frequency.setTargetAtTime(20000 * Math.pow(650 / 20000, indoor), t, 0.15);
+    // indoors: down to 650 Hz; the snow hush: down to ≈ 5 kHz (a softer, closer valley)
+    muffle.frequency.setTargetAtTime(20000 * Math.pow(650 / 20000, indoor) * Math.pow(0.25, hush * (1 - indoor)), t, 0.15);
     muffleGain.gain.setTargetAtTime(1 - 0.45 * indoor, t, 0.15);
     send.gain.setTargetAtTime(0.6 * (1 - 0.65 * indoor), t, 0.2);
   };
@@ -149,6 +155,25 @@ export function createAudioEngine(settings: Settings | undefined): AudioEngine {
     bus: (n) => (n === 'ambient' ? outdoor : buses[n] ?? null),
     dry: () => buses.ambient ?? null,
     setIndoor(k) { indoor = Math.max(0, Math.min(1, k)); applyIndoor(); },
+    setHush(k) {
+      const v = Math.round(Math.max(0, Math.min(1, k)) * 50) / 50;
+      if (v !== hush) { hush = v; applyIndoor(); }
+    },
+    setCave(k) {
+      const v = Math.max(0, Math.min(1, k));
+      if (!ac || !master || (v === cave)) return;
+      cave = v;
+      if (!echoIn && v > 0) {
+        // sfx + voice → a 0.21 s slap-back with a darkening feedback loop → master (6 nodes, only once you've been in)
+        echoIn = ac.createGain(); echoIn.gain.value = 0;
+        const dl = ac.createDelay(1), fb = ac.createGain(), lp = ac.createBiquadFilter(), out = ac.createGain();
+        dl.delayTime.value = 0.21; fb.gain.value = 0.38; lp.type = 'lowpass'; lp.frequency.value = 2400; out.gain.value = 0.55;
+        echoIn.connect(dl).connect(lp).connect(fb).connect(dl);
+        lp.connect(out).connect(master);
+        buses.sfx?.connect(echoIn); buses.voice?.connect(echoIn);
+      }
+      echoIn?.gain.setTargetAtTime(0.5 * cave, ac.currentTime, 0.3);
+    },
     get send() { return send; },
     listener,
     gains,

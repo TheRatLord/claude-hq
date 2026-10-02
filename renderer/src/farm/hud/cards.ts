@@ -12,6 +12,7 @@ import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { createDayCard } from './timeline.ts';
 import { createHarvestSection, openRecap } from './recap.ts';
 import { mascotOf } from '../model/mascots.ts';
+import { markLabel, MUTE_HELP, PIN_HELP } from '../model/marks.ts';
 
 export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void; showHelper(id: string): void } {
   const { el, body, closeBtn } = framePanel('card', 'Farmer', ICONS.hand);
@@ -75,6 +76,12 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const acts = h('div.acts', null,
       h('button.vh-btn.primary', { type: 'button', 'data-autofocus': '', 'data-testid': 'card-terminal', onclick: () => ctx.openTerminal(f.id) }, icon(ICONS.terminal), 'Open terminal', h('kbd.vh-k', { text: 'T' })),
       h('button.vh-btn', { type: 'button', onclick: () => { ctx.travel(f.id); ctx.panels.close(); } }, icon(ICONS.walk), 'Walk there'));
+    // pin / mute (model/marks.ts): Alt+P / Alt+M here, in the ledger and the overview
+    const pinned = ctx.marks.pinned(f.id), muted = ctx.marks.muted(f.id);
+    acts.append(
+      h(`button.vh-btn.vh-mark${pinned ? '.on' : ''}`, { type: 'button', 'aria-pressed': String(pinned), 'data-testid': 'card-pin', title: `${PIN_HELP} (Alt+P)`, onclick: () => ctx.marks.toggle('pinned', f.id) }, icon(ICONS.pin), pinned ? 'Pinned' : 'Pin'),
+      h(`button.vh-btn.vh-mark${muted ? '.on' : ''}`, { type: 'button', 'aria-pressed': String(muted), 'data-testid': 'card-mute', title: `${markLabel('muted', muted)}: ${MUTE_HELP} (Alt+M)`, onclick: () => ctx.marks.toggle('muted', f.id) }, icon(ICONS.muted), muted ? 'Muted' : 'Mute'));
+    if (muted) kids.push(h('div.vh-sig', { 'data-testid': 'card-muted-note', text: MUTE_HELP }));
     if (f.unseenDone) acts.append(h('button.vh-btn', { type: 'button', 'data-testid': 'card-ack', onclick: () => { ctx.b?.agents.ack(f.id); ctx.sfx('chime-done'); ctx.toast({ text: `Thanked ${shortName(f)}`, sub: 'marked as reviewed', level: 'good', icon: ICONS.check }); ctx.panels.close(); } }, icon(ICONS.check), 'Acknowledge', h('kbd.vh-k', { text: 'A' })));
     kids.push(acts);
     if ((f.status === 'idle' || f.status === 'done') && !f.needsYou) kids.push(promptBox(f));
@@ -157,7 +164,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const f = s.farmers.get(id), hp = s.helpers.get(id);
     if (f) { day.update(f.id); harvest.update(f.id); }
     const nsig = f ? JSON.stringify([f.status, f.job, f.detail, f.title, f.needsYou, f.unseenDone, f.question, f.options, f.todos, f.work, Math.round((f.context ?? 0) * 50), f.said, f.ducklings, Math.floor((s.now - f.lastActive) / 60000),
-      f.model, f.git, f.spend && [f.spend.tokens >> 14, Math.round((f.spend.cost ?? 0) * 100)]])
+      f.model, f.git, f.spend && [f.spend.tokens >> 14, Math.round((f.spend.cost ?? 0) * 100)], ctx.marks.pinned(f.id), ctx.marks.muted(f.id)])
       : hp ? JSON.stringify([hp, Math.floor(s.now / 60000)]) : 'gone';
     if (nsig === sig) return;
     // don't rebuild under the user's typing
@@ -190,6 +197,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     onClose() { confirming = false; },
     refresh: render,
     key(e) {
+      if (id && ctx.farmer(id) && e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyP' || e.code === 'KeyM')) { ctx.marks.toggle(e.code === 'KeyP' ? 'pinned' : 'muted', id); render(); return true; }
       if (!id || typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return false;
       const f = ctx.farmer(id);
       if (e.code === 'KeyT') { ctx.openTerminal(id); return true; }

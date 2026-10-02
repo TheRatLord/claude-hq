@@ -36,6 +36,7 @@ import { partName, recordParts } from '../parts.ts';
 import type { StructureSpot, StructureSpots } from '../context.ts';
 export type { StructureSpot, StructureSpots };
 
+/** baked solids merge per CELL × CELL m of map; glow parts (windows, lamps: ~1.4k triangles valley-wide) all into one */
 const CELL = 36;
 const HUB_SAY_WISH = [
   'You toss a coin in… plink! May every build be green. ✨',
@@ -270,7 +271,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
       partName(g, top.name || 'structure'); // provenance for dev tools (scene/parts.ts)
       g.computeBoundingSphere();
       c.copy(g.boundingSphere!.center);
-      const key = `${m.userData.bake}|${Math.floor(c.x / CELL)}|${Math.floor(c.z / CELL)}`;
+      const key = m.userData.bake === 'glow' ? 'glow' : `${m.userData.bake}|${Math.floor(c.x / CELL)}|${Math.floor(c.z / CELL)}`;
       (buckets.get(key) ?? buckets.set(key, []).get(key)!).push(g);
       kill.push(m);
     });
@@ -368,7 +369,7 @@ export const structuresSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // ---- valley events ----
   const offValley = ctx.onValley((e) => {
-    if (e.kind === 'blocked') ringBell();
+    if (e.kind === 'blocked' && !e.quiet) ringBell(); // a muted agent's ask does not ring the bell (model/marks.ts)
     if (e.kind === 'ship') { P('shippingBin').rig?.poke?.('ship'); audio()?.play('creak', { pos: vec('shippingBin', 0, 0.9, 0)(new THREE.Vector3()), volume: 0.7 }); }
   });
   // a field's push cart (scene/plots/git.ts) delivers its crates: the lid pops as for a commit, a softer creak

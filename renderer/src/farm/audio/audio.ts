@@ -32,6 +32,7 @@ import type { LoopKind, LoopVoice } from './loops.ts';
 import { PLAZA, stepSurface } from './steps.ts';
 import type { StepIn, StepOut } from './steps.ts';
 import { CRITTER_SOUNDS } from './types.ts';
+import { soundCaption } from './captions.ts';
 import type { CritterSound, ValleyAudio } from './types.ts';
 
 type LoopName = Parameters<AudioService['loop']>[0];
@@ -41,12 +42,15 @@ const GAPS: Record<string, number> = {
   'step-grass': 0.07, 'step-wood': 0.07, 'step-water': 0.07, step: 0.07, 'step:splash': 0.07, 'ui-hover': 0.04, 'ui-click': 0.03,
   alert: 4, bell: 6, 'chime-done': 1.2, 'chime-pass': 1.5, oops: 1, ship: 0.8, mail: 1, thunder: 1.5,
   pop: 0.08, sparkle: 0.3, quack: 0.15, hoe: 0.25, creak: 0.5, bark: 0.3, meow: 0.6, purr: 1.2, moo: 0.8, baa: 0.6,
+  rustle: 0.3, thump: 0.06, press: 1, train: 4, cart: 0.5, brush: 0.6, scope: 0.4, focus: 0.25, shutter: 0.3,
   'c:chirp': 0.07, 'c:coo': 0.4, 'c:flap': 0.1, 'c:ribbit': 0.1, 'c:plop': 0.08, 'c:hop': 0.05, 'c:hoot': 2, 'c:fish': 0.2, 'c:wag': 0.5, 'c:squeak': 0.3,
 };
 /** Distance model per bus: notifications carry far, UI/footsteps are not positional anyway. */
 const SPATIAL: Record<BusName, SpatialOpts> = {
   sfx: { ref: 3, max: 70 }, notify: { ref: 6, max: 140 }, voice: { ref: 2.5, max: 40 }, ambient: { ref: 2, max: 50 },
 };
+/** Per-name distance models where the bus default is wrong: the train carries across the valley, the cart a street. */
+const NAME_SPATIAL: Partial<Record<SfxName, SpatialOpts>> = { train: { ref: 25, max: 320 }, cart: { ref: 4, max: 60 }, brush: { ref: 1.5, max: 14 } };
 
 interface PlayOpts { pos?: THREE.Vector3 | { x: number; y: number; z: number }; volume?: number; pitch?: number; floor?: number }
 
@@ -111,7 +115,19 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!recipe) return;
     const bus = busOf(name);
     if (bus === 'notify') music?.duck(3, 0.25);
-    fire(name, recipe, bus, o, sendOf(name), SPATIAL[bus], bus === 'notify');
+    const opts = NAME_SPATIAL[name] ?? SPATIAL[bus];
+    fire(name, recipe, bus, o, sendOf(name), opts, bus === 'notify');
+    if (captionFns.size) caption(name, o, opts);
+  }
+
+  // ---- captions for the world's meaningful sounds (captions.ts; the HUD subscribes with `onCaption`)
+  const captionFns = new Set<(sound: string, text: string, key: string) => void>();
+  const captionAt = new Map<string, number>();
+  function caption(name: string, o: PlayOpts, opts: SpatialOpts): void {
+    let g = o.volume ?? 1;
+    if (o.pos) { const L = eng.listener; g *= Math.max(o.floor ?? 0, spatial(o.pos.x - L.x, o.pos.y - L.y, o.pos.z - L.z, L.rx, L.rz, opts, sp).gain); }
+    const c = soundCaption(name, g, performance.now() / 1000, captionAt);
+    if (c) for (const fn of captionFns) { try { fn(c.sound, c.text, `snd|${name}`); } catch (e) { console.error('[audio] caption', e); } }
   }
 
   function voice(seed: string, o: { pos?: THREE.Vector3; mood?: VoiceMood; syllables?: number } = {}): void {
@@ -178,6 +194,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     critter,
     indoors(k, o) { indoorK = Math.max(0, Math.min(1, k)); roofK = Math.max(0, Math.min(3, o?.roof ?? 1)); eng.setIndoor(indoorK); },
     musicNow: () => ({ on: !!music && music.on && eng.ac?.state === 'running', scene: music?.playing() ?? null }),
+    onCaption(fn) { captionFns.add(fn); return () => { captionFns.delete(fn); }; },
     _debug: {
       unlock: () => eng.unlock(),
       stats: () => ({
@@ -195,7 +212,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
         const d = await import('./debug.ts');
         const names = [...SFX, ...CRITTER_SOUNDS.map((c) => `critter:${c}`), 'voice:ann:happy:4', 'voice:bob:question:5', 'voice:cy:sad:4', 'voice:di:excited:8',
           ...['grass', 'dirt', 'stone', 'deck', 'floor', 'water', 'snow'].map((k) => `step:${k}`), 'step:stone:wet',
-          ...(['wind', 'rain', 'roof', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs', 'leaves', 'cowbells'] as const).map((k) => `loop:${k}:1`)];
+          ...(['wind', 'rain', 'roof', 'river', 'waterfall', 'pond', 'fire', 'windmill', 'bees', 'crickets', 'birds', 'owls', 'frogs', 'leaves', 'cowbells', 'millwheel', 'cave', 'glasshouse'] as const).map((k) => `loop:${k}:1`)];
         const out: Record<string, unknown> = {};
         for (const n of names) out[n] = d.inDb(await d.renderMeasure(n, n.startsWith('loop:') ? 8 : seconds));
         return out;
@@ -219,6 +236,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     const sky = ctx.valley.sky;
     musicIn.hour = sky.hour; musicIn.season = sky.season; musicIn.weather = sky.weather.kind; musicIn.intensity = sky.weather.intensity;
     musicIn.indoors = indoorK > 0.5;
+    musicIn.cave = amb.levels.cave > 0.5;
     musicIn.festival = (sky.festival?.active?.id ?? null) as FestivalName | null;
     musicIn.gathering = musicIn.indoors ? null : gatherSvc()?.music(eng.listener.x, eng.listener.z) ?? null;
     return musicIn;
@@ -288,6 +306,8 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
   };
   const offValley = ctx.onValley((e: ValleyEvent) => {
     try {
+      // a muted agent's alerts / chimes / far cheers stay silent (model/marks.ts; main.ts marks them `quiet`)
+      if (e.quiet) return;
       switch (e.kind) {
         case 'blocked': notify('alert', {}, 4); break; // everywhere, not positional: the player must hear it
         case 'finished': notify('chime-done', {}, 1.5); break;

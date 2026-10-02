@@ -91,6 +91,9 @@ When Ned reaches the mailbox, the parcel is delivered (`deliver`, once a day). I
   meet one. It shows when each one comes next. Listed in `FEATURES` at ver 8.
 * **Gazette** (`model/gazette.ts`): a "Curiosities" classified with the merchant's next day, worked out from his
   calendar at the issue's date.
+* **Sound**: the cart rattles in and out (`cart`: wheels and harness bells, a burst every ~1.2 s while it rolls, within
+  60 m; captioned), the painter's `brush` within 12 m while she paints, the morning `train` at the halt as the parcel
+  post steps off (captioned), then his whistle ([audio.md](audio.md#coverage-features--sounds)).
 
 ## The panel
 

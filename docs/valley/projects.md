@@ -67,6 +67,8 @@ missing, so they are idempotent.
 A done plan is `pending` until its place has been seen. The scene unveils it when you are outdoors within 42 m and not
 frozen in a panel or cutscene. The ruin is removed and the restored place pops in (an `easeOutBack` scale about its
 pivot). Confetti bursts (instanced, at most 220 bits). You hear fanfare, pop and sparkle, and the champion speaks.
+(Sound elsewhere: the mill wheel's `millwheel` loop, the halt's bell answered by a distant steam `train`, the
+telescope's `scope` ratchet, the glasshouse's ambience bed: [audio.md](audio.md#coverage-features--sounds).)
 `unveil(id)` stores `unveiled`, and the HUD toasts "… is restored!" with the unlock line. The lantern path lights its
 posts one by one. When the last project is unveiled, the valley lets off fireworks.
 

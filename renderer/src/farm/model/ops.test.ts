@@ -80,3 +80,17 @@ test('fuzzyScore: long texts (what they said) need the word itself; scattered le
   assert.ok(fuzzyScore('coalesce', said) > 0);
   assert.ok(fuzzyScore('chp', 'claude-hq·pebble') > 0);
 });
+
+test('scrollback search helpers: when to search, what to look for in the history', async () => {
+  const { findNeedle, wantsScrollSearch, SEARCH_MIN } = await import('./ops.ts');
+  assert.equal(SEARCH_MIN, 3);
+  assert.equal(wantsScrollSearch('ab'), false);
+  assert.equal(wantsScrollSearch(' a b '), false);
+  assert.equal(wantsScrollSearch('rate'), true);
+  assert.deepEqual(findNeedle({ text: '…ERROR rate limit exceeded on /api/v1', match: [7, 11] }), { text: 'rate limit exceeded on /api/v1', word: 'rate' });
+  const long = `x RATE ${'y'.repeat(80)}…`;
+  const n = findNeedle({ text: long, match: [2, 6] });
+  assert.equal(n.text.length, 48);
+  assert.ok(n.text.startsWith('RATE'));
+  assert.equal(findNeedle({ text: 'end…', match: [0, 3] }).text, 'end');
+});

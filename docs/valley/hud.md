@@ -50,7 +50,7 @@ card's title) use `shortName()` = the in-world `tag`; the full herdr name goes o
 
 Ledger (Tab), map (M: click a pin, or ↑/↓ + Enter in the side list, which lists farmers *and* scarecrows), mailbox (J:
 the Needs you tab pre-selects the first ask, 1–9 answers it, Enter opens the terminal), the needs-you strip (Alt+1…9),
-the pause menu's Terminals entry, the dock's terminal button, the command palette (Ctrl+K), the focus queue (Alt+N; [ops.md](ops.md)) and the leader key (Ctrl+` by default; Settings
+the pause menu's Terminals entry, the dock's terminal button, the command palette (Ctrl+K; also a line any terminal printed), the overview grid (V), the focus queue (Alt+N; [ops.md](ops.md)) and the leader key (Ctrl+` by default; Settings
 `leaderKey`). `browser-tests/valley.spec.ts` checks the ledger, map-click, map-keyboard, mailbox and needs-you paths and
 the power-user loop below: add a flow there when you add one.
 
@@ -94,7 +94,7 @@ Two stores, on purpose:
 | section | pref | what it does |
 |---|---|---|
 | Controls | `mouseSens` (×0.2–3), `invertY`, `fov` (50–90°, default 62), `headBob`, `sprintToggle` | read live by `player/controller.ts` (fov by main.ts on the camera) |
-| Controls | `keys` | rebind use / alt / map / ledger / mail / wave / lantern / notebook (defaults E F M Tab J Z T O). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
+| Controls | `keys` | rebind use / alt / map / ledger / mail / wave / lantern / notebook / overview (defaults E F M Tab J Z T O V). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
 | Graphics | `quality` (low / medium / high) | systems size pools at start, so it applies **on reload** (a *Reload now* button); `?quality=` wins and the note says so |
 | Graphics | `renderScale` (50–100 %), `shadows`, `weatherFx` (0–100 %) | live: `engine.setRenderScale` (× the quality's own scale), `engine.setShadows` (castShadow off on every light, re-applied after systems start), `ctx.comfort.weatherFx` (weather.ts scales rain / snow / leaves / motes) |
 | Graphics | `fpsCap` (display / 60 / 30) and `idleMin` (off / 2 / 5 / 10 / 30 min, default 10) | `engine.setFpsCap(effectiveFpsCap(…))`: after `idleMin` minutes with no key / mouse / wheel / touch the valley runs at `IDLE_FPS` (15) until the next input. Hidden tabs already stop rendering (core/loop.ts). Automated browsers (`navigator.webdriver`) never idle-throttle |
@@ -102,6 +102,7 @@ Two stores, on purpose:
 | Interface | `nameplates` (always / near ≤ 14 m / off) | `anchors.ts` drops nameplates, signboards and duckling labels (`nameplateShown`); bubbles and asks always show |
 | Interface | `toastK` (short / normal / long / very long), `clock` (24 h / 12 h) | toast lifetimes × k (captions too); `clockText` in the status sign and noticeboard |
 | Interface | `minimap`, `toasts`, `compactStrip`, `needsDoze`, valley tips | as before |
+| (per agent) | `pinned`, `muted` | pane ids (≤ 64 each, `sanitizeIds`): pin / mute ([ops.md](ops.md#pin-and-mute-modelmarksts)); set from the ledger, card, overview or palette, not from Settings |
 | Interface | `hands` (Show hands) | `ctx.comfort.hands`: the first-person paws and what they hold ([viewmodel.md](viewmodel.md)) |
 | Accessibility | `reducedMotion` (follow the system / on / off) | `reducedMotion(pref, prefers-reduced-motion, server reducedMotion)` → `.vh-layer.reduced` (every HUD animation and transition off), `ctx.comfort.reducedMotion` (head bob ×0.25, weather particles ×0.5, lightning flashes ×0.3), map / minimap rings stop pulsing (`DrawOpts.still`). *Off* adds `.motion-ok`, which also overrides the OS media query in hud.css |
 | Accessibility | `colorSafe` | `.vh-layer.cb`: Okabe–Ito status colours (`STATUS_PALETTE.safe`) **and** a shape per status everywhere status shows: needs you ▲, working ●, done ■, idle ◆ (`STATUS_SHAPE` / `STATUS_GLYPH`) on map pins and the minimap (`statusMark` in mapdraw.ts, the map key redraws), list dots (`.vh-dot`), every status pill (ledger, card, map tips) and farmer nameplates (`data-st` set by anchors.ts from `statusOf`) |
@@ -138,13 +139,15 @@ toggle), Tab containment, arrow-key tabs, captions and the live region.
 | Alt+1…9 | the n-th needs-you farmer's terminal, from anywhere (outside a terminal) |
 | Alt+0 | fold / unfold (or wake) the needs-you list |
 | Alt+N | the next agent in the focus queue (asks, struggling, unreviewed finishes), from anywhere incl. a terminal ([ops.md](ops.md)) |
-| Ctrl+K (⌘K) | the command palette: any agent (also by what they said), answers, panels, actions; Esc goes back ([ops.md](ops.md)) |
+| Ctrl+K (⌘K) | the command palette: any agent (also by what they said), every terminal's scrollback (3+ letters), answers, panels, actions; Esc goes back ([ops.md](ops.md)) |
 | Ctrl+` (leader) | terminals |
 | ? | the pause menu's Controls tab |
 | Esc | the pause menu (also on losing pointer lock) |
 | P | photo mode ([album.md](album.md)) |
 | L | the photo album ([album.md](album.md)) |
 | O | Fern's field notebook: every activity, how-tos, progress, hints ([guide.md](guide.md)); rebindable |
+| V | the overview grid: every agent as a tile; arrows + Enter (terminal); rebindable ([ops.md](ops.md#the-overview-grid-v-rebindable)) |
+| Alt+P / Alt+M | pin / mute the selected agent (ledger row, card, overview): pinned first everywhere, muted makes no noise ([ops.md](ops.md#pin-and-mute-modelmarksts)) |
 | F3 / F4 / F6 | dev overlays ([tools.md](tools.md#in-game-keys)) |
 
 ## HUD layout: calm by default, informative on demand
@@ -238,6 +241,6 @@ nothing in the HUD reads layout per frame except the map canvas, which redraws o
 ## Dev handle (`window.__hud`)
 
 `open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card recap noticeboard stats almanac collection shop friends pause
-drawer welcome pet gazette album guide projects palette`), `close()`,
+drawer welcome pet gazette album guide projects palette visitors overview`), `close()`,
 `current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `prefs(patch?)`, `tour`
 ([onboarding.md](onboarding.md)). Full dev API: [tools.md](tools.md#dev-api).

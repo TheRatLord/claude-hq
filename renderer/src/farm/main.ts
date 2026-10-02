@@ -14,7 +14,7 @@
  */
 import './hud/base.css';
 import { R2S } from '../../../shared/protocol.ts';
-import type { Season, WeatherKind } from './model/types.ts';
+import type { Season, ValleyEvent, WeatherKind } from './model/types.ts';
 import { call, connect, onTermData, send, sendBytes, store } from '../net/store.ts';
 import { createSettings } from '../core/settings.ts';
 import { createPlatform } from '../ui/platform.ts';
@@ -35,6 +35,7 @@ import { installNewsroom } from './newsroom.ts';
 import { installGuide } from './guidebook.ts';
 import { installProjectBoard } from './projectboard.ts';
 import { installVisitors } from './visitorsboard.ts';
+import { installHearts } from './heartsboard.ts';
 import { localJson } from './storage.ts';
 import { createPrefsStore } from './prefs.ts';
 import { ACTIONS, effectiveFpsCap, keyLabel, reducedMotion } from './model/prefs.ts';
@@ -50,6 +51,7 @@ import { installOverlay } from './dev/overlay.ts';
 import { installDesktop } from './desktop.ts';
 import type { AudioService, FarmerLocator, IndoorSpace, VillagersService } from './scene/context.ts';
 import { SITES } from './world/map.ts';
+import { quietEvent } from './model/marks.ts';
 
 performance.mark('valley:main');   // every module evaluated (npm run bench -- --startup reads these marks)
 const params = new URLSearchParams(location.search);
@@ -109,8 +111,11 @@ const agents = createAgentPort((id) => hud.openTerminal(id));
 const canvas = document.getElementById('valley') as HTMLCanvasElement;
 // ?quality= wins over Settings → Graphics → quality (which systems read at start: it applies on reload)
 const quality = ((['low', 'medium', 'high'] as const).find((q) => q === params.get('quality')) ?? prefs.data.quality) as Quality;
+// a muted agent's noisy events (model/marks.ts) reach the scene marked `quiet`: farmers still cheer, the alert bell,
+// the done chime and the far cheers stay silent (audio.ts, structures.ts)
+const quietOn = (fn: (e: ValleyEvent) => void) => valley.on((e) => fn(quietEvent(prefs.data.muted, e) ? { ...e, quiet: true } : e));
 const engine = createEngine({
-  canvas, valley: valley.state, onValley: valley.on, agents, ui: hud.ui, quality, now: () => store.now(),
+  canvas, valley: valley.state, onValley: quietOn, agents, ui: hud.ui, quality, now: () => store.now(),
 });
 const controller = createController(engine.ctx, canvas, () => prefs.data);
 // Settings → Controls / Graphics / Accessibility applied live: fov, render scale, shadows, weather amount, reduced
@@ -200,6 +205,11 @@ engine.ctx.services.set('projects', projects);
 // travelling merchant's cart, the wandering painter, the parcel post off the restored halt's train; browser-local
 const visitors = installVisitors({ valley, wallet, projects, grotto: () => engine.ctx.services.get('grotto') as { discovered?(): boolean } | undefined });
 engine.ctx.services.set('visitors', visitors);
+// heart events (model/hearts.ts, wired in heartsboard.ts; scene/villagers stages them, hud/hearts.ts shows the lines):
+// at 3 / 5 / 7 hearts a villager has a scene to share the next time you meet them at the right place and hour; a
+// keepsake (an album photo, a letter, a yard piece); browser-local
+const hearts = installHearts({ valley, friends, wallet, projects, service: (n) => engine.ctx.services.get(n), renderOnce: () => engine.renderOnce(), canvas });
+engine.ctx.services.set('hearts', hearts);
 // The Valley Gazette (model/gazette.ts, wired in newsroom.ts; hud/gazette.ts prints it): the weekly edition in the
 // mailbox every Monday morning, the morning edition on the noticeboard / G; browser-local, the demo's in memory
 const gazette = installNewsroom({ valley, collection, friends, stamps, projects, demo: () => (store.hello ? !!store.hello.demo : null) });

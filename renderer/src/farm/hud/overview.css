@@ -1,0 +1,50 @@
+/* the overview grid of every agent (hud/overview.ts; docs/valley/ops.md): a big centred panel of compact tiles */
+.vh-overview { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(1180px, var(--pw)); height: min(820px, calc(100vh - 56px)); }
+.vh-overview.open { animation: none; }
+.vh-overview .vh-body { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.vh-ov-sum { font-size: 13px; font-weight: 800; color: var(--ink-soft); margin: 0 2px 8px; }
+.vh-ov-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); grid-auto-rows: min-content; gap: 6px; padding: 2px 4px 6px; outline: none; align-content: start; }
+.vh-ov-tile { position: relative; display: grid; grid-template-columns: 24px 1fr auto; grid-template-areas: "face nm marks" "line line line" "meta meta meta";
+  gap: 1px 6px; align-items: center; padding: 5px 8px 5px 12px; border-radius: 10px; background: rgba(255, 252, 240, .72); border: 2px solid rgba(59, 42, 30, .14);
+  cursor: pointer; min-width: 0; overflow: hidden; }
+/* the status colour: a thick left edge, plus the glyph before the job (shape + colour, never colour alone) */
+.vh-ov-tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--st-idle); }
+.vh-ov-tile[data-st="blocked"]::before { background: var(--st-blocked); }
+.vh-ov-tile[data-st="working"]::before { background: var(--st-working); }
+.vh-ov-tile[data-st="done"]::before { background: var(--st-done); }
+.vh-ov-tile[data-st="unknown"]::before { background: var(--st-unknown); }
+.vh-ov-tile[data-st="blocked"] { background: rgba(255, 236, 196, .9); border-color: var(--st-blocked); }
+.vh-ov-tile .face { grid-area: face; width: 24px; height: 24px; display: grid; place-items: center; }
+.vh-ov-tile .face svg { width: 100%; height: 100%; }
+.vh-ov-tile .nm { grid-area: nm; font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vh-ov-tile .marks { grid-area: marks; display: flex; gap: 2px; }
+.vh-ov-tile .marks .mk, .vh-ov-tile .marks svg { width: 15px; height: 15px; display: block; }
+.vh-ov-tile .line { grid-area: line; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.vh-ov-tile .line .st { margin-right: 4px; font-size: 11px; color: var(--st-idle); }
+.vh-ov-tile[data-st="blocked"] .st { color: var(--st-blocked); } .vh-ov-tile[data-st="working"] .st { color: var(--st-working); }
+.vh-ov-tile[data-st="done"] .st { color: var(--st-done); } .vh-ov-tile[data-st="unknown"] .st { color: var(--st-unknown); }
+.vh-ov-tile .line .job { font-weight: 800; color: var(--ink-soft); }
+.vh-ov-tile[data-st="blocked"] .line .job { color: #7a4a00; }
+.vh-ov-tile .meta { grid-area: meta; display: flex; gap: 6px; align-items: center; font-size: 11.5px; font-weight: 700; color: var(--ink-faint); }
+.vh-ov-tile .meta .cost { margin-left: auto; color: var(--ink-soft); }
+.vh-ov-tile .badge { background: var(--st-blocked); color: #3a2400; border-radius: 999px; padding: 0 7px; font-weight: 800; }
+.vh-ov-tile.muted .nm { color: var(--ink-soft); }
+.vh-ov-tile.sel { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(240, 167, 44, .45); }
+.vh-ov-grid:focus-visible .vh-ov-tile.sel { outline: 3px solid var(--gold); outline-offset: 1px; }
+.vh-layer.hc .vh-ov-tile { background: #fff; border-color: #000; }
+.vh-layer.hc .vh-ov-tile.sel { outline: 3px solid var(--gold); border-color: #000; }
+.vh-layer.cb .vh-ov-tile .line .st { font-size: 12px; }
+.vh-layer.big .vh-ov-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }
+
+/* pin / mute toggles (model/marks.ts): ledger rows and the farmer card */
+.vh-btn.vh-mark { opacity: .55; }
+.vh-btn.vh-mark svg { width: 15px; height: 15px; }
+.vh-btn.vh-mark.on, .vh-btn.vh-mark:hover, .vh-btn.vh-mark:focus-visible { opacity: 1; }
+.vh-btn.vh-mark.on { background: var(--gold-soft); border-color: var(--gold); }
+.vh-ghead.pinned .gl { font-weight: 800; }
+.vh-layer.hc .vh-btn.vh-mark.on { background: #fff; outline: 3px solid var(--gold); }
+/* a muted agent's ask in the needs-you strip: no new-ask ring, a muted bell (hud/needs.ts) */
+.vh-need.muted::after { display: none !important; animation: none !important; }
+.vh-need .vh-need-muted { width: 14px; height: 14px; flex: none; opacity: .8; }
+.vh-need .vh-need-muted:not([hidden]) { display: inline-block; }
+.vh-need .vh-need-muted svg { width: 100%; height: 100%; display: block; }

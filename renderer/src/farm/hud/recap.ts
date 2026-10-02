@@ -247,6 +247,7 @@ export function createRecapPanel(ctx: HudCtx): Panel {
     const n = list[list.findIndex((x) => x.key === r.key) + dir];
     if (!n) return;
     key = n.key; diffFor = null; diff = null; openFile = null; patch = null;
+    ctx.sfx('page');
     render(true);
     el.querySelector<HTMLElement>(dir > 0 ? '[data-testid="recap-older"]:not(:disabled)' : '[data-testid="recap-newer"]:not(:disabled)')?.focus({ preventScroll: true });
   }

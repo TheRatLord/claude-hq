@@ -238,6 +238,9 @@ const VW_LIT = /* glsl */`
   // wet ground shines under the lamps; puddles mirror the lamp light
   vwSheen += vlLocal * ( vwP[ 0 ].x * 0.25 + vwPuddle * 0.9 );
   #endif
+  // lying snow in shade is lit by the sky: a cooler, slightly deeper blue (the sunlit side stays white), so snowy
+  // shapes keep their form under an overcast sky and from the overview
+  reflectedLight.indirectDiffuse *= mix( vec3( 1.0 ), vec3( 0.8, 0.88, 1.02 ), vwSnowK );
   reflectedLight.indirectDiffuse += vwSheen;
 #endif
 `;

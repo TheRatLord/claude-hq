@@ -70,6 +70,8 @@ When you shake it:
 * each fruit is recorded in the Collections book (`collection.gather(kind)`), so a new kind gets the usual "New in your
   collection" toast;
 * a tree that isn't ripe just rustles: blossom or leaves drift down, and nothing is picked.
+* sound: the crown's `rustle` (and a soft creak), a `thump` per fruit bounce, the pop into the basket; the press plays
+  `press` (ratchet, groan, squelch) then the pour ([audio.md](audio.md#coverage-features--sounds)).
 
 The shaken fruit is counted against today (`picked[tree]`), so a tree empties after a couple of shakes and is full
 again tomorrow.

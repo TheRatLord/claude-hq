@@ -14,8 +14,10 @@ export const PROTOCOL_VERSION = 1;
  * fields are added, so tools and recordings can tell what a server could send. 2: Entity.git, Entity.usage, commit
  * event `detail.msg`. 3: Entity.vendor (which agent CLI: shared/vendors.ts), `zoo` demo scenario. 4: `git.diff` (a read-only
  * diffstat + one file's patch of a pane's repo between two commits or a commit and the working tree: the harvest recap).
+ * 5: `term.search` (a read-only search over every pane's recent scrollback, kept server-side in a bounded ring per pane:
+ * the command palette).
  */
-export const PROTOCOL_REVISION = 4;
+export const PROTOCOL_REVISION = 5;
 export const WS_PATH = '/ws';
 
 // ---------------------------------------------------------------------------------------------
@@ -130,6 +132,7 @@ export const R2S = Object.freeze({
   WORLD_GET: 'world.get',
   TIMELINE_GET: 'timeline.get',
   GIT_DIFF: 'git.diff',
+  TERM_SEARCH: 'term.search',
   NOTE_SET: 'note.set',
   DEMO_FORCE: 'demo.force',
   DEMO_SCENARIO: 'demo.scenario',
@@ -164,6 +167,7 @@ export const ACTION_CLASS: Readonly<Record<ClientMsgType, ActionClass>> = Object
   'world.get': 'always',
   'timeline.get': 'always',
   'git.diff': 'always', // read-only: git diff --numstat / one file's patch in the pane's own repo (rev 4)
+  'term.search': 'always', // read-only: matches in the panes' recent scrollback (rev 5; server/world/scrollback.ts)
   'note.set': 'always',
   'herdr.focus': 'explicit',
   'agent.prompt': 'interact',
@@ -215,6 +219,10 @@ export const LIMITS = Object.freeze({
   timelineMax: 2000,
   diffFilesMax: 300, // git.diff: files listed (the rest summed into `more`)
   diffPatchMax: 48 * 1024, // git.diff: one file's patch, bytes (cut at a line, `truncated`)
+  searchQueryMax: 120, // term.search: query characters
+  searchHitsMax: 40, // term.search: hits per reply (`max` defaults to 24)
+  scrollbackLines: 2000, // term.search: lines kept per pane (ring, oldest dropped first)
+  scrollbackBytes: 256 * 1024, // term.search: …and at most this much text per pane
 });
 
 /** The subset sent to renderers in `hello.limits`. */
@@ -401,6 +409,15 @@ export interface DiffResult {
   more: number;
   patch?: { path: string; text: string; truncated: boolean } | null;
 }
+/**
+ * (rev 5, `term.search`) one line of a pane's recent scrollback that matched: `text` is the ANSI-stripped line (a window
+ * of ≤ 200 chars around the match, `…` where cut), `match` the [start, end) of the first hit inside `text`. `fromEnd`
+ * counts lines up from the bottom of what the server keeps for the pane (0 = the last line on screen), `at` is when the
+ * server first saw the line (ms, server clock), `screen` true while it is still on the visible screen.
+ */
+export interface ScrollHit { id: string; text: string; match: [number, number]; fromEnd: number; at: number; screen: boolean }
+/** (rev 5) `term.search {q, max?}` → `reply {ok, search}`. `panes` searched, `lines` scanned, `more` hits beyond `max`. */
+export interface SearchResult { q: string; hits: ScrollHit[]; panes: number; lines: number; more: number }
 export interface Ack { at: number; by: 'hq' }
 /** Sticky note, `Entity.note`. */
 export interface Note { text: string; at: number }
@@ -603,6 +620,8 @@ export interface ClientPayloads {
   'timeline.get': { since: number };
   /** rev 4: diffstat of the pane's repo (`from` default HEAD; no `to` = the working tree); `path` = also that file's patch */
   'git.diff': { id: string; from?: string; to?: string; path?: string };
+  /** rev 5: search every pane's recent scrollback (read-only); every word of `q` must appear in the line */
+  'term.search': { q: string; max?: number };
   'note.set': { id: string; text: string | null };
   'demo.force': { id: string; patch: Record<string, unknown> };
   'demo.scenario': { name: string; seed?: number };
@@ -875,6 +894,7 @@ export const VALIDATE: Readonly<{ [K in keyof ClientPayloads]: Readonly<Record<k
   'world.get': {},
   'timeline.get': { since: R.int(0, Number.MAX_SAFE_INTEGER) },
   'git.diff': { id, from: opt(R.str(40, { min: 4, re: /^[0-9a-f]{4,40}$/ })), to: opt(R.str(40, { min: 4, re: /^[0-9a-f]{4,40}$/ })), path: opt(R.str(LIMITS.cwdMax, { min: 1, re: /^[^\u0000-\u001f]+$/ })) },
+  'term.search': { q: R.str(LIMITS.searchQueryMax, { min: 1, re: /^[^\u0000-\u001f]+$/ }), max: R.int(1, LIMITS.searchHitsMax, true) },
   'note.set': { id, text: R.nullable(R.str(LIMITS.noteMax * 4)) }, // ≤ 280 chars checked below
   'demo.force': { id, patch: R.obj(LIMITS.textMax) },
   'demo.scenario': { name: R.str(LIMITS.labelMax, { min: 1, re: /^[A-Za-z0-9_-]+$/ }), seed: R.int(0, 0xffff_ffff, true) },

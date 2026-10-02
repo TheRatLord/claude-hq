@@ -229,10 +229,14 @@ function colourChunk(ch: Chunk, season: Season): void {
   g.attributes.landD.needsUpdate = true;
 }
 
-/** Chunk layout: 50 m chunks over the playable square, 300 m tiles for the far mountains. */
+/**
+ * Chunk layout: 100 m chunks over the playable square (9 draws; 50 m chunks were 36, ~22–30 of them on screen from
+ * the hub or the overview, for +9 % triangles: every near chunk now takes the fine grid), 300 m tiles for the far
+ * mountains.
+ */
 function layout(): { x0: number; z0: number; size: number; n: number }[] {
   const out: { x0: number; z0: number; size: number; n: number }[] = [];
-  const H = WORLD.half, C = 50;
+  const H = WORLD.half, C = 100;
   for (let z0 = -H; z0 < H; z0 += C) {
     for (let x0 = -H; x0 < H; x0 += C) {
       const nx = Math.max(x0, Math.min(0, x0 + C)), nz = Math.max(z0, Math.min(0, z0 + C));

@@ -8,7 +8,7 @@ import type { NoiseKind } from './synth.ts';
 import { noise, noiseSrc, tone } from './synth.ts';
 import { cricketPeriod } from './mix.ts';
 
-export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs', 'roof', 'leaves', 'cowbells'] as const);
+export const LOOP_KINDS = Object.freeze(['fire', 'river', 'waterfall', 'windmill', 'bees', 'rain', 'crickets', 'birds', 'wind', 'pond', 'owls', 'frogs', 'roof', 'leaves', 'cowbells', 'millwheel', 'cave', 'glasshouse'] as const);
 export type LoopKind = (typeof LOOP_KINDS)[number];
 
 export interface LoopEnv {
@@ -18,6 +18,8 @@ export interface LoopEnv {
   tempC(): number | null;
   /** optional reverb send */
   send: AudioNode | null;
+  /** the season (the leaves skitter along the ground in autumn); omitted = summer */
+  season?(): string;
 }
 export interface LoopVoice {
   out: GainNode;
@@ -94,8 +96,14 @@ export function buildLoop(kind: LoopKind, c: C, env: LoopEnv): LoopVoice {
           hiss.filt.frequency.setTargetAtTime(2800 + 1800 * g, now, 0.6);
           body.g.gain.setTargetAtTime(0.22 * g + 0.03, now, 0.5);
         }
+        const dry = env.season?.() === 'autumn';
         every(now, horizon, level * Math.max(0.2, gust(now)), () => 0.12 + rnd() * 0.6, (at) => {
           noise(c, out, at, { kind: 'pink', gain: 0.03 + rnd() * 0.06, a: 0.004, d: 0.03 + rnd() * 0.05, filter: 'bandpass', f: 2500 + rnd() * 3000, q: 1.2 });
+          // autumn: dry fallen leaves skittering across the ground on the stronger gusts (a papery tick-tick-tick)
+          if (dry && gust(at) > 0.6 && rnd() < 0.45) {
+            const n = 3 + Math.floor(rnd() * 4);
+            for (let i = 0; i < n; i++) noise(c, out, at, { kind: 'white', gain: 0.025 + rnd() * 0.03, a: 0.001, d: 0.008 + rnd() * 0.01, filter: 'bandpass', f: 1500 + rnd() * 2200, q: 1.6, delay: 0.02 + i * (0.035 + rnd() * 0.03) });
+          }
         });
       };
       break;
@@ -107,6 +115,54 @@ export function buildLoop(kind: LoopKind, c: C, env: LoopEnv): LoopVoice {
       tick = (now, horizon, level) => every(now, horizon, level, () => 1.4 + rnd() * 4.5, (at) => {
         const k = rnd() < 0.5 ? 0 : 1, n = 1 + Math.floor(rnd() * 3);
         for (let i = 0; i < n; i++) clank(c, ps[k], at + i * (0.24 + rnd() * 0.18), fs[k] * (0.985 + rnd() * 0.03), 0.06 + rnd() * 0.05);
+      });
+      break;
+    }
+    case 'millwheel': {
+      // the restored mill's wheel (scene/projects): the millrace churning, a paddle slapping in every ~0.58 s (12
+      // paddles at 0.9 rad/s), drips running off it, the oak axle groaning now and then
+      const churn = bed('pink', 'bandpass', 700, 0.8, 0.3);
+      bed('brown', 'lowpass', 300, 0.7, 0.35);
+      const creakG = c.createGain(); creakG.gain.value = 0.35; creakG.connect(out); nodes.push(creakG);
+      tick = (now, horizon, level) => {
+        if (mod(now)) churn.filt.frequency.setTargetAtTime(620 + 140 * Math.sin(now * 1.7), now, 0.2);
+        every(now, horizon, level, () => 0.58 * (0.95 + rnd() * 0.1), (at) => {
+          noise(c, out, at, { kind: 'white', gain: 0.12, a: 0.004, d: 0.16, filter: 'lowpass', f: 2600, f2: 500 });
+          noise(c, out, at, { kind: 'pink', gain: 0.1, a: 0.01, hold: 0.05, d: 0.22, filter: 'bandpass', f: 900, q: 1, delay: 0.04 });
+          if (rnd() < 0.5) { const f = 450 + rnd() * 400; tone(c, out, at + 0.1 + rnd() * 0.25, { f, f2: f * 2, glide: 0.05, gain: 0.03, a: 0.002, d: 0.05 }); }
+          if (rnd() < 0.12) SFX_RECIPES.creak(c, creakG, at + 0.25, { pitch: 0.55 + rnd() * 0.2, rnd });
+        });
+      };
+      break;
+    }
+    case 'cave': {
+      // the grotto (room tone while you are inside): a deep hollow hum, the falls as a rumble through the rock (that is
+      // the waterfall bed, muffled), and drips somewhere in the dark echoing off the walls
+      bed('brown', 'lowpass', 140, 0.7, 0.2);
+      const air = bed('pink', 'bandpass', 420, 2.5, 0.05);
+      const dryIn = c.createGain(), dl = c.createDelay(1), fb = c.createGain(), lp = c.createBiquadFilter(), wet = c.createGain();
+      dl.delayTime.value = 0.19; fb.gain.value = 0.42; lp.type = 'lowpass'; lp.frequency.value = 2200; wet.gain.value = 0.6;
+      dryIn.connect(out); dryIn.connect(dl); dl.connect(lp).connect(fb).connect(dl); lp.connect(wet).connect(out);
+      nodes.push(dryIn, dl, fb, lp, wet);
+      tick = (now, horizon, level) => {
+        if (mod(now)) air.g.gain.setTargetAtTime(0.04 + 0.03 * Math.sin(now * 0.23), now, 1);
+        every(now, horizon, level, () => 0.5 + rnd() * 2.2, (at) => {
+          const f = 900 + rnd() * 1400;
+          tone(c, dryIn, at, { f, f2: f * 1.9, glide: 0.03, gain: 0.04 + rnd() * 0.05, a: 0.002, d: 0.06 });
+        });
+      };
+      break;
+    }
+    case 'glasshouse': {
+      // the restored glasshouse (scene/projects): warm still air, condensation dripping off the leaves, the mister's
+      // hiss now and then, a bumblebee bumping along the glass
+      bed('pink', 'lowpass', 900, 0.5, 0.12);
+      const beeG = c.createGain(); beeG.gain.value = 0.3; beeG.connect(out); nodes.push(beeG);
+      tick = (now, horizon, level) => every(now, horizon, level, () => 0.9 + rnd() * 2.6, (at) => {
+        const r = rnd();
+        if (r < 0.55) { const f = 2400 + rnd() * 1800; tone(c, out, at, { f, f2: f * 0.7, glide: 0.02, gain: 0.03 + rnd() * 0.03, a: 0.001, d: 0.04 }); }
+        else if (r < 0.75) noise(c, out, at, { kind: 'white', gain: 0.04, a: 0.25, hold: 0.4, d: 0.5, filter: 'highpass', f: 5000 });
+        else SFX_RECIPES.buzz(c, beeG, at, { pitch: 1.3 + rnd() * 0.3, rnd });
       });
       break;
     }

@@ -15,7 +15,9 @@ import { unreadCount } from '../model/valley.ts';
 import type { Camera } from 'three';
 import type { FrameInfo, HandsPort, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
-import { createPanels, displayName, h, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
+import { createPanels, displayName, h, typingIn, type HudCtx, type TermFind, type ToastSpec } from './ctx.ts';
+import { createOverview } from './overview.ts';
+import { MUTE_HELP, PIN_HELP, quietEvent, setId } from '../model/marks.ts';
 import { createPrefsStore } from '../prefs.ts';
 import { captionFor, keyLabel, nameplateShown, reducedMotion, uiZoom, type Action } from '../model/prefs.ts';
 import { letterKey, matchCombo, parseCombo, STATUS_RANK } from './format.ts';
@@ -56,6 +58,8 @@ import { createPalette, type PaletteBack } from './palette.ts';
 import { FOCUS_LABEL, focusQueue, nextFocus, type FocusItem } from '../model/ops.ts';
 import type { ProjectsService } from '../model/projects.ts';
 import { createVisitorsPanel, watchVisitors } from './visitors.ts';
+import { createHeartsPanel, watchHearts } from './hearts.ts';
+import type { HeartsService } from '../model/hearts.ts';
 import type { VisitorsService } from '../model/visitors.ts';
 import type { GuideService } from '../model/guide.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
@@ -124,7 +128,7 @@ export function createHud(d: HudDeps): Hud {
   const prefs = store.data;
   const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   let b: HudBindings | null = null;
-  let pendingOpen: { id: string; enterAt?: number } | null = null;
+  let pendingOpen: { id: string; enterAt?: number; find?: TermFind } | null = null;
   const backdrop = h('div.vh-backdrop');
   const panelHost = h('div', { style: { display: 'contents' } });
 
@@ -139,7 +143,7 @@ export function createHud(d: HudDeps): Hud {
     nameOf: (id) => displayName(ctx.state(), id),
     now: () => ctx.state()?.now ?? Date.now(),
     sfx: (n) => { try { b?.sfx(n); } catch { /* audio is optional */ } },
-    openTerminal: (id, o) => openTerminal(id, o?.enterAt),
+    openTerminal: (id, o) => openTerminal(id, o?.enterAt, o?.find),
     travel: (id) => {
       if (!b) return;
       if (panels.current()?.id === 'pause') panels.close();
@@ -163,6 +167,22 @@ export function createHud(d: HudDeps): Hud {
     savePrefs: () => store.save(),
     reduced: () => reducedMotion(prefs.reducedMotion, !!motionQuery?.matches, !!d.settings.get('reducedMotion')),
     kick: () => tick(),
+    // pin / mute per agent (model/marks.ts): browser-local prefs, so they survive a reload
+    marks: {
+      pinned: (id) => prefs.pinned.includes(id),
+      muted: (id) => prefs.muted.includes(id),
+      toggle: (kind, id, on) => {
+        const now = on ?? !prefs[kind].includes(id);
+        prefs[kind] = setId(prefs[kind], id, now);
+        store.save();
+        ctx.sfx('ui-click');
+        const name = ctx.nameOf(id);
+        toasts.push({ text: kind === 'pinned' ? `${now ? 'Pinned' : 'Unpinned'} ${name}` : `${now ? 'Muted' : 'Unmuted'} ${name}`,
+          sub: now ? (kind === 'pinned' ? PIN_HELP : MUTE_HELP) : kind === 'pinned' ? 'back in their usual place' : 'toasts, notifications and alert sounds are back',
+          level: 'good', key: `mark|${kind}|${id}`, group: 'mark' });
+        tick();
+      },
+    },
   };
   const panels = createPanels(() => ctx, panelHost, backdrop, () => overlays());
   ctx.panels = panels;
@@ -207,7 +227,9 @@ export function createHud(d: HudDeps): Hud {
   const toggleMinimap = () => { prefs.minimap = !prefs.minimap; store.save(); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); };
   // the command palette (Ctrl/⌘+K) and the focus queue (Alt+N): docs/valley/ops.md
   const palette = createPalette(ctx, { next: () => focusNext(), minimap: toggleMinimap });
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createRecapPanel(ctx), createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createProjectsPanel(ctx), createVisitorsPanel(ctx), createPause(ctx), drawer, tour.panel, palette]) panels.register(p);
+  // the overview grid of every agent (V; hud/overview.ts): docs/valley/ops.md
+  const overview = createOverview(ctx);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createRecapPanel(ctx), createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createAlbumPanel(ctx), guidePanel, createProjectsPanel(ctx), createVisitorsPanel(ctx), createHeartsPanel(ctx), createPause(ctx), drawer, tour.panel, palette, overview]) panels.register(p);
   drawer.onNext = { run: () => focusNext(), peek: () => focusPeek().next };
 
   // ---- dock ----
@@ -227,7 +249,7 @@ export function createHud(d: HudDeps): Hud {
     dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')), quests.el);
   const leaderKbd = h('kbd.vh-k');
   // key caps that follow Settings → Controls (rebindable keys)
-  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [], wave: [], lantern: [], notebook: [] };
+  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [], wave: [], lantern: [], notebook: [], overview: [] };
   const kc = (a: Action) => { const k = h('kbd.vh-k'); kcap[a].push(k); return k; };
   const syncKeys = () => {
     for (const a of Object.keys(kcap) as Action[]) for (const k of kcap[a]) k.textContent = keyLabel(prefs.keys[a]);
@@ -274,10 +296,10 @@ export function createHud(d: HudDeps): Hud {
   anchors.watch(layer);
 
   // ---- terminal opener ----
-  function openTerminal(id: string, enterAt?: number): void {
-    if (!b) { pendingOpen = { id, enterAt }; return; }
-    if (panels.isOpen('drawer')) drawer.show(id, enterAt);
-    else panels.open('drawer', { id, enterAt });
+  function openTerminal(id: string, enterAt?: number, find?: TermFind): void {
+    if (!b) { pendingOpen = { id, enterAt, find }; return; }
+    if (panels.isOpen('drawer')) drawer.show(id, enterAt, find);
+    else panels.open('drawer', { id, enterAt, find });
   }
   function toggleTerminal(): void {
     if (panels.isOpen('drawer')) { panels.close(); return; }
@@ -322,6 +344,7 @@ export function createHud(d: HudDeps): Hud {
     visited.push(n.id);
     const left = q.filter((x) => x.id !== n.id).length;
     openTerminal(n.id);
+    ctx.sfx('focus');
     focusToast({ text: `${ctx.nameOf(n.id)} · ${FOCUS_LABEL[n.why]}`, sub: left ? `${left} more after this · Alt+N for the next` : 'the last one in the queue', level: n.why === 'ask' ? 'ask' : 'info', icon: ICONS.bell, id: n.id });
   }
   /** where the palette's Esc goes back to */
@@ -410,6 +433,7 @@ export function createHud(d: HudDeps): Hud {
       if (e.code === 'KeyG') { handled(e); panels.toggle('gazette'); return; }
       if (e.code === 'KeyL') { handled(e); panels.toggle('album'); return; }
       if (e.code === K.notebook) { handled(e); panels.toggle('guide'); return; }
+      if (e.code === K.overview) { handled(e); panels.toggle('overview'); return; }
       if (e.code === 'KeyI') { handled(e); panels.toggle('shop', { tab: 'sell', at: 'pocket' }); return; }
       if (e.code === K.use && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
@@ -434,6 +458,7 @@ export function createHud(d: HudDeps): Hud {
     if (e.code === K.lantern && !e.repeat) { const h = paws(); if (h) { handled(e); guideSee('lantern'); anchors.say(h.lantern() ? 'Lantern lit' : prefs.hands ? 'Lantern away' : 'Lantern: Settings → Interface → Show hands is off', 1100, undefined, 'screen'); } return; }
     if (e.code === K.mail) { handled(e); panels.open('mailbox'); return; }
     if (e.code === K.notebook) { handled(e); panels.open('guide'); return; }
+    if (e.code === K.overview) { handled(e); panels.open('overview'); return; }
     if (e.code === K.map) { handled(e); panels.open('map'); return; }
     if (e.code === K.ledger) { handled(e); panels.open('roster'); return; }
     switch (e.code) {
@@ -495,7 +520,7 @@ export function createHud(d: HudDeps): Hud {
     notifier.tick(s);
     for (const l of s.letters) if (!l.read && readKeys.has(letterKey(l))) { b.markRead(l.id); l.read = true; }
     if (!pointerDown) needs.refresh();
-    toasts.watchLetters(s.letters);
+    toasts.watchLetters(s.letters, (id) => prefs.muted.includes(id));
     greetFestival(s);
     const mail = mailOf(s, synthRead);
     const unread = unreadCount(mail);
@@ -586,7 +611,11 @@ export function createHud(d: HudDeps): Hud {
     openNeeds: () => panels.open('mailbox', 'needs'),
     bind(x) {
       b = x;
+      // captions for the world's meaningful sounds (the train, the merchant's cart, a fish biting…: audio/captions.ts)
+      (x.service?.('audio') as { onCaption?(fn: (sound: string, text: string, key: string) => void): () => void } | undefined)?.onCaption?.((sound, text, key) => { if (prefs.captions) caption(sound, text, key); });
       x.onValley((e) => {
+        // a muted agent (model/marks.ts) makes no noise: no notification, caption, announcement or toast for its news
+        if (quietEvent(prefs.muted, e) || (e.kind === 'harvested' && prefs.muted.includes(e.id))) return;
         notifier.event(e);
         const who = e.kind === 'level-up' ? '' : ctx.nameOf(e.id);
         if (prefs.captions) { const c = captionFor(e.kind, who, e.detail); if (c) caption(c.sound, c.text, `${c.key}|${e.id}`); }
@@ -618,6 +647,8 @@ export function createHud(d: HudDeps): Hud {
       try { const pj = x.service?.('projects') as ProjectsService | undefined; if (pj) watchProjects(ctx, pj); } catch { /* optional */ }
       // visitors (model/visitors.ts): an arrival, a purchase and where it landed, a parcel off the train
       try { const vs = x.service?.('visitors') as VisitorsService | undefined; if (vs) watchVisitors(ctx, vs); } catch { /* optional */ }
+      // heart events (model/hearts.ts): a villager's moment opens the dialogue box; its keepsake is toasted
+      try { const hs = x.service?.('hearts') as HeartsService | undefined; if (hs) watchHearts(ctx, hs); } catch { /* optional */ }
       // a stamp inked into the stamp book (model/stamps.ts): the stamp itself on the toast, a rubber-stamp thunk
       try {
         let thunkAt = 0;
@@ -632,7 +663,7 @@ export function createHud(d: HudDeps): Hud {
       } catch { /* optional */ }
       tick();
       warmBase(() => b?.valley().sky.season ?? 'summer');
-      if (pendingOpen) { const p = pendingOpen; pendingOpen = null; openTerminal(p.id, p.enterAt); }
+      if (pendingOpen) { const p = pendingOpen; pendingOpen = null; openTerminal(p.id, p.enterAt, p.find); }
     },
     update(f) {
       const cam = b?.camera?.() ?? null;

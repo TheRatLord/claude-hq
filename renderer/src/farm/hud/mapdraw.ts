@@ -360,6 +360,10 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
       if (vp.inside && mini) continue;
       if (!onScreen(x, y)) continue;
       villagerPin(g, x, y, pr, vp.color, vp.inside ? 0.55 : 1, mini ? null : vp.glyph, mini);
+      // the tooltip: what they're doing, where they usually are, a heart event waiting (model/routines.ts, hearts.ts)
+      if (!mini) hits.push({ id: vp.id, kind: 'place', sx: x, sy: y, r: pr + 3, tip: { title: `${vp.name} · ${vp.role}`, lines: [
+        vp.now ? `Now: ${vp.now}` : vp.inside ? 'At home' : '', ...(vp.usual ?? []).map((u) => `Usually ${u}`), vp.moment ? `♥ ${vp.moment}` : '',
+      ].filter(Boolean) } });
       if (!mini) {
         const label = vp.inside ? `${vp.name} (home)` : vp.name;
         g.font = `italic 600 11px ${SERIF}`; g.textAlign = 'center'; g.textBaseline = 'middle';

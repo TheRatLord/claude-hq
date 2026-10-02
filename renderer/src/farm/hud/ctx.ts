@@ -14,7 +14,7 @@ import { PREFS_KEY } from '../prefs.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'recap' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide' | 'projects' | 'palette' | 'visitors';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'recap' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette' | 'album' | 'guide' | 'projects' | 'palette' | 'visitors' | 'overview' | 'hearts';
 
 export interface Panel {
   id: PanelId;
@@ -87,7 +87,8 @@ export interface HudCtx {
   nameOf(id: string): string;
   now(): number;
   sfx(n: SfxName): void;
-  openTerminal(id: string, o?: { enterAt?: number }): void;
+  /** `find`: open the scrollback history at the line holding this text (a palette scrollback hit; `fromEnd` picks which) */
+  openTerminal(id: string, o?: { enterAt?: number; find?: TermFind }): void;
   travel(id: string): void;
   answer(id: string, key: string, label?: string): Promise<boolean>;
   toast(t: ToastSpec): void;
@@ -99,7 +100,17 @@ export interface HudCtx {
   reduced(): boolean;
   /** ask every open view to refresh soon */
   kick(): void;
+  /** pin / mute per agent (model/marks.ts; browser-local prefs `pinned` / `muted`) */
+  marks: {
+    pinned(id: string): boolean;
+    muted(id: string): boolean;
+    /** toggle (or set) one; persists, says so in a toast, refreshes the views */
+    toggle(kind: 'pinned' | 'muted', id: string, on?: boolean): void;
+  };
 }
+
+/** where to land in a terminal's scrollback history (hud/drawer.ts → ui/terminal/view.ts openHistory) */
+export interface TermFind { text: string; word?: string; fromEnd?: number }
 
 export function createPanels(ctx: () => HudCtx, host: HTMLElement, backdrop: HTMLElement, changed: () => void = () => {}): Panels {
   const all = new Map<PanelId, Panel>();

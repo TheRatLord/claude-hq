@@ -92,10 +92,13 @@ export interface MusicIn {
   festival: FestivalName | null;
   /** a gathering's live music is within earshot (scene/gather decides: the sing-along near the fire, the band) */
   gathering?: GatherScene | null;
+  /** in the grotto: no music, the drips and the falls are the music */
+  cave?: boolean;
 }
 
 /** What kind of music suits the moment; null = none (a fierce thunderstorm is music enough). */
 export function musicScene(m: MusicIn): MusicScene | null {
+  if (m.cave) return null;
   if (m.indoors) return 'indoors';
   // a fierce storm is music enough; an ordinary one gets the rain pieces (quieter: ambientLevels.music)
   if (m.weather === 'storm') return m.intensity > 0.85 ? null : 'rain';

@@ -12,13 +12,14 @@ import type { TermView } from '../../ui/terminal/view.ts';
 import type { TerminalKeyAction } from '../../ui/terminal/keys.ts';
 import { farmerFace, ICONS, KIND_ICON, icon } from './icons.ts';
 import { altName, HELPER_LABEL, JOB_LABEL, nice, seedHue, shortName, STATUS_LABEL, STATUS_RANK } from './format.ts';
-import { h, type HudCtx, type Panel } from './ctx.ts';
+import { h, type HudCtx, type Panel, type TermFind } from './ctx.ts';
 import { mascotOf } from '../model/mascots.ts';
 import { FOCUS_LABEL, focusQueue, type FocusItem } from '../model/ops.ts';
 
 export interface Drawer extends Panel {
   dim: HTMLElement;
-  show(id: string, enterAt?: number): void;
+  /** `find`: also open the scrollback history at that line (a palette scrollback hit) */
+  show(id: string, enterAt?: number, find?: TermFind): void;
   /** the id shown (or last shown) */
   lastId(): string | null;
   tick(): void;
@@ -260,23 +261,33 @@ export function createDrawer(ctx: HudCtx): Drawer {
     }
   }
 
-  let waiting: { id: string; enterAt?: number } | null = null;
+  let waiting: { id: string; enterAt?: number; find?: TermFind } | null = null;
+  /** the history overlay at a palette hit's line (or a note that it scrolled out of herdr's history) */
+  const landOn = (v: TermView, find: TermFind) => {
+    delete host.dataset.found;
+    void v.openHistory({ find }).then((ok) => {
+      if (view !== v) return;
+      host.dataset.found = ok ? '1' : '0'; // tests: did the history land on the line?
+      render();
+      if (!ok) ctx.toast({ text: 'That line is no longer in the terminal\'s history', sub: 'the history shows the last 2000 lines; Esc goes back to the live terminal', level: 'info' });
+    });
+  };
   // prefetch the viewer once the valley has settled (the load's busy seconds are over)
   setTimeout(() => {
     const idle = (globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
     const go = () => { void loadTermView().catch(() => { viewLoading = null; }); };
     if (idle) idle(go, { timeout: 4000 }); else go();
   }, 6000);
-  function show(id: string, enterAt?: number): void {
+  function show(id: string, enterAt?: number, find?: TermFind): void {
     if (!viewModule) {
       // first terminal of the session before the prefetch landed: open it as soon as the viewer has loaded (the latest
       // request wins; the drawer shows its empty / connecting state meanwhile)
       const first = !waiting;
-      waiting = { id, ...(enterAt !== undefined ? { enterAt } : {}) };
+      waiting = { id, ...(enterAt !== undefined ? { enterAt } : {}), ...(find ? { find } : {}) };
       last = id;
       render();
       if (first) {
-        loadTermView().then(() => { const w = waiting; waiting = null; if (w) show(w.id, w.enterAt); }, (err: unknown) => {
+        loadTermView().then(() => { const w = waiting; waiting = null; if (w) show(w.id, w.enterAt, w.find); }, (err: unknown) => {
           waiting = null;
           ctx.toast({ text: "Couldn't open that terminal", sub: String(err instanceof Error ? err.message : err), level: 'error' });
         });
@@ -285,7 +296,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     }
     const createTermView = viewModule.createTermView;
     last = id;
-    if (view?.id === id) { view.focus(enterAt !== undefined ? { enterAt } : {}); render(); return; }
+    if (view?.id === id) { view.focus(enterAt !== undefined ? { enterAt } : {}); render(); if (find) landOn(view, find); return; }
     closeView();
     const f = ctx.farmer(id);
     if (f?.unseenDone && d.settings.get('autoAckOnOpen')) ctx.b?.agents.ack(id);
@@ -317,7 +328,7 @@ export function createDrawer(ctx: HudCtx): Drawer {
     notices.append(tv.notices);
     tv.attach(host);
     render();
-    void openViewer(tv, enterAt);
+    void openViewer(tv, enterAt).then(() => { if (find && view === tv) landOn(tv, find); });
     ctx.sfx('page');
   }
 
@@ -401,10 +412,10 @@ export function createDrawer(ctx: HudCtx): Drawer {
     id: 'drawer', el, dim, ownsEscape: true,
     onOpen(arg) {
       dim.classList.add('open');
-      const a = arg as { id?: string; enterAt?: number } | undefined;
+      const a = arg as { id?: string; enterAt?: number; find?: TermFind } | undefined;
       const id = a?.id ?? last;
       listSig = '';
-      if (id) show(id, a?.enterAt); else render();
+      if (id) show(id, a?.enterAt, a?.find); else render();
     },
     onClose() {
       dim.classList.remove('open');

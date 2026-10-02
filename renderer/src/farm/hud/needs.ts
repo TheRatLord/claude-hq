@@ -15,6 +15,7 @@ import { farmerFace, ICONS, icon } from './icons.ts';
 import { ago, altName, askOrder, seedHue, shortName } from './format.ts';
 import { h, syncList, type HudCtx } from './ctx.ts';
 import { mascotOf } from '../model/mascots.ts';
+import { MUTE_HELP, pinnedFirst } from '../model/marks.ts';
 
 /** rows beyond this go behind "+N more" (they are all in the mailbox's Needs you tab) */
 const MAX = 9;
@@ -58,7 +59,9 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     const term = h('button.vh-btn.small.primary', { type: 'button', title: 'Open the terminal', onclick: () => ctx.openTerminal(id) }, icon(ICONS.terminal), 'Terminal');
     const walk = h('button.vh-btn.small', { type: 'button', title: 'Walk to this farmer', onclick: () => ctx.travel(id) }, icon(ICONS.walk), 'Walk there');
     const quick = h('button.vh-need-term', { type: 'button', title: 'Open the terminal', 'aria-label': 'Terminal', onclick: () => ctx.openTerminal(id) }, icon(ICONS.terminal));
-    card.append(h('div.top', null, h('div.face'), h('div.who', null, h('div.name'), h('div.plot')), h('kbd.vh-k.hot'), quick),
+    const mutedMark = h('span.vh-need-muted', { title: MUTE_HELP, role: 'img', 'aria-label': 'muted' });
+    mutedMark.innerHTML = ICONS.muted;
+    card.append(h('div.top', null, h('div.face'), h('div.who', null, h('div.name'), h('div.plot')), mutedMark, h('kbd.vh-k.hot'), quick),
       h('div.q'), h('div.opts'), h('div.acts', null, term, walk));
     // a folded row opens on click / Enter (buttons inside keep their own meaning)
     card.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('button') && active !== id) select(id); });
@@ -69,7 +72,12 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
   const update = (card: HTMLElement, f: FarmerView, i: number, open: boolean) => {
     const s = ctx.state();
     const isBusy = busy.has(f.id);
+    const muted = ctx.marks.muted(f.id), pinned = ctx.marks.pinned(f.id);
     card.classList.toggle('busy', isBusy);
+    // muted (model/marks.ts): still here, but quiet: no new-ask ring, a muted bell
+    card.classList.toggle('muted', muted);
+    card.classList.toggle('pinned', pinned);
+    (card.querySelector('.vh-need-muted') as HTMLElement).hidden = !muted;
     card.classList.toggle('row', !open);
     if (open) card.removeAttribute('tabindex'); else card.tabIndex = 0;
     card.setAttribute('aria-expanded', String(open));
@@ -79,7 +87,7 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
     const alt = altName(f);
     const pt = open ? `${alt ? `${alt} · ` : ''}${field} · waiting ${since}` : `${field} · ${since}`;
     if (plot.textContent !== pt) plot.textContent = pt;
-    const sig = `${f.name}|${f.tag}|${f.question}|${f.options.map((o) => `${o.key}:${o.label}`).join('|')}|${i}|${isBusy}|${open}`;
+    const sig = `${muted}|${pinned}|${f.name}|${f.tag}|${f.question}|${f.options.map((o) => `${o.key}:${o.label}`).join('|')}|${i}|${isBusy}|${open}`;
     if (card.dataset.sig === sig) return;
     card.dataset.sig = sig;
     (card.querySelector('.face') as HTMLElement).innerHTML = farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier);
@@ -119,10 +127,11 @@ export function createNeeds(ctx: HudCtx): NeedsStrip {
   function refresh(): void {
     const s = ctx.state();
     // newest first: the ask that just arrived is the one you are most likely looking for
-    const list = s ? [...s.farmers.values()].filter((f) => f.needsYou).sort((a, b) => askOrder({ since: a.jobSince, id: a.id }, { since: b.jobSince, id: b.id })) : [];
+    // pinned agents first (model/marks.ts), so Alt+1 is a pinned ask when there is one
+    const list = s ? pinnedFirst([...s.farmers.values()].filter((f) => f.needsYou).sort((a, b) => askOrder({ since: a.jobSince, id: a.id }, { since: b.jobSince, id: b.id })), (f) => f.id, ctx.prefs.pinned) : [];
     current = list;
-    // a new ask is news: wake up for it
-    for (const f of list) if (!known.has(f.id)) { known.add(f.id); attnAt = performance.now(); }
+    // a new ask is news: wake up for it (a muted agent's ask joins the list quietly)
+    for (const f of list) if (!known.has(f.id)) { known.add(f.id); if (!ctx.marks.muted(f.id)) attnAt = performance.now(); }
     if (known.size > list.length) for (const id of known) if (!list.some((f) => f.id === id)) known.delete(id);
     const userFolded = ctx.prefs.compactStrip;
     // only while walking about (pointer locked, no panel) does the clock run: with the pointer free the HUD is what you

@@ -3,8 +3,9 @@
  * `ambientLevels` (pure) for bed levels, then build / fade / retire loop voices and aim the positional ones.
  * Voices are built only while audible and retired after 8 s of silence, so a quiet valley costs almost nothing.
  */
-import type { SceneCtx } from '../scene/context.ts';
-import { HUB_Y, POND, RIVER, RIVER_HALF_WIDTH, SITES, structure } from '../world/map.ts';
+import type { IndoorSpace, SceneCtx } from '../scene/context.ts';
+import { HUB_Y, POND, RIVER, RIVER_HALF_WIDTH, SITES, heightAt, structure } from '../world/map.ts';
+import { projectSite } from '../world/projects.ts';
 import type { XZ } from '../world/map.ts';
 import type { AudioEngine, PosChain } from './engine.ts';
 import { ambientLevels, emptyLevels } from './mix.ts';
@@ -47,7 +48,7 @@ export function nearestOnPolyline(x: number, z: number, pts: readonly XZ[], out:
 /** Gain of each bed at level 1 (shared with the offline mixdown in debug.ts). */
 export const BED_SCALE: Readonly<Record<LoopKind, number>> = {
   wind: 0.55, rain: 0.6, roof: 0.75, birds: 1.6, crickets: 0.9, owls: 0.9, river: 0.8, waterfall: 1.1, pond: 0.4, frogs: 0.7,
-  fire: 0.6, windmill: 0.55, bees: 0.5, leaves: 0.9, cowbells: 0.7,
+  fire: 0.6, windmill: 0.55, bees: 0.5, leaves: 0.9, cowbells: 0.7, millwheel: 0.9, cave: 0.8, glasshouse: 0.8,
 };
 
 export interface Ambience {
@@ -64,6 +65,14 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
     cpu: () => ctx.valley.gauges?.cpu ?? 0.3,
     tempC: () => ctx.valley.gauges?.tempC ?? null,
     send: null,
+    season: () => ctx.valley.sky.season,
+  };
+  const gh = projectSite('glasshouse');
+  const ghP: P3 = { x: gh.x, y: heightAt(gh.x, gh.z) + 1.2, z: gh.z };
+  /** the Valley Projects model (scene/projects publishes 'projects'): is the glasshouse restored? */
+  const restored = (id: string): boolean => {
+    const m = ctx.services.get('projects') as { data(): { p: Record<string, { done?: boolean; unveiled?: boolean } | undefined> } } | undefined;
+    try { const p = m?.data().p[id]; return !!(p?.done && p.unveiled); } catch { return false; }
   };
   const riverP: P3 = { x: 0, y: -0.8, z: 0 }, pondP: P3 = { x: POND.x, y: -0.8, z: POND.z };
   const bees: P3[] = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
@@ -89,11 +98,14 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
     B('bees1', 'bees', BED_SCALE.bees, (l) => (Number.isFinite(beeD[1]) ? l.bees * 0.6 : 0), bees[1], { max: 40 }),
     B('leaves', 'leaves', BED_SCALE.leaves, (l) => l.leaves),
     B('cowbells', 'cowbells', BED_SCALE.cowbells, (l) => l.cowbells, herd, { ref: 4, max: 80 }),
+    // the grotto's room tone stays dry (the indoor muffle is for what comes through the rock)
+    { ...B('cave', 'cave', BED_SCALE.cave, (l) => l.cave), dry: true },
+    B('glasshouse', 'glasshouse', BED_SCALE.glasshouse, (l) => l.glasshouse, ghP, { ref: 4, max: 24 }),
   ];
   const levels = emptyLevels();
-  const inp: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 1e9, dPond: 1e9, dWaterfall: 1e9, dFire: 1e9, dWindmill: 1e9, dBees: Infinity, dHerd: Infinity, dHub: 0 };
+  const inp: AmbientIn = { hour: 12, daylight: 1, season: 'summer', weather: 'clear', intensity: 0, wind: 2, cpu: 0.3, altitude: 0, dRiver: 1e9, dPond: 1e9, dWaterfall: 1e9, dFire: 1e9, dWindmill: 1e9, dBees: Infinity, dHerd: Infinity, dHub: 0, cave: 0, dGlasshouse: Infinity, snowCover: 0 };
   const near: XZ = { x: 0, z: 0 };
-  let nextThunder = 0, lastAim = 0;
+  let nextThunder = 0, lastAim = 0, ghCheck = -1e9, ghOn = false;
 
   const measure = () => {
     const L = eng.listener;
@@ -131,6 +143,11 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
       if (d < inp.dHerd) { inp.dHerd = d; herd.x = s.x; herd.y = s.y + 1.2; herd.z = s.z; }
     }
     inp.dHub = Math.hypot(L.x, L.z + 2);
+    const room = ctx.services.get('indoors') as IndoorSpace | undefined;
+    inp.cave = room?.active && room.room === 'grotto' ? indoor() : 0;
+    inp.snowCover = (sky as { trace?: { snow: number } }).trace?.snow ?? 0;
+    const dg = Math.hypot(L.x - ghP.x, L.z - ghP.z);
+    inp.dGlasshouse = dg < 30 && ghOn ? dg : Infinity;
   };
 
   return {
@@ -140,8 +157,11 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
       const ac = eng.ac, amb = eng.bus('ambient'), dry = eng.dry();
       if (!ac || !amb || !dry) return;
       env.send = eng.send;
+      if (now - ghCheck > 2) { ghCheck = now; ghOn = restored('glasshouse'); }
       measure();
       ambientLevels(inp, levels);
+      eng.setHush(levels.hush);
+      eng.setCave(levels.cave);
       const aimNow = now - lastAim > 0.066;
       if (aimNow) lastAim = now;
       for (const b of beds) {

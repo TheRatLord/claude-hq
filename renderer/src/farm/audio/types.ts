@@ -29,4 +29,7 @@ export type CritterSound = (typeof CRITTER_SOUNDS)[number];
 
 export interface ValleyAudio extends AudioService {
   critter(kind: CritterSound, pos: THREE.Vector3, o?: { volume?: number; pitch?: number }): void;
+  /** captions for the world's meaningful sounds while they are audible (captions.ts); the HUD draws them when the
+   *  captions pref is on. Returns an unsubscribe. */
+  onCaption(fn: (sound: string, text: string, key: string) => void): () => void;
 }

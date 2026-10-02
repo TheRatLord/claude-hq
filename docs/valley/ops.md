@@ -1,13 +1,17 @@
 # Operating many agents: the command palette and the focus queue
 
 What a power user running 6–12 agents for a whole day reaches for, besides the ledger, the mailbox and the needs-you
-strip ([hud.md](hud.md#the-power-user-loop-515-agents)): one search box for everything (**Ctrl+K**, ⌘K on a Mac) and
-one key that always takes you to the next agent that wants you (**Alt+N**).
+strip ([hud.md](hud.md#the-power-user-loop-515-agents)): one search box for everything (**Ctrl+K**, ⌘K on a Mac), which
+also searches what every agent printed in its terminal; one key that always takes you to the next agent that wants you
+(**Alt+N**); **pin / mute** per agent; and one grid of every agent to scan at a glance (**V**).
 
 Key sources: `model/ops.ts` (pure: `fuzzyScore`, `fieldsMatch`, `snippet`, `focusQueue`, `nextFocus`; `ops.test.ts`),
 `hud/palette.ts` + `palette.css` (the palette panel), `hud/hud.ts` (the keys, `focusNext` / `focusPeek`, where Esc goes
-back to), `hud/drawer.ts` (the Next button), `hud/roster.ts` (the ledger filter), `browser-tests/ops.spec.ts`. Paths
-are relative to `renderer/src/farm/` unless rooted.
+back to), `hud/drawer.ts` (the Next button), `hud/roster.ts` (the ledger filter), `browser-tests/ops.spec.ts`; the scrollback
+search: `server/world/scrollback.ts` (+ `.test.ts`), `shared/protocol.ts` (`term.search`, rev 5), `source.ts`
+(`AgentPort.search`), `ui/terminal/view.ts` (`findLine`, `openHistory({ find })`); pin / mute: `model/marks.ts`
+(+ `.test.ts`), `model/prefs.ts` (`pinned`, `muted`, `sanitizeIds`); the overview: `model/overview.ts` (+ `.test.ts`),
+`hud/overview.ts` + `overview.css`; `browser-tests/ops2.spec.ts`. Paths are relative to `renderer/src/farm/` unless rooted.
 
 ## The focus queue (`focusQueue`, Alt+N)
 
@@ -39,9 +43,17 @@ Ctrl+K stays the agent's (readline / Claude Code: kill line), so there only ⌘K
   said** and **their todo list**; when one of those last four is what matched, the row shows that line as a quoted
   snippet, so "rate limit" finds who is working on rate limiting. Scattered-letter matching (`chp` → `claude-hq·pebble`)
   only applies to short texts (≤ 48 chars, `LOOSE_MAX`) within a tight span; long texts need the word itself.
-* Only offered once you type: **answers** to open asks (`pebble yes`, `<tag> answer <option>`: Enter sends that
+* **In their terminals** (3+ letters, `wantsScrollSearch`): the query also goes to the server's scrollback search
+  (below), 250 ms after the last keystroke, one request at a time (the latest query wins). Up to 12 lines show after the
+  other matches, newest first: who · field · *on screen* or how long ago, and the line with the match marked. **Enter**
+  opens that agent's terminal with the **history overlay scrolled to the line and the match selected** (`findLine` in
+  `ui/terminal/view.ts`: wrapped rows joined, the occurrence nearest the hit's distance from the bottom; the needle is the
+  line from the match on, else the matched word); a line older than the history's 2000 lines says so in a toast.
+  Shift+Enter walks there, Ctrl+Enter opens the card. Esc closes the overlay, then the drawer.
+* Only offered once you type: **pin / unpin**, **mute / unmute** for any agent (`pin pebble`, `mute flint`), **answers** to open asks (`pebble yes`, `<tag> answer <option>`: Enter sends that
   option, same path and toast as the strip) and **New task for …** (idle / finished farmers: the card with the task box).
-* **Panels and actions**: ledger, mailbox (Needs you), map, terminals, noticeboard, stats, almanac, projects, gazette,
+* **Pinned** agents (below) come first in the empty palette, in their own group, and rank higher when you type.
+* **Panels and actions**: ledger, mailbox (Needs you), map, the overview grid, terminals, noticeboard, stats, almanac, projects, gazette,
   notebook, collections, pockets, friends, album, settings, all keys, *Next who needs you*, toggle the minimap; each
   shows its key.
 * Keys: ↑/↓ (PgUp/PgDn) choose, **Enter** go (an agent: its terminal), **Shift+Enter** walk there, **Ctrl+Enter** the
@@ -51,7 +63,68 @@ Ctrl+K stays the agent's (readline / Claude Code: kill line), so there only ⌘K
 * a11y: the input is a `combobox` with `aria-activedescendant` on the `listbox` rows; the result count is a polite live
   region; high contrast gets a black-bordered selection with a gold outline; reduced motion drops the pop-in.
 * testids: `panel-palette`, `palette-input`, `palette-list`, `palette-item` (`data-kind` farmer / helper / answer /
-  task / panel / action, `data-key` e.g. `f:<id>`, `a:<id>:<key>`, `p:<panel>:<arg>`), `drawer-next`.
+  task / panel / action / line, `data-key` e.g. `f:<id>`, `a:<id>:<key>`, `p:<panel>:<arg>`, `m:pinned|muted:<id>`,
+  `l:<id>:<fromEnd>`), `drawer-next`; `drawer-host[data-found]` = 1 / 0 after a scrollback hit opened the history.
+
+## Scrollback search (`term.search`, protocol rev 5)
+
+The server used to keep only what an agent last *said* (`lastText`, ≤ 280 chars). `server/world/scrollback.ts` keeps
+more, bounded, read-only:
+
+* **A ring per pane** (`LineRing`): the last `LIMITS.scrollbackLines` (2000) lines and at most
+  `LIMITS.scrollbackBytes` (256 KB) of text, oldest dropped first; ANSI-stripped (`stripAnsi`), one line ≤ 1000 chars,
+  each stamped with when the server first saw it. A closed pane's ring is dropped with its `gone`.
+* **Fed from herdr's own scrollback**: `pane.read {source:'recent_unwrapped', format:'text', lines:400}`. The bottom
+  `rows` lines of a read are the live screen (a TUI redraws them: spinners, the input box): kept apart and replaced on
+  every read, so a spinner never piles up. The lines above have scrolled off and never change: `mergeTail` appends only
+  what follows the ring's last lines (an anchor of ≥ 2 non-blank lines) in the new read; no anchor (a cleared screen,
+  more output than one read) appends all of it.
+* **Only once somebody searches**: a search re-reads panes read more than 8 s ago (4 at a time, 1.5 s per read, 2 s for
+  the whole refresh; a slow pane answers from its ring). For 30 min after the last search a slow sweep (every 15 s, the
+  8 stalest panes, one after another) keeps the rings growing past herdr's read window. No search, no reads.
+* **The search** (`searchLines`): every word of the query in the line (case-insensitive); per pane the newest 4 distinct
+  lines, then across panes by when the line was seen; ≤ `max` (24, ≤ `LIMITS.searchHitsMax` 40). Each hit: `{id, text
+  (≤ 200 chars around the match, `…` where cut), match: [start, end), fromEnd, at, screen}` (`ScrollHit`); the reply also
+  has `panes`, `lines` scanned and `more`.
+* **Rate limited**: one search per client per 150 ms (`not_accepted`; the palette debounces and retries once).
+  `term.search` is class `always` (read-only: allowed on a read-only herdr protocol); it never sends keys, resizes or
+  runs anything. The demo answers the same `pane.read` from its fake terminals (banners, tool lines, shell output);
+  a replay has no pane text and refuses. Metrics: `/api/metrics` → `scrollback`.
+
+## Pin and mute (`model/marks.ts`)
+
+Per agent, per browser: `Prefs.pinned` / `Prefs.muted` (pane ids, newest 64 kept, `sanitizeIds`) in the browser-local
+prefs (localStorage `valley.hud.prefs` through `farm/storage.ts`), so they survive a reload. Toggles: the ledger row's
+pin and bell buttons (`aria-pressed`; **Alt+P** / **Alt+M** on the selected row, also while typing in the filter), the
+farmer card (buttons + Alt+P / Alt+M), the overview grid (Alt+P / Alt+M), the palette (`pin …`, `mute …`). Each toggle
+toasts what it means.
+
+* **Pinned**: first in the ledger (a *Pinned* group at the top, in pin order, out of their field's group), the needs-you
+  strip (so Alt+1 is a pinned ask when there is one), the palette (a *Pinned* group) and the overview grid.
+* **Muted**: no toasts for its letters, no desktop notification, no alert bell, done chime, far cheer / oops, no
+  caption or screen-reader announcement, no harvest toast. Main.ts hands the scene the muted agent's noisy events
+  (`NOISY`: blocked, finished, unblocked, celebrate, oops) marked `quiet` (`quietEvent`): the farmer still cheers and
+  hops, `audio.ts` and the farmhouse bell stay silent (a farmer's own little positional sounds near you remain). **Asks
+  still show**, quietly: in the needs-you strip (no new-ask ring, it does not wake a dozing strip, a struck-through
+  bell with the explanation in its tooltip), in the mailbox and on the overview. The card says so under the buttons.
+
+## The overview grid (V, rebindable)
+
+`hud/overview.ts`: every farmer as a compact tile in a wrapping grid, for scanning 10–40 agents at once (3–5 columns
+at 1600 px). Each tile: the status colour as a thick left edge and the status glyph (▲ ● ■ ◆; the colour-safe palette
+recolours both), face, name, pin / mute marks, the job and then the current todo `(done/total)` or the question,
+time in that state (or a gold **waiting 3m** badge for an ask) and today's cost. Order (`overviewOrder`): pinned, then
+asks (longest waiting first), struggling, unreviewed finishes, working, idle, unknown; names within a rank, so it does
+not reshuffle while you read. A summary line counts agents, asks, working, done, pinned.
+
+* **V** opens it (Settings → Controls → *Overview of every agent*, `Prefs.keys.overview`; V was free: G and O are
+  taken, R / X are used inside panels and by the yard), V or Esc closes; also from the palette ("overview").
+* Keys (`gridMove`): arrows (left / right wrap rows, up / down keep the column), Home / End, PgUp / PgDn; **Enter** the
+  terminal, **Shift+Enter** walk there, **C** or Ctrl+Enter the card, **Alt+P** / **Alt+M** pin / mute. A click selects,
+  a double click opens the terminal.
+* a11y: the grid is a focusable `listbox` with `aria-activedescendant`; each tile an `option` with a spoken summary
+  (status, waiting / job, todo, cost, pinned / muted). testids: `panel-overview`, `overview-grid`, `overview-tile`
+  (`data-id`, `data-st`), `overview-waiting`.
 
 ## The ledger filter
 
@@ -70,6 +143,9 @@ chips / day strips / new-task row button, background notifications. What hurt, a
 * *"Who was working on X?"*: neither the ledger nor any list searched what agents said or their todos → both do now.
 * *Getting back*: opening a panel from the drawer dropped the terminal → the palette's Esc returns to it.
 
-Left for later: batch actions (approve-all safe asks: needs a server-side notion of "safe", and confirmation), per-agent
-pin / mute, a compact overview grid of all agents, searching scrollback beyond the last message (the server keeps
-only `said`, ≤ 280 chars; a server-side `term.search` over herdr scrollback would be the real thing).
+Done since (Oct 2026, second round): scrollback search in the palette (`term.search`), per-agent pin / mute, the
+overview grid (V).
+
+Left for later: batch actions (approve-all safe asks: needs a server-side notion of "safe", and confirmation); regex /
+case-sensitive search and searching beyond herdr's own read window before the first search (the ring only starts filling
+when somebody searches); a muted agent's own positional sounds near you; overview tiles for scarecrows (shells).

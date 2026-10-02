@@ -21,7 +21,7 @@ defineAsset({
     const variant = o.variant ?? 'post';
     CAST.forEach((v, i) => {
       const x = (i - (CAST.length - 1) / 2) * 1.5;
-      const act = variant === 'walk' ? 'walk' : variant === 'wave' ? 'wave' : variant === 'night' || variant === 'back' ? 'stand' : v.places.post.loop[1]?.act ?? 'stand';
+      const act = variant === 'walk' ? 'walk' : variant === 'wave' ? 'wave' : variant === 'night' || variant === 'back' ? 'stand' : (v.places.mailbox ?? v.places.bin ?? v.places.mill ?? v.places.noticeboard ?? v.places.signpost ?? v.places.knoll)?.loop[1]?.act ?? 'stand';
       const d = p.add(villagerLook(v), act, x, 0, variant === 'back' ? Math.PI : 0);
       if (variant === 'night') d.prop = 'lantern';
       else if (variant !== 'walk') d.prop = propOf(d.act);

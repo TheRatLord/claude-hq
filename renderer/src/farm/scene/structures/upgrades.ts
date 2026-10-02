@@ -223,9 +223,9 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
     for (const c of root.children.slice(before)) {
       const m = c as THREE.Mesh;
       if (m.userData.bake === 'glow') {
-        const gm = glowMat(0);
+        // one glow material for every upgrade (they all follow the same night): no material switch between them
+        const gm = glows[0] ?? glows[glows.push(glowMat(0)) - 1];
         m.material = gm;
-        glows.push(gm);
         em.push(...((m.userData.emitters as LightEmitter[] | undefined) ?? []));
       }
       delete m.userData.bake;

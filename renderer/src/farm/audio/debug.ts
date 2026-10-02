@@ -112,7 +112,7 @@ export const inDb = (m: Measure) => ({ peak: db(m.peak), rms: db(m.rms), loud: d
 
 /**
  * Render one named thing into `dest` from t = 0.01:
- *   'alert'  'critter:chirp'  'voice:seed:mood:n'  'loop:river:0.8'  'step:stone'  'step:dirt:wet'
+ *   'alert'  'critter:chirp'  'voice:seed:mood:n'  'loop:river:0.8'  'loop:leaves:1:autumn'  'step:stone'  'step:dirt:wet'
  *   'inst:flute:67'  'piece:morning:spring[:festival][:n]'
  */
 export function renderInto(c: BaseAudioContext, dest: AudioNode, name: string, seconds: number, rnd: () => number = Math.random): void {
@@ -126,7 +126,7 @@ export function renderInto(c: BaseAudioContext, dest: AudioNode, name: string, s
   } else if (head === 'inst') playNote(c, dest, 0.01, a as Instrument, Number(b ?? 67), Number(cc ?? 0.6), 1);
   else if (head === 'loop') {
     const lv = Number(b ?? 1);
-    const v = buildLoop(a as LoopKind, c, { cpu: () => 0.6, tempC: () => 55, send: null });
+    const v = buildLoop(a as LoopKind, c, { cpu: () => 0.6, tempC: () => 55, send: null, season: () => cc ?? 'summer' });
     v.out.gain.value = lv;
     v.out.connect(dest);
     for (let t = 0; t < seconds; t += 0.25) v.tick(t, 0.3, lv);
@@ -185,6 +185,8 @@ export interface MixSpec {
   hour: number; season: SeasonName; weather: AmbientIn['weather']; intensity: number; wind: number;
   /** distances to the landmarks (m) */
   dRiver?: number; dPond?: number; dWaterfall?: number; dFire?: number; dWindmill?: number; dBees?: number; dHerd?: number; dHub?: number;
+  /** in the grotto (0..1), the restored glasshouse (m), snow lying (0..1) */
+  cave?: number; dGlasshouse?: number; snowCover?: number;
   /** a piece of music (scene) or none */
   music?: MusicScene | null; festival?: FestivalName | null; piece?: number;
   /** walk on this surface (a step every 0.42 s) */
@@ -205,6 +207,10 @@ const PRESETS: Record<string, Partial<MixSpec>> = {
   rain: { hour: 14, weather: 'rain', intensity: 0.7, dHub: 20 },
   storm: { hour: 16, weather: 'storm', intensity: 0.9, dHub: 20 },
   snow: { hour: 12, season: 'winter', weather: 'snow', intensity: 0.6, dHub: 30 },
+  grotto: { hour: 12, cave: 1, dWaterfall: 6, dRiver: 25, dHub: 110 },
+  glasshouse: { hour: 11, dGlasshouse: 2, dHub: 40 },
+  spring: { hour: 6.8, season: 'spring', dHub: 40 },
+  autumn: { hour: 15, season: 'autumn', wind: 7, dHub: 45 },
 };
 
 /** 'preset[,key=value…]' → spec, e.g. 'meadow,music=afternoon,steps=grass' */
@@ -234,13 +240,14 @@ export async function mixInto(c: BaseAudioContext, specStr: string, seconds: num
       hour: s.hour, daylight: daylightAt(s.hour), season: s.season, weather: s.weather, intensity: s.intensity, wind: s.wind, cpu: 0.5, altitude: 0,
       dRiver: s.dRiver ?? 300, dPond: s.dPond ?? 300, dWaterfall: s.dWaterfall ?? 300, dFire: s.dFire ?? 300, dWindmill: s.dWindmill ?? 300,
       dBees: s.dBees ?? Infinity, dHerd: s.dHerd ?? Infinity, dHub: s.dHub ?? 20,
+      cave: s.cave ?? 0, dGlasshouse: s.dGlasshouse ?? Infinity, snowCover: s.snowCover ?? 0,
     };
     const lv = ambientLevels(inp, emptyLevels());
     for (const kind of Object.keys(BED_SCALE) as LoopKind[]) {
       if (kind === 'roof') continue;
       const level = (lv as unknown as Record<string, number>)[kind] ?? 0;
       if (level < 0.004) continue;
-      const v = buildLoop(kind, c, { cpu: () => 0.5, tempC: () => 55, send: null });
+      const v = buildLoop(kind, c, { cpu: () => 0.5, tempC: () => 55, send: null, season: () => s.season });
       v.out.gain.value = level * BED_SCALE[kind];
       v.out.connect(amb);
       for (let t = 0; t < seconds; t += 0.25) v.tick(t, 0.3, level);

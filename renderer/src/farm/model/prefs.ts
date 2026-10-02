@@ -12,14 +12,15 @@ import type { Status } from '../../../../shared/protocol.ts';
 import type { ValleyEventKind } from './types.ts';
 import { pickTyped } from '../storage.ts';
 
-/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J, plus the paws: Z waves, T the lantern, and
- *  O for Fern's field notebook) */
-export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail', 'wave', 'lantern', 'notebook'] as const);
+/** the rebindable actions (defaults are the original keys: E / F / M / Tab / J, plus the paws: Z waves, T the lantern,
+ *  O for Fern's field notebook and V for the overview grid of every agent) */
+export const ACTIONS = Object.freeze(['use', 'alt', 'map', 'ledger', 'mail', 'wave', 'lantern', 'notebook', 'overview'] as const);
 export type Action = (typeof ACTIONS)[number];
 export type KeyBindings = Record<Action, string>;
-export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO' });
+export const DEFAULT_KEYS: Readonly<KeyBindings> = Object.freeze({ use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO', overview: 'KeyV' });
 export const ACTION_LABEL: Readonly<Record<Action, string>> = Object.freeze({
   use: 'Talk / use', alt: 'Terminal / alt action', map: 'Map', ledger: 'Farm ledger', mail: 'Mailbox', wave: 'Wave', lantern: 'Lantern', notebook: 'Field notebook',
+  overview: 'Overview of every agent',
 });
 
 /**
@@ -47,6 +48,10 @@ export interface Prefs {
   minimap: boolean;
   toasts: boolean;
   hinted: boolean;
+  /** pinned agents (pane ids, newest last): first in the ledger, the needs-you strip, the palette and the overview (model/marks.ts) */
+  pinned: string[];
+  /** muted agents (pane ids): no toasts, notifications or alert sounds; their asks still show, quietly, in the strip */
+  muted: string[];
   /** the needs-you strip is folded down to its count chip */
   compactStrip: boolean;
   /** terminal drawer height as a fraction of the viewport (0 = default) */
@@ -97,7 +102,7 @@ export interface Prefs {
 }
 
 export const DEFAULT_PREFS: Readonly<Prefs> = Object.freeze({
-  minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true,
+  minimap: true, toasts: true, hinted: false, pinned: [], muted: [], compactStrip: false, drawerH: 0, notify: false, needsDoze: true,
   mouseSens: 1, invertY: false, fov: 62, headBob: true, sprintToggle: false, keys: DEFAULT_KEYS,
   quality: 'high', renderScale: 1, shadows: true, weatherFx: 1, fpsCap: 0, idleMin: 10,
   uiScale: 1, nameplates: 'always', toastK: 1, clock: '24h', hands: true,
@@ -118,7 +123,19 @@ export function sanitizePrefs(raw: unknown): Prefs {
   for (const [k, ok] of Object.entries(ENUMS) as [keyof typeof ENUMS, readonly string[]][]) if (!ok.includes(p[k])) (p as unknown as Record<string, unknown>)[k] = DEFAULT_PREFS[k];
   if (!FPS_CAPS.includes(p.fpsCap as (typeof FPS_CAPS)[number])) p.fpsCap = 0;
   p.keys = sanitizeKeys(raw && typeof raw === 'object' ? (raw as { keys?: unknown }).keys : null);
+  p.pinned = sanitizeIds(raw && typeof raw === 'object' ? (raw as { pinned?: unknown }).pinned : null);
+  p.muted = sanitizeIds(raw && typeof raw === 'object' ? (raw as { muted?: unknown }).muted : null);
   return p;
+}
+
+/** at most this many pinned / muted agents are remembered (the oldest marks go first) */
+export const MARKS_MAX = 64;
+/** a stored list of pane ids: strings of a sane length only, no repeats, the newest MARKS_MAX */
+export function sanitizeIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) if (typeof v === 'string' && v.length > 0 && v.length <= 64 && !out.includes(v)) out.push(v);
+  return out.slice(-MARKS_MAX);
 }
 
 /** free keys an action falls back to when its default was taken by a binding the player chose (e.g. a new default) */
@@ -139,9 +156,11 @@ export function sanitizeKeys(raw: unknown): KeyBindings {
   }
   const used = new Set<string>();
   for (const a of ACTIONS) if (chosen.has(a)) { if (used.has(out[a])) { out[a] = DEFAULT_KEYS[a]; chosen.delete(a); } else used.add(out[a]); }
+  // a spare never takes another unchosen action's own default (that action would be bumped in turn)
+  const defaults = new Set(ACTIONS.filter((a) => !chosen.has(a)).map((a) => DEFAULT_KEYS[a]));
   for (const a of ACTIONS) {
     if (chosen.has(a)) continue;
-    const k = !used.has(DEFAULT_KEYS[a]) ? DEFAULT_KEYS[a] : SPARE_KEYS.find((s) => !used.has(s) && !RESERVED_KEYS[s]);
+    const k = !used.has(DEFAULT_KEYS[a]) ? DEFAULT_KEYS[a] : SPARE_KEYS.find((s) => !used.has(s) && !RESERVED_KEYS[s] && !defaults.has(s));
     if (!k) return { ...DEFAULT_KEYS };
     out[a] = k; used.add(k);
   }

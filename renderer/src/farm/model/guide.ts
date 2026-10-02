@@ -38,6 +38,9 @@ import { VISITORS, merchantComes } from './visitors.ts';
 import { JOURNAL } from './grotto.ts';
 import { FESTIVALS } from './calendar.ts';
 import { dayKey } from './almanac.ts';
+import type { HeartsData } from './hearts.ts';
+import { HEART_EVENTS, eventsOf } from './hearts.ts';
+import { fairCond, partOf, planFor, usualSentence } from './routines.ts';
 
 export const CHAPTERS = Object.freeze(['pastimes', 'seasons', 'village', 'explore', 'home'] as const);
 export type Chapter = (typeof CHAPTERS)[number];
@@ -84,6 +87,10 @@ export interface GuideWorld {
   visitors?: Readonly<VisitorsData> | null;
   /** today's date key (the merchant's days; optional: older callers) */
   day?: string;
+  /** heart events shared with the villagers (model/hearts.ts; optional: older callers) */
+  hearts?: Readonly<HeartsData> | null;
+  /** restored Valley Projects (the villagers' days follow them; optional) */
+  restored?: readonly string[];
 }
 
 export const emptyGuideWorld = (): GuideWorld => ({
@@ -314,6 +321,31 @@ export const PAGES: readonly PageDef[] = Object.freeze([
     by: ['villager:bram', 'villager:posy', 'villager:marigold'],
   }),
 
+  P({
+    id: 'moments', chapter: 'village', title: 'Neighbours & moments', motif: 'hearts',
+    how: 'Everybody keeps a day: home in the morning, work, lunch, an afternoon pastime, an evening out, and to bed (their lamp goes out). Rain, festivals and Sundays shift it. Grow close (3, 5 and 7 hearts) and a friend will have something to show you, next time you meet them in the right place at the right hour: they wave you over with a heart. {use} to listen.',
+    hint: 'Friends tell each other things they would never tell the noticeboard. Spend some time with someone…',
+    found: (w) => Object.keys(w.hearts?.seen ?? {}).length > 0 || FRIEND_IDS.some((id) => heartsOf(w.friends?.pts[id] ?? 0) >= 3),
+    notes: (w) => {
+      const seen = w.hearts?.seen ?? {};
+      const out = [`${Object.keys(seen).filter((id) => HEART_EVENTS.some((e) => e.id === id)).length} of ${HEART_EVENTS.length} moments shared`];
+      const cond = fairCond({ season: w.season, weather: w.weather, intensity: w.weather === 'rain' || w.weather === 'snow' ? 0.5 : w.weather === 'storm' ? 1 : 0, festival: w.festival, restored: w.restored ?? [], dow: w.day ? new Date(`${w.day}T12:00`).getDay() : 3 });
+      for (const id of FRIEND_IDS) {
+        const name = friendDef(id)?.short ?? id;
+        const evs = eventsOf(id);
+        const done = evs.filter((e) => seen[e.id]).map((e) => e.title);
+        const nx = evs.find((e) => !seen[e.id]);
+        const h = heartsOf(w.friends?.pts[id] ?? 0);
+        if (done.length) out.push(`♥ ${name}: ${done.join(' · ')}`);
+        if (nx && h >= nx.hearts) out.push(`${name} has something to show you, ${nx.when}`);
+      }
+      for (const id of FRIEND_IDS) out.push(usualSentence(friendDef(id)?.short ?? id, planFor(id, cond), partOf(w.hour)));
+      return out;
+    },
+    rumour: 'Posy has been carrying something in her satchel for years, you know. She\'d only show a real friend.',
+    by: ['villager:marigold', 'villager:bram', 'villager:hazel'],
+  }),
+
   // ---- Exploring
   P({
     id: 'summit', chapter: 'explore', title: 'The summit trail', motif: 'mountain',
@@ -500,6 +532,7 @@ export const FEATURES: readonly Feature[] = Object.freeze([
   { ver: 7, page: 'projects', title: 'Valley projects', line: 'the Mayor\'s board on the square: mend the footbridge, light the lantern path, raise a glasshouse and more, together.' },
   { ver: 7, page: 'orchard', title: 'The hillside orchard', line: 'fruit trees, beehives and a cider press behind a stone wall on the east foothills. Shake what\'s ripe!' },
   { ver: 8, page: 'visitors', title: 'Comings and goings', line: 'a travelling merchant\'s cart on Wednesdays and Saturdays, a wandering painter on fair days, and parcels once the halt reopens.' },
+  { ver: 9, page: 'moments', title: 'Neighbours & moments', line: 'the villagers keep their own days now (the map knows where), and close friends have stories to share, with a keepsake each.' },
 ] as Feature[]);
 export const LATEST = Math.max(...FEATURES.map((f) => f.ver));
 /**

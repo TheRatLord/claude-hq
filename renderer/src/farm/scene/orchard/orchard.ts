@@ -143,7 +143,7 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
     sign.position.set(O.sign.x, y + 1.18, O.sign.z + 0.06);
     root.add(sign);
   }
-  const signFace = (sign.material as THREE.MeshBasicMaterial[])[4];
+  const signFace = (sign.material as THREE.MeshBasicMaterial[])[1];
 
   // ------------------------------------------------------------------ the trees
   const treeMat = withSurfaces(toon(0xffffff, { vertexColors: true, shared: false }), { surfaces: ['bark', 'leaves', 'snow'] });
@@ -184,7 +184,7 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
   const FRUITS = N * PER_TREE + N * WINDFALL + FLYING;
   const fruit = new THREE.InstancedMesh(fruitGeometry(), fruitMat, FRUITS);
   fruit.name = 'orchard:fruit';
-  fruit.castShadow = true;
+  fruit.castShadow = false;   // hung inside the crown's own shadow; windfalls get contact shadows (post): −18k shadow tris
   fruit.frustumCulled = false;
   fruit.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   for (let i = 0; i < FRUITS; i++) { fruit.setMatrixAt(i, ZERO); fruit.setColorAt(i, _c.setHex(0xffffff)); }
@@ -375,8 +375,8 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!r) return null;
     t.shake = 1;
     const at = treePos(t, new THREE.Vector3());
-    sfx('creak', at, 0.45, 1.6);
-    sfx('step-grass', at, 0.7, 0.55);
+    sfx('rustle', at, 0.9);
+    sfx('creak', at, 0.3, 1.6);
     // a burst of petals / leaves / snow off the crown
     const burst = season === 'summer' ? 3 : 14;
     for (let k = 0; k < burst; k++) spawnPetal(t, true);
@@ -432,8 +432,8 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
     w.stash('cider', 1);
     orchard.pressed();
     hands()?.gesture('grab');
-    sfx('creak', at, 0.8, 0.7);
-    setTimeout(() => sfx('water-pour', at, 0.7, 1.2), 450);
+    sfx('press', at, 0.9);
+    setTimeout(() => sfx('water-pour', at, 0.6, 1.2), 1100);
     say(`Crunch, creak, glug: ${plan.pear ? (plan.apple ? 'apples and pears' : 'three pears') : 'three apples'} become a bottle of cloudy cider. Into the basket!`, 'orchard:press', 4200);
     return true;
   }
@@ -597,7 +597,7 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
           fl.x += fl.vx * dt; fl.y += fl.vy * dt; fl.z += fl.vz * dt; fl.spin += dt * 8;
           if (fl.y <= fl.floor) {
             fl.y = fl.floor;
-            if (fl.vy < -2.2) { fl.vy *= -0.32; fl.vx *= 0.5; fl.vz *= 0.5; sfx('step-grass', toWorld(_w.set(fl.x, fl.y, fl.z)), 0.35, 1.4); }
+            if (fl.vy < -2.2) { fl.vy *= -0.32; fl.vx *= 0.5; fl.vz *= 0.5; sfx('thump', toWorld(_w.set(fl.x, fl.y, fl.z)), 0.55); }
             else { fl.phase = 'rest'; fl.t = 0; }
           }
         } else if (fl.phase === 'rest') {
@@ -644,6 +644,7 @@ export const orchardSystem: SystemFactory = (ctx: SceneCtx) => {
       ctx.scene.remove(root);
       for (const m of baked) m.geometry.dispose();
       glow.dispose(); treeMat.dispose(); fruitMat.dispose(); petalMat.dispose();
+      sign.geometry.dispose(); signFace.map?.dispose(); for (const m of sign.material as THREE.Material[]) m.dispose();
       if (ctx.services.get('orchard') === handle) ctx.services.delete('orchard');
     },
   };

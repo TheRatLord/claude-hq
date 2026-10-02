@@ -34,6 +34,8 @@ export const DECOR_R: Readonly<Record<string, number>> = Object.freeze({
   geode: 0.4,
   // the travelling merchant's rare pieces (model/visitors.ts)
   starlamp: 0.3, sundial: 0.35, moonflower: 0.45, whirligig: 0.3,
+  // the villagers' 7-heart keepsakes (model/hearts.ts)
+  dovecote: 0.35, stilllife: 0.4, minimill: 0.4, hatstand: 0.3, crook: 0.3, orrery: 0.35,
 });
 
 /** keepsake portraits: the villager's body colour, role hat colour and the canvas backdrop */
@@ -509,6 +511,120 @@ export function buildDecor(k: Kit, bk: Kit, id: string, style: number, season: S
         k.cyl(0.07, 0.12, PAL.stone, { x: 0.15, y: 0.09 }, 7);
         k.box(0.22, 0.02, 0.02, PAL.woodDark, { x: 0.05, y: 0.2, rz: -0.25 });
       });
+      break;
+    }
+    case 'dovecote': {
+      // Posy's dovecote: a teal box of pigeonholes on a post, a pitched roof, a pigeon on the ledge
+      const TEAL = 0x3d9fa8, CREAM = 0xf3e6c8;
+      k.cyl(0.18, 0.08, PAL.stone, { y: 0.04 }, 6);
+      k.surf(['planks', { scale: 0.5 }], () => k.box(0.1, 1.3, 0.1, PAL.wood, { y: 0.69 }));
+      k.surf(['planks', { variant: 1, scale: 0.5 }], () => k.box(0.62, 0.5, 0.42, TEAL, { y: 1.55 }));
+      for (const [x, y] of [[-0.16, 1.66], [0.16, 1.66], [-0.16, 1.44], [0.16, 1.44]] as const) {
+        k.cyl(0.07, 0.02, PAL.ink, { x, y, z: 0.21, rx: Math.PI / 2 }, 8);
+        k.box(0.16, 0.02, 0.07, CREAM, { x, y: y - 0.09, z: 0.24 });
+      }
+      for (const s of [-1, 1]) k.box(0.4, 0.04, 0.54, PAL.roofRed, { x: s * 0.17, y: 1.9, rz: -s * 0.55 });
+      k.ball(0.035, GOLD, { y: 2.02 });
+      // Sergeant (grey, iridescent neck, looking unimpressed)
+      k.ball(0.075, 0x9aa0a8, { x: 0.16, y: 1.43 + 0.08, z: 0.27, s: [1, 0.9, 1.3] });
+      k.ball(0.045, 0x6a8a8a, { x: 0.16, y: 1.43 + 0.16, z: 0.31 });
+      k.cone(0.015, 0.04, 0xe0a040, { x: 0.16, y: 1.43 + 0.16, z: 0.36, rx: Math.PI / 2 }, 4);
+      break;
+    }
+    case 'stilllife': {
+      // Bram's still life: a pike in oils on a little easel, a paint-spattered stool beside it
+      const lean = -0.16, cy = 0.92, cz = 0.1;
+      for (const s of [-1, 1]) k.box(0.05, 1.25, 0.05, PAL.woodDark, { x: s * 0.28, y: 0.6, z: 0.05, rz: s * 0.1, rx: lean });
+      k.box(0.05, 1.15, 0.05, PAL.woodDark, { y: 0.55, z: -0.25, rx: 0.32 });
+      k.box(0.74, 0.05, 0.1, PAL.wood, { y: 0.55, z: 0.12 });
+      const at = (x: number, y: number, dz = 0) => ({ x, y: cy + y, z: cz + 0.045 + dz - y * Math.sin(-lean), rx: lean });
+      k.box(0.72, 0.5, 0.05, PAL.woodDark, { y: cy, z: cz, rx: lean });
+      k.box(0.64, 0.42, 0.05, 0xd8e6d0, at(0, 0, -0.03));
+      // the pike: a long green-gold body, a darker back, a tail, a beady eye
+      k.box(0.4, 0.1, 0.02, 0x8aa050, at(-0.02, -0.02));
+      k.box(0.36, 0.04, 0.02, 0x4f6a30, at(-0.02, 0.03, 0.004));
+      k.box(0.08, 0.06, 0.02, 0x8aa050, at(-0.25, -0.02));
+      for (const s of [-1, 1]) k.box(0.06, 0.05, 0.02, 0x6a8040, at(0.21, -0.02 + s * 0.04, 0.002));
+      k.box(0.02, 0.02, 0.02, PAL.ink, at(-0.18, 0.0, 0.01));
+      k.box(0.64, 0.04, 0.02, 0x8a6a48, at(0, -0.16, 0.002));
+      // the stool with a paint pot
+      k.cyl(0.14, 0.04, PAL.wood, { x: 0.52, y: 0.42, z: 0.15 }, 8);
+      for (const a of [0.4, 2.5, 4.6]) k.box(0.03, 0.42, 0.03, PAL.woodDark, { x: 0.52 + Math.cos(a) * 0.1, y: 0.21, z: 0.15 + Math.sin(a) * 0.1 });
+      k.cyl(0.05, 0.08, PAL.red, { x: 0.52, y: 0.48, z: 0.15 }, 8);
+      k.box(0.015, 0.2, 0.015, PAL.woodLight, { x: 0.53, y: 0.56, z: 0.15, rz: 0.3 });
+      break;
+    }
+    case 'minimill': {
+      // Hazel's model windmill: a tapered tower, a cap, four sails, a tiny door, on a millstone base
+      k.surf(['rock', { scale: 0.7 }], () => k.cyl(0.38, 0.1, PAL.stone, { y: 0.05 }, 12));
+      k.surf(['plaster', { strength: 0.5 }], () => k.cyl(0.24, 0.9, 0xf1ece0, { y: 0.55 }, 8, 0.17));
+      k.cone(0.24, 0.22, PAL.roofBrown, { y: 1.11 }, 8);
+      k.box(0.12, 0.2, 0.02, 0x8a5a3a, { y: 0.2, z: 0.22 });
+      k.box(0.08, 0.1, 0.02, PAL.windowGlow, { y: 0.6, z: 0.2 });
+      k.cyl(0.04, 0.12, PAL.woodDark, { y: 0.98, z: 0.2, rx: Math.PI / 2 }, 6);
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2 + 0.3;
+        k.at({ y: 0.98, z: 0.27, rz: a }, () => {
+          k.box(0.03, 0.42, 0.02, PAL.woodDark, { y: 0.22 });
+          k.box(0.1, 0.3, 0.01, 0xf3ead8, { x: 0.06, y: 0.26 });
+        });
+      }
+      // a flour sack
+      k.ball(0.09, PAL.cloth, { x: 0.28, y: 0.18, z: 0.18, s: [1, 1.2, 0.9] }, 1);
+      break;
+    }
+    case 'hatstand': {
+      // the Mayor's spare hat: a black top hat with a red band and a marigold, on a turned wooden stand
+      k.cyl(0.2, 0.05, PAL.woodDark, { y: 0.025 }, 10);
+      k.cyl(0.035, 1.2, PAL.wood, { y: 0.65 }, 8);
+      k.ball(0.06, PAL.wood, { y: 0.62 });
+      k.cyl(0.17, 0.12, PAL.wood, { y: 1.27 }, 10, 0.12);
+      k.at({ y: 1.33, rz: -0.08 }, () => {
+        k.cyl(0.25, 0.025, 0x2a2530, { y: 0.01 }, 14);
+        k.cyl(0.15, 0.3, 0x2a2530, { y: 0.17 }, 12, 0.16);
+        k.cyl(0.155, 0.06, 0xc23b5a, { y: 0.07 }, 12);
+        k.ball(0.045, 0xf0a020, { x: 0.12, y: 0.08, z: 0.09 }, 1);
+        k.ball(0.02, 0xc86010, { x: 0.135, y: 0.08, z: 0.12 });
+      });
+      break;
+    }
+    case 'crook': {
+      // Rowan's lantern crook: a shepherd's crook planted in a cairn of stones, a lantern hung from the hook
+      const h = 1.6;
+      for (const [x, z, r] of [[0, 0, 0.14], [0.12, 0.08, 0.1], [-0.1, 0.1, 0.09], [0.04, -0.12, 0.1]] as const) k.blob(r, PAL.stone, { x, y: r * 0.6, z });
+      k.cyl(0.03, h, PAL.woodDark, { y: h / 2 + 0.1 }, 6);
+      k.rod(0, h + 0.1, 0, 0.1, h + 0.3, 0, 0.028, PAL.woodDark);
+      k.rod(0.1, h + 0.3, 0, 0.24, h + 0.26, 0, 0.028, PAL.woodDark);
+      k.rod(0.24, h + 0.26, 0, 0.26, h + 0.12, 0, 0.028, PAL.woodDark);
+      k.at({ x: 0.26, y: h - 0.14 }, () => {
+        k.box(0.012, 0.12, 0.012, PAL.metalDark, { y: 0.2 });
+        k.cyl(0.08, 0.03, PAL.metalDark, { y: 0.14 }, 6);
+        k.cone(0.08, 0.06, PAL.metalDark, { y: 0.18 }, 6);
+        k.cyl(0.08, 0.03, PAL.metalDark, { y: -0.04 }, 6);
+        for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4; k.box(0.012, 0.16, 0.012, PAL.metalDark, { x: Math.cos(a) * 0.075, y: 0.05, z: Math.sin(a) * 0.075 }); }
+      });
+      bk.cyl(0.065, 0.15, 0xffd890, { x: 0.26, y: h - 0.09 }, 6);
+      out.lights.push({ x: 0.26, y: h - 0.09, z: 0, kind: 'lamp' });
+      // a feather tied to the shaft
+      k.box(0.02, 0.14, 0.05, 0x9aa0a8, { x: 0.04, y: h - 0.2, z: 0.02, rz: 0.4 });
+      break;
+    }
+    case 'orrery': {
+      // Nimbus's orrery: a brass sun on a stand, rings and planets, and one wire comet with a tail
+      const BR = 0xc9962a, BRD = 0x8a6420, y = 1.05;
+      k.cyl(0.2, 0.06, PAL.woodDark, { y: 0.03 }, 10);
+      k.cyl(0.03, y - 0.05, BRD, { y: (y - 0.05) / 2 + 0.05 }, 6);
+      k.ball(0.09, 0xf2c230, { y }, 1);
+      for (const [r, tilt] of [[0.22, 0.15], [0.34, -0.1], [0.46, 0.25]] as const) {
+        for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; k.box(0.13 * r, 0.012, 0.012, BR, { x: Math.cos(a) * r, y: y + Math.sin(a) * r * tilt, z: Math.sin(a) * r, ry: -a - Math.PI / 2 }); }
+      }
+      k.ball(0.035, 0x6fb7e0, { x: 0.22, y: y + 0.0, z: 0 });
+      k.ball(0.045, 0xd9774a, { x: -0.24, y: y + 0.0, z: 0.24 });
+      k.ball(0.055, 0x9b8ad0, { x: 0.12, y: y + 0.11, z: -0.44 });
+      // the comet: a bright head on a long brass wire, a pale tail
+      k.rod(0, y, 0, -0.5, y + 0.28, -0.1, 0.008, BRD);
+      bk.ball(0.04, 0xeaf6ff, { x: -0.5, y: y + 0.28, z: -0.1 });
+      for (let i = 1; i < 4; i++) bk.ball(0.03 - i * 0.006, 0xbfe4ff, { x: -0.5 - i * 0.06, y: y + 0.3 + i * 0.02, z: -0.1 - i * 0.02 });
       break;
     }
     default:

@@ -2,14 +2,15 @@
  * Actions & safety gate: gate by ACTION_CLASS, then `source.request(...)`. Never knows live vs demo.
  * Handles every non-`term.*` renderer→server message after ws.ts validated it and checked the entity id.
  *
- *   always      screen.watch settings.set world.get done.ack agent.explain timeline.get note.set git.diff   (HQ-local / read-only)
+ *   always      screen.watch settings.set world.get done.ack agent.explain timeline.get note.set git.diff term.search   (HQ-local / read-only)
  *   explicit    herdr.focus (button only)
  *   interact    agent.prompt agent.answer agent.keys
  *   structural  spawn pane.close — demo or a named, non-default herdr session only; NEVER the default session (there is no
  *               flag or setting that enables it there; a named session resolving to the default socket counts as default)
  * herdr/client.ts enforces its own method allowlist independently: a bug in either alone cannot mutate the
  * default session. Read-only herdr protocol → every class but `always` is refused with `readonly_protocol`.
- * `timeline.get` is served by timeline.ts; `note.set` by notes.ts; `git.diff` by enrich/gitDiff.ts (live) or the demo world.
+ * `timeline.get` is served by timeline.ts; `note.set` by notes.ts; `git.diff` by enrich/gitDiff.ts (live) or the demo world;
+ * `term.search` by scrollback.ts (live and demo: it only ever reads panes).
  */
 import { ACTION_CLASS, ERR, S2R, DEFAULT_SETTINGS } from '../../shared/protocol.ts';
 import type { ActionClass, ClientMsg, ClientMsgOf, ClientMsgType, EventKind, Prompt, ServerMsg, Settings } from '../../shared/protocol.ts';
@@ -23,6 +24,7 @@ import type { Base, WorldModel } from './model.ts';
 import type { Screens } from './screens.ts';
 import type { Timeline } from './timeline.ts';
 import type { DiffSource } from '../enrich/gitDiff.ts';
+import type { Scrollback } from './scrollback.ts';
 
 /** A connected renderer as far as actions are concerned (WsHub's client object). */
 export interface ActionClient {
@@ -63,6 +65,8 @@ export interface ActionsOptions {
   notes?: Pick<NotesEnricher, 'set'> | null;
   /** `git.diff` (rev 4): enrich/gitDiff.ts live, the DemoWorld in --demo; absent (replay) → refused */
   diffs?: DiffSource | null;
+  /** `term.search` (rev 5): scrollback.ts; absent (replay) → refused */
+  scrollback?: Pick<Scrollback, 'search'> | null;
   readOnly?: () => boolean;
 }
 
@@ -126,6 +130,7 @@ export class Actions {
   audit: ActionAudit | null;
   notes: Pick<NotesEnricher, 'set'> | null;
   diffs: DiffSource | null;
+  scrollback: Pick<Scrollback, 'search'> | null;
   readOnly: () => boolean;
   /** paneId → the answer in flight (send + acceptance poll) */
   answering: Map<string, Promise<ActionResult>>;
@@ -147,6 +152,7 @@ export class Actions {
     this.audit = o.audit ?? null;
     this.notes = o.notes ?? null;
     this.diffs = o.diffs ?? null;
+    this.scrollback = o.scrollback ?? null;
     this.readOnly = o.readOnly ?? (() => false);
     this.answering = new Map();
   }
@@ -209,6 +215,10 @@ export class Actions {
         const root = this.model.get(msg.id)?.git?.root ?? null;
         return { diff: await this.diffs.diff(msg.id, root, { from: msg.from, to: msg.to, path: msg.path }) };
       }
+      case 'term.search':
+        // read-only: matches in the panes' recent output (never a key, a resize or a command)
+        if (!this.scrollback) throw actionError(ERR.NOT_ACCEPTED, 'scrollback search is not available here');
+        return { search: await this.scrollback.search(msg.q, msg.max ?? 24, client) };
       case 'herdr.focus':
         await req('pane.focus', { pane_id: msg.id });
         return {};

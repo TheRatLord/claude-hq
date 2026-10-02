@@ -6,7 +6,7 @@
  * Presentation never imports the network, and the model never imports three or the DOM. A ValleySource can be the
  * live store, a recording, or a local fake, so the visuals stay detachable from real sessions.
  */
-import type { DiffResult, Kind, ModelTier, Status, ToolClass } from '../../../../shared/protocol.ts';
+import type { DiffResult, Kind, ModelTier, SearchResult, Status, ToolClass } from '../../../../shared/protocol.ts';
 import type { AlmanacView } from './almanac.ts';
 import type { FestivalView } from './calendar.ts';
 import type { TimelineView } from './timeline.ts';
@@ -282,7 +282,14 @@ export const VALLEY_EVENTS = Object.freeze([
   'harvested',
 ] as const);
 export type ValleyEventKind = (typeof VALLEY_EVENTS)[number];
-export interface ValleyEvent { kind: ValleyEventKind; /** farmer / helper / plot id */ id: string; detail?: string }
+export interface ValleyEvent {
+  kind: ValleyEventKind;
+  /** farmer / helper / plot id */
+  id: string;
+  detail?: string;
+  /** a muted agent's noisy event (model/marks.ts, set by main.ts): the scene still reacts, the alert sounds stay quiet */
+  quiet?: boolean;
+}
 
 export type LinkState = 'connecting' | 'live' | 'offline' | 'herdr-offline';
 
@@ -325,4 +332,9 @@ export interface AgentPort {
    * working tree); `path` also returns that file's patch. Optional: fakes and older servers have none.
    */
   diff?(id: string, q: { from?: string; to?: string | null; path?: string }): Promise<{ ok: boolean; diff?: DiffResult; error?: string }>;
+  /**
+   * read-only search over every pane's recent terminal output (`term.search`, rev 5; docs/valley/ops.md): lines holding
+   * every word of `q`, newest first. Optional: fakes and older servers have none.
+   */
+  search?(q: string, max?: number): Promise<{ ok: boolean; result?: SearchResult; error?: string }>;
 }

@@ -387,6 +387,9 @@ export const visitorsSystem: SystemFactory = (ctx: SceneCtx) => {
   const force = new Map<VisitorId, 'in' | 'here' | 'out'>();
   let first = true;
   let time = 0, planAt = 0;
+  /** when the cart's rumble / the painter's brush may sound next (s of `time`) */
+  let cartSfxAt = 0, brushSfxAt = 0;
+  const sfxAt = new THREE.Vector3();
   const haltDone = () => { try { return !!(ctx.services.get('projects') as ProjectsService | undefined)?.data().p.halt?.done; } catch { return false; } };
   function plan(): void {
     const day = today(), sky = ctx.valley.sky, hour = sky.hour;
@@ -431,7 +434,7 @@ export const visitorsSystem: SystemFactory = (ctx: SceneCtx) => {
       g.fade = 0;
       if (g.id === 'merchant') { unpark(); cart.step = 'pull'; cart.ease = 0; cart.x = g.entry.x; cart.z = g.entry.z + CART.handle + 0.6; cart.yaw = Math.atan2(g.entry.x - HUB.x, g.entry.z - HUB.z); }
       if (g.id === 'painter') easelPop = 0;
-      if (g.id === 'postie') { const p = g.pos.set(g.entry.x, heightAt(g.entry.x, g.entry.z), g.entry.z); audio()?.play('whistle', { pos: p, volume: 0.7, pitch: 0.85 }); }
+      if (g.id === 'postie') { const p = g.pos.set(g.entry.x, heightAt(g.entry.x, g.entry.z), g.entry.z); audio()?.play('train', { pos: p, volume: 0.8 }); setTimeout(() => audio()?.play('whistle', { pos: g.pos, volume: 0.7, pitch: 0.85 }), 1800); }
     }
     g.y = g.yGround = ground(g.mv.x, g.mv.z); g.hx = 1e9;
     if (g.id === 'painter') forcedPaint = force.get('painter') ? { started: time, done: false } : null;
@@ -473,6 +476,8 @@ export const visitorsSystem: SystemFactory = (ctx: SceneCtx) => {
         if (cart.ease >= 1) { parkCart(); cart.step = 'counter'; }
       }
       if (cart.step === 'unpark' && arrivedAt('hitch')) { unpark(); cart.step = 'pull'; }
+      // the cart rattling along behind him (wheels on the road, harness bells): a burst every ~1.2 s while it rolls
+      if ((walking || cart.step === 'park') && !cart.parked && time > cartSfxAt && pd < 60) { cartSfxAt = time + 1.15; audio()?.play('cart', { pos: sfxAt.set(cart.x, ground(cart.x, cart.z) + 0.6, cart.z), volume: 0.8 }); }
       if (!cart.parked && cart.step !== 'park') {
         // a two-wheeled trailer: the axle follows the hitch at a fixed distance
         const L = CART.handle + 0.45;
@@ -542,6 +547,7 @@ export const visitorsSystem: SystemFactory = (ctx: SceneCtx) => {
     if (night > 0.45 && !walking && ACT_INFO[act].prop && !ACT_INFO[act].grounded && act !== 'brush') act = 'stand';
     if (!walking && !talking && Math.abs(wrap(target.yaw - mv.yaw)) > 0.6 && !ACT_INFO[act].grounded) act = 'stand';
     if (act !== g.act) { g.act = act; g.actSince = time; }
+    if (act === 'brush' && pd < 12 && time > brushSfxAt) { brushSfxAt = time + 1.3 + Math.random() * 0.9; audio()?.play('brush', { pos: g.pos, volume: 0.9 }); }
     // gait + pose
     const turn = dt > 0 ? wrap(mv.yaw - g.lastYaw) / dt : 0;
     g.lastYaw = mv.yaw;

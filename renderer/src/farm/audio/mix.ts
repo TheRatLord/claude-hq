@@ -147,6 +147,12 @@ export interface AmbientIn {
   dHerd: number;
   /** distance from the village square (the trees are out in the countryside) */
   dHub: number;
+  /** 0..1 inside the grotto (the cave's room tone; the open-air beds fall away) */
+  cave?: number;
+  /** the restored glasshouse (m), Infinity / omitted while it is a ruin */
+  dGlasshouse?: number;
+  /** 0..1 snow lying on the ground (sky.trace.snow): fresh snow swallows the high end */
+  snowCover?: number;
 }
 
 export interface AmbientLevels {
@@ -155,12 +161,19 @@ export interface AmbientLevels {
   birds: number; crickets: number; owls: number; frogs: number;
   fire: number; windmill: number; bees: number;
   leaves: number; cowbells: number;
+  cave: number; glasshouse: number;
+  /** 0..1 the snow hush: the outdoor beds lose their top end (engine `setHush`) */
+  hush: number;
   /** music level multiplier (storms hush it) */
   music: number;
 }
 export const emptyLevels = (): AmbientLevels => ({
-  wind: 0, rain: 0, storm: 0, river: 0, waterfall: 0, pond: 0, birds: 0, crickets: 0, owls: 0, frogs: 0, fire: 0, windmill: 0, bees: 0, leaves: 0, cowbells: 0, music: 0,
+  wind: 0, rain: 0, storm: 0, river: 0, waterfall: 0, pond: 0, birds: 0, crickets: 0, owls: 0, frogs: 0, fire: 0, windmill: 0, bees: 0, leaves: 0, cowbells: 0,
+  cave: 0, glasshouse: 0, hush: 0, music: 0,
 });
+
+/** How much birdsong each season carries (spring is the densest; a few hardy winter birds). */
+export const BIRD_SEASON: Readonly<Record<SeasonLike, number>> = Object.freeze({ spring: 1.2, summer: 1, autumn: 0.8, winter: 0.35 });
 
 /** Dawn chorus: a bump around sunrise-ish (hour ≈ 6.5). */
 const dawn = (h: number): number => Math.exp(-(((h - 6.6) / 1.1) ** 2));
@@ -172,6 +185,7 @@ export function ambientLevels(a: AmbientIn, out: AmbientLevels = emptyLevels()):
   const wet = k === 'rain' ? 0.35 + 0.65 * a.intensity : k === 'storm' ? 0.7 + 0.3 * a.intensity : 0;
   const snow = k === 'snow' ? 0.4 + 0.6 * a.intensity : 0;
   const cold = a.season === 'winter' ? 1 : 0;
+  const cave = clamp(a.cave ?? 0, 0, 1), open = 1 - 0.85 * cave;
   out.rain = clamp(wet, 0, 1);
   out.storm = k === 'storm' ? clamp(0.5 + 0.5 * a.intensity, 0, 1) : 0;
   out.wind = clamp(0.12 + a.wind / 14 + out.storm * 0.35 + snow * 0.1 + clamp(a.altitude / 25, 0, 0.3) + (k === 'fog' ? -0.06 : 0), 0.04, 1);
@@ -180,7 +194,9 @@ export function ambientLevels(a: AmbientIn, out: AmbientLevels = emptyLevels()):
   out.waterfall = proximity(a.dWaterfall, 10, 120) * (1 + 0.3 * proximity(a.dWaterfall, 3, 9));
   out.pond = proximity(a.dPond, 10.5, 32) * (1 - snow * 0.5);
   const quietWeather = 1 - 0.85 * out.rain - 0.5 * snow - (k === 'fog' ? 0.3 : 0);
-  out.birds = clamp((a.daylight * 0.55 + dawn(a.hour) * 0.65 + dusk(a.hour) * 0.15 * a.daylight) * quietWeather * (cold ? 0.45 : 1), 0, 1);
+  // spring's dawn chorus is the loudest of the year
+  const chorus = a.season === 'spring' ? 0.85 : 0.65;
+  out.birds = clamp((a.daylight * 0.55 + dawn(a.hour) * chorus + dusk(a.hour) * 0.15 * a.daylight) * quietWeather * BIRD_SEASON[a.season], 0, 1);
   out.crickets = clamp(smooth(0.25, 0.75, night) * (0.6 + 0.4 * dusk(a.hour)) * (1 - 0.75 * out.rain) * (1 - snow) * (cold ? 0 : a.season === 'autumn' ? 0.7 : 1), 0, 1);
   out.owls = clamp(smooth(0.7, 0.95, night) * (1 - 0.8 * out.rain) * 0.8, 0, 1);
   const frogSeason = a.season === 'winter' ? 0 : a.season === 'autumn' ? 0.45 : 1;
@@ -194,6 +210,17 @@ export function ambientLevels(a: AmbientIn, out: AmbientLevels = emptyLevels()):
   const boughs = a.season === 'winter' ? 0.3 : a.season === 'autumn' ? 1.1 : 0.9;
   out.leaves = clamp((out.wind - 0.1) * 1.3 * boughs * smooth(12, 34, a.dHub) * (1 - 0.6 * out.rain), 0, 1);
   out.cowbells = Number.isFinite(a.dHerd) ? proximity(a.dHerd, 6, 60) * smooth(0.12, 0.45, a.daylight) * (1 - 0.7 * out.rain) * (1 - 0.6 * snow) : 0;
+  // the grotto: inside the rock the open-air beds fall away (the falls stay, a rumble through the walls)
+  out.cave = cave;
+  if (cave > 0) {
+    out.wind *= open; out.rain *= 1 - 0.7 * cave; out.birds *= open; out.crickets *= open; out.owls *= open; out.frogs *= open;
+    out.leaves *= open; out.cowbells *= open; out.bees *= open; out.fire *= open; out.windmill *= open;
+    out.river *= 1 - 0.6 * cave; out.pond *= 1 - 0.6 * cave;
+  }
+  const dg = a.dGlasshouse ?? Infinity;
+  out.glasshouse = Number.isFinite(dg) ? proximity(dg, 3, 14) * (1 - cave) : 0;
+  // fresh snow (falling or lying) and thick fog swallow the high end of the valley
+  out.hush = clamp(Math.max(clamp(a.snowCover ?? 0, 0, 1), snow) * 0.85 + (k === 'fog' ? 0.3 : 0), 0, 1) * (1 - cave);
   out.music = 1 - out.storm * 0.6;
   return out;
 }

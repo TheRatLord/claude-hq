@@ -17,7 +17,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [lore.md](valley/lore.md) | writing copy or changing how agent state shows: fields, farmers, ducklings, jobs, field traces, idle leisure and nooks, system-stat landmarks |
 | [art.md](valley/art.md) | building or restyling anything visible: toon/facet rules, sculpted creatures, surface library, palette, local lights, post, seasons, the land (strata, ivy, meadow, horizon) |
 | [hud.md](valley/hud.md) | touching DOM overlays: names/tags, anchored bubbles, the interaction tag, terminal routes, power-user loop, keys, layout zones, z-order, layer classes, drawer |
-| [ops.md](valley/ops.md) | running many agents at once: the command palette (Ctrl+K: agents by name or by what they said, answers, panels) and the focus queue (Alt+N, the drawer's Next) |
+| [ops.md](valley/ops.md) | running many agents at once: the command palette (Ctrl+K: agents by name or by what they said, every terminal's scrollback via `term.search`, answers, panels), the focus queue (Alt+N, the drawer's Next), pin / mute per agent, the overview grid (V) |
 | [recap.md](valley/recap.md) | changing harvest recaps: what a stretch of work records, when it closes, the postcard / toast / card / ledger, the read-only `git.diff` |
 | [timeline.md](valley/timeline.md) | changing the per-farmer day timeline: what is recorded, its bounds and storage, the card's Today section, the ledger strips |
 | [signals.md](valley/signals.md) | changing what the server knows about an agent and where it shows: model, context fill, todo checklist, git per field, token spend; the known-vs-surfaced audit |
@@ -33,6 +33,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [pet.md](valley/pet.md) | changing your own pet: adoption at the foundlings basket, following, fetch, finds, bedtime, happiness |
 | [economy.md](valley/economy.md) | changing bits, the basket, the General store, decor or the yard |
 | [friends.md](valley/friends.md) | changing villagers (cast, routines, contracts) or friendship, gifts, requests and milestones |
+| [villagers.md](valley/villagers.md) | changing villagers' daily routines or the heart events at 3 / 5 / 7 hearts |
 | [gatherings.md](valley/gatherings.md) | changing campfire evenings, concerts or market mornings |
 | [festivals.md](valley/festivals.md) | changing the festival calendar or festival dressing |
 | [stamps.md](valley/stamps.md) | changing the stamp book: achievements across every system, their rewards and trophies, the Almanac's Stamps tab |

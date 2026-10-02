@@ -327,6 +327,29 @@ export function propMaterial(o: ToonOpts = {}): THREE.MeshToonMaterial {
   return m;
 }
 
+/**
+ * A crop part's uniforms + its toon and depth materials, pooled: fields come and go all day (a churny session built
+ * ~1.9k crop materials a minute, each a JS object + three's per-material state, all to be collected), and the
+ * programs are shared anyway (`customProgramCacheKey`). A material belongs to its uniforms (onBeforeCompile binds
+ * them), so the three travel together and the uniforms are reset on reuse.
+ */
+export interface CropKit { u: CropUniforms; mat: THREE.MeshToonMaterial; depth: THREE.MeshDepthMaterial }
+const cropPool: CropKit[] = [];
+const CROP_POOL_MAX = 192;
+export function takeCropKit(bend = 0.12): CropKit {
+  const k = cropPool.pop();
+  if (!k) { const u = cropUniforms(bend); return { u, mat: cropMaterial(u, { side: THREE.DoubleSide }), depth: cropDepthMaterial(u) }; }
+  const u = k.u;
+  u.uTime.value = 0; (u.uWind.value as THREE.Vector2).set(0.8, 0.3); u.uBend.value = bend; u.uDroop.value = 0;
+  u.uDry.value = 0; u.uGreen.value = 0; u.uSat.value = 1; u.uSnow.value = 0; u.uPart.value = NO_PART; u.uPartK.value = 0;
+  return k;
+}
+export function releaseCropKit(k: CropKit): void {
+  if (cropPool.length < CROP_POOL_MAX) cropPool.push(k);
+  else { k.mat.dispose(); k.depth.dispose(); }
+}
+export const cropPoolSize = (): number => cropPool.length;
+
 /** Depth material for shadows that sways with the crop (keeps shadow and mesh in sync). */
 export function cropDepthMaterial(u: CropUniforms): THREE.MeshDepthMaterial {
   const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });

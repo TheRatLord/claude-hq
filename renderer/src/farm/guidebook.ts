@@ -13,6 +13,7 @@
  *
  * Service 'guide' (`GuideHandle`): the villagers ask it for rumours, the HUD reads it, `__valley.guide()` drives it.
  */
+import type { HeartsData } from './model/hearts.ts';
 import { createGuide, nudgesFor, NEAR_FAR, type GuideService, type GuideWorld, type Near, type NudgeId, type SeenId } from './model/guide.ts';
 import type { Valley } from './model/valley.ts';
 import type { CollectionService } from './model/collection.ts';
@@ -88,6 +89,8 @@ export function installGuide(d: GuideDeps): GuideHandle {
       photos: d.photos(), toured: onboarding.data().pastimes, seen: [],
       projects: (svc.get('projects') as ProjectsService | undefined)?.data() ?? null,
       visitors: (svc.get('visitors') as { data(): VisitorsData } | undefined)?.data() ?? null, day: dayKey(Date.now()),
+      hearts: (svc.get('hearts') as { data(): HeartsData } | undefined)?.data() ?? null,
+      restored: Object.entries((svc.get('projects') as ProjectsService | undefined)?.data().p ?? {}).filter(([, p]) => p?.unveiled).map(([id]) => id),
     };
   };
 

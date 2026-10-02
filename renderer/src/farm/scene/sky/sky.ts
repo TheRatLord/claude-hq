@@ -22,6 +22,7 @@ import type { AudioService, IndoorSpace } from '../context.ts';
 import { sunTimes } from '../../model/sky.ts';
 import { hash32 } from '../../../../../shared/identity.ts';
 import { VL_KEY } from '../lights/shader.ts';
+import { WORLD } from '../../world/map.ts';
 
 /** dev service 'atmosphere': force the weather moments (null = follow the weather) */
 export interface AtmosphereService {
@@ -35,6 +36,13 @@ const OVERCAST_GREY = new THREE.Color(0x9aa4ae);
 const FOG_GREY = new THREE.Color(0xc4cad0);
 const SNOW_GREY = new THREE.Color(0xd6dde6);
 const STORM_GREY = new THREE.Color(0x4a5260);
+/**
+ * Snowfall's air: a cool slate a step darker than lying snow, so a snowy valley reads as white shapes going blue-grey
+ * with distance instead of white fading into white (the overview's whiteout). SNOW_SHADE: the cooler split-tone for
+ * shadows on lying snow (blue, not the palette's violet).
+ */
+const SNOW_AIR = new THREE.Color(0x94a6bc), SNOW_SHADE = new THREE.Color(0x0a2050);
+const WATER_Y = WORLD.water;
 /** indoors (the farmhouse): what the open-sky fill turns into under a roof — warm bounce off plaster and planks */
 const ROOM_SKY = new THREE.Color(0xd8c4a8), ROOM_GROUND = new THREE.Color(0x8a5a3a);
 
@@ -236,13 +244,18 @@ export const skySystem: SystemFactory = (ctx) => {
       // --- fog: horizon-matched, closer in weather
       tmpC.copy(mix.horizon).lerp(mix.glow, 0.12 * sunW).lerp(mix.zenith, 0.12);
       { const l = tmpC.r * 0.2126 + tmpC.g * 0.7152 + tmpC.b * 0.0722; tmpC.lerp(tmpC2.setRGB(l, l, l), 0.28); }
-      fog.color.copy(tmpC);
+      fog.color.copy(tmpC).lerp(SNOW_AIR, sn * 0.55);
       let near = 45, far = 440;
       near = near * (1 - rn * 0.75 - sn * 0.8 - fg * 0.95) ;
       // snow thickens the air without whiting out the valley from the lookout (the falling flakes do the rest)
       far = far * (1 - oc * 0.15 - rn * 0.45 - st * 0.1 - sn * 0.4 - fg * 0.84);
-      fog.near = Math.max(0, near);
-      fog.far = Math.max(60, far);
+      // the air thins with height like the post haze (scale height 110 m above the water): looking down from the
+      // overview or the summit the fog reaches further (×1.46 at 90 m up), at eye height on the floor nothing changes
+      ctx.camera.getWorldPosition(camPos);
+      const y0 = Math.max(0, camPos.y - WATER_Y);
+      const thin = y0 > 0.5 ? (110 * (1 - Math.exp(-y0 / 110))) / y0 : 1;
+      fog.near = Math.max(0, near) / thin;
+      fog.far = Math.max(60, far) / thin;
 
       // --- dome
       ctx.camera.getWorldPosition(camPos);
@@ -325,6 +338,14 @@ export const skySystem: SystemFactory = (ctx) => {
       g.shadowTint.copy(mix.shade);
       g.saturation = mix.sat * (1 - gloom * 0.28 - fg * 0.2 - sn * 0.12);
       g.contrast = mix.contrast * (1 - fg * 0.08);
+      // lying snow: expose for the snow (a touch down, a touch more contrast) and cool its shadows toward blue, so a
+      // white valley keeps its form; by day only (moonlit snow already sits in the night grade)
+      {
+        const ls = a.ground.snow * (1 - mix.night);
+        g.exposure *= 1 - 0.12 * ls;
+        g.contrast *= 1 + 0.06 * ls;
+        g.shadowTint.lerp(SNOW_SHADE, 0.6 * ls);
+      }
       g.vignette = 0.22 + mix.night * 0.12;
       // only true light sources halo: the threshold stays above anything lamp-lit (lit pools peak ≈ 0.8), so lamp glass,
       // window cores, fire and the moon bloom, softly; by day only the sun disk and specular glints reach it

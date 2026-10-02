@@ -19,6 +19,39 @@ import { copyText, readClipboard, setPrimary, getPrimary } from './clipboard.ts'
 import { terminalKey, type TerminalKeyAction } from './keys.ts';
 import { createGlyphMapper, mapGlyphText } from './glyphs.ts';
 
+/** A line to land on in the history overlay: `text` (else the shorter `word`), the occurrence nearest `fromEnd` lines up. */
+export interface HistoryFind { text: string; word?: string; fromEnd?: number }
+
+/**
+ * Where `f` is in a terminal's buffer: wrapped rows are joined into logical lines, matched case-insensitively; of several
+ * matches the one whose distance from the bottom is closest to `fromEnd` (else the newest). Row / column of the match
+ * start and its length in cells (which `select` wraps across rows).
+ */
+export function findLine(t: Pick<Terminal, 'buffer' | 'cols'>, f: HistoryFind): { row: number; col: number; len: number } | null {
+  const b = t.buffer.active;
+  const lines: { row: number; text: string }[] = [];
+  for (let y = 0; y < b.length; y++) {
+    const l = b.getLine(y);
+    if (!l) continue;
+    const s = l.translateToString(false);
+    if (l.isWrapped && lines.length) lines[lines.length - 1].text += s;
+    else lines.push({ row: y, text: s });
+  }
+  while (lines.length && !lines[lines.length - 1].text.trim()) lines.pop();
+  for (const needle of [f.text, f.word].filter((x): x is string => !!x && !!x.trim())) {
+    const low = needle.toLowerCase().trim();
+    let best: { row: number; col: number; len: number } | null = null, bestD = Infinity;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const at = lines[i].text.toLowerCase().indexOf(low);
+      if (at < 0) continue;
+      const d = f.fromEnd === undefined ? lines.length - 1 - i : Math.abs(lines.length - 1 - i - f.fromEnd);
+      if (d < bestD) { bestD = d; best = { row: lines[i].row + Math.floor(at / t.cols), col: at % t.cols, len: low.length }; }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
 /** Swallow a double-tapped Enter immediately after an Enter opened the terminal. */
 export const ENTER_GUARD_MS = 250;
 /** Readable neutral terminal defaults, independent of the surrounding application. */
@@ -173,7 +206,8 @@ export interface TermView {
   promote(o?: { takeover?: boolean }): Promise<ReplyMsg>;
   demote(): Promise<void>;
   toggleMode(): Promise<void>;
-  openHistory(): Promise<void>;
+  /** the scrollback overlay; `find` lands on (selects and scrolls to) the line holding that text: true when found */
+  openHistory(o?: { find?: HistoryFind }): Promise<boolean>;
   closeHistory(): void;
   pasteText(text: string): Promise<void>;
   pasteFromClipboard(): Promise<void>;
@@ -484,7 +518,7 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
   let enterOpenAt = -1e9;
 
   // ---- history overlay ----
-  async function openHistory(): Promise<void> {
+  async function openHistory(o: { find?: HistoryFind } = {}): Promise<boolean> {
     if (!hist) {
       const t = new Terminal({ cols: term.cols, rows: term.rows, scrollback: 5000, fontFamily: MONO, fontSize: term.options.fontSize, lineHeight: LINE_HEIGHT, theme: XTERM_THEME, disableStdin: true, cursorBlink: false, allowProposedApi: true });
       const m = h('div.frame');
@@ -531,11 +565,19 @@ export function createTermView(o: { id: string; net: TermNet; settings: Settings
     t.write('\x1b[2m… loading history …\x1b[0m');
     t.focus();
     const r = await net.call({ t: 'term.history', id, lines: 2000 });
-    if (!my.open) return;
+    if (!my.open) return false;
     t.reset();
-    if (!r.ok) { t.write(`\x1b[31mHistory unavailable: ${r.error}\x1b[0m`); return; }
+    if (!r.ok) { t.write(`\x1b[31mHistory unavailable: ${r.error}\x1b[0m`); return false; }
     const text = mapGlyphText(String(r.ansi ?? '')).replace(/\r?\n/g, '\r\n');
-    t.write(text, () => { t.scrollToBottom(); t.scrollLines(-3); });
+    return new Promise<boolean>((done) => t.write(text, () => {
+      const at = o.find ? findLine(t, o.find) : null;
+      if (at) {
+        // the line a search found (the command palette): a third of the way down, selected
+        t.scrollToLine(Math.max(0, at.row - Math.floor(t.rows / 3)));
+        t.select(at.col, at.row, at.len);
+      } else { t.scrollToBottom(); t.scrollLines(-3); }
+      done(!!at);
+    }));
   }
   function closeHistory() {
     if (!hist?.open) return;

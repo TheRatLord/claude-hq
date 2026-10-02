@@ -36,6 +36,8 @@ export const ICONS = {
   scarecrow: S(`<path d="M12 21V9M4 11.5h16" stroke="#8a5a32" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="3" fill="#f3dfae" ${ol}/><path d="M7 5.5h10l-2-3H9z" fill="#c8955a" ${ol}/><path d="M8.5 11h7l-1 6h-5z" fill="#6aa84f" ${ol}/>`),
   play: S(`<path d="M8 5l11 7-11 7z" fill="currentColor"/>`),
   pin: S(`<circle cx="12" cy="9" r="5" fill="#d9534f" ${ol}/><path d="M12 14v7" stroke="${INK}" stroke-width="1.6"/>`),
+  // a muted agent (model/marks.ts): the bell, greyed, struck through
+  muted: S(`<path d="M12 3.5c3.6 0 5.8 2.6 5.8 6.3v3.4l2 3H4.2l2-3V9.8c0-3.7 2.2-6.3 5.8-6.3z" fill="#cfc4b0" ${ol}/><circle cx="12" cy="18.8" r="2" fill="#a89b86" ${ol}/><path d="M4 4l16 16" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`),
   // Fern's field notebook: a green cover, an elastic band, a pencil tucked in
   notebook: S(`<rect x="4.5" y="3" width="14" height="18" rx="1.8" fill="#5c8a4a" ${ol}/><path d="M7 3v18" stroke="#3f6a33" stroke-width="1.2"/><rect x="10" y="7" width="6.5" height="4" rx=".6" fill="#f3e6c4" ${ol}/><path d="M15.5 3v18" stroke="#c9573f" stroke-width="1.6"/><path d="M18.6 6.5l2.2-2.2 1 1-2.2 2.2z" fill="#f0c04a" ${ol}/><path d="M18.6 6.5L17 9.5l2.6-1.9" fill="#e8c9a0" ${ol}/>`),
   compass: S(`<circle cx="12" cy="12" r="9.5" fill="#f3dfae" ${ol}/><path d="M12 4.5l2.5 7.5h-5z" fill="#d9534f" ${ol}/><path d="M12 19.5l-2.5-7.5h5z" fill="#fff6e0" ${ol}/>`),

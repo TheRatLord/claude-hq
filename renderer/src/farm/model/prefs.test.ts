@@ -7,7 +7,7 @@ import {
 import { STATUSES } from '../../../../shared/protocol.ts';
 
 test('prefs: defaults keep the original behaviour (E / F / M / Tab / J, fov 62, bob on, 1x everything)', () => {
-  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO' });
+  assert.deepEqual(DEFAULT_KEYS, { use: 'KeyE', alt: 'KeyF', map: 'KeyM', ledger: 'Tab', mail: 'KeyJ', wave: 'KeyZ', lantern: 'KeyT', notebook: 'KeyO', overview: 'KeyV' });
   assert.equal(DEFAULT_PREFS.fov, 62);
   assert.equal(DEFAULT_PREFS.headBob, true);
   assert.equal(DEFAULT_PREFS.mouseSens, 1);
@@ -49,7 +49,7 @@ test('keys: duplicates in storage resolve to defaults; conflicts are refused wit
   assert.deepEqual(sanitizeKeys({ use: 'KeyF' }), { ...DEFAULT_KEYS, use: 'KeyF', alt: 'KeyR' }, 'use on F: the chosen key wins, alt moves to a spare');
   // a player who had put the map on O before the notebook existed keeps it; the notebook takes a spare key
   assert.deepEqual(sanitizeKeys({ map: 'KeyO' }), { ...DEFAULT_KEYS, map: 'KeyO', notebook: 'KeyR' });
-  assert.deepEqual(sanitizeKeys({ map: 'KeyR', ledger: 'KeyO' }), { ...DEFAULT_KEYS, map: 'KeyR', ledger: 'KeyO', notebook: 'KeyV' });
+  assert.deepEqual(sanitizeKeys({ map: 'KeyR', ledger: 'KeyO' }), { ...DEFAULT_KEYS, map: 'KeyR', ledger: 'KeyO', notebook: 'KeyX' }, 'a spare never takes another action\'s default (V: the overview)');
   assert.deepEqual(keyConflict(DEFAULT_KEYS, 'use', 'KeyM'), { action: 'map' });
   assert.deepEqual(keyConflict(DEFAULT_KEYS, 'use', 'KeyW'), { reserved: 'walk' });
   assert.equal(keyConflict(DEFAULT_KEYS, 'use', 'KeyE'), null, 'its own key is fine');

@@ -16,7 +16,8 @@ import { PAL, WORKSPACE_COLORS, toon } from '../toon.ts';
 import type { Batches } from './batch.ts';
 import type { TextAtlas } from './atlas.ts';
 import { signPainter, tagPainter } from './atlas.ts';
-import { cropDepthMaterial, cropMaterial, cropUniforms, atlasMaterial, partPoints, propMaterial, PART_N } from './materials.ts';
+import { cropUniforms, atlasMaterial, partPoints, propMaterial, releaseCropKit, takeCropKit, PART_N } from './materials.ts';
+import type { CropKit } from './materials.ts';
 import type { CropUniforms } from './materials.ts';
 import { cropLayout, decorClump, SUN_STEM } from './crops.ts';
 import type { Clear, CropLayout, Slot } from './crops.ts';
@@ -115,6 +116,8 @@ export class Field {
   private readonly layout: CropLayout;
   private readonly cropMeshes: (THREE.InstancedMesh | null)[] = [];
   private readonly cropU: CropUniforms[] = [];
+  /** pooled crop materials (materials.ts takeCropKit), handed back on dispose */
+  private readonly cropKits: CropKit[] = [];
   private readonly slotIndex: number[] = [];
   /** world parting points shared by every crop part's uniforms (farmers standing in the crop, the player) */
   private readonly partPts = partPoints();
@@ -301,15 +304,22 @@ export class Field {
     this.decorN = counts[counts.length - 1];
     this.decorArr = new Float32Array(this.decorN * 16);
     this.layout.parts.forEach((part, i) => {
-      const u = cropUniforms(part.bend);
+      if (part.growth === 'decor') {
+        const u = cropUniforms(part.bend);
+        u.uPart.value = this.partPts;
+        u.uPartK.value = part.part ?? 0;
+        this.cropMeshes.push(null); this.cropU.push(u); return;
+      }
+      const kit = takeCropKit(part.bend);
+      this.cropKits.push(kit);
+      const u = kit.u;
       u.uPart.value = this.partPts;
       u.uPartK.value = part.part ?? 0;
-      if (part.growth === 'decor') { this.cropMeshes.push(null); this.cropU.push(u); return; }
-      const mesh = new THREE.InstancedMesh(singleSided(part.geo(season)), cropMaterial(u, { side: THREE.DoubleSide }), Math.max(1, counts[i]));
+      const mesh = new THREE.InstancedMesh(singleSided(part.geo(season)), kit.mat, Math.max(1, counts[i]));
       mesh.count = counts[i];
       mesh.castShadow = part.shadow;
       mesh.receiveShadow = true;
-      mesh.customDepthMaterial = cropDepthMaterial(u);
+      mesh.customDepthMaterial = kit.depth;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.name = `crop:${part.key}`;
       const colored = this.layout.slots.some((s) => s.part === i && s.color !== null);
@@ -1076,7 +1086,8 @@ export class Field {
     this.git.dispose(atlas);
     this.root.removeFromParent();
     this.props.geometry.dispose();
-    for (const m of this.cropMeshes) if (m) { m.dispose(); (m.material as THREE.Material).dispose(); m.customDepthMaterial?.dispose(); }
+    for (const m of this.cropMeshes) if (m) m.dispose();
+    for (const k of this.cropKits.splice(0)) releaseCropKit(k);
   }
 
   stats(): { crops: number; tiles: number; fence: number; git: ReturnType<FieldGit['stats']> } {

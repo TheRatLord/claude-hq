@@ -177,6 +177,29 @@ function groupShadowDepth(root: THREE.Object3D): void {
   });
 }
 
+/**
+ * Which system put each top-level scene object there (`userData.system`): set for what a factory adds and for what an
+ * update appends later (scene.add appends), so `npm run bench -- --split` can split draw calls and triangles per system.
+ * Objects other code adds (frame hooks, the player) stay untagged.
+ */
+function tagOwner(children: THREE.Object3D[], from: number, name: string): void {
+  for (let i = from; i < children.length; i++) children[i].userData.system ??= name;
+}
+
+/**
+ * Pooled InstancedMeshes sit at count 0 most of the day (deer, fox, owl, fireflies, hearts, offerings …: ~20 draws in
+ * the main + shadow pass). three still binds their program and uploads uniforms before drawing nothing, so an empty
+ * one (or an empty draw range: trails, ring buffers) is dropped here, before any of that (main and shadow pass alike).
+ * Programs still compile at load (`engine.add` → `renderer.compile` ignores counts).
+ */
+function skipEmptyDraws(r: THREE.WebGLRenderer): void {
+  const draw = r.renderBufferDirect;
+  r.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+    if (((object as THREE.InstancedMesh).isInstancedMesh && (object as THREE.InstancedMesh).count === 0) || geometry.drawRange.count === 0) return;
+    draw.call(r, camera, scene, geometry, material, object, group);
+  } as typeof r.renderBufferDirect;
+}
+
 export function createEngine(o: EngineOpts): Engine {
   // the scene renders into the post chain's own target (scene/post): the canvas only gets the final full-screen pass, so
   // a multisampled default framebuffer would be pure cost (the 'post' service is always registered)
@@ -184,6 +207,7 @@ export function createEngine(o: EngineOpts): Engine {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.setOpaqueSort(opaqueSort as unknown as Parameters<THREE.WebGLRenderer['setOpaqueSort']>[0]);
+  skipEmptyDraws(renderer);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.08, 900);
   camera.rotation.order = 'YXZ';
@@ -240,12 +264,13 @@ export function createEngine(o: EngineOpts): Engine {
     for (const fn of frameHooks) fn(fi);
     interactions.pick();
     for (const sys of systems) {
-      const t0 = performance.now();
+      const t0 = performance.now(), n = scene.children.length;
       try { sys.update(fi); } catch (e) {
         state.perf.frameErrors++;
         if (!ctx.debug[`err:${sys.name}`]) { ctx.debug[`err:${sys.name}`] = true; console.error(`[engine] ${sys.name} threw`, e); }
       }
       systemMs[sys.name] = (systemMs[sys.name] ?? 0) * 0.95 + (performance.now() - t0) * 0.05;
+      if (scene.children.length > n) tagOwner(scene.children, n, sys.name);
     }
     draw(s.dt);
     if (!firstFrameAt) { firstFrameAt = performance.now(); firstFrameMs = firstFrameAt - t0; }
@@ -269,6 +294,7 @@ export function createEngine(o: EngineOpts): Engine {
           renderer.setRenderTarget(null);
           renderer.getContext().flush();   // send the queued compiles to the GPU process now, not at the first frame
         }
+        for (const o of scene.children) if (!before.has(o)) o.userData.system ??= s.name;
         buildMs[s.name] = (buildMs[s.name] ?? 0) + performance.now() - t0;
         systems.push(s);
         return s;

@@ -130,6 +130,19 @@ export const DECOR: readonly DecorDef[] = Object.freeze([
     { visitor: true, glow: true }),
   D('whirligig', 'Whirligig', 150, 1, '#e0574a', 'A painted wind toy on a pole: a little farmer pumping a well, faster the harder it blows.',
     { visitor: true }),
+  // heart-event keepsakes (model/hearts.ts, a villager's 7-heart scene): given, never sold
+  D('dovecote', 'Posy\'s dovecote', 220, 1, '#3d9fa8', 'Built by Bram from the valley\'s old pigeonholes. Sergeant\'s grandchicks stop here on their rounds, and occasionally sulk.',
+    { gift: true, friend: { id: 'villager:posy', hearts: 7 } }),
+  D('stilllife', 'Bram\'s still life', 220, 1, '#e6c547', 'A pike in oils on a little easel, by Bram. The pike was not consulted. Do not look at the brushwork; look at the fish.',
+    { gift: true, friend: { id: 'villager:bram', hearts: 7 } }),
+  D('minimill', 'Hazel\'s model windmill', 220, 1, '#d9c08a', 'A knee-high windmill Hazel carved in the evenings. Its sails turn in a breeze, not as well as hers, obviously.',
+    { gift: true, friend: { id: 'villager:hazel', hearts: 7 } }),
+  D('hatstand', 'The Mayor\'s spare hat', 220, 1, '#9b5a8c', 'A top hat on a stand, with a marigold in the band. A mayor keeps a hat in every house she trusts.',
+    { gift: true, friend: { id: 'villager:marigold', hearts: 7 } }),
+  D('crook', 'Rowan\'s lantern crook', 220, 1, '#5d8f45', 'A shepherd\'s crook with a lantern hung from the hook, carried on every night walk for nine years. Lit at dusk, so Fern can find your door.',
+    { gift: true, glow: true, friend: { id: 'villager:fern', hearts: 7 } }),
+  D('orrery', 'Nimbus\'s orrery', 220, 1, '#6fb7e0', 'A little brass sky on a stand: the sun, the planets, and one wire comet that comes round every eleven years.',
+    { gift: true, friend: { id: 'villager:nimbus', hearts: 7 } }),
 ] as DecorDef[]);
 
 const BY_ID = new Map(DECOR.map((d) => [d.id, d]));

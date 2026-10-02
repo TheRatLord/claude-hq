@@ -3,7 +3,8 @@ import { almanacView, emptyAlmanac } from '../../model/almanac.ts';
 import assert from 'node:assert/strict';
 import { CAST, villagerLook } from './cast.ts';
 import type { Villager } from './cast.ts';
-import { entryAt, hoursInto, nextBeat, roundStop, stormy, whereAt } from './schedule.ts';
+import { entryAt, hoursInto, nextBeat, roundStop, stormy } from './schedule.ts';
+import { fairCond, placeIndoors, planFor } from '../../model/routines.ts';
 import { festivalAt } from '../../model/calendar.ts';
 import { brief, callOut, clock, lineFor, partOfDay, shipLine } from './lines.ts';
 import { KIND_COLORS, ROLE_HAT_NAMES, WEAR_NAMES, roleHat, wear } from '../farmers/mascots.ts';
@@ -38,56 +39,44 @@ test('villager looks: Clawd bodies with a role hat and wear; every hat / wear bu
   for (const w of WEAR_NAMES) assert.ok(wear(w, 1).boxes.length > 3, w);
 });
 
-test('places reference real structures and acts', () => {
+test('places reference real structures / project sites and acts; every place a plan can take them to is in the cast', () => {
   const check = (v: Villager, p: { at: string; loop: readonly { act: string; min: number; max: number }[] }) => {
-    assert.ok(p.at === 'xz' || (STRUCTURE_IDS as readonly string[]).includes(p.at), `${v.name}: ${p.at}`);
+    assert.ok(p.at === 'xz' || (STRUCTURE_IDS as readonly string[]).includes(p.at) || /^project:(glasshouse|millwheel|observatory|halt|board)$/.test(p.at), `${v.name}: ${p.at}`);
     assert.ok(p.loop.length > 0);
     for (const b of p.loop) { assert.ok((ACTS as readonly string[]).includes(b.act), b.act); assert.ok(b.max >= b.min && b.min > 0); }
   };
+  const conds = [fairCond(), fairCond({ weather: 'rain', intensity: 0.6 }), fairCond({ season: 'winter' }), fairCond({ festival: 'harvest' }), fairCond({ dow: 0 }),
+    fairCond({ restored: ['glasshouse', 'millwheel', 'observatory', 'halt'] })];
   for (const v of CAST) {
-    for (const k of ['post', 'lunch', 'evening', 'home', 'shelter'] as const) check(v, v.places[k]);
-    for (const p of v.places.round ?? []) check(v, p);
-    if (v.day.some((d) => d.slot === 'round')) assert.ok(v.places.round?.length, `${v.name} has rounds in the plan but no stops`);
-    assert.ok(v.day.some((d) => d.slot === 'home'), `${v.name} goes home at some point`);
+    for (const p of Object.values(v.places)) if (p) check(v, p);
+    assert.ok(v.places.shelter.indoors, `${v.name} shelters indoors`);
+    for (const c of conds) for (const e of planFor(v.id, c)) {
+      for (const k of [e.place, ...(e.stops ?? [])]) assert.ok(v.places[k], `${v.name} has no place for "${k}"`);
+      // where the plan says indoors, the cast agrees (and the other way round)
+      assert.equal(!!v.places[e.place]?.indoors, placeIndoors(e.place), `${v.name}: ${e.place} indoors?`);
+    }
   }
 });
 
 test('day plan: cyclic across midnight, jittered a little per day', () => {
-  const day = CAST[0].day; // postmaster: post 6.5, lunch 12, post 13, evening 18.5, home 22
-  assert.equal(day[entryAt(day, 9)].slot, 'post');
-  assert.equal(day[entryAt(day, 12.5)].slot, 'lunch');
-  assert.equal(day[entryAt(day, 20)].slot, 'evening');
-  assert.equal(day[entryAt(day, 23)].slot, 'home');
-  assert.equal(day[entryAt(day, 3)].slot, 'home', 'wraps past midnight');
+  const day = planFor('posy', fairCond());
+  const kind = (h: number, d = 0, k = 0) => day[entryAt(day, h, d, k)].kind;
+  assert.equal(kind(9), 'work');
+  assert.equal(kind(12.5), 'lunch');
+  assert.equal(kind(20), 'evening');
+  assert.equal(kind(23), 'sleep');
+  assert.equal(kind(3), 'sleep', 'wraps past midnight');
   // jitter moves boundaries by at most ±0.3 h and differs between days
   const starts = new Set<number>();
   for (let d = 0; d < 20; d++) {
-    for (let h = 0; h < 24; h += 0.05) {
-      const e = entryAt(day, h, d, 42);
-      if (h > 7 && h < 11.6) assert.equal(day[e].slot, 'post', `day ${d} ${h}`);
-    }
-    for (let h = 5.9; h < 7.2; h += 0.01) if (day[entryAt(day, h, d, 42)].slot === 'post') { starts.add(Math.round(h * 100)); break; }
+    for (let h = 7.4; h < 11.6; h += 0.05) assert.equal(kind(h, d, 42), 'work', `day ${d} ${h}`);
+    for (let h = 6.5; h < 7.4; h += 0.01) if (kind(h, d, 42) === 'work') { starts.add(Math.round(h * 100)); break; }
   }
   assert.ok(starts.size > 3, 'the morning start varies by day');
 });
 
-test('storms send villagers to shelter, unless they are home', () => {
-  const day = CAST[0].day;
-  assert.equal(whereAt(day, 10, 'storm', 0.5).slot, 'shelter');
-  assert.equal(whereAt(day, 10, 'rain', 0.9).slot, 'shelter');
-  assert.equal(whereAt(day, 10, 'rain', 0.4).slot, 'post');
-  assert.equal(whereAt(day, 23.5, 'storm', 1).slot, 'home');
-  assert.equal(whereAt(day, 23.5, 'storm', 1, 0, 0, false).slot, 'shelter', 'sleeping out: shelter');
-  for (const v of CAST) assert.ok(v.places.shelter.indoors, `${v.name} shelters indoors`);
-  assert.ok(stormy('storm', 0) && !stormy('fog', 1) && !stormy('clear', 1));
-});
-
-test('every villager is somewhere sensible all day, and asleep / home at 3 am except the night owl', () => {
-  for (const v of CAST) for (let h = 0; h < 24; h += 0.25) assert.ok(entryAt(v.day, h, 100, 7) >= 0);
-  const home3 = CAST.filter((v) => v.day[entryAt(v.day, 3)].slot === 'home').map((v) => v.role);
-  assert.ok(home3.length >= CAST.length - 1);
-  const owl = CAST.find((v) => v.role === 'weather')!;
-  assert.equal(owl.day[entryAt(owl.day, 21)].slot, 'evening');
+test('storms', () => {
+  assert.ok(stormy('storm', 0) && !stormy('fog', 1) && !stormy('clear', 1) && stormy('rain', 0.9) && !stormy('rain', 0.4));
 });
 
 test('rounds and beats are deterministic', () => {
@@ -95,9 +84,9 @@ test('rounds and beats are deterministic', () => {
   assert.equal(roundStop(4, 0.7), 1);
   assert.equal(roundStop(4, 2.5), 0);
   assert.equal(roundStop(0, 1), -1);
-  const day = [{ from: 22, slot: 'home' as const }, { from: 6, slot: 'post' as const }];
+  const day = [{ from: 22 }, { from: 6 }];
   assert.ok(Math.abs(hoursInto(day, 0, 1) - 3) <= 0.31, "3 h into the night, give or take the jitter");
-  const loop = CAST[0].places.post.loop;
+  const loop = CAST[0].places.mailbox!.loop;
   const a = nextBeat(loop, -1, 5, 0), b = nextBeat(loop, -1, 5, 0);
   assert.deepEqual(a, b);
   assert.equal(a.i, 0);

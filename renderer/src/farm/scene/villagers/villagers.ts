@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import type { AudioService, FrameInfo, LightEmitter, LightsService, PetsService, SceneCtx, SystemFactory, VillagerPin, VillagersService } from '../context.ts';
 import type { ValleyEvent } from '../../model/types.ts';
-import { PATHS, SITES, WORLD, heightAt, structure } from '../../world/map.ts';
+import { PATHS, SITES, STRUCTURE_IDS, WORLD, heightAt, structure } from '../../world/map.ts';
 import type { StructureId, XZ } from '../../world/map.ts';
 import { Crowd } from '../farmers/rig.ts';
 import type { DrawIn, DrawOut } from '../farmers/rig.ts';
@@ -32,8 +32,14 @@ import type { EmoteName } from '../farmers/atlas.ts';
 import { Labels } from '../farmers/labels.ts';
 import { CAST, villagerLook } from './cast.ts';
 import type { Place, Villager } from './cast.ts';
-import { hash01, hoursInto, keyOf, nextBeat, roundStop, whereAt } from './schedule.ts';
-import type { Where } from './schedule.ts';
+import { hash01, keyOf, nextBeat } from './schedule.ts';
+import { DAY_PARTS, nowText, partOf, planFor, routineAt, usualLines, usualSentence, wet } from '../../model/routines.ts';
+import type { PlaceKey, RoutineCond, RoutineEntry, RoutineKind, RoutineNow } from '../../model/routines.ts';
+import type { HeartScene, HeartsService } from '../../model/hearts.ts';
+import { projectSite, siteLocal } from '../../world/projects.ts';
+import type { ProjectSiteId } from '../../world/projects.ts';
+import { createCurtains } from './windows.ts';
+import { ACTS } from '../farmers/pose.ts';
 import { brief, callOut, lineFor, shipLine } from './lines.ts';
 import { askLine, closeLine, doneLine, giftLine, giftedLine, remindLine, thanksLine } from './friendlines.ts';
 import type { FriendsChange, FriendsService } from '../../model/friends.ts';
@@ -42,6 +48,8 @@ import type { GatherSpot } from '../farmers/brain.ts';
 import { cheeseCue, cheeseFocus, cheeseWeight } from '../cheese.ts';
 import type { CheeseCue } from '../context.ts';
 
+/** what a villager calls out when a heart event is due and you're nearby */
+const BECKON = ['Oh! Have you got a minute?', 'Psst. Over here.', 'There you are! Come here a sec.', 'Got a moment? I want to show you something.'];
 /** Height of the role hat above the body top (labels and emotes clear it). */
 const HAT_TOP: Readonly<Record<Villager['hat'], number>> = { postcap: 0.28, eyeshade: 0.18, millcap: 0.3, tophat: 0.45, ranger: 0.34, souwester: 0.34 };
 /** acts at an evening gathering (scene/gather) that float a little emote now and then: [emote, period s] */
@@ -49,7 +57,22 @@ const GATHER_EMOTE: Partial<Record<Act, readonly [EmoteName, number]>> = {
   laugh: ['haha', 2.3], sing: ['note', 2.5], dance: ['note', 3.3], clap: ['sparkle', 3.8], toast: ['heart', 9],
 };
 
+/** service 'villagerDays': the villagers' days (model/routines.ts), for the notebook, dev hooks and tests */
+export interface VillagerDays {
+  plan(id: string): readonly RoutineEntry[];
+  now(id: string): RoutineNow | null;
+  /** "Fern is usually at the glasshouse in the afternoon." (this part of the day by default) */
+  usual(id: string, part?: 'morning' | 'afternoon' | 'evening' | 'night'): string;
+  /** dev: put a villager at a part of their day now: an hour, a kind ('pastime'), a place ('stones') or a part
+   *  ('evening'); null hands them back to the clock */
+  jump(id: string, to: number | string | null): RoutineNow | null;
+}
+const norm = (id: string) => (id.startsWith('villager:') ? id : `villager:${id}`);
 interface Spot { x: number; z: number; yaw: number; via?: { x: number; z: number } }
+/** what part of the day they're in (model/routines.ts RoutineKind; the gatherings read 'evening', 'home', 'shelter') */
+type Where = RoutineKind;
+/** a heart event being staged (model/hearts.ts): where they stand for it, and the line it's on */
+interface Staging { step: number; x: number; z: number; yaw: number; act: string | null; face: string | null; walked: number; baseX: number; baseZ: number; speaking: boolean }
 interface Errand { kind: 'chat' | 'pet'; target: string; x: number; z: number; yaw: number; until: number; arrived: boolean; done: boolean }
 
 interface Folk {
@@ -58,8 +81,12 @@ interface Folk {
   k: number;
   key: number;
   pin: VillagerPin;
-  spots: Record<Exclude<Where, 'round'>, Spot>;
-  rounds: Spot[];
+  /** world spots per routine place, resolved the first time they are needed (a restored project's site may come later) */
+  spots: Map<PlaceKey, Spot>;
+  /** today's plan (model/routines.ts) and the condition key it was made for */
+  plan: RoutineEntry[]; planKey: string; now: RoutineNow | null;
+  /** a heart event's staging while one plays with them; when they last beckoned for one */
+  stage: Staging | null; beckonAt: number;
   /** passed the current place's `via` waypoint */
   viaDone: boolean;
   /** current place */
@@ -109,7 +136,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   const labels = new Labels(ctx);
   const root = new THREE.Group();
   root.name = 'villagers-root';
-  root.add(crowd.group, bills.mesh);
+  const curtains = createCurtains();
+  root.add(crowd.group, bills.mesh, curtains.mesh);
   ctx.scene.add(root);
 
   const roads = buildRoads(PATHS, { x: 0, z: -1, hw: 12, hd: 10 });
@@ -129,7 +157,12 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   /** a place → a world spot on free, dry ground (spiral out from the authored point when a prop is in the way) */
   const resolve = (p: Place): Spot => {
     let x = p.x, z = p.z, yaw = typeof p.face === 'number' ? p.face : 0;
-    if (p.at !== 'xz') {
+    if (p.at.startsWith('project:')) {
+      // a Valley Project's site (world/projects.ts): local frame, +z its front
+      const s = projectSite(p.at.slice(8) as ProjectSiteId), w = siteLocal(s, p.x, p.z);
+      x = w.x; z = w.z;
+      yaw = p.face === 'toward' ? Math.atan2(s.x - x, s.z - z) : s.yaw + (p.face as number);
+    } else if (p.at !== 'xz') {
       const s = structure(p.at as StructureId);
       const c = Math.cos(s.yaw), sn = Math.sin(s.yaw);
       x = s.x + p.x * c + p.z * sn; z = s.z - p.x * sn + p.z * c;
@@ -147,7 +180,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       }
     }
     let via: Spot['via'];
-    if (p.via && p.at !== 'xz') { const s = structure(p.at as StructureId), c = Math.cos(s.yaw), sn = Math.sin(s.yaw); via = { x: s.x + p.via.x * c + p.via.z * sn, z: s.z - p.via.x * sn + p.via.z * c }; }
+    if (p.via && p.at !== 'xz' && !p.at.startsWith('project:')) { const s = structure(p.at as StructureId), c = Math.cos(s.yaw), sn = Math.sin(s.yaw); via = { x: s.x + p.via.x * c + p.via.z * sn, z: s.z - p.via.x * sn + p.via.z * c }; }
     return { x, z, yaw, via };
   };
 
@@ -157,30 +190,59 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   const offValley = ctx.onValley((e) => { if (e.kind === 'ship') events.push(e); });
 
   const sky = () => ctx.valley.sky;
-  const placeOf = (f: Folk, where: Where, hour: number, entry: number): { key: string; place: Place; spot: Spot } => {
-    if (where === 'round' && f.v.places.round?.length) {
-      const stops = f.v.places.round;
-      const i = roundStop(stops.length, hoursInto(f.v.day, entry, hour, sky().dayOfYear, f.key));
-      return { key: `round:${i}`, place: stops[i], spot: f.rounds[i] };
-    }
-    const w = (where === 'round' ? 'post' : where) as Exclude<Where, 'round'>;
-    return { key: w, place: w === 'shelter' ? f.v.places.shelter : f.v.places[w], spot: f.spots[w] };
+  /** the place a villager stands at for a routine place key (their cast entry; shelter if they have none) */
+  const placeOf = (f: Folk, key: PlaceKey): { key: string; place: Place; spot: Spot } => {
+    const pl = f.v.places[key] ?? f.v.places.shelter;
+    const k = f.v.places[key] ? key : 'shelter';
+    let spot = f.spots.get(k);
+    if (!spot) { spot = resolve(pl); f.spots.set(k, spot); }
+    return { key: k, place: pl, spot };
   };
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // The day (model/routines.ts): a plan per villager for today's conditions, rebuilt only when they change
+  const restoredNow = (): string[] => {
+    const ps = ctx.services.get('projectsScene') as { restored?(id: string): boolean } | undefined;
+    if (!ps?.restored) return [];
+    return ['glasshouse', 'millwheel', 'observatory', 'halt'].filter((id) => { try { return !!ps.restored!(id); } catch { return false; } });
+  };
+  let condAt = -1, condKey = '';
+  const cond: RoutineCond = { dow: 3, season: 'summer', weather: 'clear', intensity: 0, festival: null, restored: [] };
+  /** today's conditions (checked once a second): the key changes when a plan would */
+  function refreshCond(): void {
+    if (time < condAt) return;
+    condAt = time + 1;
+    const s = sky();
+    cond.dow = new Date(ctx.valley.now || Date.now()).getDay();
+    cond.season = s.season; cond.weather = s.weather.kind; cond.intensity = s.weather.intensity;
+    cond.festival = s.festival?.active?.id ?? null;
+    cond.restored = restoredNow();
+    condKey = `${cond.dow}|${cond.season}|${wet(cond) ? 1 : 0}|${cond.festival ?? ''}|${(cond.restored as string[]).join(',')}`;
+  }
+  const routineOf = (f: Folk): RoutineNow => {
+    if (f.planKey !== condKey) { f.plan = planFor(f.v.id, cond); f.planKey = condKey; }
+    const s = sky();
+    const hour = hourOf(f);
+    return routineAt(f.plan, hour, { weather: s.weather.kind, intensity: s.weather.intensity }, s.dayOfYear, f.key);
+  };
+  /** dev: a villager jumped to a part of their day (`__valley.routine`) lives that many hours ahead of the clock */
+  const jumpTo = new Map<string, number>();
+  const hourOf = (f: Folk): number => (((sky().hour + (jumpTo.get(f.v.id) ?? 0)) % 24) + 24) % 24;
 
   for (const v of CAST) {
     const k = hash01(keyOf(v.id), 3.3);
     const look = villagerLook(v);
-    const spots = {
-      post: resolve(v.places.post), lunch: resolve(v.places.lunch), evening: resolve(v.places.evening), home: resolve(v.places.home), shelter: resolve(v.places.shelter),
-    };
-    const rounds = (v.places.round ?? []).map(resolve);
+    const spots = new Map<PlaceKey, Spot>();
+    const shelter = resolve(v.places.shelter);
+    spots.set('shelter', shelter);
     const light: LightEmitter = { pos: new THREE.Vector3(), color: LANTERN.clone(), intensity: 0.95, radius: 4.6, flicker: 0.3, gain: 0, when: 'night' };
     const f: Folk = {
       v, look, k, key: keyOf(v.id),
       pin: { id: v.id, name: v.name, role: v.title, glyph: v.glyph, color: `#${v.color.toString(16).padStart(6, '0')}`, x: 0, z: 0, inside: false },
-      spots, rounds, viaDone: true, where: 'post', placeKey: '', place: v.places.post, spot: spots.post,
+      spots, plan: [], planKey: '', now: null, stage: null, beckonAt: 0,
+      viaDone: true, where: 'work', placeKey: '', place: v.places.shelter, spot: shelter,
       beat: -1, beatN: 0, beatUntil: 0, beatAct: 'stand', errand: null, socialAt: 20 + k * 40,
-      inside: false, fade: 1, mv: newMover(spots.post.x, spots.post.z, spots.post.yaw),
+      inside: false, fade: 1, mv: newMover(shelter.x, shelter.z, shelter.yaw),
       act: 'stand', actSince: 0, tgt: newPose(), out: newPose(), spr: newSprings(),
       gait: { cyc: k * 3, w: 0, jog: 0, turn: 0, speed: 0, heavy: false, bounce: v.bounce }, lastYaw: 0, glyphs: newGlyphs(),
       prop: null, propS: 0, y: 0, yGround: 0, hx: 1e9, hz: 0, react: null, emote: null, emoteUntil: 0,
@@ -193,10 +255,10 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       gather: null, gPlace: { at: 'xz', x: 0, z: 0, face: 0, loop: [{ act: 'stand', min: 30, max: 60 }], amble: true }, gSpot: { x: 0, z: 0, yaw: 0 },
     };
     // start where the clock says, already settled (the valley was here before you)
-    const s = sky();
-    const { slot, entry } = whereAt(v.day, s.hour, s.weather.kind, s.weather.intensity, s.dayOfYear, f.key, !!v.places.home.indoors);
-    const p = placeOf(f, slot, s.hour, entry);
-    f.where = slot; f.placeKey = p.key; f.place = p.place; f.spot = p.spot;
+    refreshCond();
+    const now = routineOf(f);
+    const p = placeOf(f, now.place);
+    f.now = now; f.where = now.kind; f.placeKey = p.key; f.place = p.place; f.spot = p.spot;
     place(f.mv, { key: p.key, x: p.spot.x, z: p.spot.z, yaw: p.spot.yaw, gait: 'walk' });
     if (p.place.indoors) { f.inside = true; f.fade = 0; }
     f.y = f.yGround = ground(f.mv.x, f.mv.z);
@@ -209,7 +271,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       enabled: () => !f.inside && f.fade > 0.5,
       use: () => talk(f, false),
       // F: a gift from your basket (model/friends.ts) when you have one and they haven't had one today; else a chat
-      alt: { get verb() { return canGift(f) ? 'Give a gift' : v.fn === 'say' ? 'Ask more' : 'Just chat'; }, use: () => (canGift(f) ? gift(f) : talk(f, true)) },
+      alt: { get verb() { return canGift(f) && !dueNow(f) ? 'Give a gift' : v.fn === 'say' ? 'Ask more' : 'Just chat'; }, use: () => (canGift(f) && !dueNow(f) ? gift(f) : talk(f, true)) },
       hint: () => hintFor(f.v) + friendHint(f.v),
     });
     folks.push(f);
@@ -217,6 +279,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
 
   /** E: a line about the valley, then the villager's shortcut (the panel opens a beat later so the line reads first) */
   function talk(f: Folk, chatOnly: boolean): void {
+    // a heart event due with them right here, right now (model/hearts.ts): the scene plays instead
+    if (beginMoment(f)) return;
     const n = f.talks + (chatOnly ? 1 : 0);
     // friendship first (model/friends.ts): the day's first chat counts; today's request is asked for, nudged or delivered
     const fr = friends();
@@ -284,7 +348,9 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!fv) return '';
     const rq = fv.request;
     const req = rq && !rq.done ? (rq.ready ? ' · request ready!' : !rq.req.asked ? ' · has a request' : '') : '';
-    return ` · ♥ ${fv.hearts}${req}`;
+    const f = folks.find((x) => x.v === v);
+    const moment = f && dueNow(f) ? ' · wants to show you something' : '';
+    return ` · ♥ ${fv.hearts}${req}${moment}`;
   }
   /** a friendship change the scene shows: gift reactions in their voice */
   function onFriends(c: FriendsChange): void {
@@ -309,6 +375,110 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       const st = structure(q.place as StructureId);
       const r = Math.max(st.size[0], st.size[1]) * 0.5 + 4;
       if (Math.hypot(ctx.player.pos.x - st.x, ctx.player.pos.z - st.z) < r) fr.visited(q.place, ctx.valley.sky.hour);
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Heart events (model/hearts.ts, service 'hearts'): due when you meet them at the right place and hour; talking to
+  // them then plays the scene. The HUD shows the lines (hud/hearts.ts); here they are staged: where the villager
+  // stands and looks, their act and emotes, and where your eyes go (a gentle turn; a cut with reduced motion).
+  const heartsSvc = (): HeartsService | undefined => ctx.services.get('hearts') as HeartsService | undefined;
+  const dueNow = (f: Folk): boolean => {
+    if (f.inside || !f.now || f.where === 'shelter') return false;
+    try { return !!heartsSvc()?.due(f.v.id, f.now.place, hourOf(f)); } catch { return false; }
+  };
+  function beginMoment(f: Folk): boolean {
+    const hs = heartsSvc();
+    if (!hs || !dueNow(f) || ctx.player.frozen) return false;
+    const e = hs.due(f.v.id, f.now!.place, hourOf(f));
+    if (!e) return false;
+    return !!hs.begin(e.id);
+  }
+  /** a look target → a world point (for your eyes) */
+  const lookPoint = (f: Folk, look: string, out: THREE.Vector3): THREE.Vector3 | null => {
+    const hp = f.head;
+    if (look === 'them' || look === 'you') return out.set(hp.x, hp.y + 0.05, hp.z);
+    if (look === 'sky') {
+      const dx = hp.x - ctx.player.pos.x, dz = hp.z - ctx.player.pos.z, l = Math.hypot(dx, dz) || 1;
+      return out.set(hp.x + (dx / l) * 18, hp.y + 16, hp.z + (dz / l) * 18);
+    }
+    if (look === 'ahead') return out.set(hp.x + Math.sin(f.mv.yaw) * 20, hp.y + 2.5, hp.z + Math.cos(f.mv.yaw) * 20);
+    if (look.startsWith('project:')) {
+      const id = look.slice(8) as ProjectSiteId;
+      try { const st = projectSite(id); return out.set(st.x, heightAt(st.x, st.z) + 3, st.z); } catch { return null; }
+    }
+    if ((STRUCTURE_IDS as readonly string[]).includes(look)) { const st = structure(look as StructureId); return out.set(st.x, st.y + 2.2, st.z); }
+    return null;
+  };
+  const lookV = new THREE.Vector3();
+  let lastLook = '', lastStep = -1, lastScene: HeartScene | null = null;
+  /** apply the scene's current line to its villager (every frame while a scene plays; cheap when nothing changed) */
+  function stageMoment(): void {
+    const sc = heartsSvc()?.current() ?? null;
+    if (!sc) {
+      if (lastScene) {
+        const f = folks.find((x) => x.v.id === lastScene!.event.who);
+        if (f) { f.stage = null; f.talkUntil = time + 3; f.beatUntil = 0; f.greeted = true; f.greetCool = time + 30; }
+        lastScene = null; lastLook = ''; lastStep = -1;
+      }
+      return;
+    }
+    const f = folks.find((x) => x.v.id === sc.event.who);
+    if (!f) return;
+    if (sc !== lastScene) {
+      // the scene begins: they stop where they are and turn to you; your eyes find them
+      lastScene = sc; lastStep = -1; lastLook = '';
+      if (f.errand) { if (f.errand.kind === 'pet') pets()?.hold(f.errand.target as 'dog' | 'cat', f.v.id, 0); f.errand = null; }
+      f.stage = { step: -1, x: f.mv.x, z: f.mv.z, yaw: Math.atan2(ctx.player.pos.x - f.mv.x, ctx.player.pos.z - f.mv.z), act: null, face: 'you', walked: 0, baseX: f.mv.x, baseZ: f.mv.z, speaking: false };
+      audio()?.voice(f.v.id, { pos: f.pos, mood: 'excited', syllables: 4 });
+    }
+    const st = f.stage!;
+    if (sc.step === lastStep) return;
+    lastStep = sc.step;
+    const b = sc.phase === 'talk' ? sc.lines[sc.i] : null;
+    st.speaking = !!b && b.who !== 'aside';
+    if (!b) { if (sc.phase === 'choose') { st.act = 'stand'; st.face = 'you'; st.yaw = Math.atan2(ctx.player.pos.x - st.x, ctx.player.pos.z - st.z); } return; }
+    if (b.act) st.act = (ACTS as readonly string[]).includes(b.act) ? b.act : 'stand';
+    if (b.emote && b.emote in EMOTE) { f.emote = b.emote as EmoteName; f.emoteUntil = time + 3.4; }
+    if (b.face) {
+      st.face = b.face;
+      if (b.face === 'you') st.yaw = Math.atan2(ctx.player.pos.x - st.x, ctx.player.pos.z - st.z);
+      else if (b.face !== 'ahead') { const pt = lookPoint(f, b.face, lookV); if (pt) st.yaw = Math.atan2(pt.x - st.x, pt.z - st.z); }
+    }
+    if (b.walk && st.walked < 3) {
+      const d = Math.min(b.walk, 3 - st.walked);
+      const nx = st.x + Math.sin(st.yaw) * d, nz = st.z + Math.cos(st.yaw) * d;
+      if (!ctx.colliders.blocked(nx, nz, 0.3) && dry(nx, nz)) { st.x = nx; st.z = nz; st.walked += d; }
+    }
+    if (b.who !== 'aside') audio()?.voice(f.v.id, { pos: f.pos, mood: b.emote === 'heart' ? 'happy' : b.emote === 'bang' ? 'excited' : b.emote === 'question' ? 'question' : 'happy', syllables: 2 + Math.min(5, Math.floor(b.text.length / 24)) });
+    // your eyes: the first line frames them; after that only when a line says where to look
+    const look = b.look ?? (lastLook ? '' : 'them');
+    if (look && look !== lastLook) {
+      lastLook = look;
+      const pt = lookPoint(f, look, lookV);
+      const c = ctx.services.get('controller') as { lookAt?(x: number, y: number, z: number): void } | undefined;
+      if (pt) {
+        if (ctx.comfort.reducedMotion) {
+          // a cut, not a pan
+          const e = ctx.player.eye, dx = pt.x - e.x, dy = pt.y - e.y, dz = pt.z - e.z;
+          ctx.player.yaw = Math.atan2(-dx, -dz); ctx.player.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1.2, 1.2);
+        } else c?.lookAt?.(pt.x, pt.y, pt.z);
+      }
+    }
+  }
+  /** twice a second: anyone near with a moment due beckons you over with a heart (and says so, now and then) */
+  function checkMoments(): void {
+    const hs = heartsSvc();
+    if (!hs || hs.current()) return;
+    for (const f of folks) {
+      if (f.inside || !f.now) continue;
+      const d = Math.hypot(ctx.player.pos.x - f.mv.x, ctx.player.pos.z - f.mv.z);
+      if (d > 16 || time < f.beckonAt || !dueNow(f)) continue;
+      f.beckonAt = time + 14;
+      f.emote = 'heart'; f.emoteUntil = time + 4;
+      f.greetUntil = time + 2.6;
+      if (d > 3) { f.line = BECKON[(f.talks + Math.floor(f.k * 7)) % BECKON.length]; f.lineUntil = time + 4.5; }
+      audio()?.voice(f.v.id, { pos: f.pos, mood: 'question', syllables: 3 });
     }
   }
 
@@ -387,10 +557,14 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   /** evening gatherings (scene/gather): a spot at the campfire / the concert / the market on their time off */
   const gatherSvc = () => ctx.services.get('gatherings') as GatherService | undefined;
   function plan(f: Folk): void {
-    const s = sky();
-    const { slot, entry } = whereAt(f.v.day, s.hour, s.weather.kind, s.weather.intensity, s.dayOfYear, f.key, !!f.v.places.home.indoors);
+    const now = routineOf(f);
+    f.now = now;
+    // a heart event holds them where it is playing (model/hearts.ts)
+    if (f.stage) return;
+    const slot = now.kind === 'sleep' ? 'home' : now.kind;
     const gs = gatherSvc();
-    f.gather = gs?.villager(f.v.id, slot, f.v.places.evening.at === 'campfire') ?? null;
+    const regular = f.plan.some((e) => e.kind === 'evening' && e.place === 'campfire');
+    f.gather = gs?.villager(f.v.id, slot, regular) ?? null;
     let p: { key: string; place: Place; spot: Spot };
     if (f.gather) {
       const g = f.gather;
@@ -400,13 +574,16 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       // the campfire's storyteller
       const told = gs?.line(f.v.id);
       if (told) { f.line = told; f.lineUntil = time + 0.7; }
-    } else p = placeOf(f, slot, s.hour, entry);
+    } else p = placeOf(f, now.place);
+    f.where = now.kind;
     if (p.key !== f.placeKey) {
-      f.where = slot; f.placeKey = p.key; f.place = p.place; f.spot = p.spot; f.beat = -1; f.beatUntil = 0; f.viaDone = !p.spot.via;
+      f.placeKey = p.key; f.place = p.place; f.spot = p.spot; f.beat = -1; f.beatUntil = 0; f.viaDone = !p.spot.via;
       if (f.errand) { if (f.errand.kind === 'pet') pets()?.hold(f.errand.target as 'dog' | 'cat', f.v.id, 0); f.errand = null; }
       if (f.inside && !p.place.indoors) { f.inside = false; f.fade = Math.min(f.fade, 0.01); } // steps out of the door
       else if (f.inside) { place(f.mv, { key: p.key, x: p.spot.x, z: p.spot.z, yaw: p.spot.yaw, gait: 'walk' }); f.viaDone = true; } // indoors → indoors (home ↔ storm shelter): stays in
     }
+    // lights out: their window's curtain is drawn while they sleep indoors
+    curtains.set(f.v.id, now.kind === 'sleep' && !!p.place.indoors && f.inside);
   }
 
   /** photo mode's "say cheese" cue this frame (scene/cheese.ts) */
@@ -416,7 +593,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     const at = f.placeKey;
     const settled = mv.arrived && mv.key === at;
     // indoors: fade out at the door, stay in
-    if (f.place.indoors && settled && !f.errand) {
+    if (f.place.indoors && settled && !f.errand && !f.stage) {
       f.fade = Math.max(0, f.fade - dt / 0.6);
       if (f.fade <= 0) f.inside = true;
     } else if (!f.inside) f.fade = Math.min(1, f.fade + dt / 0.6);
@@ -451,6 +628,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     // player
     const px = cheesy ? cue!.x : ctx.player.pos.x, pz = cheesy ? cue!.z : ctx.player.pos.z;
     const pdx = px - mv.x, pdz = pz - mv.z, pd = Math.hypot(pdx, pdz), toPlayer = Math.atan2(pdx, pdz);
+    const st = f.stage;
+    if (st) f.talkUntil = Math.max(f.talkUntil, time + 0.5);
     const talking = time < f.talkUntil;
     // walked up to and looked at: they pause for you, so E finds them where you are looking (a short grace once you look
     // away, so a glance at the HUD doesn't send them off). A while at most (HOLD_S): then they carry on with their day,
@@ -499,6 +678,12 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (!walking0 && (talking || greeting || beckon || held)) target.yaw = toPlayer;
     // stop and talk when spoken to; stand still while you walk up and look at them (or hold still for a photo)
     if (talking || held || posing) { target.key = mv.key; target.x = mv.x; target.z = mv.z; }
+    // a heart event: where the scene puts them, facing where it says
+    if (st) {
+      const far = Math.hypot(st.x - mv.x, st.z - mv.z) > 0.15;
+      target.key = far ? `moment:${st.x.toFixed(2)},${st.z.toFixed(2)}` : mv.key; target.x = far ? st.x : mv.x; target.z = far ? st.z : mv.z;
+      target.yaw = st.face === 'you' ? toPlayer : st.yaw; target.gait = 'walk';
+    }
     const moved = moveStep(mv, target, dt, routeFn);
     const walking = !mv.arrived;
     if (walking && Math.hypot(mv.goal.x - mv.x, mv.goal.z - mv.z) > 1.5) ctx.colliders.resolve(mv, 0.3);
@@ -508,7 +693,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
 
     // act
     const react = f.react && time < f.react.until ? f.react : null;
-    let act: Act = walking ? 'stand' : react?.act ?? (talking ? 'talk' : er?.arrived ? (er.kind === 'chat' ? 'chat' : 'pet') : f.gather && settled ? f.gather.act : f.beatAct);
+    let act: Act = walking ? 'stand' : st ? (st.act as Act | null) ?? 'talk' : react?.act ?? (talking ? 'talk' : er?.arrived ? (er.kind === 'chat' ? 'chat' : 'pet') : f.gather && settled ? f.gather.act : f.beatAct);
     if (!walking && !react && !talking && Math.abs(wrap(target.yaw - mv.yaw)) > 0.6 && !ACT_INFO[act].grounded) act = 'stand';
     if (act !== f.act) { f.act = act; f.actSince = time; }
 
@@ -557,7 +742,7 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     if (f.where === 'shelter' && !talking) face = 'worried';
     if (greeting || beckon) face = 'happy';
     if (posing) face = 'sparkle';
-    if (talking && Math.sin(time * 5) < 0) face = 'talk';
+    if (talking && (!st || st.speaking) && Math.sin(time * 5) < 0) face = 'talk';
     if (time > f.blinkAt) { f.blinkT = 0; f.blinkAt = time + f.look.blinkEvery * (0.5 + hash01(f.key, time)); }
     f.blinkT += dt;
     const blink = f.blinkT < 0.14 ? Math.sin((f.blinkT / 0.14) * Math.PI) : 0;
@@ -606,7 +791,16 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
   const near: { f: Folk; d: number }[] = [];
   for (let i = 0; i < CAST.length; i++) near.push({ f: null as unknown as Folk, d: 0 });
   let nearN = 0;
-  let planAt = 0;
+  let planAt = 0, pinAt = 0;
+  /** the map's tooltip: what they're doing now, where they usually are, a heart event waiting (1 Hz) */
+  const usualKey = new Map<string, string>();
+  function pinInfo(f: Folk): void {
+    if (f.now) f.pin.now = f.inside && f.now.kind !== 'sleep' ? `${nowText(f.now)} (indoors)` : nowText(f.now);
+    if (usualKey.get(f.v.id) !== f.planKey) { usualKey.set(f.v.id, f.planKey); f.pin.usual = usualLines(f.plan); }
+    let moment: string | undefined;
+    try { const e = heartsSvc()?.next(f.v.id); if (e) moment = `wants to show you something ${e.when}`; } catch { /* optional */ }
+    f.pin.moment = moment;
+  }
   const byDist = (a: { d: number }, b: { d: number }) => a.d - b.d;
 
   const pins: VillagerPin[] = folks.map((f) => f.pin);
@@ -615,10 +809,38 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
     debug(id) {
       const f = folks.find((x) => x.v.id === id);
       if (!f) return null;
-      return { where: f.where, place: f.placeKey, act: f.act, beat: f.beatAct, inside: f.inside, fade: f.fade, x: f.mv.x, z: f.mv.z, arrived: f.mv.arrived, path: f.mv.path.length, prop: f.prop, errand: f.errand ? `${f.errand.kind}:${f.errand.target}` : null, spot: f.spot };
+      return { where: f.where, doing: f.now ? nowText(f.now) : '', stage: !!f.stage, curtain: curtains.drawn().includes(f.v.id), place: f.placeKey, act: f.act, beat: f.beatAct, inside: f.inside, fade: f.fade, x: f.mv.x, z: f.mv.z, arrived: f.mv.arrived, path: f.mv.path.length, prop: f.prop, errand: f.errand ? `${f.errand.kind}:${f.errand.target}` : null, spot: f.spot };
     },
   };
   ctx.services.set('villagers', service);
+  /** the villagers' days (model/routines.ts) for the notebook, the dev hooks and tests */
+  const days: VillagerDays = {
+    plan: (id) => { const f = folks.find((x) => x.v.id === norm(id)); return f ? f.plan : []; },
+    now: (id) => folks.find((x) => x.v.id === norm(id))?.now ?? null,
+    usual(id, part) { const f = folks.find((x) => x.v.id === norm(id)); return f ? usualSentence(f.v.name, f.plan, part ?? partOf(sky().hour)) : ''; },
+    jump(id, to) {
+      const f = folks.find((x) => x.v.id === norm(id));
+      if (!f) return null;
+      if (to === null) { jumpTo.delete(f.v.id); planAt = 0; return f.now; }
+      let hour = typeof to === 'number' ? to : NaN;
+      if (typeof to === 'string') {
+        // a kind ('pastime', 'lunch', 'sleep' …), a place ('glasshouse', 'stones' …) or a part of the day ('evening')
+        const e = f.plan.find((x) => x.kind === to || x.place === to || x.stops?.includes(to as PlaceKey));
+        if (e) hour = e.from + 0.35 + (e.stops ? Math.max(0, e.stops.indexOf(to as PlaceKey)) * 0.6 : 0);
+        else if (to in DAY_PARTS) hour = DAY_PARTS[to as keyof typeof DAY_PARTS][0] + 1;
+      }
+      if (!Number.isFinite(hour)) return null;
+      jumpTo.set(f.v.id, (((hour - sky().hour) % 24) + 24) % 24);
+      // there at once (no walk across the valley): a dev hook for shots and tests
+      const now = routineOf(f), p = placeOf(f, now.place);
+      f.now = now; f.where = now.kind; f.placeKey = p.key; f.place = p.place; f.spot = p.spot; f.beat = -1; f.beatUntil = 0; f.viaDone = true; f.errand = null;
+      place(f.mv, { key: p.key, x: p.spot.x, z: p.spot.z, yaw: p.spot.yaw, gait: 'walk' });
+      f.inside = !!p.place.indoors; f.fade = f.inside ? 0 : 1;
+      planAt = 0; pinAt = 0;
+      return now;
+    },
+  };
+  ctx.services.set('villagerDays', days);
 
   return {
     name: 'villagers',
@@ -638,9 +860,13 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       }
       events.length = 0;
       if (!offFriends) { const fr = friends(); if (fr) offFriends = fr.onChange(onFriends); }
-      if (time >= visitAt) { visitAt = time + 0.5; checkVisits(); }
-      // plan at 4 Hz (cheap: a few comparisons per villager)
+      if (time >= visitAt) { visitAt = time + 0.5; checkVisits(); checkMoments(); }
+      // plan at 4 Hz (cheap: a few comparisons per villager; the day plans themselves are cached per condition)
+      refreshCond();
       if (time >= planAt) { planAt = time + 0.25; for (const f of folks) plan(f); }
+      if (time >= pinAt) { pinAt = time + 1; for (const f of folks) pinInfo(f); }
+      stageMoment();
+      curtains.update(dt);
       order.length = 0;
       for (const f of folks) { stepFolk(f, dt, night); if (!f.inside) order.push(f); }
       crowd.begin();
@@ -704,6 +930,8 @@ export const villagersSystem: SystemFactory = (ctx: SceneCtx) => {
       ctx.scene.remove(root);
       crowd.dispose();
       if (ctx.services.get('villagers') === service) ctx.services.delete('villagers');
+      if (ctx.services.get('villagerDays') === days) ctx.services.delete('villagerDays');
+      curtains.dispose();
     },
   };
 };

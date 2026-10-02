@@ -265,6 +265,11 @@ export interface VillagerPin {
   z: number;
   /** indoors (asleep): not in the world right now */
   inside: boolean;
+  /** what they're doing right now, where they usually are by part of the day (model/routines.ts), and a heart event
+   *  waiting for you (model/hearts.ts): the map's tooltip */
+  now?: string;
+  usual?: string[];
+  moment?: string;
 }
 export interface VillagersService {
   list(): readonly VillagerPin[];
@@ -289,6 +294,13 @@ export const SFX = Object.freeze([
   'stamp',
   // seasonal pastimes (scene/seasons): an oar dipping in, a skate blade's push / carve, packing snow
   'oar', 'skate', 'crunch',
+  // the orchard (scene/orchard): a shaken crown's rustle, fruit thumping into the grass, the cider press's screw and squelch
+  'rustle', 'thump', 'press',
+  // visitors and projects: a steam train far down the line, the merchant's cart rolling in, the painter's brush, the
+  // observatory telescope's brass ratchet
+  'train', 'cart', 'brush', 'scope',
+  // ops (hud): the focus queue stepping to the next agent (Alt+N); photo mode's shutter
+  'focus', 'shutter',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 
@@ -298,7 +310,7 @@ export interface AudioService {
   /** a farmer's cute vocal blip (pitch from their seed); `mood` shapes the contour */
   voice(seed: string, o?: { pos?: THREE.Vector3; mood?: 'happy' | 'question' | 'sad' | 'excited'; syllables?: number }): void;
   /** positional loop (fire crackle, water, windmill creak); returns a handle */
-  loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
+  loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds' | 'millwheel', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
   /** 0 outdoors … 1 indoors: the valley's ambience goes muffled behind walls, rain drums on the roof (optional);
    *  `roof` scales the rain on the roof (the barn's tin drums louder than the farmhouse shingles = 1) */
   indoors?(k: number, o?: { roof?: number }): void;

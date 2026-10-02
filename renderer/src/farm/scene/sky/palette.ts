@@ -62,11 +62,17 @@ const KEYS: K[] = [
     stars: 0, night: 0, exposure: 1.02, gain: 0x8a8176, shade: 0x241c58, sat: 1.06, contrast: 1.07, bloom: 0.7, mist: 0,
   }],
   [(_r, s) => s - 0.1, {
-    zenith: 0x4a5aa0, horizon: 0xffa47a, glow: 0xff8a5a, key: 0xffaa74, keyI: 1.8, hemiSky: 0x8e94c4, hemiGround: 0x484254, hemiI: 1.2,
+    zenith: 0x4a5ea2, horizon: 0xffa47a, glow: 0xff8a5a, key: 0xffaa74, keyI: 1.8, hemiSky: 0x8a96c4, hemiGround: 0x484254, hemiI: 1.2,
     stars: 0.05, night: 0.25, exposure: 1.08, gain: 0x88807a, shade: 0x221c54, sat: 1.0, contrast: 1.07, bloom: 0.85, mist: 0.1,
   }],
+  // just after sunset: the away-from-sun sky goes blue at once (blending the sunset's peach horizon straight into the
+  // dusk blue passed through mauve: a lavender wash over the whole view from the summit); the peach stays in `glow`
+  [(_r, s) => s + 0.3, {
+    zenith: 0x2c3e80, horizon: 0x8a98b8, glow: 0xf09670, key: 0xa2aed8, keyI: 1.15, hemiSky: 0x7282ac, hemiGround: 0x2e3242, hemiI: 1.25,
+    stars: 0.3, night: 0.5, exposure: 1.18, gain: 0x80838e, shade: 0x12204e, sat: 0.94, contrast: 1.07, bloom: 0.95, mist: 0.15,
+  }],
   [(_r, s) => s + 0.65, {
-    zenith: 0x1a2a6a, horizon: 0x6a76a8, glow: 0xd8907a, key: 0x8aa0d8, keyI: 0.75, hemiSky: 0x4c6096, hemiGround: 0x1e2232, hemiI: 1.3,
+    zenith: 0x1a2c6c, horizon: 0x5c78aa, glow: 0xd8907a, key: 0x8aa0d8, keyI: 0.75, hemiSky: 0x4a6298, hemiGround: 0x1e2232, hemiI: 1.3,
     stars: 0.55, night: 0.75, exposure: 1.28, gain: 0x7c8494, shade: 0x0e1644, sat: 0.86, contrast: 1.08, bloom: 1, mist: 0.2,
   }],
   [(_r, s) => s + 2.1, NIGHT],

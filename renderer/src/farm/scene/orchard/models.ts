@@ -467,8 +467,12 @@ export function signBoard(): THREE.Mesh {
   tex.anisotropy = 4;
   const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
   const geo = new THREE.BoxGeometry(1.4, 0.55, 0.05);
-  // the canvas on the front (+z) and back faces only; the edges stay wood
-  const m = new THREE.Mesh(geo, [new THREE.MeshBasicMaterial({ color: 0x5a3a22 }), new THREE.MeshBasicMaterial({ color: 0x5a3a22 }), new THREE.MeshBasicMaterial({ color: 0x5a3a22 }), new THREE.MeshBasicMaterial({ color: 0x5a3a22 }), mat, mat]);
+  // the canvas on the front (+z) and back faces only; the edges stay wood. BoxGeometry's six groups run ±x ±y ±z in
+  // index order: two groups (edges, faces) are two draws instead of six
+  geo.clearGroups();
+  geo.addGroup(0, 24, 0);
+  geo.addGroup(24, 12, 1);
+  const m = new THREE.Mesh(geo, [new THREE.MeshBasicMaterial({ color: 0x5a3a22 }), mat]);
   m.name = 'orchard:sign';
   return m;
 }

@@ -86,7 +86,7 @@ Today card `Model spend: $64 · 120M tokens across 23 farmers`. Subagent transcr
 
 Additive, inside `PROTOCOL_VERSION` 1: `PROTOCOL_REVISION` 2 (sent as `hello.revision`) adds `Entity.git`,
 `Entity.usage` (both optional on the type, always sent by a rev-2 server, `null` when unknown) and `detail.msg / sha /
-branch` on `commit` events. `PROTOCOL_REVISION` 4 adds the read-only request `git.diff` ([recap.md](recap.md)). Older servers and recordings simply lack them: the model reads absent as `null`, and every
+branch` on `commit` events. `PROTOCOL_REVISION` 4 adds the read-only request `git.diff` ([recap.md](recap.md)). `PROTOCOL_REVISION` 5 adds the read-only request `term.search` over every pane's recent scrollback, kept server-side in a bounded ring per pane ([ops.md](ops.md#scrollback-search-termsearch-protocol-rev-5)); `Entity` is unchanged (no golden regeneration). Older servers and recordings simply lack them: the model reads absent as `null`, and every
 presentation path handles `null`. The new View fields are optional on `FarmerView` / `HelperView` / `PlotView` /
 `ValleyState` so hand-built views (gallery, scene tests) need not fill them; `createValley` always does.
 

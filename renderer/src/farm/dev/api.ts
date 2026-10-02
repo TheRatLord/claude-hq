@@ -62,6 +62,10 @@
  *   __valley.visitors(cmd?, a?)           visitors (model/visitors.ts, dev/visitors.ts): visitors() → today's calendar, who's here, the stock;
  *                                         visitors('merchant' | 'painter' | 'postie', 'in' | 'here' | 'out') forces an arrival / departure;
  *                                         'calendar', 'go' id, 'open' id, 'finish', 'buy' stockId | 'painting', 'days' n, 'reset'
+ *   __valley.routine(id?, to?)            the villagers' days (dev/hearts.ts): routine() everyone now; routine(id) a plan; routine(id, hour |
+ *                                         kind | place | part) jumps them there now; routine(id, null) back to the clock
+ *   __valley.heartEvent(cmd?, a?, b?)     heart events (dev/hearts.ts): heartEvent() status; heartEvent('fern-1') forces one (hearts, place,
+ *                                         you in front, the scene begins); (id, 'play', k) plays it through; 'next', 'choose' k, 'reset' id?
  *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
  *   __valley.auditShow(keys, focus, view) highlight items + frame the free camera on a finding; auditClear()
  */
@@ -82,6 +86,7 @@ import type { FriendsService } from '../model/friends.ts';
 import type { StampsService } from '../model/stamps.ts';
 import { projectsDev } from './projects.ts';
 import { visitorsDev } from './visitors.ts';
+import { heartsDev, routineDev } from './hearts.ts';
 import type { Newsroom } from '../newsroom.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
@@ -508,6 +513,9 @@ export function installDevApi(d: DevDeps): void {
     /** the Valley Projects: projects() lists them; projects.complete(id), .unveil(id), .go(id), .open(id), .reset(id), .work(kind, n) */
     projects: projectsDev(ctx),
     visitors: visitorsDev(ctx),
+    /** the villagers' days (model/routines.ts) and heart events (model/hearts.ts): dev/hearts.ts */
+    routine: routineDev(ctx),
+    heartEvent: heartsDev(ctx),
     stamp(id: string) { const st = ctx.services.get('stamps') as StampsService | undefined; const e = st?.devAward(id); return e ? { id: e.def.id, count: e.count, bits: e.bits, trophy: e.trophy?.decor ?? null } : null; },
     /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
     buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },

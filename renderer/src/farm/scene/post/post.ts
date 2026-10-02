@@ -87,6 +87,7 @@ export const postSystem: SystemFactory = (ctx) => {
   const raysM = mk(raysFrag, { tDepth: { value: depth }, uSunUv: { value: new THREE.Vector2() }, uAspect: { value: 1 } });
   const sunNdc = new THREE.Vector3(), camFwd = new THREE.Vector3();
   const tmpSilver = new THREE.Color(0.34, 0.42, 0.62);
+  const SNOW_HAZE = new THREE.Color(0x8fa4c2);
   const composite = mk(compositeFrag, cu);
   // contact shadows: 8 taps on high, 4 on medium, compiled out on low
   composite.defines = { AO_TAPS: low ? 0 : ctx.quality === 'medium' ? 4 : 8 };
@@ -165,6 +166,8 @@ export const postSystem: SystemFactory = (ctx) => {
       const nightK = a.night;
       cu.uHaze.value = 0.58 * (1 - 0.4 * nightK);
       cu.uHazeColor.value.copy(ctx.lighting.fogColor).lerp(a.zenith, 0.3).multiplyScalar(1 - 0.3 * nightK);
+      // over lying snow the air reads a step bluer and darker than the snow, never white on white (the overview)
+      if (a.ground.snow > 0.001) cu.uHazeColor.value.lerp(SNOW_HAZE, 0.4 * a.ground.snow * (1 - nightK));
       const sunUp = a.sunElev > -0.06;
       cu.uHazeDir.value.copy(sunUp ? a.sun : a.moon);
       if (sunUp) cu.uHazeWarm.value.copy(ctx.lighting.fogColor).lerp(a.glow, 0.55 * (1 - a.overcast * 0.8) * (1 - a.fog));

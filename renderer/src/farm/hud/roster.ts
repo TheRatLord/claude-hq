@@ -20,10 +20,12 @@ import { openRecap } from './recap.ts';
 
 const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
-interface Group { plot: PlotView | null; rows: Row[] }
+interface Group { plot: PlotView | null; rows: Row[]; pinned?: boolean }
 
-function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
+/** `pinned` (model/marks.ts): those farmers leave their field's group for a *Pinned* group at the top, in pin order */
+function groups(s: ValleyState, q: string, only: RosterFilter, pinned: readonly string[] = []): Group[] {
   const out = new Map<string, Group>();
+  const pins: Group = { plot: null, rows: [], pinned: true };
   const get = (plotId: string) => {
     let g = out.get(plotId);
     if (!g) { g = { plot: s.plots.get(plotId) ?? null, rows: [] }; out.set(plotId, g); }
@@ -33,7 +35,7 @@ function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
     const plot = s.plots.get(f.plotId);
     if (!rosterFilterHit(only, f)) continue;
     if (!matches(q, f.name, f.tag, f.project, f.detail, f.title, f.question, plot?.label, STATUS_LABEL[f.status], JOB_LABEL[f.job], f.kind, agentName(f), f.needsYou ? 'needs blocked' : '', f.said, f.todos?.current)) continue;
-    get(f.plotId).rows.push({ id: f.id, kind: 'farmer', f });
+    (pinned.includes(f.id) ? pins : get(f.plotId)).rows.push({ id: f.id, kind: 'farmer', f });
   }
   for (const hp of only ? [] : s.helpers.values()) {
     const plot = s.plots.get(hp.plotId);
@@ -44,7 +46,9 @@ function groups(s: ValleyState, q: string, only: RosterFilter): Group[] {
   const list = [...out.values()];
   for (const g of list) g.rows.sort((a, b) => rank(a) - rank(b) || (a.kind === 'farmer' ? a.f.name : a.hp.name).localeCompare(b.kind === 'farmer' ? b.f.name : b.hp.name));
   const worst = (g: Group) => Math.min(...g.rows.map(rank));
-  return list.sort((a, b) => worst(a) - worst(b) || (a.plot?.label ?? '~').localeCompare(b.plot?.label ?? '~'));
+  list.sort((a, b) => worst(a) - worst(b) || (a.plot?.label ?? '~').localeCompare(b.plot?.label ?? '~'));
+  pins.rows.sort((a, b) => pinned.indexOf(a.id) - pinned.indexOf(b.id));
+  return pins.rows.length ? [pins, ...list] : list;
 }
 
 export function createRoster(ctx: HudCtx): Panel {
@@ -61,6 +65,7 @@ export function createRoster(ctx: HudCtx): Panel {
     h('span', null, h('kbd.vh-k', { text: 'Ctrl+I' }), 'card'),
     h('span', null, h('kbd.vh-k', { text: 'Ctrl+Enter' }), 'task'),
     h('span', null, h('kbd.vh-k', { text: 'R' }), 'harvest'),
+    h('span', null, h('kbd.vh-k', { text: 'Alt+P' }), h('kbd.vh-k', { text: 'Alt+M' }), 'pin · mute'),
     h('span', null, h('kbd.vh-k', { text: 'Tab' }), '/', h('kbd.vh-k', { text: 'Esc' }), 'close'));
   body.append(h('div.top', null, h('div.vh-search', null, input), summary), rowsEl, foot);
 
@@ -87,7 +92,7 @@ export function createRoster(ctx: HudCtx): Panel {
   const task = (id: string) => ctx.panels.open('card', { id, task: canTask(ctx.farmer(id)) });
 
   const rowSig = (r: Row): string => r.kind === 'farmer'
-    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}|${r.f.model}|${spendCell(r.f)}|${lastHarvest(r.f.id)?.key ?? ''}`
+    ? `f|${ctx.marks.pinned(r.id)}|${ctx.marks.muted(r.id)}|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}|${r.f.model}|${spendCell(r.f)}|${lastHarvest(r.f.id)?.key ?? ''}`
     : `h|${r.hp.name}|${r.hp.tag}|${r.hp.running}|${r.hp.exit}|${r.hp.label}|${r.hp.activity}|${r.hp.ports.join(',')}`;
 
   /** the farmer's newest harvest recap (model/recap.ts), if any */
@@ -121,6 +126,17 @@ export function createRoster(ctx: HudCtx): Panel {
     const acts = h('div.acts', null,
       h('button.vh-btn.small.term', { type: 'button', title: 'Open terminal (Enter)', onclick: (e: Event) => { e.stopPropagation(); open(id); } }, icon(ICONS.terminal), 'Terminal'),
       h('button.vh-btn.small', { type: 'button', title: 'Walk there (W)', 'aria-label': 'Walk there', onclick: (e: Event) => { e.stopPropagation(); walk(id); } }, icon(ICONS.walk)));
+    if (r.kind === 'farmer') {
+      // pin / mute (model/marks.ts): toggle buttons, Alt+P / Alt+M on the selected row
+      const pinned = ctx.marks.pinned(id), muted = ctx.marks.muted(id);
+      acts.prepend(
+        h(`button.vh-btn.small.vh-mark${pinned ? '.on' : ''}`, { type: 'button', 'aria-pressed': String(pinned), 'data-testid': 'roster-pin', 'aria-label': `Pin ${shortName(r.f)} to the top`,
+          title: `${pinned ? 'Unpin' : 'Pin to the top of the ledger, the needs-you strip, the palette and the overview'} (Alt+P)`,
+          onclick: (e: Event) => { e.stopPropagation(); select(id, false); ctx.marks.toggle('pinned', id); } }, icon(ICONS.pin)),
+        h(`button.vh-btn.small.vh-mark${muted ? '.on' : ''}`, { type: 'button', 'aria-pressed': String(muted), 'data-testid': 'roster-mute', 'aria-label': `Mute ${shortName(r.f)}`,
+          title: `${muted ? 'Unmute' : 'Mute: no toasts, notifications or alert sounds; asks still show, quietly, in the needs-you strip'} (Alt+M)`,
+          onclick: (e: Event) => { e.stopPropagation(); select(id, false); ctx.marks.toggle('muted', id); } }, icon(ICONS.muted)));
+    }
     if (r.kind === 'farmer' && canTask(r.f)) acts.prepend(h('button.vh-btn.small.task', { type: 'button', title: 'Give a new task (Ctrl+Enter)', 'aria-label': 'Give a new task', 'data-testid': 'roster-task', onclick: (e: Event) => { e.stopPropagation(); task(id); } }, icon(ICONS.send)));
     const ago = h('span.t', { title: 'time since their last activity' });
     if (r.kind === 'farmer') {
@@ -162,6 +178,7 @@ export function createRoster(ctx: HudCtx): Panel {
   }
 
   function groupHead(g: Group): HTMLElement {
+    if (g.pinned) return h('div.vh-ghead.pinned', null, icon(ICONS.pin), h('span.gl', { text: 'Pinned' }), h('span.gs', { text: `${g.rows.length} pinned · Alt+P on a row pins or unpins it` }));
     const p = g.plot;
     const n = g.rows.length;
     let need = 0, work = 0;
@@ -181,8 +198,8 @@ export function createRoster(ctx: HudCtx): Panel {
     const s = ctx.state();
     if (!s) return;
     const q = input.value;
-    const gs = groups(s, q, only);
-    const order = gs.map((g) => `${g.plot?.id ?? '-'}:${g.rows.map((r) => r.id).join(',')}`).join('|');
+    const gs = groups(s, q, only, ctx.prefs.pinned);
+    const order = gs.map((g) => `${g.pinned ? 'pinned' : g.plot?.id ?? '-'}:${g.rows.map((r) => r.id).join(',')}`).join('|');
     if (force) { rowsEl.replaceChildren(); rowEls.clear(); sig = ''; }
     if (order !== sig) {
       // structure changed (rows added / removed / regrouped / reordered): rebuild the group shells, keep row nodes
@@ -192,7 +209,7 @@ export function createRoster(ctx: HudCtx): Panel {
       visible = [];
       const live = new Set<string>();
       for (const g of gs) {
-        const grp = h('div.vh-group', { role: 'group', 'aria-label': g.plot?.label ?? 'Wandering' }, groupHead(g));
+        const grp = h('div.vh-group', { role: 'group', 'aria-label': g.pinned ? 'Pinned' : g.plot?.label ?? 'Wandering' }, groupHead(g));
         grp.dataset.head = '';
         for (const r of g.rows) {
           let re = rowEls.get(r.id);
@@ -220,7 +237,7 @@ export function createRoster(ctx: HudCtx): Panel {
     for (const g of gs) for (const r of g.rows) byId.set(r.id, r);
     for (const g of gs) {
       const head = rowEls.get(g.rows[0]?.id ?? '')?.parentElement?.firstElementChild as HTMLElement | null | undefined;
-      const hs = `${g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}|${g.plot?.git ? `${branchName(g.plot.git)}${g.plot.git.branches}${repoBits(g.plot.git)}` : ''}`;
+      const hs = `${g.pinned ? `pinned${g.rows.length}` : g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}|${g.plot?.git ? `${branchName(g.plot.git)}${g.plot.git.branches}${repoBits(g.plot.git)}` : ''}`;
       if (head && head.dataset.sig !== hs) { const nh = groupHead(g); nh.dataset.sig = hs; head.replaceWith(nh); }
     }
     // day strips share one window (the earliest record today → now, in 5-minute steps) and repaint only on a change
@@ -295,6 +312,8 @@ export function createRoster(ctx: HudCtx): Panel {
         return true;
       }
       if (sel && e.ctrlKey && e.key === 'Enter') { if (ctx.farmer(sel)) task(sel); return true; }
+      // pin / mute the selected farmer (also while typing in the filter)
+      if (sel && e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyP' || e.code === 'KeyM')) { if (ctx.farmer(sel)) { ctx.marks.toggle(e.code === 'KeyP' ? 'pinned' : 'muted', sel); render(); } return true; }
       if (e.key === 'Enter' && sel && !(e.target instanceof HTMLButtonElement)) {
         if (e.shiftKey) walk(sel); else open(sel, e.timeStamp);
         return true;

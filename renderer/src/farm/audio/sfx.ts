@@ -305,6 +305,85 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
     for (let i = 0; i < 14; i++) end = noise(c, out, t, { kind: 'white', gain: 0.1 * (1 - i / 20), a: 0.001, d: 0.018, filter: 'bandpass', f: (2600 + (i % 3) * 300) * o.pitch, q: 4, delay: i * 0.045 });
     return max(end, noise(c, out, t, { kind: 'pink', gain: 0.18, a: 0.01, d: 0.25, filter: 'lowpass', f: 2400, f2: 600, delay: 0.62 }));
   },
+  // ---- the orchard (scene/orchard)
+  rustle: (c, out, t, o) => {
+    // a shaken crown: overlapping leafy swishes sweeping through the boughs, an airy hiss, a few twigs ticking
+    let end = t;
+    for (let i = 0; i < 7; i++) end = max(end, noise(c, out, t, { kind: 'pink', gain: 0.34 * (1 - i / 9), a: 0.02, d: 0.12 + o.rnd() * 0.12, filter: 'bandpass', f: (1100 + o.rnd() * 2200) * o.pitch, q: 0.9, delay: i * 0.07 + o.rnd() * 0.03 }));
+    noise(c, out, t, { kind: 'pink', gain: 0.12, a: 0.05, hold: 0.15, d: 0.3, filter: 'lowpass', f: 900 });
+    noise(c, out, t, { kind: 'white', gain: 0.025, a: 0.06, hold: 0.2, d: 0.35, filter: 'bandpass', f: 4200, q: 0.8 });
+    for (let i = 0; i < 4; i++) noise(c, out, t, { kind: 'white', gain: 0.06, a: 0.001, d: 0.012, filter: 'bandpass', f: 2200 + o.rnd() * 1300, q: 3, delay: 0.05 + o.rnd() * 0.5 });
+    return end;
+  },
+  thump: (c, out, t, o) => {
+    // a fruit dropping into the grass: a soft round thud and a brush of blades
+    tone(c, out, t, { f: 150 * o.pitch, f2: 72, gain: 0.3, a: 0.002, d: 0.09 });
+    return noise(c, out, t, { kind: 'pink', gain: 0.12, a: 0.003, d: 0.07, filter: 'lowpass', f: 1100 });
+  },
+  press: (c, out, t, o) => {
+    // the cider press: the screw's ratchet clicking down, the wooden beam groaning, the fruit giving way with a squelch
+    let end = t;
+    for (let i = 0; i < 5; i++) {
+      const at = i * 0.11;
+      noise(c, out, t, { kind: 'white', gain: 0.1, a: 0.001, d: 0.02, filter: 'bandpass', f: 2300 * o.pitch, q: 2, delay: at });
+      tone(c, out, t, { type: 'triangle', f: 820 * o.pitch, f2: 600, gain: 0.05, a: 0.001, d: 0.04, delay: at });
+    }
+    formant(c, out, t, { wave: 'sawtooth', pitch: [[0, 38 * o.pitch], [0.3, 52 * o.pitch], [0.6, 44 * o.pitch]], formants: [[650, 6, 1], [1300, 8, 0.4]], gain: 0.22, a: 0.08, hold: 0.35, d: 0.2, delay: 0.5, breath: 0.1 });
+    noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.04, hold: 0.15, d: 0.35, filter: 'bandpass', f: 700 * o.pitch, f2: 280, q: 1.4, delay: 0.75 });
+    for (let i = 0; i < 4; i++) end = max(end, bubble(c, out, t + 0.85 + o.rnd() * 0.4, (300 + o.rnd() * 300) * o.pitch, 0.05));
+    return end;
+  },
+  // ---- visitors and projects
+  train: (c, out, t, o) => {
+    // a steam train far down the line: a chime whistle (short, then long) over a faint run of chuffs
+    const p = o.pitch;
+    let end = t;
+    const blast = (dl: number, hold: number) => {
+      for (const f of [370, 466, 554]) end = max(end, tone(c, out, t, { type: 'sawtooth', f: f * p * 0.98, f2: f * p, glide: 0.18, gain: 0.12, a: 0.07, hold, d: 0.4, delay: dl, lp: 1700, vib: { rate: 5, depth: 0.004 } }));
+      noise(c, out, t, { kind: 'pink', gain: 0.2, a: 0.08, hold, d: 0.45, filter: 'bandpass', f: 1150 * p, q: 1.4, delay: dl });
+    };
+    blast(0, 0.22);
+    blast(0.7, 1.05);
+    for (let i = 0; i < 8; i++) noise(c, out, t, { kind: 'brown', gain: 0.4 * (1 - i / 10), a: 0.02, d: 0.18, filter: 'lowpass', f: 420, delay: 0.15 + i * 0.3 });
+    return end;
+  },
+  cart: (c, out, t, o) => {
+    // a wooden cart on the road (one stretch of ~1.3 s; the visitors replay it while it rolls): the rumble of iron-shod
+    // wheels, knocks over stones, the harness bells jingling, now and then the axle complaining
+    noise(c, out, t, { kind: 'brown', gain: 0.2, a: 0.15, hold: 0.8, d: 0.3, filter: 'lowpass', f: 320 });
+    for (let i = 0; i < 5; i++) tone(c, out, t, { f: (85 + o.rnd() * 35) * o.pitch, f2: 58, gain: 0.1, a: 0.002, d: 0.05, delay: i * 0.24 + o.rnd() * 0.05 });
+    for (let i = 0; i < 4; i++) bell(c, out, t, { f: (2600 + o.rnd() * 1400) * o.pitch, gain: 0.05, d: 0.25, delay: 0.08 + i * 0.24 + o.rnd() * 0.08 });
+    if (o.rnd() < 0.35) formant(c, out, t, { wave: 'sawtooth', pitch: [[0, 60 * o.pitch], [0.2, 80 * o.pitch], [0.35, 66 * o.pitch]], formants: [[900, 7, 1], [1700, 8, 0.4]], gain: 0.1, a: 0.04, hold: 0.15, d: 0.12, delay: 0.5 });
+    return t + 1.3;
+  },
+  brush: (c, out, t, o) => {
+    // the painter's brush on canvas: two soft bristly strokes
+    noise(c, out, t, { kind: 'white', gain: 0.14, a: 0.06, hold: 0.08, d: 0.12, filter: 'bandpass', f: 3600 * o.pitch, f2: 2800, q: 1.2 });
+    return noise(c, out, t, { kind: 'white', gain: 0.11, a: 0.05, hold: 0.06, d: 0.14, filter: 'bandpass', f: 3100 * o.pitch, f2: 4000, q: 1.2, delay: 0.36 + o.rnd() * 0.1 });
+  },
+  scope: (c, out, t, o) => {
+    // the observatory's brass telescope: a geared ratchet as it swings up, a little lens-cap click
+    let end = t;
+    for (let i = 0; i < 6; i++) end = tone(c, out, t, { type: 'triangle', f: (2900 + (i % 2) * 260) * o.pitch, gain: 0.05, a: 0.001, d: 0.03, delay: i * 0.07 });
+    noise(c, out, t, { kind: 'pink', gain: 0.06, a: 0.05, hold: 0.25, d: 0.15, filter: 'bandpass', f: 500, q: 1.5 });
+    return max(end, bell(c, out, t, { f: 1760 * o.pitch, gain: 0.07, d: 0.3, delay: 0.5, partials: [[1, 1, 1], [2.76, 0.4, 0.5]] }));
+  },
+  // ---- ops and photo mode
+  focus: (c, out, t, o) => {
+    // the focus queue stepping on (Alt+N): a soft rising "boop-bip" with a tiny glint, quieter than the done chime
+    pluck(c, out, t, { f: 659.3 * o.pitch, gain: 0.12, d: 0.18 });
+    pluck(c, out, t, { f: 987.8 * o.pitch, gain: 0.12, d: 0.3, delay: 0.075 });
+    return bell(c, out, t, { f: 1975.5 * o.pitch, gain: 0.04, d: 0.4, delay: 0.1 });
+  },
+  shutter: (c, out, t) => {
+    // a little film camera: the shutter's click, the mirror's soft slap, the second curtain, a winder ratchet
+    noise(c, out, t, { kind: 'white', gain: 0.2, a: 0.001, d: 0.012, filter: 'highpass', f: 3000 });
+    tone(c, out, t, { f: 210, f2: 95, gain: 0.18, a: 0.001, d: 0.05, delay: 0.004 });
+    noise(c, out, t, { kind: 'white', gain: 0.14, a: 0.001, d: 0.014, filter: 'bandpass', f: 4200, q: 1.5, delay: 0.065 });
+    let end = t;
+    for (let i = 0; i < 5; i++) end = noise(c, out, t, { kind: 'white', gain: 0.05, a: 0.001, d: 0.012, filter: 'bandpass', f: 2800, q: 3, delay: 0.2 + i * 0.04 });
+    return end;
+  },
 };
 
 export const CRITTER_RECIPES: Record<CritterSound, Recipe> = {
@@ -474,9 +553,9 @@ export const PUDDLE: Recipe = (c, out, t, o) => {
 export type BusName = 'sfx' | 'notify' | 'voice' | 'ambient';
 export function busOf(name: SfxName): BusName {
   switch (name) {
-    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'bell': case 'oops': case 'fanfare': return 'notify';
+    case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'bell': case 'oops': case 'fanfare': case 'focus': return 'notify';
     case 'greet': case 'voice': return 'voice';
-    case 'thunder': case 'firework': return 'ambient';
+    case 'thunder': case 'firework': case 'train': return 'ambient';
     default: return 'sfx';
   }
 }
@@ -486,8 +565,9 @@ export function sendOf(name: SfxName): number {
   switch (name) {
     case 'bell': return 0.5;
     case 'alert': case 'chime-done': case 'chime-pass': case 'mail': case 'fanfare': return 0.25;
-    case 'thunder': case 'firework': return 0.4;
-    case 'ui-hover': case 'ui-click': case 'ui-open': case 'ui-close': case 'step-grass': case 'step-wood': case 'step-water': case 'stamp': return 0;
+    case 'thunder': case 'firework': case 'train': return 0.4;
+    case 'focus': return 0.08;
+    case 'ui-hover': case 'ui-click': case 'ui-open': case 'ui-close': case 'step-grass': case 'step-wood': case 'step-water': case 'stamp': case 'shutter': return 0;
     default: return 0.12;
   }
 }

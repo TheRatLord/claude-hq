@@ -20,3 +20,8 @@
 /* the drawer's focus-queue button (hud/drawer.ts) */
 .vh-dhead .ctl .vh-next .n { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 9px; background: var(--berry); color: #fff; font-size: 11px; text-align: center; }
 .vh-dhead .ctl .vh-next[data-n="0"] .n { display: none; }
+
+/* scrollback hits (`term.search`): the terminal's line in a monospace face, the match marked */
+.vh-pal-row small.vh-pal-line { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 12px; font-weight: 500; }
+.vh-pal-row small.vh-pal-line mark { background: var(--gold-soft); color: var(--ink); border-radius: 3px; padding: 0 1px; }
+.vh-layer.hc .vh-pal-row small.vh-pal-line mark { background: #000; color: #fff; }

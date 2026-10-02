@@ -17,7 +17,7 @@ const SAME_KEY_MS = 8_000;
 /** default lifetimes (ms): long enough to read a line, short enough to keep the corner quiet */
 const LIFE = { error: 7000, warn: 5500, ask: 5500, other: 4000 } as const;
 
-export interface Toasts { el: HTMLElement; push(t: ToastSpec, bg?: boolean): void; watchLetters(letters: readonly Letter[]): void }
+export interface Toasts { el: HTMLElement; push(t: ToastSpec, bg?: boolean): void; watchLetters(letters: readonly Letter[], muted?: (farmerId: string) => boolean): void }
 
 interface Live { node: HTMLElement; key: string; group: string; n: number; timer: ReturnType<typeof setTimeout> | undefined; ms: number; gone: boolean; hover: boolean; bg: boolean }
 
@@ -46,6 +46,7 @@ export function createToasts(ctx: HudCtx): Toasts {
   function fill(x: Live, t: ToastSpec): void {
     const lvl = t.level ?? 'info';
     x.node.className = `vh-toast ${lvl}${t.id || t.open ? ' click' : ''}`;
+    if (t.id) x.node.dataset.id = t.id; else delete x.node.dataset.id; // whose news it is (tests, muted agents)
     x.node.replaceChildren(
       icon(t.icon ?? (lvl === 'error' || lvl === 'warn' ? ICONS.bell : LETTER_ICON.news)),
       h('div', null, h('div.t', { text: t.text }), t.sub ? h('div.s', { text: t.sub }) : null),
@@ -112,7 +113,8 @@ export function createToasts(ctx: HudCtx): Toasts {
   const LEVEL: Partial<Record<Letter['kind'], ToastSpec['level']>> = {
     'needs-you': 'ask', finished: 'good', 'test-pass': 'good', commit: 'good', error: 'error', 'test-fail': 'warn', struggle: 'warn',
   };
-  function watchLetters(letters: readonly Letter[]): void {
+  /** `muted`: a muted agent's letters never pop (they stay in the mailbox; model/marks.ts) */
+  function watchLetters(letters: readonly Letter[], muted?: (farmerId: string) => boolean): void {
     const fresh: Letter[] = [];
     for (const l of letters) if (!seen.has(l.id)) { seen.add(l.id); if (primed) fresh.push(l); }
     // the mailbox is capped, the ids seen all day are not: keep only the ones still in it
@@ -122,6 +124,7 @@ export function createToasts(ctx: HudCtx): Toasts {
     const covered = ctx.panels.modal && !ctx.panels.current()?.light;
     for (const l of fresh.reverse()) {
       if (l.kind === 'news' || l.kind === 'subagents') continue;
+      if (l.farmerId && muted?.(l.farmerId)) continue;
       // a stretch that ended without a finish event posts its letter with the recap already on it: the harvest toast says it
       if (l.recap) continue;
       if (covered && l.kind !== 'needs-you' && l.kind !== 'error') continue;

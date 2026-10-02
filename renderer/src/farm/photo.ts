@@ -379,7 +379,7 @@ export function installPhotoMode(engine: Engine, controller: Controller, valley:
   function shutter(): void {
     flash.classList.add('go');
     requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove('go')));
-    audio()?.play('page', { volume: 0.7 });
+    audio()?.play('shutter', { volume: 0.8 });
     void snap();
   }
   function enter(): void {

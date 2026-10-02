@@ -19,6 +19,7 @@
  *          --size 1600x900  --quality high|medium|low (default: the game's default)  --reps 3  --frames 30
  *          --settle 2500 (ms after each pose)  --json FILE  --shots (PNG per pose → scratch/bench/<scenario>-<cond>-<pose>.png)
  *          --eval JS (run in the page after load, e.g. A/B toggles)
+ *          --split (print each row's draw calls + triangles per system and the biggest meshes; always in --json)
  *   npm run bench -- --startup                           # load time instead: first frame, ready, programs (scripts/startup.ts)
  * The machine may be busy (other agents shooting): check `uptime`, run A and B alternately, compare medians.
  */
@@ -49,6 +50,56 @@ export const CONDS: Record<string, { hour: number; weather: string; season?: str
 interface Sample {
   gpu: number; scene: number; post: number; shadow: number; cpu: number; submit: number;
   calls: number; tris: number; shCalls: number; sysSum: number; sys: [string, number][]; fps: number; disjoint: boolean;
+}
+
+export interface Split { sys: Record<string, [number, number, number]>; top: [string, number, number, number][]; heavy: [string, number, number, number][] }
+
+/**
+ * in-page: one frame's draws split by owner (`--split`). Wraps renderer.renderBufferDirect for one post.render(): each
+ * draw goes to the system that added its top-level scene object (`userData.system`, scene/engine.ts), `post` for the
+ * post chain's own quads; per system [main calls, shadow calls, triangles (main + shadow)], plus the 14 biggest
+ * meshes / groups by calls (`system/name`, the nearest named ancestor) and the 10 heaviest by triangles.
+ */
+export async function split(page: Page): Promise<Split | null> {
+  return page.evaluate(() => {
+    type O = import('three').Object3D;
+    const v = (window as unknown as { __valley: { ctx: { renderer: import('three').WebGLRenderer; scene: import('three').Scene; services: Map<string, unknown> } } }).__valley;
+    const ctx = v.ctx, r = ctx.renderer;
+    const post = ctx.services.get('post') as { render(dt: number): void } | undefined;
+    if (!post) return null;
+    const sys: Record<string, [number, number, number]> = {}, det: Record<string, [number, number, number]> = {};
+    const orig = r.renderBufferDirect;
+    const ownerOf = (o: O): [string, string] => {
+      let top: O = o, named = o.name ? o : null;
+      while (top.parent && top.parent !== ctx.scene) { top = top.parent; if (!named && top.name) named = top; }
+      if (top.parent !== ctx.scene) return ['post', 'post'];
+      const s = (top.userData.system as string | undefined) ?? `(${top.name || top.type})`;
+      return [s, `${s}/${(named ?? o).name || o.type}`];
+    };
+    r.renderBufferDirect = function (this: unknown, cam, scene, geo, mat, obj, group) {
+      // the engine drops empty instanced draws (scene/engine.ts skipEmptyDraws)
+      if (((obj as import('three').InstancedMesh).isInstancedMesh && (obj as import('three').InstancedMesh).count === 0) || geo.drawRange.count === 0) return orig.call(r, cam, scene, geo, mat, obj, group);
+      const [s, d] = ownerOf(obj);
+      const g = geo as import('three').BufferGeometry & { instanceCount?: number };
+      let n = g.index ? g.index.count : (g.attributes.position?.count ?? 0);
+      n = Math.min(n, g.drawRange.count, group ? group.count : Infinity);
+      const inst = (obj as import('three').InstancedMesh).isInstancedMesh ? (obj as import('three').InstancedMesh).count : (g.instanceCount ?? 1);
+      const tris = (obj as import('three').Mesh).isMesh ? Math.round((n / 3) * (Number.isFinite(inst) ? inst : 1)) : 0;
+      const shadow = scene === null;
+      for (const [k, t] of [[s, sys], [d, det]] as const) {
+        const e = (t[k] ??= [0, 0, 0]);
+        e[shadow ? 1 : 0]++; e[2] += tris;
+      }
+      return orig.call(r, cam, scene, geo, mat, obj, group);
+    } as typeof r.renderBufferDirect;
+    const auto = r.shadowMap.autoUpdate;
+    r.shadowMap.autoUpdate = true;
+    try { post.render(0); } finally { r.renderBufferDirect = orig; r.shadowMap.autoUpdate = auto; }
+    const top = Object.entries(det).sort((a, b) => (b[1][0] + b[1][1]) - (a[1][0] + a[1][1]) || b[1][2] - a[1][2]).slice(0, 14)
+      .map(([k, e]) => [k, ...e] as [string, number, number, number]);
+    const heavy = Object.entries(det).sort((a, b) => b[1][2] - a[1][2]).slice(0, 10).map(([k, e]) => [k, ...e] as [string, number, number, number]);
+    return { sys, top, heavy };
+  });
 }
 
 /** in-page: GPU phases via timer queries around the scene render inside post.render() */
@@ -131,6 +182,7 @@ async function main(): Promise<void> {
   const jsonOut = opt('--json', '');
   const shots = argv.includes('--shots');
   const extra = opt('--eval', '');
+  const showSplit = argv.includes('--split');
   const shotDir = path.join(REPO, 'scratch/bench');
   if (shots || jsonOut) fs.mkdirSync(shotDir, { recursive: true });
   const rows: Record<string, unknown>[] = [];
@@ -168,11 +220,19 @@ async function main(): Promise<void> {
             }, spec);
             await page.waitForTimeout(settle);
             const m = await measure(page, frames, reps);
+            const sp = await split(page);
             const tag = `${scenario}-${cond}-${pose}`;
             if (shots) await page.screenshot({ path: path.join(shotDir, `${tag}.png`) });
             if (!m) { console.log(`${scenario.padEnd(8)} ${cond.padEnd(5)} ${pose.padEnd(6)} (no timer query / post)`); continue; }
-            rows.push({ scenario, cond, pose, ...m });
+            rows.push({ scenario, cond, pose, ...m, split: sp });
             console.log(`${scenario.padEnd(8)} ${cond.padEnd(5)} ${pose.padEnd(6)} ${pad(m.gpu.toFixed(2), 6)} ${pad(m.scene.toFixed(2), 6)} ${pad(m.shadow.toFixed(2), 6)} ${pad(m.post.toFixed(2), 5)} ${pad(m.cpu.toFixed(2), 5)} ${pad(m.sysSum.toFixed(2), 5)} ${pad(m.submit.toFixed(2), 6)} ${pad(m.calls, 5)} ${pad(m.shCalls, 5)} ${pad(m.tris, 8)}  ${m.sys.map(([k, x]) => `${k} ${x}`).join(', ')}${m.disjoint ? '  (disjoint!)' : ''}`);
+            if (showSplit && sp) {
+              const k = (t: number) => (t >= 1000 ? `${(t / 1000).toFixed(1)}k` : String(t));
+              const bySys = Object.entries(sp.sys).sort((a, b) => (b[1][0] + b[1][1]) - (a[1][0] + a[1][1]));
+              console.log(`    calls main+shadow/tris: ${bySys.map(([n, [c, sh, t]]) => `${n} ${c}+${sh}/${k(t)}`).join(', ')}`);
+              console.log(`    biggest: ${sp.top.map(([n, c, sh, t]) => `${n} ${c}+${sh}/${k(t)}`).join(', ')}`);
+              console.log(`    heaviest: ${sp.heavy.map(([n, c, sh, t]) => `${n} ${c}+${sh}/${k(t)}`).join(', ')}`);
+            }
           }
           for (const e of errors.slice(0, 5)) console.log(`  pageerror: ${e.slice(0, 300)}`);
           await context.close();

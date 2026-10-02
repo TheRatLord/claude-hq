@@ -136,3 +136,30 @@ export function nextFocus(queue: readonly FocusItem[], current: string | null, v
   const fresh = rest.find((q) => !visited.includes(q.id));
   return fresh ?? rest[0];
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// scrollback search (`term.search`, rev 5: the palette's "In their terminals" rows)
+
+/** the palette searches terminals once the query is this long (shorter ones match half of every screen) */
+export const SEARCH_MIN = 3;
+/** …and this long after the last keystroke (the server also refuses more than one search per 150 ms per client) */
+export const SEARCH_DEBOUNCE_MS = 250;
+/** at most this many terminal lines in the palette */
+export const SEARCH_ROWS = 12;
+
+/** should this query also search the terminals? (≥ SEARCH_MIN non-space characters) */
+export function wantsScrollSearch(q: string): boolean {
+  return q.replace(/\s+/g, '').length >= SEARCH_MIN;
+}
+
+/**
+ * What to look for in the terminal's history to land on a hit (hud/drawer.ts → view.ts `findLine`): `text` the hit's
+ * line from the match on (≤ 48 chars, without the `…` cut marks), `word` just the matched word as a fallback.
+ */
+export function findNeedle(hit: { text: string; match: readonly [number, number] }): { text: string; word: string } {
+  const [s, e] = hit.match;
+  const word = hit.text.slice(s, e);
+  let text = hit.text.slice(s, s + 48);
+  if (text.endsWith('…')) text = text.slice(0, -1);
+  return { text: text.trimEnd() || word, word };
+}

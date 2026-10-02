@@ -27,6 +27,7 @@ import { Actions } from './world/actions.ts';
 import { BlockedEnricher } from './world/blocked.ts';
 import { AcksEnricher } from './world/acks.ts';
 import { Screens } from './world/screens.ts';
+import { Scrollback } from './world/scrollback.ts';
 import { TerminalHub } from './terminals/hub.ts';
 import { WsHub } from './ws.ts';
 import { createHttpServer } from './http.ts';
@@ -129,6 +130,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
   });
   model.on('msg', (m) => {
     if (m.t === S2R.GONE) {
+      scrollback?.drop(m.id);
       hub.paneGone(m.id, m.reason === 'rekeyed' ? 'rekeyed' : 'pane closed');
       terminals.drop?.(m.id);
     }
@@ -137,11 +139,16 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
     if (!c) hub.offline();
   });
   const screens = new Screens({ source, hub, model, clock, log: log.child('screens') });
+  // `term.search` (rev 5): live and demo read panes the same way; a replay has no pane text to search
+  const scrollback = opts.replay ? null : new Scrollback({
+    source, clock, log: log.child('scrollback'),
+    panes: () => [...model.entities.values()].map((e) => ({ id: e.id, rows: e.layoutRect?.rows ?? null, agent: e.kind !== 'shell' })),
+  });
   const timeline = new Timeline({ dir: stateDir, clock, log: log.child('timeline') }).attach(model);
   const audit = new AuditLog({ dir: stateDir, session: cfg.session, clock, log: log.child('audit') });
   const actions = new Actions({
     source, model, clock, session: cfg.session, isDefault: w.isDefault, demo: !!cfg.demo, settings,
-    demoEnricher: w.demoEnricher ?? null, acks, blocked, screens, timeline, readOnly, audit, notes, diffs: w.diffs ?? null,
+    demoEnricher: w.demoEnricher ?? null, acks, blocked, screens, timeline, readOnly, audit, notes, diffs: w.diffs ?? null, scrollback,
     saveSettings: (s) => {
       try {
         saveSettings(cfg.configDir, s);
@@ -179,7 +186,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
       herdr: { ...herdrInfo(), client: w.client?.stats ?? null, live: sourceMetrics() },
       terminals: hub.metrics(), backend: terminals.metrics?.() ?? null, ws: wsHub.metrics(), world: model.metrics(),
       enrichers: Object.fromEntries(enrichers.map((e) => [e.name, 'metrics' in e && typeof e.metrics === 'function' ? e.metrics() : null])), screens: screens.metrics(),
-      timeline: timeline.metrics(), audit: audit.metrics(),
+      timeline: timeline.metrics(), audit: audit.metrics(), scrollback: scrollback?.metrics() ?? null,
     }),
   });
 
@@ -212,6 +219,7 @@ export async function createApp(opts: AppOptions = {}): Promise<App> {
     await hub.closeAll();
     await wsHub.close();
     screens.close();
+    scrollback?.close();
     timeline.close();
     model.close();
     await terminals.close();

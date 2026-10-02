@@ -2,8 +2,8 @@
  * The one adapter between the network store and the pure valley model, plus the AgentPort the presentation uses
  * to act on real sessions. Nothing under farm/scene or farm/hud imports net/ — they get these two objects.
  */
-import { R2S } from '../../../shared/protocol.ts';
-import type { DiffResult } from '../../../shared/protocol.ts';
+import { LIMITS, R2S } from '../../../shared/protocol.ts';
+import type { DiffResult, SearchResult } from '../../../shared/protocol.ts';
 import { call, send, store } from '../net/store.ts';
 import type { ValleySource } from './model/valley.ts';
 import type { AgentPort, LinkState } from './model/types.ts';
@@ -41,6 +41,13 @@ export function createAgentPort(openTerminal: (id: string) => void): AgentPort {
       const r = await call({ t: R2S.GIT_DIFF, id, ...(q.from ? { from: q.from } : {}), ...(q.to ? { to: q.to } : {}), ...(q.path ? { path: q.path } : {}) });
       const why = typeof r.why === 'string' ? r.why : undefined;
       return r.ok && r.diff && typeof r.diff === 'object' ? { ok: true, diff: r.diff as DiffResult } : { ok: false, error: why ?? r.error ?? 'no diff' };
+    },
+    async search(q, max) {
+      // rev 5: an older server does not know `term.search`
+      if ((store.hello?.revision ?? 0) < 5) return { ok: false, error: 'this HQ server is too old to search terminals (update it)' };
+      const r = await call({ t: R2S.TERM_SEARCH, q: q.slice(0, LIMITS.searchQueryMax), ...(max ? { max } : {}) });
+      const why = typeof r.why === 'string' ? r.why : undefined;
+      return r.ok && r.search && typeof r.search === 'object' ? { ok: true, result: r.search as SearchResult } : { ok: false, error: why ?? r.error ?? 'no result' };
     },
   };
 }

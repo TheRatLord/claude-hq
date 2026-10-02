@@ -12,7 +12,9 @@
  */
 import './palette.css';
 import type { FarmerView, HelperView, ValleyState } from '../model/types.ts';
-import { FOCUS_LABEL, fieldsMatch, focusQueue, snippet, type FocusWhy } from '../model/ops.ts';
+import { FOCUS_LABEL, fieldsMatch, findNeedle, focusQueue, SEARCH_DEBOUNCE_MS, SEARCH_ROWS, snippet, wantsScrollSearch, type FocusWhy } from '../model/ops.ts';
+import { markLabel } from '../model/marks.ts';
+import type { ScrollHit } from '../../../../shared/protocol.ts';
 import { keyLabel } from '../model/prefs.ts';
 import { farmerFace, ICONS } from './icons.ts';
 import { agentName, HELPER_LABEL, JOB_LABEL, seedHue, shortName, STATUS_LABEL, STATUS_RANK } from './format.ts';
@@ -31,7 +33,7 @@ export interface PaletteHooks {
 type Mods = { shift: boolean; ctrl: boolean };
 interface Entry {
   key: string;
-  kind: 'farmer' | 'helper' | 'answer' | 'task' | 'panel' | 'action';
+  kind: 'farmer' | 'helper' | 'answer' | 'task' | 'panel' | 'action' | 'line';
   label: string;
   sub: string;
   /** the key cap shown on the right */
@@ -46,6 +48,10 @@ interface Entry {
   typed?: boolean;
   /** ranking nudge (agents before panels on equal matches) */
   boost?: number;
+  /** a pinned agent (model/marks.ts): the empty palette lists them first */
+  pinned?: boolean;
+  /** a terminal line (`term.search`): the [start, end) of the match inside `sub` */
+  mark?: [number, number];
   run(m: Mods): void;
 }
 
@@ -73,6 +79,28 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
   let sel = 0;
   let back: PaletteBack = null;
   let sig = '';
+  // ---- the terminals' scrollback (`term.search`, rev 5): debounced, one request at a time, the latest query wins ----
+  let lines: { q: string; hits: ScrollHit[]; more: number } | null = null;
+  let searching: string | null = null;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchErr = '';
+  const searchSoon = () => {
+    clearTimeout(searchTimer);
+    const q = input.value.trim();
+    if (!wantsScrollSearch(q) || !ctx.b?.agents.search) { searching = null; return; }
+    searching = q;
+    searchTimer = setTimeout(() => void runSearch(q), SEARCH_DEBOUNCE_MS);
+  };
+  const runSearch = async (q: string) => {
+    const port = ctx.b?.agents;
+    if (!port?.search || input.value.trim() !== q) return;
+    const r = await port.search(q, 24).catch((e: unknown) => ({ ok: false as const, error: String(e), result: undefined }));
+    if (input.value.trim() !== q) return; // typed on meanwhile: that search is coming
+    searching = null;
+    if (r.ok && r.result) { lines = { q, hits: r.result.hits, more: r.result.more }; searchErr = ''; }
+    else { lines = null; searchErr = r.error ?? ''; if (/too fast/.test(searchErr)) { searchSoon(); return; } }
+    filter();
+  };
 
   // ---- building the entries ----
   const farmerEntries = (s: ValleyState): Entry[] => {
@@ -81,14 +109,16 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
     const why = new Map(queue.map((q, i) => [q.id, { why: q.why, i }]));
     const farmers = [...s.farmers.values()].sort((a, b) => {
       const qa = why.get(a.id)?.i ?? 1e3, qb = why.get(b.id)?.i ?? 1e3;
-      return qa - qb || STATUS_RANK[a.status] - STATUS_RANK[b.status] || shortName(a).localeCompare(shortName(b));
+      const pa = ctx.marks.pinned(a.id) ? 0 : 1, pb = ctx.marks.pinned(b.id) ? 0 : 1;
+      return pa - pb || qa - qb || STATUS_RANK[a.status] - STATUS_RANK[b.status] || shortName(a).localeCompare(shortName(b));
     });
     for (const f of farmers) {
       const plot = s.plots.get(f.plotId);
       const w = why.get(f.id)?.why;
       const todos = f.todos?.items.map((t) => t.text).join(' · ') ?? '';
+      const pinned = ctx.marks.pinned(f.id), muted = ctx.marks.muted(f.id);
       out.push({
-        key: `f:${f.id}`, kind: 'farmer', label: shortName(f), why: w, status: f.needsYou ? 'blocked' : f.status,
+        key: `f:${f.id}`, kind: 'farmer', label: `${shortName(f)}${muted ? ' (muted)' : ''}`, why: w, status: f.needsYou ? 'blocked' : f.status, pinned,
         sub: farmerSub(f, plot?.label ?? ''),
         face: farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier),
         fields: [
@@ -98,7 +128,7 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
           { text: f.said, weight: 0.6 }, { text: todos, weight: 0.6 },
         ],
         quote: [6, 7, 8, 9],
-        boost: w ? 300 : 200,
+        boost: (w ? 300 : 200) + (pinned ? 150 : 0),
         run: (m) => {
           if (m.shift) ctx.travel(f.id);
           else if (m.ctrl) ctx.panels.open('card', { id: f.id, task: canTask(f) });
@@ -112,6 +142,16 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
           fields: [{ text: f.tag, weight: 2 }, { text: plot?.label }, { text: `answer reply ${o.label}`, weight: 1.5 }, { text: f.question, weight: 0.5 }],
           boost: 100,
           run: () => { void ctx.answer(f.id, o.key, o.label); },
+        });
+      }
+      // pin / mute (model/marks.ts), offered once you type ("pin pebble", "mute flint")
+      for (const [kind, on, words] of [['pinned', pinned, 'pin unpin keep top first favourite'], ['muted', muted, 'mute unmute quiet silence notifications sounds toasts']] as const) {
+        out.push({
+          key: `m:${kind}:${f.id}`, kind: 'action', typed: true, label: `${markLabel(kind, on)}: ${shortName(f)}`,
+          sub: kind === 'pinned' ? 'first in the ledger, the needs-you strip, this palette and the overview' : on ? 'toasts, notifications and alert sounds come back' : 'no toasts, notifications or alert sounds; asks still show, quietly',
+          face: kind === 'pinned' ? ICONS.pin : ICONS.muted,
+          fields: [{ text: f.tag, weight: 2 }, { text: plot?.label }, { text: words, weight: 1.5 }],
+          run: () => ctx.marks.toggle(kind, f.id),
         });
       }
       if (canTask(f)) {
@@ -149,6 +189,7 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
       p('roster', 'Farm ledger', keyLabel(K.ledger), 'roster everyone agents list status', undefined, ICONS.book),
       p('mailbox', 'Mailbox: needs you', keyLabel(K.mail), 'letters asks answers inbox', 'needs', ICONS.mail),
       p('map', 'Map', keyLabel(K.map), 'where everyone is pins', undefined, ICONS.map),
+      p('overview', 'Overview of every agent', keyLabel(K.overview), 'grid all agents scan status dashboard glance', undefined, ICONS.eye),
       { key: 'x:term', kind: 'action', label: 'Terminals', sub: 'the terminal drawer', cap: leader, face: ICONS.terminal,
         fields: [{ text: 'Terminals', weight: 2 }, { text: 'drawer shell console' }],
         run: () => { const id = ctx.state() ? (focusQueue(ctx.state()!.farmers.values())[0]?.id ?? [...ctx.state()!.farmers.keys()][0]) : undefined; if (id) ctx.openTerminal(id); else ctx.panels.open('drawer'); } },
@@ -187,18 +228,47 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
         scored.push({ e, score: m.score + (e.boost ?? 0), quote: qf ? snippet(qf, q) : '' });
       }
       scored.sort((a, b) => b.score - a.score);
-      shown = scored.slice(0, MAX_ROWS).map((x) => (x.quote ? { ...x.e, sub: `“${x.quote}”` } : x.e));
+      const found = lineEntries(q);
+      shown = [...scored.slice(0, MAX_ROWS - found.length).map((x) => (x.quote ? { ...x.e, sub: `“${x.quote}”` } : x.e)), ...found];
     }
     if (sel >= shown.length) sel = Math.max(0, shown.length - 1);
     draw();
   }
 
+  /** the terminal lines that matched (newest first, ≤ SEARCH_ROWS): Enter opens that terminal's history at the line */
+  function lineEntries(q: string): Entry[] {
+    if (!lines || lines.q !== q) return [];
+    const s = ctx.state();
+    const out: Entry[] = [];
+    for (const hit of lines.hits) {
+      if (out.length >= SEARCH_ROWS) break;
+      const f = s?.farmers.get(hit.id), hp = s?.helpers.get(hit.id);
+      if (!f && !hp) continue;
+      const who = f ? shortName(f) : shortName(hp!);
+      const plot = s?.plots.get((f ?? hp)!.plotId)?.label ?? '';
+      const when = s ? agoShort(s.now - hit.at) : '';
+      out.push({
+        key: `l:${hit.id}:${hit.fromEnd}`, kind: 'line', label: `${who}${plot && plot !== who ? ` · ${plot}` : ''}${hit.screen ? ' · on screen' : when ? ` · ${when}` : ''}`,
+        sub: `“${hit.text}”`, mark: [hit.match[0] + 1, hit.match[1] + 1],
+        face: f ? farmerFace(seedHue(f.seed), mascotOf(f.kind, f.vendor), f.tier) : ICONS.scarecrow, status: f ? (f.needsYou ? 'blocked' : f.status) : undefined,
+        fields: [],
+        run: (m) => {
+          if (m.shift) ctx.travel(hit.id);
+          else if (m.ctrl) ctx.panels.open('card', hit.id);
+          else ctx.openTerminal(hit.id, { find: { ...findNeedle(hit), fromEnd: hit.fromEnd } });
+        },
+      });
+    }
+    return out;
+  }
+
   function draw(): void {
-    const ns = `${input.value}|${shown.map((e) => `${e.key}${e.sub}${e.why ?? ''}${e.status ?? ''}`).join(',')}`;
+    const ns = `${input.value}|${searching ?? ''}|${shown.map((e) => `${e.key}${e.sub}${e.why ?? ''}${e.status ?? ''}${e.pinned ? 'p' : ''}`).join(',')}`;
     if (ns === sig) { mark(false); return; }
     sig = ns;
     if (!shown.length) {
-      list.replaceChildren(h('div.vh-empty', null, `Nothing matches "${input.value.trim()}".`, h('small', { text: 'Try a name, a field, a job ("testing"), words they said, "needs" or a panel ("map").' })));
+      list.replaceChildren(h('div.vh-empty', null, searching ? `Searching the terminals for "${input.value.trim()}"…` : `Nothing matches "${input.value.trim()}".`,
+        h('small', { text: 'Try a name, a field, a job ("testing"), words they said or printed (3+ letters search every terminal), "needs" or a panel ("map").' })));
       input.removeAttribute('aria-activedescendant');
       count.textContent = '';
       return;
@@ -206,7 +276,8 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
     let lastGroup = '';
     const nodes: HTMLElement[] = [];
     shown.forEach((e, i) => {
-      const group = !input.value.trim() ? (e.why ? 'Needs a look' : e.kind === 'farmer' || e.kind === 'helper' ? 'Everyone' : 'Panels & actions') : '';
+      const group = !input.value.trim() ? (e.pinned ? 'Pinned' : e.why ? 'Needs a look' : e.kind === 'farmer' || e.kind === 'helper' ? 'Everyone' : 'Panels & actions')
+        : e.kind === 'line' ? 'In their terminals' : '';
       if (group && group !== lastGroup) { lastGroup = group; nodes.push(h('div.vh-pal-g', { role: 'presentation', text: group })); }
       const face = h('span.face', { 'aria-hidden': 'true' });
       face.innerHTML = e.face ?? '';
@@ -214,7 +285,7 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
         id: `vh-pal-${i}`, role: 'option', 'aria-selected': String(i === sel), 'data-testid': 'palette-item', 'data-kind': e.kind, 'data-key': e.key,
       },
       face,
-      h('span.txt', null, h('span.lb', { text: e.label }), e.sub ? h('small', { text: e.sub }) : null),
+      h('span.txt', null, h('span.lb', { text: e.label }), e.sub ? (e.mark ? markedSub(e.sub, e.mark) : h('small', { text: e.sub })) : null),
       e.why ? h(`span.vh-pill.st-${e.why === 'ask' ? 'blocked' : e.why === 'done' ? 'done' : 'idle'}`, { text: FOCUS_LABEL[e.why] }) : e.status && e.kind === 'farmer' ? h(`i.vh-dot.st-${e.status}`) : null,
       e.cap ? h('kbd.vh-k', { text: e.cap }) : null);
       row.classList.toggle('sel', i === sel);
@@ -224,7 +295,8 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
     });
     list.replaceChildren(...nodes);
     mark();
-    count.textContent = `${shown.length}${shown.length === MAX_ROWS ? '+' : ''} result${shown.length === 1 ? '' : 's'}`;
+    const nl = shown.filter((e) => e.kind === 'line').length;
+    count.textContent = `${shown.length}${shown.length === MAX_ROWS ? '+' : ''} result${shown.length === 1 ? '' : 's'}${searching ? ' · searching terminals…' : nl ? ` · ${nl} in terminals` : ''}`;
   }
 
   /** move the selection highlight without rebuilding the rows */
@@ -255,19 +327,19 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
     else ctx.panels.open(b.panel, b.arg);
   }
 
-  input.addEventListener('input', () => { sel = 0; filter(); });
+  input.addEventListener('input', () => { sel = 0; searchSoon(); filter(); });
 
   return {
     id: 'palette', el,
     onOpen(arg) {
       back = (arg as PaletteBack | undefined) ?? null;
       input.value = '';
-      sel = 0; sig = '';
+      sel = 0; sig = ''; lines = null; searching = null;
       build();
       filter();
       input.focus();
     },
-    onClose() { input.value = ''; },
+    onClose() { input.value = ''; clearTimeout(searchTimer); searching = null; lines = null; },
     // the live view: statuses change while it is open (a new ask moves up), the text you typed stays
     refresh() { build(); filter(); },
     back: () => back,
@@ -275,7 +347,7 @@ export function createPalette(ctx: HudCtx, hooks: PaletteHooks): Panel & { back(
     key(e) {
       if (e.key === 'Escape') { goBack(); return true; }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (shown.length) { sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length; mark(); }
+        if (shown.length) { sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length; mark(); ctx.sfx('ui-hover'); }
         return true;
       }
       if (e.key === 'PageDown' || e.key === 'PageUp') { sel = Math.max(0, Math.min(shown.length - 1, sel + (e.key === 'PageDown' ? 8 : -8))); mark(); return true; }
@@ -304,3 +376,13 @@ function helperSub(hp: HelperView, field: string): string {
   return `${field ? `${field} · ` : ''}Scarecrow · ${HELPER_LABEL[hp.activity]}${hp.label ? ` · ${hp.label}` : ''}`;
 }
 
+
+/** the hit line with its match marked (the row's sub line) */
+function markedSub(text: string, [s, e]: [number, number]): HTMLElement {
+  return h('small.vh-pal-line', null, text.slice(0, s), h('mark', { text: text.slice(s, e) }), text.slice(e));
+}
+/** '3m ago', '2h ago' (seen by the server) */
+function agoShort(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
+}
