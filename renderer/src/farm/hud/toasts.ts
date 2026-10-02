@@ -103,6 +103,8 @@ export function createToasts(ctx: HudCtx): Toasts {
   function watchLetters(letters: readonly Letter[]): void {
     const fresh: Letter[] = [];
     for (const l of letters) if (!seen.has(l.id)) { seen.add(l.id); if (primed) fresh.push(l); }
+    // the mailbox is capped, the ids seen all day are not: keep only the ones still in it
+    if (seen.size > letters.length * 2 + 200) { const keep = new Set(letters.map((l) => l.id)); for (const id of seen) if (!keep.has(id)) seen.delete(id); }
     if (!primed && ctx.state()?.link !== 'connecting') primed = letters.length > 0 || (ctx.state()?.farmers.size ?? 0) > 0;
     // while a big panel is up only asks and errors pop (everything else is in the mailbox)
     const covered = ctx.panels.modal && !ctx.panels.current()?.light;

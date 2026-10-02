@@ -198,7 +198,10 @@ function colourChunk(ch: Chunk, season: Season): void {
     const high = Math.max(ss(12, 18, cy), ss(62, 84, Math.hypot(cx, cz * 1.05)), ss(-0.5, -1.5, cy - WORLD.water));
     const lim = 0.8 + high * 0.04 - ss(14, 30, cy) * 0.08;
     const rockK = ss(lim, lim - 0.12, ny);
-    if (rockK > 0) {
+    // valley banks (not the mountains) blend per vertex from the smoothed slope: a steep grassy mound (the windmill
+    // hill) shades into earth softly instead of in crisp dark facets
+    const soft = high < 1 && !ch.far;
+    if (rockK > 0 || soft) {
       rockColor(cx, cy, cz, ny, season, rc);
       // low grassy banks show earth, not granite
       if (high < 1) rc.copy(fc.setRGB(grid[ch.vidx[v0] * 3], grid[ch.vidx[v0] * 3 + 1], grid[ch.vidx[v0] * 3 + 2])).multiplyScalar(0.86).lerp(season === 'winter' ? GROUND.mud : GROUND.dirt, 0.22).lerp(rockColor(cx, cy, cz, ny, season, tmpC), high);
@@ -209,13 +212,14 @@ function colourChunk(ch: Chunk, season: Season): void {
     for (let k = 0; k < 3; k++) {
       const vi = v0 + k, gi = ch.vidx[vi];
       if (wall) rockColor(pos[vi * 3], pos[vi * 3 + 1], pos[vi * 3 + 2], ny, season, rc);
+      const rk = soft ? rockK * high + ss(lim, lim - 0.16, ch.gny[gi]) * (1 - high) : rockK;
       fc.setRGB(grid[gi * 3], grid[gi * 3 + 1], grid[gi * 3 + 2]);
-      if (rockK > 0) fc.lerp(rc, rockK);
+      if (rk > 0) fc.lerp(rc, rk);
       col[vi * 3] = fc.r * jit; col[vi * 3 + 1] = fc.g * jit; col[vi * 3 + 2] = fc.b * jit;
       fc.setRGB(dgrid[gi * 3], dgrid[gi * 3 + 1], dgrid[gi * 3 + 2]);
-      if (rockK > 0) fc.lerp(rc, rockK);
+      if (rk > 0) fc.lerp(rc, rk);
       ld[vi * 3] = fc.r * jit; ld[vi * 3 + 1] = fc.g * jit; ld[vi * 3 + 2] = fc.b * jit;
-      la[vi * 4] = kind[gi * 4]; la[vi * 4 + 1] = kind[gi * 4 + 1]; la[vi * 4 + 2] = rockK; la[vi * 4 + 3] = kind[gi * 4 + 3];
+      la[vi * 4] = kind[gi * 4]; la[vi * 4 + 1] = kind[gi * 4 + 1]; la[vi * 4 + 2] = soft ? rk * (0.55 + 0.45 * high) : rk; la[vi * 4 + 3] = kind[gi * 4 + 3];
       lb[vi * 4 + 2] = kind[gi * 4 + 2];
     }
   }
@@ -320,6 +324,9 @@ const TERRAIN_FRAG = /* glsl */ `
       float mEw = sPw * 0.12 + 0.004;
       ${MEADOW_GLSL}
       float mOpen = (1.0 - sst(0.14, vLandA.x, 0.08)) * (1.0 - wSa) * (1.0 - wS * 0.85);
+#ifdef VW_TOON
+      vwTallK = mdw.y * mOpen;   // weather surfaces: no puddles under the rough tall grass
+#endif
       if (mOpen > 0.0) {
         float fa = smoothstep(12.0, 70.0, sDist);
         r = mix(r, sgreen(r * vec3(0.88, 0.98, 0.98), -0.3), mdw.x * mOpen);
@@ -361,6 +368,9 @@ const TERRAIN_FRAG = /* glsl */ `
     }
     if (wS > 0.0) r = mix(r, surf_snow(g, r), wS);
   }
+#ifdef VW_TOON
+  vwPathK = max(wP, wSa * 0.6);   // weather surfaces: puddles gather freely on the tracks, rarely on the grass
+#endif
   if (wR > 0.01) r = mix(r, surf_cliff(cl, cb), wR);
   // cliff strata: the shelf's turf rolls over each ledge in ragged tongues (landB.w = nearness to the riser top),
   // with a cool shadow line under the overhang; snow caps in winter (uTurf)

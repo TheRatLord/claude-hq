@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { localJson, readJson, readLocal, writeJson, writeLocal } from './storage.ts';
+import { localJson, pickTyped, readJson, readLocal, readTyped, writeJson, writeLocal } from './storage.ts';
 
 function fakeStorage(opts: { blocked?: boolean; full?: boolean } = {}): Map<string, string> {
   const m = new Map<string, string>();
@@ -39,4 +39,18 @@ test('localJson: a model store port; save failures surface for the model to log'
   assert.deepEqual(st.load(), { v: 1 });
   fakeStorage({ full: true });
   assert.throws(() => st.save({ v: 2 }));
+});
+
+test('pickTyped keeps only known keys of the default type (old builds, hand edits, garbage)', () => {
+  const def = { minimap: true, drawerH: 0, name: 'a' };
+  assert.deepEqual(pickTyped(def, { minimap: false, drawerH: 0.4, name: 'b', extra: 1 }), { minimap: false, drawerH: 0.4, name: 'b' });
+  assert.deepEqual(pickTyped(def, { minimap: 'yes', drawerH: 'big', name: 3 }), def);
+  assert.deepEqual(pickTyped(def, { drawerH: null }), def);
+  for (const junk of [null, undefined, 'str', 42, [true, 1], true]) assert.deepEqual(pickTyped(def, junk), def);
+  assert.deepEqual(pickTyped(def, JSON.parse('{"__proto__": {"minimap": false}, "drawerH": 1e999}')), def);
+  const m = fakeStorage();
+  m.set('p', '{"minimap":false,"drawerH":"x"}');
+  assert.deepEqual(readTyped('p', def), { ...def, minimap: false });
+  m.set('p', '[1,2');
+  assert.deepEqual(readTyped('p', def), def);
 });

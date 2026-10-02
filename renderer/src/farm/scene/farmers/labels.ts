@@ -51,6 +51,8 @@ export class Labels {
     let vis = 1;
     const occ = (this.ctx.services.get('lights') as LightsService | undefined)?.occluders();
     if (occ) for (let i = 0; i < occ.length; i++) if (segmentHitsBox(occ[i], e.x, e.y, e.z, pos.x, pos.y, pos.z)) { vis = 0; break; }
+    // keys are per farmer and farmers come and go all day: a fade state is cheap to lose, an ever-growing map is not
+    if (this.seen.size > 512 && !this.seen.has(key)) this.seen.clear();
     const prev = this.seen.get(key) ?? vis;
     const k = prev + (vis - prev) * Math.min(1, this.dt * 10);
     this.seen.set(key, k);

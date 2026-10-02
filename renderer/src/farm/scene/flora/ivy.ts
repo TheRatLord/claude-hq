@@ -125,14 +125,20 @@ function leafColor(season: Season, l: Leaf, out: THREE.Color): THREE.Color {
 
 /** Geometry writer: flat-shaded triangles, each turned to face `f`. */
 class Writer {
-  pos: number[] = []; nrm: number[] = []; col: number[] = [];
+  pos: number[] = []; nrm: number[] = []; col: number[] = []; avg: number[] = [];
+  /** per vertex: the piece's centre (xyz) and kind (w: 1 leaf, 0 stem), for the distance LOD (IVY_FAR_VERT) */
+  cen: number[] = [];
+  centre = new THREE.Vector3(); kind = 1;
   private e1 = new THREE.Vector3(); private e2 = new THREE.Vector3(); private nn = new THREE.Vector3();
   get count(): number { return this.pos.length / 3; }
   tri(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, f: THREE.Vector3, col: THREE.Color): void {
     this.nn.crossVectors(this.e1.subVectors(b, a), this.e2.subVectors(c, a));
     if (this.nn.dot(f) < 0) { const t = b; b = c; c = t; this.nn.negate(); }
     this.nn.normalize();
-    for (const p of [a, b, c]) { this.pos.push(p.x, p.y, p.z); this.nrm.push(this.nn.x, this.nn.y, this.nn.z); this.col.push(col.r, col.g, col.b); }
+    for (const p of [a, b, c]) {
+      this.pos.push(p.x, p.y, p.z); this.nrm.push(this.nn.x, this.nn.y, this.nn.z); this.col.push(col.r, col.g, col.b);
+      this.cen.push(this.centre.x, this.centre.y, this.centre.z, this.kind);
+    }
   }
 }
 
@@ -158,6 +164,7 @@ export function ivyMesh(layout: IvyLayout, season: Season, which?: readonly numb
         dir.subVectors(p1, p0);
         va.crossVectors(dir, s.n).normalize().multiplyScalar(0.035);
         q0.copy(p0).sub(va); q1.copy(p0).add(va); q2.copy(p1).add(va); q3.copy(p1).sub(va);
+        w.centre.copy(p0).add(p1).multiplyScalar(0.5); w.kind = 0;
         w.tri(q0, q1, q2, s.n, sc); w.tri(q0, q2, q3, s.n, sc);
       }
     }
@@ -173,20 +180,49 @@ export function ivyMesh(layout: IvyLayout, season: Season, which?: readonly numb
       lft.copy(l.p).addScaledVector(vb, -0.55 * s).addScaledVector(va, 0.05 * s);
       rgt.copy(l.p).addScaledVector(vb, 0.55 * s).addScaledVector(va, 0.05 * s);
       apex.copy(l.p).addScaledVector(l.n, 0.22 * s);
+      w.centre.copy(l.p); w.kind = 1;
       w.tri(apex, rgt, top, l.n, lc); w.tri(apex, top, lft, l.n, lc);
       w.tri(apex, lft, bot, l.n, lc); w.tri(apex, bot, rgt, l.n, lc);
     }
-    if (w.count > start) parts.push({ name: `ivy#${di}`, start, count: w.count - start });
+    if (w.count > start) {
+      parts.push({ name: `ivy#${di}`, start, count: w.count - start });
+      // the drape's mean leaf colour, muted: from mid-distance the whole curtain shades as one calm patch (ivyFar)
+      let r = 0, g = 0, b = 0;
+      for (let i = start * 3; i < w.col.length; i += 3) { r += w.col[i]; g += w.col[i + 1]; b += w.col[i + 2]; }
+      // half-way to grey and a little lifted, so a dark wine curtain sits in the sandstone instead of on it
+      // (autumn: warmed toward rust, so the far curtains read creeper-red, not plum)
+      const n = w.count - start, l = (r + g + b) / (3 * n), k = season === 'autumn' ? 1.35 : 1.2;
+      const kr = season === 'autumn' ? 1.15 : 1, kb = season === 'autumn' ? 0.78 : 1;
+      for (let i = start; i < w.count; i++) w.avg.push((r / n + (l - r / n) * 0.5) * k * kr, (g / n + (l - g / n) * 0.5) * k, (b / n + (l - b / n) * 0.5) * k * kb);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(w.pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(w.nrm, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(w.col, 3));
+  g.setAttribute('ivyAvg', new THREE.Float32BufferAttribute(w.avg, 3));
+  g.setAttribute('ivyC', new THREE.Float32BufferAttribute(w.cen, 4));
   g.userData = { parts };
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;
 }
+
+/**
+ * Distance calm for an ivy material: past ~20 m each drape fades to its own muted mean colour (`ivyAvg`), leaves grow
+ * about their centres (up to 2×) to close the gaps between strands and the thin stems shrink away, so from
+ * mid-distance a curtain reads as one soft continuous patch on the rock instead of a comb of wine / rust specks.
+ */
+export const IVY_FAR_VERT = ['#include <common>', '#include <common>\nattribute vec3 ivyAvg;\nattribute vec4 ivyC;\nvarying vec3 vIvyAvg;',
+  '#include <begin_vertex>', `#include <begin_vertex>
+vIvyAvg = ivyAvg;
+{
+  float ivyD = length((modelViewMatrix * vec4(ivyC.xyz, 1.0)).xyz);
+  float ivyK = ivyC.w > 0.5 ? 1.0 + smoothstep(15.0, 60.0, ivyD) : 1.0 - 0.9 * smoothstep(12.0, 40.0, ivyD);
+  transformed = ivyC.xyz + (transformed - ivyC.xyz) * ivyK;
+}`] as const;
+export const IVY_FAR_FRAG = ['#include <common>', '#include <common>\nvarying vec3 vIvyAvg;',
+  '#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vIvyAvg, smoothstep(18.0, 55.0, length(vViewPosition)));'] as const;
 
 /** Gallery / test: one drape over a synthetic strata step (a 3 m riser leaning out 0.3, shelves either side). */
 export function ivySample(season: Season, w = 3, len = 2.6): { geo: THREE.BufferGeometry; step: (x: number, z: number) => number } {

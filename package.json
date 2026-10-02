@@ -11,6 +11,7 @@
     "dev": "node scripts/workbench.ts",
     "build": "node scripts/workbench.ts --build",
     "shoot": "node scripts/shoot.ts",
+    "soak": "node scripts/soak.ts",
     "bench": "node scripts/bench.ts",
     "mapviz": "node scripts/mapviz.ts",
     "audit:placement": "node scripts/placement.ts",

@@ -183,8 +183,14 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
   const waterAt = (x: number, z: number): WaterKind => (Math.hypot(x - POND.x, z - POND.z) < POND.r + 4 ? 'pond' : 'river');
   const nearWater = (x: number, z: number) => Math.min(distToPolyline(x, z, RIVER) - RIVER_HALF_WIDTH, Math.hypot(x - POND.x, z - POND.z) - POND.r) < 11;
 
+  /** the pond frozen over (scene/seasons): no casting onto the ice */
+  const pondFrozen = () => ((ctx.services.get('seasons') as { ice(): number } | undefined)?.ice() ?? 0) > 0.5;
   /** where the view ray meets open water within casting range (sets st.aim / st.aimOk) */
   function aimAtWater(): void {
+    aimOpen();
+    if (st.aimOk && waterAt(st.aim.x, st.aim.z) === 'pond' && pondFrozen()) st.aimOk = false;
+  }
+  function aimOpen(): void {
     st.aimOk = false;
     const p = ctx.player;
     if (p.frozen || !nearWater(p.pos.x, p.pos.z) || p.pos.y < WORLD.water + 0.05 && heightAt(p.pos.x, p.pos.z) < WORLD.water - 0.05) return;
@@ -221,7 +227,9 @@ export const forageSystem: SystemFactory = (ctx: SceneCtx) => {
   };
   addEventListener('keydown', onKey);
 
-  const conditions = () => ({ season: ctx.valley.sky.season, hour: ctx.valley.sky.hour, weather: ctx.valley.sky.weather.kind, water: st.water });
+  // out in the rowboat (scene/seasons, service 'rowboat'), the middle of the pond is where the rarer fish are
+  const rareBoost = () => (ctx.services.get('rowboat') as { fishBoost(x: number, z: number): number } | undefined)?.fishBoost(st.target.x, st.target.z) ?? 1;
+  const conditions = () => ({ season: ctx.valley.sky.season, hour: ctx.valley.sky.hour, weather: ctx.valley.sky.weather.kind, water: st.water, rareBoost: rareBoost() });
   const r = rand(Date.now() >>> 0);
 
   function setPhase(ph: Phase, dur = 0): void { st.phase = ph; st.t = 0; st.dur = dur; waterI.verb = ph === 'idle' ? 'Cast a line' : ph === 'bite' ? 'Hook it!' : 'Reel in'; }

@@ -23,6 +23,7 @@ Key sources: `model/collection.ts` (pure + `collection.test.ts`: `CATALOG`, `SIG
 * Look at open water near the pond or the river → `[E] Cast a line`; the held rod casts the bobber, it nibbles, then
   dips with a splash and a `bite` ping → E within ~1.2 s (a second chance if you miss) reels in, and the catch is held
   up in view.
+* From the rowboat ([seasons.md](seasons.md)) the middle of the pond raises the odds of the rarer fish (`rareBoost`).
 * What bites depends on season, hour (night-only catfish / eels / moonlit char, dawn-and-dusk pike), weather (rain-only
   thunder bass and eels) and water (`rollFish`); old boots and a message in a bottle come up too.
 

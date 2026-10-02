@@ -34,7 +34,11 @@
  *   __valley.timeline(id?, 'seed'|'clear') a farmer's day (model/timeline.ts): timeline() → every farmer's summary, timeline(id) → the day,
  *                                         its summary and key moments; 'seed' (demo only; id or '*') replaces it with a plausible
  *                                         morning (demoDay), 'clear' empties it
+ *   __valley.boat(cmd?, a?)  skate(cmd?, a?)  snowman(cmd?, a?)   seasonal pastimes (scene/seasons): boat('in' | 'row' secs | 'turn' |
+ *                                         'spin' | 'middle' | 'out'); skate('on' | 'eight' | 'glide' secs | 'off') (winter: the pond frozen);
+ *                                         snowman('build' pieces? | 'roll' r? | 'place' | 'reset') (winter with lying snow); no cmd = the state
  *   __valley.inside(view?)                go into the farmhouse (instant) and stand at a viewpoint: door room hearth shelf desk bed tank window; inside(false) leaves
+ *                                         'barn' / 'barn:VIEW' (door aisle stalls loft hens panel bench …: scene/interior/barnLayout.ts) for the barn
  *   __valley.interact()                   use whatever is under the crosshair
  *   __valley.focused()                    { id, kind, verb, label } under the crosshair
  *   __valley.audit(opts?)                 placement audit (floating / sunk / overlap …, dev/placement.ts; async)
@@ -56,6 +60,7 @@ import type { FriendsService } from '../model/friends.ts';
 import type { StampsService } from '../model/stamps.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
+import type { SeasonsService } from '../scene/seasons/seasons.ts';
 import { gatherViewpoint } from '../scene/gather/gather.ts';
 import type { CampfireSeg, GatherKind } from '../model/gatherings.ts';
 import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/map.ts';
@@ -77,6 +82,9 @@ export const POSES: Record<string, [number, number, number, number]> = {
   trail: [-6, 106.8, -1.47, 0.02],
   bridge: [14.2, 119.9, 1.91, -0.1],
   summit: [-2.2, 127.0, 0.04, -0.16],
+  // the seasonal pastimes (scene/seasons): the dock with the rowboat alongside, the pond from its south-west shore
+  dock: [36.9, 38.4, -1.88, -0.25],
+  ice: [31.0, 51.5, -0.97, -0.14],
 };
 
 export interface DevDeps {
@@ -209,7 +217,7 @@ export function installDevApi(d: DevDeps): void {
     force: (id: string, patch: Record<string, unknown>) => d.demoForce?.(id, patch),
     scenario: (name: string, seed?: number) => d.demoScenario?.(name, seed),
     interact() { ctx.interact.focused()?.use(); },
-    /** the farmhouse interior (scene/interior): inside('hearth') stands at a viewpoint, inside(false) steps out to the porch */
+    /** the walk-in rooms (scene/interior): inside('hearth') / inside('barn:loft') stands at a viewpoint, inside(false) steps out */
     inside(view: string | false = 'door') {
       const home = ctx.services.get('indoors') as IndoorSpace | undefined;
       if (!home) return false;
@@ -284,6 +292,15 @@ export function installDevApi(d: DevDeps): void {
     },
     /** mark the first n entries of the Collections book found (shots: panel=collection) */
     collect: (n = 12) => (ctx.services.get('collection') as CollectionService | undefined)?.devFill(n),
+    /** the rowboat (scene/seasons): boat('in') climbs in at the dock, boat('row', secs) / 'turn' / 'spin' rows by itself,
+     *  boat('middle') out to the middle of the pond, boat('out') steps out onto the dock; boat() → its state */
+    boat: (cmd?: string, a?: number) => (ctx.services.get('seasons') as SeasonsService | undefined)?.boat(cmd, a) ?? null,
+    /** skating on the frozen pond (winter): skate('on') onto the ice, skate('eight') skates a figure eight by itself,
+     *  skate('glide', secs) pushes off, skate('off') back to the shore; skate() → the state */
+    skate: (cmd?: string, a?: number) => (ctx.services.get('seasons') as SeasonsService | undefined)?.skate(cmd, a) ?? null,
+    /** snowmen (winter, lying snow): snowman('build', pieces?) a whole one in front of you, snowman('roll', r?) start rolling a
+     *  ball, snowman('place') set it down, snowman('reset') melt them all; snowman() → the state */
+    snowman: (cmd?: string, a?: number) => (ctx.services.get('seasons') as SeasonsService | undefined)?.snowman(cmd, a) ?? null,
     /** wild visitors (scene/life/wildlife.ts): wildlife() lists them; wildlife('deer') brings one out at its habitat and
      *  stands you in view of it; wildlife('owl', 'here') summons it in front of the camera instead; wildlife('deer', 'spook') startles it */
     wildlife(id?: string, mode?: 'here' | 'spook') {

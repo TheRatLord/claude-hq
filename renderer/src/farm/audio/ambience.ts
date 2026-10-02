@@ -58,7 +58,7 @@ export interface Ambience {
   dispose(): void;
 }
 
-export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () => void, externalThunderSince: () => number, indoor: () => number = () => 0): Ambience {
+export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () => void, externalThunderSince: () => number, indoor: () => number = () => 0, roof: () => number = () => 1): Ambience {
   const wf = structure('waterfall'), fire = structure('campfire'), mill = structure('windmill');
   const env: LoopEnv = {
     cpu: () => ctx.valley.gauges?.cpu ?? 0.3,
@@ -74,8 +74,8 @@ export function createAmbience(ctx: SceneCtx, eng: AudioEngine, playThunder: () 
   const beds: Bed[] = [
     B('wind', 'wind', BED_SCALE.wind, (l) => l.wind),
     B('rain', 'rain', BED_SCALE.rain, (l) => l.rain),
-    // indoors (the farmhouse): the rain drums on the roof instead
-    { ...B('roof', 'roof', BED_SCALE.roof, (l) => l.rain * indoor()), dry: true },
+    // indoors: the rain drums on the roof instead (louder on the barn's tin than the farmhouse shingles)
+    { ...B('roof', 'roof', BED_SCALE.roof, (l) => l.rain * indoor() * roof()), dry: true },
     B('birds', 'birds', BED_SCALE.birds, (l) => l.birds),
     B('crickets', 'crickets', BED_SCALE.crickets, (l) => l.crickets),
     B('owls', 'owls', BED_SCALE.owls, (l) => l.owls),

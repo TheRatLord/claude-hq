@@ -35,8 +35,8 @@ function blockWeather(y: number, doy: number, block: number, season: Season): { 
 }
 
 export function dayOfYear(d: Date): number {
-  const start = new Date(d.getFullYear(), 0, 0);
-  return Math.floor((d.getTime() - start.getTime()) / 86_400_000);
+  // calendar days in UTC: local midnights are 23 or 25 h apart across DST, so wall-ms maths would roll the day at 01:00
+  return Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 86_400_000);
 }
 
 /** Sunrise / sunset hours, shifted by season (longer summer days). */
@@ -95,7 +95,8 @@ function stepTrace(t: { wet: number; snow: number }, kind: WeatherKind, k: numbe
 /**
  * What the recent weather left behind at `date`: integrates the deterministic 3-hour blocks of the last two days
  * (the same table as `skyAt`), so every window agrees and a reload does not dry the puddles. A forced `weather`
- * counts as having been going on for at least the last 1.5 h. Pure.
+ * counts as having been going on for at least the last 1.5 h (rain, storm, snow) or 3 h (dry kinds), under the
+ * forced `hour`'s daylight when one is set. Pure.
  */
 export function weatherTrace(date: Date, o: SkyOverrides = {}): WeatherTrace {
   const realHour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
@@ -103,7 +104,10 @@ export function weatherTrace(date: Date, o: SkyOverrides = {}): WeatherTrace {
   const t = { wet: 0, snow: 0 };
   let rainEnd: number | null = null; // hours before now that the last rain stopped (null: none seen)
   let raining = false;
-  const forcedFor = o.weather ? Math.max(realHour - block * BLOCK_H, 1.5) : 0;
+  // a forced dry spell (clear / cloudy / fog) counts as 3 h, so a forced sunny day has mostly dried what the real
+  // blocks left; forced rain / snow as 1.5 h (puddles fill fast; snow is still building)
+  const forcedMin = o.weather && (wetKind(o.weather) || o.weather === 'snow') ? 1.5 : 3;
+  const forcedFor = o.weather ? Math.max(realHour - block * BLOCK_H, forcedMin) : 0;
   for (let i = TRACE_BLOCKS; i >= 0; i--) {
     const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), (block - i) * BLOCK_H);
     const ago0 = (date.getTime() - start.getTime()) / 3_600_000; // hours from block start to now
@@ -118,7 +122,9 @@ export function weatherTrace(date: Date, o: SkyOverrides = {}): WeatherTrace {
       segs.push([Math.min(ago0, forcedFor), ago1, o.weather]);
     } else segs.push([ago0, ago1, realKind]);
     for (const [a0, a1, kind] of segs) {
-      const midHour = start.getHours() + (ago0 - (a0 + a1) / 2);
+      // the forced stretch dries under the forced clock's sun (a `hour` override), the real blocks under the real one
+      const forced = o.weather !== undefined && o.weather !== null && a0 <= forcedFor;
+      const midHour = forced && o.hour != null ? (((o.hour - (a0 + a1) / 2) % 24) + 24) % 24 : start.getHours() + (ago0 - (a0 + a1) / 2);
       stepTrace(t, kind, o.weather && kind === o.weather ? o.intensity ?? k : k, a0 - a1, season, daylightAt(midHour, dayOfYear(start)));
       if (wetKind(kind)) { raining = a1 <= 0; rainEnd = a1; } else raining = false;
     }

@@ -768,12 +768,18 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
     confetti,
     taken,
     dispose() {
+      // collect before hiding: hide() takes each upgrade's root out of the group, and a hidden (not yet earned) upgrade
+      // is never in it; either way its geometry must go too, or every season change leaks the whole set on the GPU
+      const geos = new Set<THREE.BufferGeometry>();
+      const collect = (o: THREE.Object3D) => { const m = o as THREE.Mesh; if (m.isMesh) geos.add(m.geometry); };
+      group.traverse(collect);
+      for (const b of built) b.root.traverse(collect);
       for (const b of built) hide(b);
       flashOff?.();
       unsub?.(); unsub = null;
       if (ctx.services.get('upgrades') === svc) ctx.services.delete('upgrades');
       ctx.scene.remove(group);
-      group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+      for (const g of geos) g.dispose();
       for (const m of glows) m.dispose();
       bulbs.dispose();
     },

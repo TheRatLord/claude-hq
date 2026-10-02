@@ -116,3 +116,30 @@ test('loop advances caller state and contains callback errors', () => {
     console.error = saved.err;
   }
 });
+
+test('loop: repeated visibilitychange events never start a second frame chain', () => {
+  const pending = new Map<number, FrameRequestCallback>();
+  let next = 0;
+  let onVis: (() => void) | null = null;
+  const doc = { hidden: false, addEventListener: (_: string, fn: () => void) => { onVis = fn; }, removeEventListener() {} };
+  const saved = { raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, doc: Object.getOwnPropertyDescriptor(globalThis, 'document') };
+  globalThis.requestAnimationFrame = (fn) => { pending.set(++next, fn); return next; };
+  globalThis.cancelAnimationFrame = (id) => { pending.delete(id); };
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
+  const ctx: LoopState = { clock: createClock(), perf: { fps: 0, frameMs: 0, cpuMs: 0, frameErrors: 0 }, dt: 0, rawDt: 0, time: 0, now: 0, hour: 0, frame: 0, hidden: false };
+  const loop = createLoop(ctx, () => {});
+  try {
+    loop.start();
+    for (let i = 0; i < 5; i++) onVis!();          // 'visible' while visible, five times
+    doc.hidden = true; onVis!(); doc.hidden = false; onVis!(); onVis!();
+    assert.equal(pending.size, 1, 'one rAF chain');
+    const [fn] = pending.values(); pending.clear(); fn(16);
+    assert.equal(pending.size, 1);
+  } finally {
+    loop.stop();
+    globalThis.requestAnimationFrame = saved.raf;
+    globalThis.cancelAnimationFrame = saved.caf;
+    if (saved.doc) Object.defineProperty(globalThis, 'document', saved.doc);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+});

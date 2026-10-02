@@ -162,7 +162,7 @@ export function createHud(d: HudDeps): Hud {
   // ---- read-state persistence (letter ids restart per page; keys survive) ----
   const readKeys = new Set<string>();
   const stored = readJson(READ_KEY);
-  if (Array.isArray(stored)) for (const k of stored as string[]) readKeys.add(k);
+  if (Array.isArray(stored)) for (const k of stored.slice(-400)) if (typeof k === 'string') readKeys.add(k);
   const saveRead = () => writeJson(READ_KEY, [...readKeys].slice(-400));
   const synthRead = new Set<string>();
   const mark = {

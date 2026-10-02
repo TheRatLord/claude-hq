@@ -42,6 +42,9 @@ export function collectIcon(d: CollectDef): string {
     case 'mapleleaf': return S(`<path d="M12 2l2 4 3-1-1 4 4 1-3 3 2 2-5 0-1 4-1-4-5 0 2-2-3-3 4-1-1-4 3 1z" fill="${c}" ${ol}/><path d="M12 7v15" stroke="#8a3a2a" stroke-width="1.3"/>`);
     case 'holly': return S(`<path d="M4 15l2-2-1-2 3-1 0-2 3 1 1-2 1 3-2 2 1 2-3 0-1 2z" fill="${c}" ${ol}/><path d="M20 15l-2-2 1-2-3-1 0-2-3 1-1-2-1 3 2 2-1 2 3 0 1 2z" fill="${c}" ${ol}/><g fill="#d02a2a" ${ol}><circle cx="11" cy="15.5" r="2.2"/><circle cx="14" cy="16.5" r="2.2"/><circle cx="12" cy="19" r="2.2"/></g>`);
     case 'pinecone': return S(`<path d="M12 2c4 3 6 8 5 13-1 4-3 6-5 7-2-1-4-3-5-7-1-5 1-10 5-13z" fill="${c}" ${ol}/><path d="M8 9l4 2 4-2M7.3 13l4.7 2.5 4.7-2.5M8 17l4 2 4-2M12 3v18" stroke="#c8925a" stroke-width="1.1" fill="none"/>`);
+    // barn produce (model/collection.ts PRODUCE)
+    case 'egg': return S(`<path d="M3.5 15.5c1.5 4 15.5 4 17 0" fill="#c99a5a" ${ol}/><path d="M12 3c3.6 0 6 5 6 8.6S15.4 18 12 18s-6-2.8-6-6.4S8.4 3 12 3z" fill="${c}" ${ol}/><ellipse cx="10" cy="8" rx="1.3" ry="2" fill="#fff" opacity=".8"/>`);
+    case 'milk': return S(`<path d="M6 7h12l-1.4 13.2a1.6 1.6 0 01-1.6 1.3H9a1.6 1.6 0 01-1.6-1.3z" fill="#b8c4cc" ${ol}/><ellipse cx="12" cy="7" rx="6" ry="1.8" fill="${c}" ${ol}/><path d="M6.5 7.5c0-4 11-4 11 0" fill="none" stroke="${INK}" stroke-width="1.3"/><path d="M7.4 12h9.2" stroke="#8a9aa6" stroke-width="1.2"/>`);
     case 'crystal': return S(`<path d="M3 20c2-3 16-3 18 0z" fill="#b7b0a3" ${ol}/><path d="M10 20V7l2.5-4.5L15 7v13z" fill="${c}" ${ol}/><path d="M6 20v-7l2-3 2 3v7zM15 20v-6l2-3 2 3v6z" fill="#cdeefa" ${ol}/><path d="M12.5 3v17" stroke="#fff" stroke-width="1" opacity=".7"/>`);
   }
   return S(`<circle cx="12" cy="12" r="8" fill="${c}" ${ol}/>`);

@@ -7,7 +7,7 @@
  * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  *             ?timeline=0 (demo: no seeded morning on the farmers' day timelines, model/timeline.ts)
- *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior)
+ *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior), ?pose=barn-inside[:VIEW] (the barn)
  *             ?welcome=1 (open the first-run welcome tour, fresh; automated browsers skip it otherwise) | ?welcome=0 (never)
  */
 import './hud/base.css';
@@ -210,6 +210,8 @@ if (pose) {
   else if (nums.length >= 2 && nums.every(Number.isFinite)) controller.teleport(nums[0], nums[1], nums[2], nums[3]);
   // pose=inside (or inside:hearth, inside:shelf … see INSIDE_VIEWS in scene/interior/layout.ts): the farmhouse interior
   else if (/^inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(pose.split(':')[1] || 'door');
+  // pose=barn-inside (or barn-inside:loft, :stalls … see BARN_VIEWS in scene/interior/barnLayout.ts): the barn interior
+  else if (/^barn-inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(`barn:${pose.split(':')[1] || 'door'}`);
 }
 
 engine.start();

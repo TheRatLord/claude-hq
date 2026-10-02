@@ -10,7 +10,8 @@ Paths are relative to `renderer/src/farm/`.
 ## Weather leaves traces and makes moments
 
 Weather follows the real clock (`model/sky.ts`, 3-hour blocks); `sky.trace` (`weatherTrace`, pure + `sky.test.ts`)
-integrates the last two days of blocks into `wet` (soaks in fast, dries over hours: slower at night, in fog and
+integrates the last two days of blocks (a forced `weather` counts as the last 1.5 h for rain / storm / snow, 3 h for
+dry kinds, under the forced `hour`'s sun, so `?weather=clear&hour=10` has mostly dried the real night's rain) into `wet` (soaks in fast, dries over hours: slower at night, in fog and
 winter), lying `snow` (builds ~3 h to full, melts in rain / sun) and `sinceRain`, so every window agrees and a reload
 does not dry the puddles. What it drives:
 
@@ -18,8 +19,11 @@ does not dry the puddles. What it drives:
   per-material hook; shared `VW` uniform block written by the weather system). Wet surfaces darken and richen with a
   soft sky sheen and a banded sun glint (wet lamp pools shine at night). Puddles grow and shrink with `wet` on flat
   ground-level surface-library faces (`VW_SURF`, defined by `withSurfaces`; height checked against `vwGround`, a
-  128² heightmap of `heightAt`): freely on paths, the square and soil, now and then on grass; they mirror the sky
-  gradient, the sun and lamp light, and ring with drops while it rains. Never on characters, never indoors.
+  128² heightmap of `heightAt`; the terrain skips that check, it tells the patch its own tracks via `vwPathK` and its
+  tall grass via `vwTallK`): freely on paths, the square and soil; on grass rarely, small and muddy (darker, less
+  sky, a wider wet rim), only in hollows of the heightmap and never under tall grass. They mirror the sky gradient,
+  the sun and lamp light, and ring with drops while it rains. Only real wetting glints in the sun (merely damp ground
+  does not). Never on characters, never indoors.
 * **Lying snow + frost**: snow covers up-facing world faces in drifts as `trace.snow` builds (the square, roofs,
   fences, crops), with sun sparkle; on cold clear nights and mornings (winter, Nov–mid-Mar) the ground goes pale and
   twinkles with pin-point frost that shimmers as you move, until the sun has been up a while.
@@ -61,6 +65,8 @@ npm run shoot -- --shot "name=rb,hour=16.5,weather=cloudy,cam=0;3;10;-1.3;0.2,ev
 npm run shoot -- --shot "name=mist,hour=7,weather=clear,cam=0;22;70;0;-0.22,eval=__valley.atmo({mist:1})"   # dawn mist on the river
 npm run shoot -- --shot "name=gr,hour=16.8,weather=cloudy,cam=0;3;10;1.87;0.3"                          # god rays (face the sun)
 npm run shoot -- --shot "name=sn,pose=hub,hour=10,weather=snow,season=winter"                             # lying snow builds
+npm run bench -- --scenario mixed --cond snow --pose hub,farmhouse   # snow on the real GPU (≈ +0.3 ms over a clear day; flakes
+                                                                     # within 1.5 m of the eye are collapsed, not overdrawn)
 npm run shoot -- --shot "name=fr,cam=0;2.2;14;0;-0.35,hour=7.6,weather=clear,eval=__valley.atmo({frost:1})"  # frost sparkle
 npm run bench -- --quality low --eval "__valley.atmo({mist:1})"  # A/B a setting on the real GPU (tools.md → Benchmark)
 ```

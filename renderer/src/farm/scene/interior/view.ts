@@ -228,22 +228,34 @@ void main() {
 }`;
 
 export interface Beams { mesh: THREE.Mesh; update(t: number, sunLocal: THREE.Vector3, k: readonly number[], color: THREE.Color): void }
-/** one beam per window; `k[i]` (0..1) is how much sun window i lets in right now */
-export function buildBeams(): Beams {
+/** One opening a beam slants in through: centre, right and up edge vectors (room-local), and its light group (0..3). */
+export interface BeamOpening { o: readonly [number, number, number]; r: readonly [number, number, number]; u: readonly [number, number, number]; group: number }
+/** the farmhouse windows, one group each */
+export function houseOpenings(): BeamOpening[] {
+  return WINDOWS.map((w, wi) => ({
+    o: w.wall === 'front' ? [w.at, w.y, ROOM.z1 + 0.05] as const : [ROOM.x1 + 0.05, w.y, w.at] as const,
+    r: w.wall === 'front' ? [w.w, 0, 0] as const : [0, 0, -w.w] as const,
+    u: [0, w.h, 0] as const,
+    group: wi,
+  }));
+}
+const BEAM_GROUPS = 4;
+/**
+ * One beam per opening; `k[g]` (0..1) is how much sun the openings of group g let in right now. `drop`: how far (m)
+ * a beam falls before it fades (from its opening's centre to a little under the floor).
+ */
+export function buildBeams(openings: readonly BeamOpening[], drop = WINDOWS[0].y - ROOM.floor + 0.6): Beams {
   const corners: number[] = [], origin: number[] = [], right: number[] = [], up: number[] = [], index: number[] = [];
   const beamK: number[] = [];
-  WINDOWS.forEach((w, wi) => {
-    const o = w.wall === 'front' ? [w.at, w.y, ROOM.z1 + 0.05] : [ROOM.x1 + 0.05, w.y, w.at];
-    const r = w.wall === 'front' ? [w.w, 0, 0] : [0, 0, -w.w];
-    const u = [0, w.h, 0];
+  for (const w of openings) {
     const base = corners.length / 3;
     // a box swept from the opening: 4 corners × near/far
     for (const z of [0, 1]) for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
-      corners.push(x, y, z); origin.push(...o); right.push(...r); up.push(...u); beamK.push(wi);
+      corners.push(x, y, z); origin.push(...w.o); right.push(...w.r); up.push(...w.u); beamK.push(Math.min(BEAM_GROUPS - 1, w.group));
     }
     const q = (a: number, b: number, c: number, d: number) => index.push(base + a, base + b, base + c, base + a, base + c, base + d);
     q(0, 1, 5, 4); q(1, 2, 6, 5); q(2, 3, 7, 6); q(3, 0, 4, 7);
-  });
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(corners, 3)); // unused by the shader; keeps three happy
   geo.setAttribute('aCorner', new THREE.Float32BufferAttribute(corners, 3));
@@ -252,9 +264,9 @@ export function buildBeams(): Beams {
   geo.setAttribute('aUp', new THREE.Float32BufferAttribute(up, 3));
   geo.setAttribute('aWin', new THREE.Float32BufferAttribute(beamK, 1));
   geo.setIndex(index);
-  const u = { uSunLocal: { value: new THREE.Vector3(0, 1, 0) }, uLen: { value: 5 }, uK: { value: 0 }, uColor: { value: new THREE.Color(1, 0.9, 0.7) }, uTime: { value: 0 }, uWinK: { value: [0, 0, 0] } };
+  const u = { uSunLocal: { value: new THREE.Vector3(0, 1, 0) }, uLen: { value: 5 }, uK: { value: 0 }, uColor: { value: new THREE.Color(1, 0.9, 0.7) }, uTime: { value: 0 }, uWinK: { value: [0, 0, 0, 0] } };
   const mat = new THREE.ShaderMaterial({
-    vertexShader: BEAM_VERT.replace('uniform float uLen;', 'uniform float uLen;\nattribute float aWin;\nuniform float uWinK[3];\nvarying float vK;').replace('vT = aCorner.z;', 'vT = aCorner.z;\nvK = uWinK[int(aWin)];'),
+    vertexShader: BEAM_VERT.replace('uniform float uLen;', `uniform float uLen;\nattribute float aWin;\nuniform float uWinK[${BEAM_GROUPS}];\nvarying float vK;`).replace('vT = aCorner.z;', 'vT = aCorner.z;\nvK = uWinK[int(aWin + 0.5)];'),
     fragmentShader: BEAM_FRAG.replace('varying float vT;', 'varying float vT;\nvarying float vK;').replace('uColor * uK *', 'uColor * uK * vK *'),
     uniforms: u, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, fog: false,
   });
@@ -267,12 +279,13 @@ export function buildBeams(): Beams {
     update(t, sun, k, color) {
       u.uTime.value = t;
       u.uSunLocal.value.copy(sun);
-      for (let i = 0; i < 3; i++) u.uWinK.value[i] = k[i] ?? 0;
+      let any = false;
+      for (let i = 0; i < BEAM_GROUPS; i++) { const v = k[i] ?? 0; u.uWinK.value[i] = v; if (v > 0.01) any = true; }
       u.uK.value = 1;
       u.uColor.value.copy(color);
-      // reach the floor: the beam is as long as it takes to drop the sill height
-      u.uLen.value = Math.min(7, (WINDOWS[0].y - ROOM.floor + 0.6) / Math.max(0.2, sun.y));
-      mesh.visible = k.some((x) => x > 0.01);
+      // reach the floor: the beam is as long as it takes to drop that far
+      u.uLen.value = Math.min(9, drop / Math.max(0.2, sun.y));
+      mesh.visible = any;
     },
   };
 }

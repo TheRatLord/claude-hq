@@ -2,11 +2,14 @@
  * First-person walker for the valley: pointer-lock mouse look, WASD, sprint, jump, terrain following, structure
  * collision, no swimming (deep water and cliffs push back), footstep-locked head bob.
  * Movement pauses whenever a modal UI owns the input (`player.frozen`).
- * Indoors (service 'indoors', the farmhouse interior): its floor and furniture replace the terrain and colliders.
+ * Indoors (service 'indoors', the farmhouse / barn interiors): its floors (by feet height: the barn's loft) and solids
+ * replace the terrain and colliders.
  * Fly mode (photo mode): the camera leaves the body and flies freely (WASD along the view, Space up, C down, Shift
  * fast, no collision); leaving it snaps the view back to where you stood.
  * Sitting (`sit`, the campfire's log benches at an evening gathering): the body eases onto the seat and the eye lowers
  * to a seated height; the mouse still looks around, and any move key or Space stands you up again.
+ * Riding (`ride`, scene/seasons: the rowboat, skating on the frozen pond): a `Rider` takes over movement each frame
+ * (it reads the move keys, writes the feet position and says where the eye goes); the mouse still looks around.
  */
 import * as THREE from 'three';
 import type { FrameInfo, IndoorSpace, SceneCtx } from '../scene/context.ts';
@@ -21,6 +24,23 @@ const RADIUS = 0.35;
 const WALK = 4.6, SPRINT = 8.2, ACCEL = 10, JUMP_V = 5.2, GRAVITY = 16;
 const MAX_SLOPE = 0.42; // 1 − normal.y above which ground is a wall
 const MAX_R = 128; // hard boundary (the mountains are steeper than this anyway)
+
+/** The move keys this frame, for a `Rider`. */
+export interface RideInput { fwd: number; side: number; sprint: boolean; jump: boolean }
+/** Where the camera goes while riding (written by the rider each frame). */
+export interface RideOut {
+  /** eye height above `player.pos.y` */
+  eye: number;
+  /** camera roll (lean into a carve, a rocking boat), radians */
+  roll: number;
+  /** horizontal velocity to carry on with when the ride ends (skating off onto the shore) */
+  vx: number; vz: number;
+}
+/**
+ * Something that moves the player instead of walking (scene/seasons: the rowboat, skates). `ride` advances one frame:
+ * read `input`, write `ctx.player.pos` / `speed` (and turn `yaw` if it wants), fill `out`; return false to get off.
+ */
+export interface Rider { ride(dt: number, input: RideInput, out: RideOut): boolean }
 
 export interface Controller {
   update(f: FrameInfo): void;
@@ -37,6 +57,10 @@ export interface Controller {
    *  stands up. `onStand` runs when the player gets up (a move key, Space, or `sit(null)`). */
   sit(at: { x: number; z: number; y: number; yaw: number } | null, onStand?: () => void): void;
   readonly seated: boolean;
+  /** hand movement to a rider (null: back on foot); `onEnd` runs when the ride ends for any reason (the rider says
+   *  so, `ride(null)`, a teleport) */
+  ride(r: Rider | null, onEnd?: () => void): void;
+  readonly riding: Rider | null;
   dispose(): void;
 }
 
@@ -52,6 +76,17 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   const flyDir = new THREE.Vector3();
   let seat: { x: number; z: number; y: number; yaw: number } | null = null, onStand: (() => void) | null = null, sitK = 0;
   const sitFrom = new THREE.Vector3();
+  let rider: Rider | null = null, onRideEnd: (() => void) | null = null;
+  const rideIn: RideInput = { fwd: 0, side: 0, sprint: false, jump: false };
+  const rideOut: RideOut = { eye: EYE, roll: 0, vx: 0, vz: 0 };
+  const endRide = () => {
+    if (!rider) return;
+    const fn = onRideEnd;
+    rider = null; onRideEnd = null;
+    vel.set(rideOut.vx, 0, rideOut.vz); vy = 0; grounded = true;
+    rideOut.roll = 0;
+    fn?.();
+  };
   const stand = () => {
     if (!seat) return;
     const fn = onStand;
@@ -84,7 +119,7 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
   const indoors = (): IndoorSpace | null => { const r = ctx.services.get('indoors') as IndoorSpace | undefined; return r?.active ? r : null; };
   const walkable = (x: number, z: number): boolean => {
     const room = indoors();
-    if (room) return room.floor(x, z) !== null;
+    if (room) return room.floor(x, z, p.pos.y) !== null;
     // a deck you can step onto carries you over anything (the summit trail's staircase and rope bridge, docks)
     const deck = (ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined)?.(x, z);
     if (deck != null && deck < p.pos.y + 0.65) return true;
@@ -132,6 +167,18 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
         p.speed = 0;
         return;
       }
+      if (rider) {
+        rideIn.fwd = fwd; rideIn.side = side; rideIn.sprint = sprint; rideIn.jump = keys.has('Space');
+        let on = false;
+        try { on = rider.ride(dt, rideIn, rideOut); } catch (e) { console.error('[controller] rider threw', e); }
+        if (on) {
+          p.eye.set(p.pos.x, p.pos.y + rideOut.eye, p.pos.z);
+          ctx.camera.position.copy(p.eye);
+          ctx.camera.rotation.set(p.pitch, p.yaw, rideOut.roll);
+          return;
+        }
+        endRide();
+      }
       if (seat) {
         // seated: ease onto the seat; any move key or Space stands up
         if (fwd || side || keys.has('Space')) { keys.delete('Space'); stand(); }
@@ -167,7 +214,7 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       if (room) room.resolve(p.pos, RADIUS); else ctx.colliders.resolve(p.pos, RADIUS);
       // vertical
       if (grounded && keys.has('Space')) { vy = JUMP_V; grounded = false; }
-      const ground = room ? room.floor(p.pos.x, p.pos.z) ?? p.pos.y : Math.max(heightAt(p.pos.x, p.pos.z), WORLD.water - 0.6);
+      const ground = room ? room.floor(p.pos.x, p.pos.z, p.pos.y) ?? p.pos.y : Math.max(heightAt(p.pos.x, p.pos.z), WORLD.water - 0.6);
       const walk = room ? ground : (ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined)?.(p.pos.x, p.pos.z) ?? null;
       const floor = walk !== null ? Math.max(ground, walk) : ground;
       if (!grounded) {
@@ -200,6 +247,7 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
     },
     teleport(x, z, yaw, pitch) {
       stand();
+      endRide();
       p.pos.set(x, indoors()?.floor(x, z) ?? heightAt(x, z), z);
       if (yaw !== undefined) p.yaw = yaw;
       if (pitch !== undefined) p.pitch = pitch;
@@ -230,6 +278,16 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       look = { yaw: Math.atan2(-Math.sin(at.yaw), -Math.cos(at.yaw)), pitch: -0.16 };
     },
     get seated() { return seat !== null; },
+    ride(r, fn) {
+      if (rider === r) { onRideEnd = fn ?? onRideEnd; return; }
+      endRide();
+      if (!r) return;
+      stand();
+      rider = r; onRideEnd = fn ?? null;
+      rideOut.eye = EYE; rideOut.roll = 0; rideOut.vx = 0; rideOut.vz = 0;
+      vel.set(0, 0, 0); vy = 0; grounded = true;
+    },
+    get riding() { return rider; },
     dispose() {
       removeEventListener('keydown', kd); removeEventListener('keyup', ku); removeEventListener('blur', blur);
       removeEventListener('mousemove', mm); canvas.removeEventListener('click', click);

@@ -13,13 +13,13 @@ import { fishOdds, SIGHTINGS } from '../model/collection.ts';
 import { PLACE_NAME, type VisitPlace } from '../model/friends.ts';
 import type { Status } from '../../../../shared/protocol.ts';
 import './map.css';
-import { readJson, readLocal, writeJson, writeLocal } from '../storage.ts';
+import { readLocal, readTyped, writeJson, writeLocal } from '../storage.ts';
 
 // ---------------------------------------------------------------------------------------------- layers + extras
 
 const LAYERS_KEY = 'valley.hud.mapLayers';
 function loadLayers(): MapLayers {
-  return { ...DEFAULT_LAYERS, ...(readJson(LAYERS_KEY) as Partial<MapLayers> | null) };
+  return readTyped(LAYERS_KEY, DEFAULT_LAYERS);
 }
 /** shared by the panel and the minimap (one object: a toggle in the panel shows on the minimap at once) */
 const layers: MapLayers = loadLayers();

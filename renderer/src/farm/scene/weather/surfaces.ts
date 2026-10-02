@@ -8,7 +8,9 @@
  *           valley floor (`vwGround`, a coarse heightmap of `heightAt`), on ground surfaces (soil, dirt, cobble,
  *           sand, pebbles, rock, fieldstone, untagged terrain). A world-space noise mask grows the puddles as the
  *           ground soaks and shrinks them as it dries; inside: dark water reflecting the sky gradient, a sun glint, lamp
- *           light, and rain-drop rings while it rains.
+ *           light, and rain-drop rings while it rains. The terrain tells the patch where its dirt tracks are
+ *           (`vwPathK`) and where tall grass stands (`vwTallK`): on grass, puddles are rare, small, muddy (darker,
+ *           less sky) with a wider wet rim, and only in hollows of the heightmap; none under tall grass.
  *   snow    lying snow covers up-facing surface-library faces (ground, roofs, fences, crops) in noisy drifts as it
  *           builds (`trace.snow`), with blue-white sparkles in sun / lamp light.
  *   frost   on cold clear mornings the ground goes pale and twinkles; the twinkle depends on the view direction so it
@@ -73,6 +75,10 @@ uniform sampler2D vwGround;
 vec3 vwSheen = vec3( 0.0 );
 float vwPuddle = 0.0;
 float vwSnowK = 0.0;
+// set by a material's own fragment (the terrain): how path-like (dirt / sand) the pixel is (-1 = unknown), and how
+// much tall rough grass stands there (no puddles under tall grass)
+float vwPathK = -1.0;
+float vwTallK = 0.0;
 float vwH( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 float vwN( vec2 p ) {
   vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
@@ -134,6 +140,15 @@ if ( vwP[ 0 ].x + vwP[ 0 ].y + vwP[ 1 ].w > 0.002 ) {
     #endif
   }
   #endif
+  // the terrain knows its own paths: puddle freely on the dirt tracks, rarely on the grass. It is the ground by
+  // definition: skip the coarse heightmap test (bilinear between 2.3 m samples, it strays > 0.3 m on hills and cut
+  // the wet soak into dark triangles there), keep only the water level
+  if ( vwPathK >= 0.0 ) {
+    vwPudK = mix( 0.36, 1.0, vwPathK );
+    vwGroundK = vwW.y < ${(WORLD.water + 0.05).toFixed(2)} ? 0.0 : 1.0;
+  }
+  // grass puddles are muddy: smaller, darker, in hollows, with a soft wet rim
+  float vwMud = clamp( ( 1.0 - vwPudK ) / 0.45, 0.0, 1.0 ) * ( 1.0 - vwTallK );
   float vwLarge = vwN( vwW.xz * 0.21 + 4.0 ) * 0.65 + vwN( vwW.xz * 0.9 - 2.0 ) * 0.35;
 
   // --- lying snow (world only): up-facing faces, drifting coverage with the amount
@@ -172,31 +187,44 @@ if ( vwP[ 0 ].x + vwP[ 0 ].y + vwP[ 1 ].w > 0.002 ) {
     // puddles: the mask grows with the amount; dark water reflecting the sky
     float pud = 0.0;
     if ( vwGroundK > 0.0 && vwUp > 0.93 ) {
-      float amt = vwP[ 2 ].w * vwPudK;
-      float th = 1.0 - amt * 0.42;
+      float amt = vwP[ 2 ].w * vwPudK * ( 1.0 - vwTallK );
+      float th = 1.0 - amt * 0.38;
       float m = vwLarge + ( vwN( vwW.xz * 3.7 ) - 0.5 ) * 0.08;
+      if ( vwMud > 0.0 ) {
+        // on grass water only gathers in hollows of the valley floor (heightmap: lower than its surroundings)
+        vec2 gu = vwW.xz / ( 2.0 * vwP[ 3 ].w ) + 0.5, go = vec2( 3.5 / ( 2.0 * vwP[ 3 ].w ), 0.0 );
+        float g0 = texture2D( vwGround, gu ).r;
+        float hollow = 0.25 * ( texture2D( vwGround, gu + go ).r + texture2D( vwGround, gu - go ).r
+          + texture2D( vwGround, gu + go.yx ).r + texture2D( vwGround, gu - go.yx ).r ) - g0;
+        m += ( smoothstep( -0.04, 0.12, hollow ) - 0.75 ) * 0.14 * vwMud;
+      }
       pud = smoothstep( th, th + 0.025, m ) * vwGroundK * smoothstep( 0.93, 0.98, vwUp ) * ( 1.0 - vwSnowK );
       if ( pud > 0.0 && vwP[ 0 ].z > 0.01 ) {
         vec2 tilt = vwDrops( vwW.xz, vwT ) * vwP[ 0 ].z * vwNear;
         Nr = normalize( vec3( tilt.x * 0.35, 1.0, tilt.y * 0.35 ) );
       } else if ( pud > 0.0 ) Nr = vec3( 0.0, 1.0, 0.0 );
       // a darker, wetter rim around each puddle
-      float rim = smoothstep( th - 0.07, th, m ) * ( 1.0 - pud ) * vwGroundK;
+      float rim = smoothstep( th - 0.07 - 0.06 * vwMud, th, m ) * ( 1.0 - pud ) * vwGroundK;
       soak = max( soak, vwWet * ( 0.6 + 0.4 * rim ) * vwGroundK * smoothstep( 0.9, 0.98, vwUp ) * ( 1.0 - vwSnowK ) );
     }
     vwPuddle = pud;
     // wet stone / soil / wood: darker and a touch richer (squaring in linear deepens the colour)
     float dk = soak * ( 0.75 + 0.25 * vwGroundK );
-    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * diffuseColor.rgb * 1.7, 0.35 * dk ) * ( 1.0 - 0.3 * dk );
-    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( dot( diffuseColor.rgb, vec3( 0.06 ) ) ) + vec3( 0.008, 0.011, 0.016 ), pud );
+    // (only a touch richer: squaring saturates warm dirt into orange paint between the puddles)
+    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * diffuseColor.rgb * 1.7, 0.18 * dk ) * ( 1.0 - 0.36 * dk );
+    // puddle water: near black, mirroring the sky; on grass a peaty brown-olive that keeps less of the sky
+    vec3 vwWater = mix( vec3( 0.008, 0.011, 0.016 ), vec3( 0.022, 0.02, 0.008 ), vwMud );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( dot( diffuseColor.rgb, vec3( 0.06 ) ) ) + vwWater, pud );
     float ndv = clamp( dot( Nr, vwV ), 0.0, 1.0 );
     float fres = pow( 1.0 - ndv, 4.0 );
     vec3 rd = reflect( -vwV, Nr );
     vec3 sky = mix( vwP[ 2 ].rgb, vwP[ 1 ].rgb, smoothstep( 0.0, 0.5, rd.y ) ) * vec3( 0.8, 0.88, 1.0 );
     float far = 1.0 - smoothstep( 30.0, 90.0, vwDist ) * 0.6;
-    vwSheen += sky * ( fres * 0.16 * soak * far + pud * ( 0.3 + 0.4 * fres ) );
+    vwSheen += sky * ( fres * 0.16 * soak * far + pud * ( 0.3 + 0.4 * fres ) * ( 1.0 - 0.6 * vwMud ) );
     float sp = max( dot( rd, vwP[ 3 ].xyz ), 0.0 );
-    float glint = smoothstep( 0.86, 0.9, pow( sp, 18.0 ) ) * ( soak * 0.35 + pud * 1.2 ) + smoothstep( 0.97, 0.985, sp ) * pud * 2.5;
+    // (merely damp ground does not mirror the sun: the soak glint needs a real wetting, else a pale disc follows the
+    // sun across every dry-ish path for hours after rain)
+    float glint = smoothstep( 0.86, 0.9, pow( sp, 18.0 ) ) * ( soak * 0.35 * smoothstep( 0.3, 0.7, vwWet ) + pud * 1.2 ) + smoothstep( 0.97, 0.985, sp ) * pud * 2.5;
     vwSheen += vwP[ 4 ].rgb * glint * vwNear;
   }
 }

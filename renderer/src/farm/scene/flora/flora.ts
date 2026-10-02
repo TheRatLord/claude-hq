@@ -20,9 +20,9 @@ import {
 } from './species.ts';
 import type { BushKind } from './species.ts';
 import { WIND, sway, syncWind } from './wind.ts';
-import { ivyMesh, layoutIvy } from './ivy.ts';
+import { IVY_FAR_FRAG, IVY_FAR_VERT, ivyMesh, layoutIvy } from './ivy.ts';
 import { heightAt } from '../../world/map.ts';
-import { SURF, withSurfaces } from '../surface/index.ts';
+import { SURF, chainShader, withSurfaces } from '../surface/index.ts';
 
 interface Set_ { inst: CellInstancer; build(season: Season): THREE.BufferGeometry; recolor?(season: Season): void }
 
@@ -139,7 +139,10 @@ export const floraSystem: SystemFactory = (ctx: SceneCtx) => {
   add('molehills', S.molehills, (s) => molehillGeometry(s, 1), solidMat, { cell: 20, far: 90, height: 0.3 });
   // ivy drapes: walked down their risers once, merged into a few sector meshes (three frustum-culls them; no per-frame work)
   const ivyLayout = layoutIvy(S.ivy, heightAt);
-  const ivyMat = toon(0xffffff, { vertexColors: true, shared: false });
+  const ivyMat = chainShader(toon(0xffffff, { vertexColors: true, shared: false }), (sh) => {
+    sh.vertexShader = sh.vertexShader.replace(IVY_FAR_VERT[0], IVY_FAR_VERT[1]).replace(IVY_FAR_VERT[2], IVY_FAR_VERT[3]);
+    sh.fragmentShader = sh.fragmentShader.replace(IVY_FAR_FRAG[0], IVY_FAR_FRAG[1]).replace(IVY_FAR_FRAG[2], IVY_FAR_FRAG[3]);
+  }, 'ivy-far');
   mats.push(ivyMat);
   const IVY_SECTORS = 6;
   const ivySectors: number[][] = Array.from({ length: IVY_SECTORS }, () => []);

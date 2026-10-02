@@ -326,6 +326,15 @@ export function createAnchors(focused: () => Interactable | null, all: () => Ite
     hudDirty = false;
     HUD.n = 0;
     if (!hudRoot) return;
+    // forget furniture that left the page (every toast that ever showed was a "children" obstacle): the set, the
+    // observers and the elements must not grow for as long as the valley stays open
+    let stale = false;
+    for (const e of observed) if (!e.isConnected) { observed.delete(e); ro?.unobserve(e); stale = true; }
+    if (stale && mo) {
+      mo.disconnect();
+      mo.observe(hudRoot, { attributes: true, attributeFilter: ['class'] });
+      for (const e of observed) mo.observe(e, (e as HTMLElement).dataset.hudObstacle === 'children' ? { ...MO_OPTS, childList: true } : MO_OPTS);
+    }
     const add = (e: Element) => {
       // children of a "children" obstacle change size on their own too (hover / CSS-only states): watch their boxes
       if (mo && !observed.has(e)) { observed.add(e); mo.observe(e, MO_OPTS); ro?.observe(e); }

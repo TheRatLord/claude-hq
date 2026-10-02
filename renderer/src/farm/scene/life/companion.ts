@@ -46,6 +46,8 @@ import type { Fx } from './util.ts';
 import type { Activity } from './schedule.ts';
 
 const STORE_KEY = 'claude-valley.pet.v1';
+/** A spot your pet sits and rides along on (service 'petPerch', scene/seasons: the rowboat's bow); mutated in place. */
+export interface PetPerch { active: boolean; x: number; y: number; z: number; yaw: number }
 
 type State = 'off' | 'arrive' | 'follow' | 'rest' | 'sniff' | 'greet' | 'find' | 'fetch' | 'carry' | 'play' | 'petted' | 'belly' | 'home' | 'indoor';
 
@@ -100,7 +102,12 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
   const houseCorner = L(-7.55, 3.5), houseBack = { x: YARD.x0 - 1.5, z: WEST_GAP.z }, gapIn = { x: YARD.x0 + 1.1, z: WEST_GAP.z };
   // the hearth rug (farmhouse-local room frame), facing the room
   const rug = L(FURN.rug.x + 0.55, FURN.rug.z + 0.7);   // fireside of the armchair, in view of the room
-  const rugYaw = Math.atan2(-0.6 * cosF + 0.8 * sinF, 0.6 * sinF + 0.8 * cosF);
+  let rugYaw = Math.atan2(-0.6 * cosF + 0.8 * sinF, 0.6 * sinF + 0.8 * cosF), rugY = fh.y + ROOM.floor;
+  /** the room you are in may name its own spot (the barn: the hay by the door); else the farmhouse hearth rug */
+  const roomSpot = (): void => {
+    const sp = indoors()?.petSpot?.();
+    if (sp) { rug.x = sp.x; rug.z = sp.z; rugYaw = sp.yaw; rugY = sp.y; }
+  };
   // the foundlings' basket: a clear patch of meadow beside the signpost
   const basketAt = { x: sign.x + 1.6, z: sign.z + 1.2, yaw: 0 };
   {
@@ -259,6 +266,7 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
 
   // ------------------------------------------------------------------ state
   let state: State = 'off', prev: State = 'rest', t = 0, now = 0;
+  let perched = false;
   let still = 0, sniffIn = 6, sniffT = 0, greetIn = 4, findIn = 3, barkQ = 0, barkGap = 0, pant = 0, voiceIn = 0, tickIn = 0;
   let ms = 0;
   let walkAcc = 0, walkIn = 1, side = 1, wokeUntil = -1, napPose: PetPose = 'lie';
@@ -551,6 +559,16 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     inp.pose = 'stand'; inp.sniff = 0; inp.ears = 0; inp.happy = 0; inp.lean = 0; inp.bump = 0; inp.tilt = 0; inp.narrow = 0; inp.slowBlink = false;
     inp.joy = aff.joy;
     m.personal = 0.55; freeAt.r = 0;
+    // a perch (scene/seasons: the rowboat's bow): sit there and ride along, then hop off by you
+    const pp = ctx.services.get('petPerch') as PetPerch | undefined;
+    if (pp?.active && state !== 'off' && state !== 'indoor' && state !== 'home') {
+      if (!perched) { if (stk.held) dropStick(); setState('rest'); body?.snap(); bark(1); }
+      perched = true;
+      m.x = m.px = pp.x; m.z = m.pz = pp.z; m.yaw = m.pyaw = pp.yaw; m.v = 0; m.lift = 0; m.stuck = 0;
+      inp.pose = 'sit'; inp.joy = Math.max(0.5, aff.joy); inp.ears = 0.6; still = 1;
+      return 0;
+    }
+    if (perched) { perched = false; snapNear(); setState('rest'); crumbs.reset(player.x, player.z); }
     let speed = 0;
     const room = indoors();
     const awayOk = state === 'follow' || state === 'rest' || state === 'sniff' || state === 'arrive';
@@ -558,6 +576,7 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     if (room?.active && state !== 'indoor' && state !== 'petted') {
       if (stk.held) dropStick();
       stk.on = false; stick.visible = false;
+      roomSpot();
       m.x = m.px = rug.x; m.z = m.pz = rug.z; m.yaw = m.pyaw = rugYaw; m.lift = 0; m.v = 0;
       body?.snap();
       napPose = night() ? 'curl' : 'lie';
@@ -750,7 +769,7 @@ export function createCompanion(ctx: SceneCtx, fx: Fx): Companion {
     if (!body) return;
     const room = indoors();
     const inside = state === 'indoor' || (state === 'petted' && prev === 'indoor');
-    m.y = inside && room?.active ? fh.y + ROOM.floor : groundY(ctx, m.x, m.z);
+    m.y = perched ? (ctx.services.get('petPerch') as PetPerch).y : inside && room?.active ? rugY : groundY(ctx, m.x, m.z);
     if (dt > 1e-4) {
       const dx = m.x - m.px, dz = m.z - m.pz;
       const gs = (dx * Math.sin(m.yaw) + dz * Math.cos(m.yaw)) / dt;

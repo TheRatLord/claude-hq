@@ -132,6 +132,31 @@ const M: Record<Motif, (g: C2) => void> = {
   lamp: (g) => { line(g, 0, -0.35, 0, 0.85); line(g, -0.4, 0.85, 0.4, 0.85); g.beginPath(); g.moveTo(-0.32, -0.35); g.lineTo(0.32, -0.35); g.lineTo(0.22, -0.8); g.lineTo(-0.22, -0.8); g.closePath(); g.fill(); g.beginPath(); g.moveTo(-0.38, -0.8); g.lineTo(0, -1.0); g.lineTo(0.38, -0.8); g.closePath(); g.fill(); for (const a of [-2.6, -0.55, 0]) line(g, Math.cos(a) * 0.48, -0.58 + Math.sin(a) * 0.48, Math.cos(a) * 0.68, -0.58 + Math.sin(a) * 0.68); },
   gnome: (g) => { g.beginPath(); g.moveTo(-0.45, -0.15); g.lineTo(0.1, -0.98); g.lineTo(0.45, -0.15); g.closePath(); g.fill(); dot(g, 0, 0.02, 0.2); g.beginPath(); g.moveTo(-0.38, 0.05); g.quadraticCurveTo(0, 0.95, 0.38, 0.05); g.closePath(); g.stroke(); line(g, -0.55, 0.9, 0.55, 0.9); },
   portrait: (g) => { line(g, -0.45, 0.95, -0.25, -0.2); line(g, 0.45, 0.95, 0.25, -0.2); line(g, 0, 0.95, 0, 0.3); box(g, -0.65, -0.85, 1.3, 1.05); g.save(); g.lineWidth *= 0.8; heartAt(g, 0, -0.3, 0.42); g.restore(); },
+  boat: (g) => {
+    // a rowboat on two ripple lines, an oar out to each side
+    g.beginPath(); g.moveTo(-0.85, -0.05); g.lineTo(0.85, -0.05); g.quadraticCurveTo(0.6, 0.45, 0.35, 0.45); g.lineTo(-0.45, 0.45); g.quadraticCurveTo(-0.75, 0.4, -0.85, -0.05); g.closePath(); g.fill();
+    line(g, -0.35, -0.05, -0.75, -0.55); line(g, 0.3, -0.05, 0.7, -0.55);
+    for (const y of [0.65, 0.85]) { g.beginPath(); for (let i = 0; i <= 8; i++) { const x = -0.9 + i * 0.225; g[i ? 'lineTo' : 'moveTo'](x, y + (i % 2 ? 0.05 : -0.05)); } g.stroke(); }
+  },
+  skates: (g) => {
+    // a skate boot on its blade, and the figure eight it left behind
+    g.beginPath(); g.moveTo(-0.55, -0.85); g.lineTo(-0.05, -0.85); g.lineTo(-0.05, -0.05); g.lineTo(0.6, 0.1); g.quadraticCurveTo(0.75, 0.2, 0.7, 0.35); g.lineTo(-0.6, 0.35); g.closePath(); g.fill();
+    g.save(); g.lineWidth *= 1.3; line(g, -0.7, 0.55, 0.75, 0.55); g.beginPath(); g.arc(0.75, 0.42, 0.13, -Math.PI / 2, Math.PI / 2); g.stroke(); g.restore();
+    line(g, -0.45, 0.35, -0.45, 0.55); line(g, 0.45, 0.35, 0.45, 0.55);
+    g.save(); g.globalCompositeOperation = 'destination-out'; for (const y of [-0.65, -0.45, -0.25]) line(g, -0.4, y, -0.15, y); g.restore();
+    g.save(); g.lineWidth *= 0.7; g.beginPath(); g.ellipse(0.5, -0.6, 0.18, 0.13, 0, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.ellipse(0.5, -0.33, 0.2, 0.14, 0, 0, Math.PI * 2); g.stroke(); g.restore();
+  },
+  snowman: (g) => {
+    g.beginPath(); g.arc(0, 0.5, 0.45, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, -0.1, 0.33, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, -0.6, 0.25, 0, Math.PI * 2); g.stroke();
+    dot(g, -0.09, -0.65, 0.04); dot(g, 0.09, -0.65, 0.04);
+    g.beginPath(); g.moveTo(0, -0.58); g.lineTo(0.3, -0.53); g.lineTo(0, -0.52); g.closePath(); g.fill();
+    for (const y of [-0.15, 0.05, 0.4]) dot(g, 0, y, 0.045);
+    line(g, -0.3, -0.15, -0.8, -0.45); line(g, 0.3, -0.15, 0.8, -0.45);
+    g.beginPath(); g.rect(-0.24, -0.38, 0.48, 0.09); g.fill(); line(g, 0.15, -0.3, 0.22, 0.0);
+  },
+  egg: (g) => { g.beginPath(); g.ellipse(0, 0.05, 0.5, 0.68, 0, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-0.95, 0.55); g.quadraticCurveTo(0, 1.05, 0.95, 0.55); g.stroke(); line(g, -0.75, 0.62, -0.95, 0.85); line(g, 0.75, 0.62, 0.95, 0.85); g.beginPath(); g.ellipse(-0.18, -0.22, 0.09, 0.16, 0.3, 0, Math.PI * 2); g.fill(); },
   house: (g) => { g.beginPath(); g.moveTo(-0.95, -0.05); g.lineTo(0, -0.85); g.lineTo(0.95, -0.05); g.stroke(); box(g, -0.7, -0.15, 1.4, 1.0); g.beginPath(); g.rect(-0.2, 0.3, 0.4, 0.55); g.fill(); box(g, 0.35, 0.05, 0.25, 0.22); box(g, 0.45, -0.8, 0.2, 0.35); },
 };
 

@@ -11,7 +11,8 @@ relative to `renderer/src/farm/`.
 ## Bits and the basket
 
 * The coin is the **bit** (a copper coin stamped with a sprout), shown on the status sign's coin chip.
-* Every forage/fish/junk find goes into your **basket** ([pastimes.md](pastimes.md)); sell it to Bram (talk to him at
+* Every forage/fish/junk find goes into your **basket** ([pastimes.md](pastimes.md)), and so do barn produce (eggs, a
+  pail of milk: `PRODUCE` in `model/collection.ts`, [interior.md](interior.md)); sell it to Bram (talk to him at
   the shipping bin when the basket has something) or at the **General store**, a green striped cart on the meadow
   south-east of the square, placed level beside a road (`storeSpot`): E browse, F sell your basket.
 * Bram pays by rarity (forage: 45 for a rare one), size and rarity (fish), 2 for junk (40 for rare junk) (`sellPrice`

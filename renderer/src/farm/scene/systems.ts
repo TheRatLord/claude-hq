@@ -20,6 +20,7 @@ import { trailSystem } from './trail/trail.ts';
 import { yardSystem } from './yard/yard.ts';
 import { weatherSystem } from './weather/weather.ts';
 import { interiorSystem } from './interior/interior.ts';
+import { seasonsSystem } from './seasons/seasons.ts';
 import { audioSystem } from '../audio/audio.ts';
 import { postSystem } from './post/post.ts';
 
@@ -38,6 +39,7 @@ export const SYSTEMS: readonly SystemFactory[] = [
   forageSystem,
   trailSystem,
   yardSystem,
+  seasonsSystem,
   weatherSystem,
   interiorSystem,
   audioSystem,

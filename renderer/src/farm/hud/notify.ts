@@ -71,6 +71,7 @@ export function createNotifier(ctx: HudCtx): Notifier {
     const key = `${e.kind}|${e.id}`;
     if (now - (lastAt.get(key) ?? -Infinity) < PER_FARMER_MS) return;
     lastAt.set(key, now);
+    if (lastAt.size > 400) for (const [k, t] of lastAt) if (now - t > PER_FARMER_MS) lastAt.delete(k); // farmers come and go all day
     pending.push({
       kind: e.kind, id: e.id, name: shortName(f),
       text: e.kind === 'blocked' ? f.question ?? '' : f.title ?? f.said ?? '',
@@ -81,6 +82,7 @@ export function createNotifier(ctx: HudCtx): Notifier {
   // ---- tab icon ----
   let badge = '-';
   let link: HTMLLinkElement | null = null;
+  const icons = new Map<string, string>();
   function tick(s: ValleyState): void {
     let need = 0, done = 0;
     for (const f of s.farmers.values()) { if (f.needsYou) need++; else if (f.unseenDone) done++; }
@@ -89,7 +91,10 @@ export function createNotifier(ctx: HudCtx): Notifier {
     badge = b;
     try {
       link ??= document.querySelector<HTMLLinkElement>('link[rel~="icon"]') ?? document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'icon' }));
-      link.href = drawIcon(need, done > 0);
+      // a handful of badges exist (n1…n9+, d, none): draw each once, not a canvas per change all day
+      let url = icons.get(b);
+      if (url === undefined) { url = drawIcon(need, done > 0); icons.set(b, url); }
+      link.href = url;
       link.dataset.badge = b;
     } catch { /* no canvas (tests) */ }
   }

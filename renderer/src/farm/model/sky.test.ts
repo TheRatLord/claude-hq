@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { skyAt, weatherTrace } from './sky.ts';
+import { dayOfYear, skyAt, weatherTrace } from './sky.ts';
 import type { WeatherKind } from './types.ts';
 
 const H = 3_600_000;
@@ -57,9 +57,31 @@ test('trace: a forced rain is wet now; forced snow builds lying snow over time',
   assert.ok(b.snow > a.snow, `${a.snow} → ${b.snow}`);
 });
 
+test('trace: a forced sunny day dries what the real rain left, faster under a forced midday sun', () => {
+  // just after a real wet block, during the night
+  const end = findBlock(new Date(2026, 3, 1), (k, p) => !['rain', 'storm'].includes(k) && ['rain', 'storm'].includes(p) && k !== 'fog');
+  const d = new Date(end.getTime() + 0.25 * H);
+  const real = weatherTrace(d);
+  const noon = weatherTrace(d, { weather: 'clear', hour: 12 });
+  const night = weatherTrace(d, { weather: 'clear', hour: 1 });
+  assert.ok(noon.wet < real.wet, `forced clear dries: ${real.wet} → ${noon.wet}`);
+  assert.ok(noon.wet < night.wet, `midday sun dries faster: noon ${noon.wet}, night ${night.wet}`);
+  assert.ok(noon.wet < 0.3, `long after rain on a sunny day the puddles are small (they start at wet 0.2): ${noon.wet}`);
+});
+
 test('trace: overrides win', () => {
   const t = weatherTrace(new Date(2026, 6, 10, 12), { trace: { wet: 0.7, sinceRain: 0.2 } });
   assert.equal(t.wet, 0.7);
   assert.equal(t.sinceRain, 0.2);
   assert.equal(skyAt(new Date(2026, 6, 10, 12), { trace: { snow: 1 } }).trace.snow, 1);
+});
+
+test('dayOfYear is the calendar day all day long, across DST (rolls at midnight, not at 01:00)', () => {
+  assert.equal(dayOfYear(new Date(2026, 0, 1, 0, 5)), 1);
+  assert.equal(dayOfYear(new Date(2026, 11, 31, 23, 55)), 365);
+  for (const [m, d] of [[2, 9], [5, 10], [10, 1], [10, 2]] as const) {
+    const early = dayOfYear(new Date(2026, m, d, 0, 30)), late = dayOfYear(new Date(2026, m, d, 23, 30));
+    assert.equal(early, late, `2026-${m + 1}-${d}`);
+    assert.equal(dayOfYear(new Date(2026, m, d + 1, 0, 1)), early + 1);
+  }
 });

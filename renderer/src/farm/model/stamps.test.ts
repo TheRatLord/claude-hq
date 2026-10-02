@@ -195,7 +195,7 @@ test('stamps: tolerant parse; the view hides unearned secrets and reports progre
   assert.equal(parseStamps({ v: 2 }), null);
   const d = parseStamps({ v: 1, earned: { 'first-fish': T0, bogus: T0, rainbow: 'x' }, n: { ship: 3.7, answered: -1 }, plots: { a: [1, 2], b: 'x' }, nooks: ['pergola', 'pergola', 3], fests: ['harvest', 'nope'], seasons: ['winter', 'monsoon'], trophies: 9 })!;
   assert.deepEqual(d.earned, { 'first-fish': T0 });
-  assert.deepEqual(d.n, { ship: 3, answered: 0, photo: 0, late: 0 });
+  assert.deepEqual(d.n, { ship: 3, answered: 0, photo: 0, late: 0, row: 0, eight: 0, snowman: 0 });
   assert.deepEqual(d.plots, { a: [1, 2] });
   assert.deepEqual(d.nooks, ['pergola']);
   assert.deepEqual(d.fests, ['harvest']);

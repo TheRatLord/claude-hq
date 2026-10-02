@@ -1,6 +1,6 @@
 # The stamp book
 
-Long-term goals that tie the valley's systems together: 43 stamps, each earned once and for good, inked into a book on
+Long-term goals that tie the valley's systems together: 46 stamps, each earned once and for good, inked into a book on
 the Almanac panel's **Stamps** tab. They read the other systems' state; they never keep a copy of it.
 
 Key sources: `model/stamps.ts` (the book, pure + `stamps.test.ts`: `STAMPS`, `StampWorld`, `observe`, `passes`,
@@ -14,10 +14,10 @@ services, created by `main.ts`), `hud/stamps.ts` + `stamps.css` (canvas-drawn st
 | category | stamps (secret ones in *italics*) |
 |---|---|
 | **Work** (real agent work) | first crate shipped · 100 commits · a 7-day Almanac streak · 10 green test runs in a day · 50 asks answered · five farmers working at once · a field that lived a full week · *midnight oil* (a commit between midnight and four) |
-| **Pastimes** | first fish · every fish of one season · a 60 cm catch · 10 forage kinds · the whole field guide · a rainbow (held 3 s) · *odd boot* · *pen pal* (the bottle) |
+| **Pastimes** | first fish · every fish of one season · a 60 cm catch · 10 forage kinds · the whole field guide · a rainbow (held 3 s) · *odd boot* · first row (the rowboat, [seasons.md](seasons.md)) · *pen pal* (the bottle) |
 | **Village** | 2 ♥ with everyone · a 10 ♥ friend · a first request · 20 requests · sat down at a campfire · a bandstand concert (within 30 m, 12 s) · *perfect presents* (a known loved gift for all six) |
 | **Explorer** | the summit lookout · 7 cairn stones · out under a meteor-shower night (clear, dark, 20 s) · every leisure nook · a photo-mode picture · *summit by starlight* |
-| **Seasons & festivals** | one per festival (be within 22 m of its centrepiece while it is on) · first snow · all four seasons |
+| **Seasons & festivals** | one per festival (be within 22 m of its centrepiece while it is on) · first snow · a figure eight on the ice · a snow friend (a dressed snowman) · all four seasons |
 | **Home** | first decor bought · a rank-gated piece · a full yard · the welcome sign · *keepsake* (a 10 ♥ portrait) |
 
 A **demo valley never inks Work stamps** (its farmers are fake; the ship / answer counters don't move either). Dwell
@@ -36,7 +36,7 @@ and where the player stands (each nook's footprint + 3 m, the summit deck). `shi
 mode's `onSave` are counted as they happen (`event()`), with the wall-clock hour for midnight oil.
 
 **Persisted** (`claude-valley.stamps.v1`, per browser profile; tolerant `parseStamps`), only what no other service
-keeps: earned stamps + when (ms), lifetime counters `ship` / `answered` / `photo` / `late`, first / last seen of open
+keeps: earned stamps + when (ms), lifetime counters `ship` / `answered` / `photo` / `late` / `row` / `eight` / `snowman` (the seasonal pastimes count their own moments: `StampsService.event`), first / last seen of open
 fields (`plots`, last seen refreshed hourly, pruned 3 days after a field is gone, so a reopened workspace starts its
 week again), and the sets of nooks, festivals and seasons visited. `trophies` = cups already given.
 

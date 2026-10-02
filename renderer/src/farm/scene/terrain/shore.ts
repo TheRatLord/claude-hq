@@ -142,6 +142,8 @@ function placements(): { pads: Place[]; flowers: Place[]; reeds: Place[]; cattai
 }
 
 let cached: ReturnType<typeof placements> | null = null;
+/** where the shore plants are (scene/seasons: the rowboat nudges through the lily pads) */
+export const shorePlaces = (): ReturnType<typeof placements> => (cached ??= placements());
 
 function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, list: Place[], name: string): THREE.InstancedMesh {
   const m = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));

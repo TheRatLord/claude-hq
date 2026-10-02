@@ -15,7 +15,7 @@
  *   npm run bench -- --scenario mixed --cond day --pose hub,top
  *   npm run bench -- --quality low --reps 5 --frames 40 --json scratch/bench/a.json --shots
  *
- * Options: --scenario a,b (mixed,crowd40)  --cond day,night,rain  --pose hub,square,river,pond,east,top,inside
+ * Options: --scenario a,b (mixed,crowd40)  --cond day,night,rain,snow  --pose hub,square,river,pond,east,top,inside
  *          --size 1600x900  --quality high|medium|low (default: the game's default)  --reps 3  --frames 30
  *          --settle 2500 (ms after each pose)  --json FILE  --shots (PNG per pose → scratch/bench/<scenario>-<cond>-<pose>.png)
  *          --eval JS (run in the page after load, e.g. A/B toggles)
@@ -37,10 +37,11 @@ export const POSES: Record<string, string> = {
   hub: 'hub', square: 'square', river: 'river', pond: 'pond', east: 'east',
   top: 'cam:0;90;70;0;-0.95', inside: 'inside:room',
 };
-export const CONDS: Record<string, { hour: number; weather: string }> = {
+export const CONDS: Record<string, { hour: number; weather: string; season?: string }> = {
   day: { hour: 10, weather: 'clear' },
   night: { hour: 22, weather: 'clear' },
   rain: { hour: 14, weather: 'rain' },
+  snow: { hour: 9, weather: 'snow', season: 'winter' },
 };
 
 interface Sample {
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
           const u = new URL(dev.url);
           u.searchParams.set('hour', String(c.hour));
           u.searchParams.set('weather', c.weather);
+          if (c.season) u.searchParams.set('season', c.season);
           if (quality) u.searchParams.set('quality', quality);
           await page.goto(u.toString());
           await page.waitForFunction(() => (window as unknown as { __valley?: { ready: boolean } }).__valley?.ready === true, null, { timeout: 60_000 });

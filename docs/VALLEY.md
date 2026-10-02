@@ -24,6 +24,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [audio.md](valley/audio.md) | changing sound: buses, music planner and band, gathering music, footsteps, ambience, levels, the audio debug renderer |
 | [almanac.md](valley/almanac.md) | changing prosperity points, ranks or town upgrades |
 | [pastimes.md](valley/pastimes.md) | changing foraging, fishing or the Collections book |
+| [seasons.md](valley/seasons.md) | changing the seasonal pastimes: the rowboat, skating on the frozen pond, snowmen (and the controller's `ride` hook) |
 | [wildlife.md](valley/wildlife.md) | changing wild visitors, shyness or the field guide |
 | [pet.md](valley/pet.md) | changing your own pet: adoption at the foundlings basket, following, fetch, finds, bedtime, happiness |
 | [economy.md](valley/economy.md) | changing bits, the basket, the General store, decor or the yard |
@@ -31,7 +32,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [gatherings.md](valley/gatherings.md) | changing campfire evenings, concerts or market mornings |
 | [festivals.md](valley/festivals.md) | changing the festival calendar or festival dressing |
 | [stamps.md](valley/stamps.md) | changing the stamp book: achievements across every system, their rewards and trophies, the Almanac's Stamps tab |
-| [interior.md](valley/interior.md) | changing the walk-in farmhouse room |
+| [interior.md](valley/interior.md) | changing the walk-in rooms (farmhouse, barn: chores, machine room) |
 | [trail.md](valley/trail.md) | changing the summit trail, its decks, the lookout or the valley viewer |
 | [tools.md](valley/tools.md) | taking screenshots, benchmarking, auditing placement, running browser tests, or using URL params, debug keys and the `__valley` / `__hud` dev API |
 
@@ -77,7 +78,10 @@ the lead.
 * Player progress persists per browser profile in localStorage `claude-valley.<area>.v1` (`almanac`, `collection`,
   `wallet`, `friends`, `onboarding`, `summit`, …); HUD prefs under `valley.hud.*`. Go through `farm/storage.ts`:
   `localJson(key)` is the `{ load, save }` port a `model/` store takes (models parse and log save failures),
-  `readJson` / `writeJson` / `readLocal` / `writeLocal` never throw (blocked or full storage).
+  `readJson` / `writeJson` / `readLocal` / `writeLocal` never throw (blocked or full storage); read a prefs-style
+  object with `readTyped(key, defaults)` (only known keys of the default's type survive). Anything may be in storage
+  (old builds, hand edits, garbage): `model/robust.test.ts` fuzzes every model store and `browser-tests/robust.spec.ts`
+  boots on corrupt values.
 * No external assets: geometry, textures, sounds and fonts are made in code ([art.md](valley/art.md)).
   HUD icons are inline SVG strings: build them with `svgIcon`, `INK` and `ITEM_OUTLINE` from `hud/icons.ts`.
 
@@ -93,11 +97,11 @@ the lead.
 | **villagers** | `scene/villagers/*` (role hats / wear / lantern data live in `farmers/mascots.ts` + `geo.ts`, drawn by the shared rig) | the persistent villager cast, routines, dialogue, service `villagers` (`VillagersService`: map pins, debug) |
 | **life & sound** | `scene/life/*`, `audio/*` | ambient critters (birds, butterflies, fireflies, fish, frogs, village dog & cat), wild visitors, your own pet, services `audio`, `pets`, `wildlife`, `companion` |
 | **hud** | `hud/*` | every DOM overlay, terminal drawer, `UiPort` |
-| **interior** | `scene/interior/*` | the walk-in farmhouse room, service `indoors` (`IndoorSpace`) |
+| **interior** | `scene/interior/*` | the walk-in rooms (farmhouse, barn), service `indoors` (`IndoorSpace`) |
 | **trail** | `scene/trail/*` (route + cut in `world/trail.ts`) | the summit trail's dressing, staircase / bridge / deck `walkSurface`s (wrapping structures'), the valley viewer, the summit cairn, service `trail` |
 | lead | `model/*`, `world/*` (API), `scene/{engine,context,toon,assets,systems}.ts`, `player/*`, `dev/*`, `main.ts`, scripts | contracts |
 
-Not assigned a row: `scene/forage/*` (system `forage`), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
+Not assigned a row: `scene/seasons/*` (system `seasons`: rowboat, ice, snowmen; [seasons.md](valley/seasons.md)), `scene/forage/*` (system `forage`), `scene/gather/*` (service `gatherings`) and `scene/yard/*`
 (system `yard`, service `wallet`) — ask the lead before editing them; `scene/sculpt.ts` and `scene/parts.ts` are shared
 helpers.
 
@@ -107,7 +111,7 @@ helpers.
 
 * 60 fps. Draw calls ≲ 600 total: land ≤ 120, structures ≤ 120, plots ≤ 150, farmers ≤ 100 (villagers ≈ 10 of it),
   life ≤ 40, forage ≤ 10, yard ≤ 6 (4 merged/instanced, +2 while carrying), trail ≤ 8, interior ≤ 40 (only while
-  inside), atmosphere ≤ 30 + post.
+  inside), seasons ≤ 8 (rowboat 3–4, winter ice 1 + snowmen 3), atmosphere ≤ 30 + post.
 * One shadow-casting directional light (atmosphere owns it; shadow camera follows the player).
 * Check `__valley.perf()` → `calls`, `tris` (main + shadow pass), `systemMs`. GPU ≤ 10 ms a frame at the hub and the
   top view (`npm run bench`; ≈ 7–8 ms today), CPU frame (`cpu`) ≲ 8 ms with `crowd40`.

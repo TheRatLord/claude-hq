@@ -42,6 +42,7 @@ export const MOTIFS = Object.freeze([
   'mountain', 'cairn', 'meteor', 'compass', 'camera', 'star',
   'blossom', 'lantern', 'cake', 'pumpkin', 'jack', 'tree', 'firework', 'snowflake', 'leaf',
   'fence', 'lamp', 'gnome', 'portrait', 'house',
+  'boat', 'skates', 'snowman', 'egg',
 ] as const);
 export type Motif = (typeof MOTIFS)[number];
 
@@ -73,6 +74,8 @@ export interface StampWorld {
   wallet: Readonly<WalletData> | null;
   /** stones on the summit cairn */
   stones: number;
+  /** days with every barn animal fed (model/barn.ts) */
+  chores: number;
   /** where the player is */
   at: { summit: boolean; nook: string | null; festival: boolean; concert: boolean; campfire: boolean };
   /** a rainbow in the sky / a meteor shower over a clear night sky, while you're out under it */
@@ -81,7 +84,7 @@ export interface StampWorld {
 
 export const emptyWorld = (now = 0): StampWorld => ({
   now, demo: false, hour: 12, season: 'summer', weather: 'clear', snow: 0, festival: null, outdoors: true, streak: 0, testsToday: 0,
-  working: 0, plots: [], collection: null, friends: null, wallet: null, stones: 0,
+  working: 0, plots: [], collection: null, friends: null, wallet: null, stones: 0, chores: 0,
   at: { summit: false, nook: null, festival: false, concert: false, campfire: false }, sky: { rainbow: false, shower: false },
 });
 
@@ -91,7 +94,7 @@ export interface StampsData {
   /** earned stamps: when (ms) */
   earned: Record<string, number>;
   /** lifetime counters nobody else keeps: commits shipped, asks answered, photos taken, late-night commits */
-  n: { ship: number; answered: number; photo: number; late: number };
+  n: { ship: number; answered: number; photo: number; late: number; row: number; eight: number; snowman: number };
   /** fields seen: id → [first seen, last seen] ms (pruned a few days after a field is gone) */
   plots: Record<string, [number, number]>;
   /** nooks visited, festivals attended, seasons spent in the valley */
@@ -102,7 +105,7 @@ export interface StampsData {
   trophies: number;
 }
 
-export const emptyStamps = (): StampsData => ({ v: 1, earned: {}, n: { ship: 0, answered: 0, photo: 0, late: 0 }, plots: {}, nooks: [], fests: [], seasons: [], trophies: 0 });
+export const emptyStamps = (): StampsData => ({ v: 1, earned: {}, n: { ship: 0, answered: 0, photo: 0, late: 0, row: 0, eight: 0, snowman: 0 }, plots: {}, nooks: [], fests: [], seasons: [], trophies: 0 });
 
 /** progress toward a stamp: have / need (shown under an unearned stamp) */
 export interface Progress { have: number; need: number }
@@ -211,6 +214,9 @@ export const STAMPS: readonly StampDef[] = Object.freeze([
   S('odd-boot', 'pastimes', 'Odd boot', 'boot', 'A secret: something that isn\'t a fish.',
     'Size eleven, left foot. Somewhere out there is a lonely right one.',
     (w) => !!w.collection?.found.boot, { secret: true }),
+  S('first-row', 'pastimes', 'First row', 'boat', 'Take the rowboat out on the pond.',
+    'Out on the pond in the little rowboat, the dock getting smaller behind you.',
+    (_w, m) => m.n.row >= 1),
   S('pen-pal', 'pastimes', 'Pen pal', 'bottle', 'A secret: a letter from far away.',
     'A message in a bottle, from somebody who thinks the valley is lovely. They\'re right.',
     (w) => !!w.collection?.found.bottle, { secret: true }),
@@ -264,6 +270,12 @@ export const STAMPS: readonly StampDef[] = Object.freeze([
   S('first-snow', 'seasons', 'First snow', 'snowflake', 'Be out in the valley while it snows.',
     'Snow on the roofs, snow on the fences, snow on the farmers\' hats.',
     (w) => w.outdoors && (w.weather === 'snow' || w.snow > 0.3), { dwell: 3000 }),
+  S('figure-eight', 'seasons', 'Figure eight', 'skates', 'Skate a figure eight on the frozen pond.',
+    'A loop one way, a loop the other, and the ice wrote it down for you.',
+    (_w, m) => m.n.eight >= 1),
+  S('snow-friend', 'seasons', 'Snow friend', 'snowman', 'Build a snowman: three balls, eyes and a nose.',
+    'Three snowballs high, a carrot for a nose and a very patient smile.',
+    (_w, m) => m.n.snowman >= 1),
   S('four-seasons', 'seasons', 'All year round', 'leaf', 'Spend time in the valley in all four seasons.',
     'Blossom, sunshine, falling leaves and snow: a whole year in the valley.',
     (_w, m) => pr(m.seasons.length, 4)),
@@ -278,6 +290,9 @@ export const STAMPS: readonly StampDef[] = Object.freeze([
   S('yard-full', 'home', 'Full yard', 'fence', 'Fill every spot in your yard.',
     'Not a single empty spot left inside the picket fence. Biscuit has to weave through.',
     (w) => pr(w.wallet?.pieces.filter((p) => p.slot !== null).length ?? 0, YARD_SLOTS)),
+  S('barn-chores', 'home', 'Barn chores', 'egg', 'Feed every animal in the barn in one day.',
+    'Hay for Daisy and Pepper, hay for the sheep, grain for the hens. The whole barn sighed happily.',
+    (w) => w.chores >= 1),
   S('welcome-home', 'home', 'Welcome home', 'house', 'Finish Posy\'s welcome tour.',
     'Posy\'s welcome sign by the gate. You live here now.',
     (w) => owns(w, (id) => id === 'welcome')),
@@ -314,7 +329,7 @@ export function parseStamps(raw: unknown): StampsData | null {
   const d = emptyStamps();
   if (o.earned && typeof o.earned === 'object') for (const [id, at] of Object.entries(o.earned as Record<string, unknown>)) if (BY_ID.has(id) && ints(at)) d.earned[id] = ints(at);
   const n = (o.n && typeof o.n === 'object' ? o.n : {}) as Record<string, unknown>;
-  d.n = { ship: ints(n.ship), answered: ints(n.answered), photo: ints(n.photo), late: ints(n.late) };
+  d.n = { ship: ints(n.ship), answered: ints(n.answered), photo: ints(n.photo), late: ints(n.late), row: ints(n.row), eight: ints(n.eight), snowman: ints(n.snowman) };
   if (o.plots && typeof o.plots === 'object') {
     for (const [id, v] of Object.entries(o.plots as Record<string, unknown>)) {
       if (Array.isArray(v) && v.length === 2 && ints(v[0]) && ints(v[1])) d.plots[id] = [ints(v[0]), ints(v[1])];
@@ -361,9 +376,11 @@ export function progressOf(d: StampDef, w: StampWorld, m: StampsData): Progress 
 }
 
 /** A one-shot valley happening the book counts itself (lifetime counters). Returns true if anything changed. */
-export type StampEvent = 'ship' | 'unblocked' | 'photo';
+export type StampEvent = 'ship' | 'unblocked' | 'photo' | 'row' | 'eight' | 'snowman';
 export function countEvent(m: StampsData, kind: StampEvent, o: { demo: boolean; hour: number }): boolean {
   if (kind === 'photo') { m.n.photo++; return true; }
+  // the seasonal pastimes (scene/seasons): an outing in the rowboat, a figure eight on the ice, a finished snowman
+  if (kind === 'row' || kind === 'eight' || kind === 'snowman') { m.n[kind]++; return true; }
   if (o.demo) return false;
   if (kind === 'ship') { m.n.ship++; if (late(o.hour)) m.n.late++; return true; }
   m.n.answered++;

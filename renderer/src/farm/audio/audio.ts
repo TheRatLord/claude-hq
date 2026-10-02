@@ -164,8 +164,8 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     };
   }
 
-  let indoorK = 0;
-  const amb = createAmbience(ctx, eng, () => fire('thunder:ambient', SFX_RECIPES.thunder, 'ambient', { volume: 0.35 + rnd() * 0.3, pitch: 0.9 }, 0.4, SPATIAL.ambient), () => now() - lastExternalThunder, () => indoorK);
+  let indoorK = 0, roofK = 1;
+  const amb = createAmbience(ctx, eng, () => fire('thunder:ambient', SFX_RECIPES.thunder, 'ambient', { volume: 0.35 + rnd() * 0.3, pitch: 0.9 }, 0.4, SPATIAL.ambient), () => now() - lastExternalThunder, () => indoorK, () => roofK);
 
   // ---- the service
   const svc: ValleyAudio & { _debug: unknown } = {
@@ -176,7 +176,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
     voice,
     loop,
     critter,
-    indoors(k) { indoorK = Math.max(0, Math.min(1, k)); eng.setIndoor(indoorK); },
+    indoors(k, o) { indoorK = Math.max(0, Math.min(1, k)); roofK = Math.max(0, Math.min(3, o?.roof ?? 1)); eng.setIndoor(indoorK); },
     musicNow: () => ({ on: !!music && music.on && eng.ac?.state === 'running', scene: music?.playing() ?? null }),
     _debug: {
       unlock: () => eng.unlock(),
@@ -328,7 +328,7 @@ export const audioSystem: SystemFactory = (ctx: SceneCtx) => {
       const p = ctx.player.pos;
       const ws = ctx.services.get('walkSurface') as ((x: number, z: number) => number | null) | undefined;
       const room = ctx.services.get('indoors') as IndoorSpace | undefined;
-      const floor = room?.active ? room.floor(p.x, p.z) ?? p.y : Math.max(heightAt(p.x, p.z), ws?.(p.x, p.z) ?? -Infinity);
+      const floor = room?.active ? room.floor(p.x, p.z, p.y) ?? p.y : Math.max(heightAt(p.x, p.z), ws?.(p.x, p.z) ?? -Infinity);
       const vy = f.dt > 0 ? (p.y - prevY) / f.dt : 0;
       prevY = p.y;
       if (!air && p.y - floor > 0.12 && vy > 2) { air = true; airTime = 0; play('jump'); }

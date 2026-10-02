@@ -39,6 +39,8 @@ void main() {
   vUv = aCorner;
   vA = fade * sqrt(uWidth / width) * smoothstep(0.8, 3.0, dist);
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
+  // invisible (faded) streaks close to the eye would still rasterise as huge quads: collapse them
+  if (vA < 0.004) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
 }`;
 const rainFrag = /* glsl */`
 uniform vec3 uColor;
@@ -72,6 +74,8 @@ void main() {
   vA = fade * smoothstep(1.5, 4.5, dist) * min(1.0, size / px * 1.2 + 0.5);
   size = max(size, px);
   gl_Position = projectionMatrix * viewMatrix * vec4(w + (right * aCorner.x + up * aCorner.y) * size, 1.0);
+  // flakes within ~1.5 m are faded out but would cover a big patch of screen (overdraw): collapse them
+  if (vA < 0.004) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
 }`;
 const flakeFrag = /* glsl */`
 uniform vec3 uColor;

@@ -10,3 +10,4 @@ import './forage/assets.ts';
 import './trail/assets.ts';
 import './yard/assets.ts';
 import './interior/assets.ts';
+import './seasons/assets.ts';

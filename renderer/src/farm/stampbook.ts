@@ -2,7 +2,7 @@
  * The stamp book's wiring (model/stamps.ts is the pure book; hud/stamps.ts draws it in the Almanac panel). main.ts
  * creates the book here and this file feeds it: about once a second (and shortly after any service's change hook) it
  * builds a `StampWorld` snapshot by reading the live services — the valley state and Almanac, the Collections book,
- * friendship, the wallet / yard, the trail's cairn, the gatherings, the festival on the square, the atmosphere's
+ * friendship, the wallet / yard, the trail's cairn, the barn's chores, the gatherings, the festival on the square, the atmosphere's
  * rainbow, a meteor-shower night, where the player stands — and asks the book to check it. Valley events (commits,
  * answers) and photo mode's saves are counted as they happen.
  *
@@ -18,6 +18,7 @@ import type { Controller } from './player/controller.ts';
 import type { IndoorSpace } from './scene/context.ts';
 import type { GatherService } from './scene/gather/gather.ts';
 import type { TrailService } from './scene/trail/trail.ts';
+import type { BarnService } from './model/barn.ts';
 import type { AtmosphereService } from './scene/sky/sky.ts';
 import { showerOn } from './scene/sky/meteors.ts';
 import { NOOKS, TRAIL, structure } from './world/map.ts';
@@ -73,6 +74,7 @@ export function installStampBook(d: StampBookDeps): StampsService {
       plots: [...s.plots.values()].map((q) => ({ id: q.id, alive: q.stage !== 'harvest' && q.stage !== 'fallow' })),
       collection: collection.data(), friends: friends.data(), wallet: wallet.data(),
       stones: (svc.get('trail') as TrailService | undefined)?.stones() ?? 0,
+      chores: (svc.get('barn') as BarnService | undefined)?.data().total.days ?? 0,
       at: {
         summit: near(summit.x, summit.z, Math.max(summit.w, summit.d) + 2) && p.y > summit.y - 3,
         nook: nooks.find((n) => near(n.x, n.z, n.r))?.id ?? null,

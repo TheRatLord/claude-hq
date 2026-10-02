@@ -8,6 +8,7 @@ import { dayText, inDaysText } from '../model/calendar.ts';
 import type { ValleyState } from '../model/types.ts';
 import { ICONS, SEASON_ICON } from './icons.ts';
 import type { ToastSpec } from './ctx.ts';
+import { readJson, writeJson } from '../storage.ts';
 
 export const FESTIVAL_ICON: Readonly<Record<FestivalId, string>> = {
   blossom: SEASON_ICON.spring, lantern: ICONS.lantern, founders: ICONS.rosette, harvest: SEASON_ICON.autumn,
@@ -26,10 +27,11 @@ export function festivalGreeter(push: (t: ToastSpec) => void): (s: ValleyState) 
     if (greeted.has(k)) return true;
     greeted.add(k);
     try {
-      const prev = (JSON.parse(localStorage.getItem(GREETED_KEY) ?? '[]') as string[]).filter((x) => x.startsWith(`${today()}|`));
+      const stored = readJson(GREETED_KEY);
+      const prev = (Array.isArray(stored) ? stored : []).filter((x): x is string => typeof x === 'string' && x.startsWith(`${today()}|`));
       if (prev.includes(k)) return true;
-      localStorage.setItem(GREETED_KEY, JSON.stringify([...prev, k]));
-    } catch { /* storage blocked: once per load */ }
+      writeJson(GREETED_KEY, [...prev, k]);
+    } catch { /* once per load */ }
     return false;
   };
   return (s) => {

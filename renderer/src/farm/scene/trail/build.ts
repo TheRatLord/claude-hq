@@ -470,7 +470,7 @@ export function waveFlag(m: THREE.Mesh, t: number, wind: number): void {
 
 /** One loose stone of the summit cairn's offerings (InstancedMesh geometry, vertex coloured). */
 export function offeringGeometry(): THREE.BufferGeometry {
-  const g = new THREE.DodecahedronGeometry(0.11, 0).toNonIndexed();
+  const g = new THREE.DodecahedronGeometry(0.11, 0); // polyhedra are already non-indexed (toNonIndexed would warn)
   g.scale(1.2, 0.62, 1);
   const n = g.attributes.position.count, col = new Float32Array(n * 3), c = new THREE.Color();
   for (let i = 0; i < n; i++) { c.setHex(PAL.stone).offsetHSL(0, 0, ((i / 3) % 3) * 0.02 - 0.02); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }

@@ -194,6 +194,24 @@ export const SFX_RECIPES: Record<SfxName, Recipe> = {
   },
   greet: (c, out, t, o) => renderVoice(c, out, t, planVoice('greet', 'happy', 2, Math.floor(o.rnd() * 8)), 0.9),
   voice: (c, out, t, o) => renderVoice(c, out, t, planVoice('valley', 'happy', 3, Math.floor(o.rnd() * 8)), 0.9),
+  // ---- seasonal pastimes (scene/seasons)
+  oar: (c, out, t, o) => {
+    // the blade catching the water, a swirl as it pulls through, a drip or two off the tip on the way back
+    noise(c, out, t, { kind: 'pink', gain: 0.22, a: 0.012, hold: 0.06, d: 0.32, filter: 'bandpass', f: 900 * o.pitch, f2: 420, q: 1.1 });
+    noise(c, out, t, { kind: 'white', gain: 0.07, a: 0.004, d: 0.12, filter: 'highpass', f: 2600 });
+    let end = t + 0.5;
+    for (let i = 0; i < 2; i++) end = max(end, bubble(c, out, t + 0.55 + o.rnd() * 0.35, (650 + o.rnd() * 400) * o.pitch, 0.03));
+    return end;
+  },
+  skate: (c, out, t, o) => {
+    // a blade's hiss across the ice: a bright band sweeping down, with a little grit
+    noise(c, out, t, { kind: 'white', gain: 0.16, a: 0.02, hold: 0.08, d: 0.3, filter: 'bandpass', f: 5200 * o.pitch, f2: 2600 * o.pitch, q: 2.2 });
+    return noise(c, out, t, { kind: 'pink', gain: 0.07, a: 0.01, d: 0.22, filter: 'highpass', f: 1800 });
+  },
+  crunch: (c, out, t, o) => {
+    STEP_RECIPES.snow(c, out, t, o);
+    return max(STEP_RECIPES.snow(c, out, t + 0.07, o), noise(c, out, t, { kind: 'brown', gain: 0.18, a: 0.01, d: 0.16, filter: 'lowpass', f: 380 }));
+  },
   // ---- world
   splash: (c, out, t, o) => {
     noise(c, out, t, { kind: 'white', gain: 0.45, a: 0.004, d: 0.35, filter: 'lowpass', f: 5000 * o.pitch, f2: 500 });

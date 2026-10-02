@@ -133,7 +133,7 @@ function leaves(season: Season, slot: number): LeafSet | null {
     case 'spring': return [
       { dark: C(0x4f9a3e), light: C(0x9ad866), accent: C(0xf5b0c8), p: 0.14 },
       { dark: C(0xd66f98), light: C(0xf7b7cf), accent: C(0xfff0f5), p: 0.25 }, // cherry blossom
-      { dark: C(0xd9cfd8), light: C(0xfff8fb), accent: C(0x9ad866), p: 0.15 }, // white blossom
+      { dark: C(0xe4a9c2), light: C(0xfff3f7), accent: C(0x9ad866), p: 0.15 }, // white blossom (a blush in the shade: a grey dark side read as stone)
       { dark: C(0x5aa246), light: C(0xa6dc70), accent: C(0xf2b8cc), p: 0.1 },
     ][slot];
     case 'summer': return [

@@ -202,7 +202,7 @@ export type SystemFactory = (ctx: SceneCtx) => System;
  *   'lights'      LightsService (scene/lights)      lighting: lamps, lanterns, windows, fires as local light
  *   'pets'        PetsService                       life package: the village dog and cat (idle farmers pet them)
  *   'villagers'   VillagersService                  villagers package: the persistent villager cast (map pins, dev)
- *   'indoors'     IndoorSpace                       interior package: the walk-in farmhouse (controller, engine, sky, audio read it)
+ *   'indoors'     IndoorSpace                       interior package: the walk-in farmhouse and barn (controller, engine, sky, audio read it)
  *   'gatherings'  GatherService (scene/gather)      evening gatherings: campfire, bandstand concert, market (farmers, villagers, audio read it)
  * Consumers must tolerate a missing service (optional chaining) — packages land independently.
  */
@@ -263,6 +263,8 @@ export const SFX = Object.freeze([
   'coins',
   // the stamp book (model/stamps.ts, hud/stamps.ts): a stamp inked into the book
   'stamp',
+  // seasonal pastimes (scene/seasons): an oar dipping in, a skate blade's push / carve, packing snow
+  'oar', 'skate', 'crunch',
 ] as const);
 export type SfxName = (typeof SFX)[number];
 
@@ -273,8 +275,9 @@ export interface AudioService {
   voice(seed: string, o?: { pos?: THREE.Vector3; mood?: 'happy' | 'question' | 'sad' | 'excited'; syllables?: number }): void;
   /** positional loop (fire crackle, water, windmill creak); returns a handle */
   loop(name: 'fire' | 'river' | 'waterfall' | 'windmill' | 'bees' | 'rain' | 'crickets' | 'birds', pos?: THREE.Vector3): { setVolume(v: number): void; stop(): void };
-  /** 0 outdoors … 1 indoors: the valley's ambience goes muffled behind walls, rain drums on the roof (optional) */
-  indoors?(k: number): void;
+  /** 0 outdoors … 1 indoors: the valley's ambience goes muffled behind walls, rain drums on the roof (optional);
+   *  `roof` scales the rain on the roof (the barn's tin drums louder than the farmhouse shingles = 1) */
+  indoors?(k: number, o?: { roof?: number }): void;
   /** what the music is doing (optional): `on` = it can be heard at all (unlocked, enabled, not silenced); `scene` = the
    *  piece playing now (musicPlan.ts MusicScene: 'campfire' / 'concert' at a gathering), null while it rests */
   musicNow?(): { on: boolean; scene: string | null };
@@ -345,22 +348,27 @@ export interface StructureSpots {
 }
 
 /**
- * A walk-in room the player can be inside (the farmhouse interior, scene/interior; service 'indoors'). While `active`
- * the controller walks on its floor and collides with its furniture instead of the terrain and the valley's colliders,
- * the engine only offers the room's own interactables (`owns`), the sky dims its open-air fill, and the audio muffles
- * the outdoors. Outdoor systems keep running; the room hides the outdoor scene while you are in it.
+ * A walk-in room the player can be inside (the farmhouse or the barn, scene/interior; service 'indoors'). While
+ * `active` the controller walks on its floors and collides with its solids instead of the terrain and the valley's
+ * colliders, the engine only offers the room's own interactables (`owns`), the sky dims its open-air fill, and the
+ * audio muffles the outdoors. Outdoor systems keep running; the room hides the outdoor scene while you are in it.
  */
 export interface IndoorSpace {
   readonly active: boolean;
-  /** world floor height at (x, z) inside the room, null outside its walls (not walkable) */
-  floor(x: number, z: number): number | null;
-  /** push a circle of radius r (world x / z, mutated) out of the room's furniture */
-  resolve(p: { x: number; z: number }, r: number): void;
+  /** which room you are in ('farmhouse' | 'barn'), null outdoors */
+  readonly room?: string | null;
+  /** world floor height at (x, z) inside the room for feet at world height y (a loft above, the floor below; omitted =
+   *  the ground floor), null outside its walls (not walkable) */
+  floor(x: number, z: number, y?: number): number | null;
+  /** push a circle of radius r (world x / z, mutated; y = feet height for multi-level rooms) out of the room's solids */
+  resolve(p: { x: number; z: number; y?: number }, r: number): void;
   /** is this interactable part of the room (offered while inside)? */
   owns(i: Interactable): boolean;
-  /** go in / out (a short fade; `instant` skips it: shots, dev, map travel) */
-  enter(instant?: boolean): void;
+  /** go in / out (a short fade; `instant` skips it: shots, dev, map travel); `room` defaults to the farmhouse */
+  enter(instant?: boolean, room?: string): void;
   leave(instant?: boolean): void;
-  /** dev / shots: stand at a named viewpoint inside (entering first); false if the name is unknown */
+  /** dev / shots: stand at a named viewpoint inside (entering first): 'hearth', 'barn', 'barn:loft'; false if unknown */
   view?(name: string): boolean;
+  /** where a pet that came in with you curls up (world; reused object), null when this room has no spot */
+  petSpot?(): { x: number; y: number; z: number; yaw: number } | null;
 }

@@ -3,7 +3,7 @@
 Everything for checking your work: tests, screenshots on the real GPU, the benchmark, the map PNG, the placement
 audit, browser tests, URL parameters, in-game debug keys and the `window.__valley` / `window.__hud` dev API.
 
-Key sources: `scripts/shoot.ts`, `scripts/bench.ts`, `scripts/mapviz.ts`, `scripts/placement.ts` +
+Key sources: `scripts/shoot.ts`, `scripts/bench.ts`, `scripts/soak.ts`, `scripts/mapviz.ts`, `scripts/placement.ts` +
 `scripts/placement-allow.json`, `scripts/devserver.ts`, `scripts/workbench.ts`, `scripts/typecheck.ts`,
 `renderer/src/farm/dev/` (`api.ts`, `overlay.ts`, `gallery.ts`, `placement.ts`, `placementCore.ts`),
 `renderer/src/farm/photo.ts`, `renderer/src/farm/main.ts` (URL params), `browser-tests/`, `playwright.config.ts`,
@@ -17,6 +17,7 @@ node --test "renderer/src/farm/**/*.test.ts"        # model + layer rules (+ you
 npm run test:browser                                # Playwright browser tests (below)
 npm run shoot -- --shot name=a,pose=hub,hour=10     # screenshots on the real GPU → scratch/shots/a.png, prints errors + perf
 npm run bench -- --scenario mixed --pose hub,top    # GPU / CPU ms, calls, tris per pose (Benchmark below)
+npm run soak -- --minutes 20                        # leave it running all day, compressed: leak report (Soak below)
 npm run mapviz                                      # top-down map PNG, no browser
 npm run audit:placement                             # floating / sunk / overlapping assets → scratch/placement/ (below)
 npm run dev                                         # interactive: /, /gallery/, /workbench/
@@ -57,7 +58,7 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 ## Poses, scenarios, URL parameters
 
 * **Poses** (`POSES` in `dev/api.ts`): `hub farmhouse square windmill pond barn river plots east trailhead trail bridge
-  summit`; also `pose=x,z[,yaw,pitch]` and `pose=inside[:view]` ([interior.md](interior.md)).
+  summit dock ice`; also `pose=x,z[,yaw,pitch]` and `pose=inside[:view]` / `pose=barn-inside[:view]` ([interior.md](interior.md)).
 * **Demo scenarios** (`server/demo/scenarios.ts`, `--scenario`): `mixed allStates crowd40 trio longIdle queue churn
   empty offline`.
 * **URL parameters** (`main.ts`): `t` (server token), `pose`, `hour`, `weather`, `season`, `festival=ID`
@@ -86,7 +87,7 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 * `perf()` (fps, `calls`, `tris`, `systemMs`), `systems()`, `debug(flag, on?)` (`'labels'`, `'colliders'`, `'nav'`),
   `force(id, patch)` / `scenario(name, seed?)` (demo backend only), `villagers()` / `villager(id)`.
 * Areas: `almanac(points)`, `fireworks(s)`, `forage` / `forageGo` / `fish` / `collect`, `wildlife`, `coins` / `buy` /
-  `sell` / `yard` / `furnish`, `hearts` / `requests` / `gift`, `gather`, `inside`, `stamps` / `stamp`; `ctx.services.get(name)` reaches any
+  `sell` / `yard` / `furnish`, `hearts` / `requests` / `gift`, `gather`, `inside`, `stamps` / `stamp`, `boat` / `skate` / `snowman` ([seasons.md](seasons.md)); `ctx.services.get(name)` reaches any
   service (e.g. `'trail'`, `'farmers'`, `'audio'`).
 * `audit(opts?)`, `auditShow(keys, focus, view)`, `auditClear()` (placement audit, below).
 
@@ -100,7 +101,8 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 ## Benchmark (`npm run bench`)
 
 `scripts/bench.ts` drives the real GPU (same Chromium flags as `shoot`) through `mixed` and `crowd40` × day (10:00
-clear) / night (22:00 clear) / rain (14:00) × 7 poses (`hub square river pond east top inside`; `top` = free camera
+clear) / night (22:00 clear) / rain (14:00) × 7 poses (also `--cond snow`: 09:00 snow in winter; any named pose works
+in `--pose`, e.g. `farmhouse`) (`hub square river pond east top inside`; `top` = free camera
 `0;90;70;0;-0.95`) and prints one row each: `gpu` (whole frame, `EXT_disjoint_timer_query_webgl2`, median of reps),
 split into `scene` (incl. the shadow map), `shadow` (scene with shadow updates on − off) and `post` (bloom, rays,
 composite, FXAA); `cpu` (frame loop EMA: hooks + systems + submit), `sys` (sum of systems), `submit` (JS/driver time
@@ -113,7 +115,8 @@ npm run bench -- --json scratch/bench/a.json --shots             # keep numbers 
 npm run bench -- --quality low --eval "__valley.atmo({mist:1})"  # A/B a setting
 ```
 
-The machine is shared (agents shooting): check `uptime`, compare medians of A and B run alternately, and trust the GPU
+The machine is shared (agents shooting): a `shoot` fps of 25–45 under load average > 10 is contention, not the
+scene (a "27 fps in snow" report re-measured at 60 fps / 6 ms GPU); check `uptime`, compare medians of A and B run alternately, and trust the GPU
 columns over `cpu` when the load is high (timer queries still include time-slicing with other GPU clients). Per-pose
 costs worth knowing: mist banks ≈ 0.3 ms (night / dawn), wet surfaces ≈ 0.7 ms (any toon pixel while `wet` > 0; dry
 costs nothing), god rays ≈ 0.1 ms, shadow map ≈ 0.5 ms, post ≈ 1.2 ms. (The atmosphere's own earlier estimates, mist
@@ -124,11 +127,59 @@ valley-wide `InstancedMesh` cannot be frustum-culled by three, so pack only what
 transparent `DoubleSide` materials take `forceSinglePass: true` when additive (else three draws them twice and
 re-resolves the program each frame).
 
+## Soak (`npm run soak`)
+
+The valley is left open all day, so anything that grows per toast, per panel, per season or per reconnect eventually
+hurts. `scripts/soak.ts` starts a demo dev server (or `--url`), drives one page through everything a long session does
+and prints a leak report. Every `--cycle` seconds it churns through random actions — `scenario` (mixed / churn /
+crowd40 …), `panels` (every HUD panel and a farmer card), `terminal`, `toasts`, `poses`, `weather` (+ hour, season,
+puddles / snow / rainbow), `inside`, `gather`, `wildlife`, `festival`, `forage` (+ fishing), `pet`, `flap` (rapid
+status changes), `socket` (drops the valley's WebSocket), `hidden` (tab hidden, the page clock jumps 1–5 h), `midnight`
+(the page clock jumps to 8 s before midnight) — then returns to a fixed baseline (first scenario, hub, 10:00 clear,
+panels closed), settles, forces a GC (CDP) and samples:
+
+| metric | from |
+|---|---|
+| `heapMB`, `nodes`, `listeners` | CDP `Performance.getMetrics` after `HeapProfiler.collectGarbage` (nodes include detached ones) |
+| `hudNodes` (+ the biggest `#hud` subtrees) | the DOM |
+| `geometries`, `textures`, `programs`, `objects` | `renderer.info`, a scene traversal |
+| `timeouts`, `intervals`, `rafs` | live counts from an init script that wraps the timer APIs |
+| `audio` | live AudioNodes (CDP `WebAudio` created − destroyed) |
+| `storageTotal` (+ per key) | localStorage bytes |
+| `fps`, `err` | `__valley.perf()` (fps is only indicative: the machine is shared) |
+
+The report fits a line over the second half of the samples; a metric is flagged `LEAK` when it grows faster than its
+hourly tolerance, the last third's median sits above the middle third's and it grew by a real amount overall. Every
+console error / warning / page error is listed with the action that preceded it (`--stacks` appends a short stack).
+Exit code 1 on a leak or a console message.
+
+```sh
+npm run soak                                                   # 20 min, every action (≈ 25–30 min wall on a busy box)
+npm run soak -- --minutes 4 --cycle 12 --actions terminal       # one action: is it the leak?
+npm run soak -- --start 2026-10-02T23:58 --date-scale 4         # cross midnight with the page open (page Date only)
+npm run soak -- --json scratch/soak/a.json --stacks             # keep every sample
+```
+
+Options: `--minutes --cycle --settle --scenarios --demo --timescale` (the demo server clock, default 20×) `--anim`
+(`__valley.timeScale`) `--date-scale --start --seed --actions --json --size --stacks --url`. The page's `Date` is
+replaced by an accelerated / jumpable clock (`__soak.jump(ms)`, `__soak.setScale(k)`); timers and frames stay real.
+Runs on the working tree: when other agents' edits are half-done, run it from a copy (`git archive HEAD | tar -x -C
+scratch/snap`, symlink `node_modules`, copy your files over).
+
+Finding the source of a leak: run one action at a time (`--actions X`), then look at what is retained — CDP
+`DOM.getDetachedDomNodes` names detached elements; for GPU memory, hook `BufferGeometry.prototype.addEventListener`
+(three adds its `'dispose'` listener when it uploads a geometry) to list uploaded geometries that are not in the scene
+by creation stack. Last round (fixed): every toast was kept alive by the anchored bubbles' obstacle set (`hud/anchors.ts`
+prunes it now), a duplicate `visibilitychange` started a second rAF chain (`core/loop.ts`), and a season change leaked
+the town upgrades' geometry (`structures/upgrades.ts` dispose).
+
 ## Browser tests (`npm run test:browser`)
 
 Playwright (`playwright.config.ts`, specs in `browser-tests/`: `valley.spec.ts` (terminal routes and the power-user
 loop, see [hud.md](hud.md#every-terminal-is-a-menu-away)), `trail.spec.ts` (the valley viewer), `stamps.spec.ts` (the stamp
-book, [stamps.md](stamps.md)), `workbench.spec.ts`;
+book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
+with the page open, a tab hidden for hours, a dropped socket under a terminal, long / unicode / emoji names, status
+flapping: all with a clean console), `workbench.spec.ts`;
 `server.ts` starts a demo server fixture). Add a flow to `valley.spec.ts` when you add a route to a terminal.
 
 The specs load `dist/`, so **`npm run build` first** (a stale build tests old code). Each test gets its own demo

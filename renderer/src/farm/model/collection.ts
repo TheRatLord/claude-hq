@@ -168,7 +168,18 @@ export function sightText(d: SightDef): string {
 
 export const FORAGE: readonly ForageDef[] = CATALOG.filter((d): d is ForageDef => d.kind === 'forage');
 export const FISHES: readonly FishDef[] = CATALOG.filter((d): d is FishDef => d.kind === 'fish');
-const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
+/**
+ * Barn produce (the walk-in barn's chores, model/barn.ts): eggs from the nest boxes and Daisy's milk. They go into the
+ * basket and sell like any find (`collectDef` knows them), but they are not finds: never in the Collections book,
+ * never foraged.
+ */
+export const PRODUCE: readonly ForageDef[] = Object.freeze([
+  F('egg', 'Fresh egg', ALL, 'meadow', 4, '#f4e6cc',
+    'Still warm from the nest box. The hens pretend not to have noticed you taking it.'),
+  F('milk', 'Pail of milk', ALL, 'meadow', 2, '#f6f2e8',
+    'Creamy and fresh from Daisy. Hazel trades a loaf for a pail, and the cats follow you home.'),
+]);
+const BY_ID = new Map([...CATALOG, ...PRODUCE].map((d) => [d.id, d]));
 export const collectDef = (id: string): CollectDef | undefined => BY_ID.get(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -228,6 +239,8 @@ export interface FishConditions {
   hour: number;
   weather: WeatherKind;
   water: WaterKind;
+  /** extra odds for the rarer fish (a cast from the rowboat out in the middle of the pond: scene/seasons), default 1 */
+  rareBoost?: number;
 }
 export const isNight = (hour: number): boolean => hour >= 20 || hour < 5;
 export const isTwilight = (hour: number): boolean => (hour >= 4.5 && hour < 8) || (hour >= 17.5 && hour < 21.5);
@@ -246,7 +259,7 @@ export function canBite(d: FishDef, c: FishConditions): boolean {
 
 /** Everything that can bite right now, with odds (rain and dusk wake the rarer fish up a little). */
 export function fishOdds(c: FishConditions): { def: FishDef; weight: number }[] {
-  const boost = (rainy(c.weather) ? 1.4 : 1) * (isTwilight(c.hour) ? 1.25 : 1);
+  const boost = (rainy(c.weather) ? 1.4 : 1) * (isTwilight(c.hour) ? 1.25 : 1) * (c.rareBoost ?? 1);
   return FISHES.filter((d) => canBite(d, c)).map((d) => ({ def: d, weight: d.weight * (d.rare && !d.junk ? boost : 1) }));
 }
 

@@ -71,9 +71,14 @@ Lamps, lanterns, windows and fires are real lights, not ground decals.
   (a slow noise picks the heavy ledges, most stay bare): a leafy mat on the shelf rolls over the lip and strands walk
   down the riser against `heightAt` (hugging it, ragged hem, longest mid-curtain), merged into 6 sector meshes (no
   per-frame work; parts `ivy#n` for the audit); summer deep green, autumn muted creeper wine / rust / bronze, winter
-  sparse evergreen with frosted mats. Outcrops sit on shelves, not stuck to faces.
+  sparse evergreen with frosted mats. **Distance calm** (`IVY_FAR_VERT` / `IVY_FAR_FRAG`): past ~20 m each drape
+  fades to its own muted mean colour (`ivyAvg`; autumn warmed toward rust), its leaves grow up to 2× about their
+  centres (`ivyC`) and the stems shrink away, so from mid-distance a curtain is one soft patch, not a comb of specks. Outcrops sit on shelves, not stuck to faces.
 * **Cascades.** Four little cascades (`TRICKLES` in `scene/terrain/features.ts`, drawn by `water.ts` as one ribbon)
   spill down the strata, white on the risers and glassy across the shelves.
+* **Banks.** Steep faces turn to rock on the mountains per face (crisp facets); down in the valley (pad cuts, the
+  pond, the windmill hill) the earthy bank blends per vertex from the smoothed slope, softly, with only a hint of the
+  cliff pattern (`colourChunk` in `terrain.ts`).
 * **Meadow mosaic** (`scene/terrain/meadow.ts`: one value noise shared by GLSL and TS): darker clover drifts, sunny
   bleached patches with rough tall grass, and wildflower drifts (a colour wash from afar, petals up close, seasonal
   colours via `bloomColors`) with clover and flowers planted in the same places.

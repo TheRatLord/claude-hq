@@ -91,6 +91,9 @@ export function createLoop<C extends LoopState>(ctx: C, frame: (ctx: C) => void,
     } else {
       if (hiddenTimer) { clearTimeout(hiddenTimer); hiddenTimer = null; }
       lastFrameAt = 0;
+      // a 'visible' event while already visible (duplicate events, embedders) must not start a second rAF chain:
+      // each extra chain renders the whole valley once more per vsync
+      cancelAnimationFrame(raf);
       raf = requestAnimationFrame(onRaf);
     }
   };

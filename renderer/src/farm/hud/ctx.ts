@@ -8,7 +8,7 @@ import type { HudDeps } from './port.ts';
 import type { HudBindings } from './hud.ts';
 import { h } from '../../ui/dom.ts';
 import { shortName } from './format.ts';
-import { readJson, writeJson } from '../storage.ts';
+import { readTyped, writeJson } from '../storage.ts';
 
 export { h };
 
@@ -75,7 +75,7 @@ export interface Prefs {
 const PREFS_KEY = 'valley.hud.prefs';
 export function loadPrefs(): Prefs {
   const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true };
-  return { ...def, ...(readJson(PREFS_KEY) as Partial<Prefs> | null) };
+  return readTyped(PREFS_KEY, def);
 }
 export function savePrefs(p: Prefs): void { writeJson(PREFS_KEY, p); }
 

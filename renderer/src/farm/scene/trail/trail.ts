@@ -25,7 +25,7 @@ import { SUMMIT, benchKit, binocularMask, bridgeKit, cairnKit, flagMesh, offerin
 import type { Solid } from './build.ts';
 import { bridgeFloor, flightOf, platformFloor, spanOf, stairsFloor } from './decks.ts';
 import { damp } from '../../../core/math.ts';
-import { readJson, writeJson } from '../../storage.ts';
+import { readTyped, writeJson } from '../../storage.ts';
 
 export interface TrailService {
   /** look through the summit viewer at farmer i (in viewer order); teleports you to it first */
@@ -125,7 +125,8 @@ export const trailSystem: SystemFactory = (ctx: SceneCtx) => {
 
   // the cairn counter, per browser profile
   let store = { stones: 0, day: '' };
-  store = { ...store, ...(readJson(STORE) as Partial<typeof store> | null) };
+  store = readTyped(STORE, store);
+  store.stones = Math.max(0, Math.min(1e6, Math.floor(store.stones)));
   const spot = { x: 0, y: 0, z: 0, ry: 0 };
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e3 = new THREE.Euler(), v3 = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   function placeStones(): void {

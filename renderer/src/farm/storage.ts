@@ -32,3 +32,21 @@ export function readJson(key: string): unknown {
 export function writeJson(key: string, value: unknown): void {
   writeLocal(key, JSON.stringify(value));
 }
+
+/**
+ * `def` overlaid with the fields of `raw` that have the same type as in `def` (numbers must be finite). A preference
+ * object from an older build, a hand-edited value or plain garbage can only ever fill in known keys with sane types.
+ */
+export function pickTyped<T extends object>(def: T, raw: unknown): T {
+  const out = { ...def };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const k of Object.keys(def) as (keyof T & string)[]) {
+    if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+    const v = (raw as Record<string, unknown>)[k], d = def[k];
+    if (typeof v !== typeof d || (typeof v === 'number' && !Number.isFinite(v))) continue;
+    out[k] = v as T[typeof k];
+  }
+  return out;
+}
+/** the JSON object under `key` read through `pickTyped(def, …)` */
+export function readTyped<T extends object>(key: string, def: T): T { return pickTyped(def, readJson(key)); }
