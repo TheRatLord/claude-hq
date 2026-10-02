@@ -196,7 +196,11 @@ export class Kit {
     tagSurface(g, SURF[name], { ...tg, axis });
   }
 
-  box(w: number, h: number, d: number, color: number, t?: Xf, kind?: BakeKind): this { return this.add(new THREE.BoxGeometry(w, h, d), color, t, kind); }
+  box(w: number, h: number, d: number, color: number, t?: Xf, kind?: BakeKind): this {
+    // lamp glass needs a vertex mid-face: the glass shader's flame core lives there (a 1-segment box only has corners)
+    const lamp = kind === 'glow' && color === PAL.lampGlow;
+    return this.add(lamp ? new THREE.BoxGeometry(w, h, d, 2, 1, 2) : new THREE.BoxGeometry(w, h, d), color, t, kind);
+  }
   /**
    * A roof slab (box w × th × len, local y = up out of the roof, z = down the slope): `top` on the upper face and the
    * edges (rows level across the slope), `under` (default: ceiling boards) on the underside.
@@ -357,6 +361,13 @@ export function setGlow(m: THREE.MeshBasicMaterial, night: number, boost = 1): v
   const b = m.userData.uBoost as { value: number } | undefined;
   if (b) b.value = boost * (0.35 + 0.65 * e);
 }
+/**
+ * Unlit-glass tone of a glow material: `scale` its brightness and `tint` it toward each part's own colour (default
+ * 1, 0.22: cool outdoor glass). Rooms take darker, smokier glass, or the unlit panes read white against the room.
+ */
+export function setGlass(m: THREE.MeshBasicMaterial, scale: number, tint: number): void {
+  (m.userData.uGlassT as { value: THREE.Vector2 } | undefined)?.value.set(scale, tint);
+}
 export const GLOW_FRAG = /* glsl */`
 vec3 glowInterior( vec3 g ) {
   float kind = floor( g.z + 0.001 );
@@ -398,29 +409,31 @@ vec3 glowInterior( vec3 g ) {
 }`;
 export function glowMat(night = 0): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ vertexColors: true });
-  const uGlow = { value: 0 }, uBoost = { value: 1 };
+  const uGlow = { value: 0 }, uBoost = { value: 1 }, uGlassT = { value: new THREE.Vector2(1, 0.22) };
   m.userData.uGlow = uGlow;
   m.userData.uBoost = uBoost;
+  m.userData.uGlassT = uGlassT;
   (m as THREE.Material & { defaultAttributeValues?: Record<string, number[]> }).defaultAttributeValues = { glowUV: [0, 0, 3] };
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uGlow = uGlow;
     sh.uniforms.uBoost = uBoost;
     sh.uniforms.uGlass = { value: GLASS };
+    sh.uniforms.uGlassT = uGlassT;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 glowUV;\nvarying vec3 vGlowUV;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowUV = glowUV;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uGlow, uBoost;\nuniform vec3 uGlass;\nvarying vec3 vGlowUV;\n${GLOW_FRAG}`)
+      .replace('#include <common>', `#include <common>\nuniform float uGlow, uBoost;\nuniform vec3 uGlass;\nuniform vec2 uGlassT;\nvarying vec3 vGlowUV;\n${GLOW_FRAG}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
-          vec3 glass = mix( uGlass, vColor.rgb, 0.22 ) * ( 0.85 + 0.3 * vColor.g );
+          vec3 glass = mix( uGlass, vColor.rgb, uGlassT.y ) * ( 0.85 + 0.3 * vColor.g ) * uGlassT.x;
           vec3 lit = glowInterior( vGlowUV ) * uBoost;
           diffuseColor.rgb = mix( glass, lit, uGlow );
         }`)
       // lit glass counts as warm light for the night grade (see scene/lights/shader.ts VL_ALPHA)
       .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a = 1.0 - 0.5 * uGlow;');
   };
-  m.customProgramCacheKey = () => 'structures-glow-v2';
+  m.customProgramCacheKey = () => 'structures-glow-v3';
   setGlow(m, night);
   return m;
 }

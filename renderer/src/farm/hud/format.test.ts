@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { askOrder, clock, dur, letterKey, letterTitle, matchCombo, matches, nextAfter, nice, notifyCopy, parseCombo, rosterFilterHit } from './format.ts';
+import { askOrder, branchName, clock, contextLine, dur, kindLine, repoBits, spendLine, letterKey, letterTitle, matchCombo, matches, nextAfter, nice, notifyCopy, parseCombo, rosterFilterHit } from './format.ts';
 
 const key = (o: Partial<KeyboardEvent>) => ({ key: '', code: '', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...o });
 
@@ -89,4 +89,18 @@ test('desktop notification copy: one ping speaks for itself, a burst summarises 
   ]);
   assert.equal(many?.title, 'Claude Valley: 4 need you · 1 finished');
   assert.equal(many?.body, 'Waiting: atlas, birch, cobalt +1\nDone: dune');
+});
+
+test('work signal copy: model, context, repo, spend', () => {
+  assert.equal(kindLine({ kind: 'claude', tier: 'opus', model: 'Opus 5.5' }), 'Claude · Opus 5.5');
+  assert.equal(kindLine({ kind: 'claude', tier: 'sonnet' }), 'Claude · Sonnet');
+  assert.equal(kindLine({ kind: 'codex', tier: null, model: 'Codex' }), 'Codex');
+  assert.equal(contextLine({ context: 0.82, contextTokens: 164_000, contextWindow: 200_000 }), '82% · 164k of 200k');
+  assert.equal(contextLine({ context: 0.9, contextTokens: null, contextWindow: null }), '90% · compaction soon');
+  assert.equal(contextLine({ context: null }), '');
+  assert.equal(repoBits({ dirty: 3, ahead: 2, behind: 1 }), '3 changed · 2 to push · 1 behind');
+  assert.equal(repoBits({ dirty: 0, ahead: null, behind: 0 }), '');
+  assert.equal(branchName({ branch: null, head: 'abc1234' }), '@abc1234');
+  assert.equal(spendLine({ tokens: 2_100_000, cost: 1.236, partial: false }), '$1.24 · 2.1M tokens');
+  assert.equal(spendLine({ tokens: 5000, cost: null, partial: true }), 'at least 5k tokens');
 });

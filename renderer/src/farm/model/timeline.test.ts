@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BLIP_MS, GAP_MS, MAX_MARKS, MAX_SPANS, addMark, bands, compactSpans, createTimeline, demoDay, earliest, keyMoments, parseTimeline,
-  pushJob, spanAt, stripRange, summarize,
+  BLIP_MS, GAP_MS, MAX_MARKS, MAX_SPANS, ROLL_DAYS, ROLL_FARMERS, addMark, bands, compactSpans, createTimeline, demoDay, earliest, keyMoments,
+  parseRolls, parseTimeline, pushJob, pushRoll, rollDay, spanAt, stripRange, summarize,
 } from './timeline.ts';
 import type { FarmerDay, Observed, Span, TimelineData } from './timeline.ts';
 import { dayKey } from './almanac.ts';
@@ -206,4 +206,52 @@ test('valley: the timeline records jobs, asks with their wait, ships and test ru
   v.useTimeline(undefined, demoDay);
   v.tick();
   assert.ok(v.state.timeline.farmers.get('p1')!.spans.length > 5);
+});
+
+test('timeline roll-up: a finished day becomes a few numbers per farmer, kept ROLL_DAYS days', () => {
+  const fd = demoDay({ id: 'a', tag: 'app', name: 'flint' }, T0 + 6 * 60 * MIN);
+  const r = rollDay({ day: dayKey(T0), farmers: { a: fd, idle: { id: 'idle', tag: 'x', name: 'x', spans: [], marks: [], rev: 0 } } });
+  assert.equal(r.day, dayKey(T0));
+  assert.equal(r.farmers.length, 1, 'farmers with nothing recorded are left out');
+  const s = summarize(fd), f = r.farmers[0];
+  assert.equal(f.ships, s.ships); assert.equal(f.asks, s.asks); assert.equal(f.passes, s.passes);
+  assert.ok(Math.abs(f.active - s.active) <= 500);
+  const answered = fd.marks.filter((m) => m.kind === 'ask' && (m.wait ?? 0) > 0);
+  assert.equal(f.answered, answered.length);
+  // bounded: the busiest ROLL_FARMERS
+  const many = Object.fromEntries(Array.from({ length: ROLL_FARMERS + 6 }, (_, i) => [`f${i}`, { id: `f${i}`, tag: 't', name: `n${i}`, spans: [{ job: 'plant' as Job, from: T0, to: T0 + (i + 1) * MIN }], marks: [], rev: 0 }]));
+  const big = rollDay({ day: dayKey(T0), farmers: many });
+  assert.equal(big.farmers.length, ROLL_FARMERS);
+  assert.equal(big.farmers[0].id, `f${ROLL_FARMERS + 5}`, 'busiest first');
+  // pruned to the ROLL_DAYS before today, one per date, oldest first
+  let past = parseRolls([], '2026-10-20');
+  for (let d = 1; d <= 19; d++) past = pushRoll(past, { day: `2026-10-${String(d).padStart(2, '0')}`, farmers: [] }, '2026-10-20');
+  assert.equal(past.length, ROLL_DAYS);
+  assert.equal(past[0].day, '2026-10-12'); assert.equal(past.at(-1)!.day, '2026-10-19');
+  assert.deepEqual(parseRolls([{ day: '2026-10-20', farmers: [] }, { day: 'x' }, null, 5], '2026-10-20'), [], 'today and junk are not past days');
+});
+
+test('timeline roll-up: midnight and a stale stored day both roll into past, and it persists', () => {
+  let saved: TimelineData | null = null;
+  const store = { load: () => (saved ? JSON.parse(JSON.stringify(saved)) : null), save: (d: TimelineData) => { saved = JSON.parse(JSON.stringify(d)); } };
+  const tl = createTimeline(store, { now: T0 });
+  run(tl, obs('plant'), T0, T0 + 10 * MIN);
+  tl.mark('a', 'ship', T0 + 10 * MIN, 'feat: x');
+  // the valley stays open across midnight
+  const midnight = new Date(2026, 9, 3, 0, 0, 30).getTime();
+  tl.observe([obs('plant')], midnight);
+  assert.equal(tl.view.past.length, 1);
+  assert.equal(tl.view.past[0].day, dayKey(T0));
+  assert.equal(tl.view.past[0].farmers[0].ships, 1);
+  assert.ok(tl.view.past[0].farmers[0].active >= 9 * MIN);
+  tl.flush();
+  assert.equal(saved!.past?.length, 1);
+  // closed on the 3rd, opened on the 5th: the 3rd's stored day is rolled up on load, the 2nd's roll kept
+  tl.mark('a', 'ship', midnight + 1000, 'fix: y');
+  tl.flush();
+  const later = createTimeline(store, { now: new Date(2026, 9, 5, 9).getTime() });
+  assert.deepEqual(later.view.past.map((r) => r.day), ['2026-10-02', '2026-10-03']);
+  assert.equal(later.view.farmers.size, 0);
+  // a store from long ago keeps nothing
+  assert.deepEqual(parseTimeline(saved, '2026-12-01').past, []);
 });

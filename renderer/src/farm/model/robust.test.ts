@@ -13,7 +13,8 @@ import { createFriends } from './friends.ts';
 import { createOnboarding } from './onboarding.ts';
 import { createStamps } from './stamps.ts';
 import { createPetModel } from './pet.ts';
-import { createTimeline, demoDay, keyMoments, summarize } from './timeline.ts';
+import { createTimeline, demoDay, keyMoments, rollDay, summarize } from './timeline.ts';
+import { composeIssue, createGazette, demoInput, gatherFacts } from './gazette.ts';
 
 const NOW = new Date(2026, 9, 2, 14, 0).getTime();
 const now = () => NOW;
@@ -77,7 +78,7 @@ test('robust: the almanac loads any stored value', () => {
 
 test('robust: the timeline loads any stored value', () => {
   const day = demoDay({ id: 'a', tag: 'app', name: 'flint' }, NOW);
-  const sample = JSON.parse(JSON.stringify({ v: 1, day: '2026-10-02', farmers: { a: day } }));
+  const sample = JSON.parse(JSON.stringify({ v: 1, day: '2026-10-02', farmers: { a: day }, past: [rollDay({ day: '2026-10-01', farmers: { a: day } })] }));
   fuzz('timeline', sample, (raw) => {
     const tl = createTimeline(port(raw), { now: NOW });
     tl.observe([{ id: 'a', tag: 'app', name: 'flint', job: 'plant', needsYou: false }], NOW + 1000);
@@ -161,5 +162,20 @@ test('robust: the pet loads any stored value', () => {
     const s = createPetModel(port(raw), { now: () => NOW + 86_400_000 * 3 });
     s.tick(); s.act('fetch' as never); s.walked(30); s.rename('Pip 🐶');
     return s.data();
+  });
+});
+
+test('robust: the gazette loads any stored value', () => {
+  const st = port(null);
+  const g = createGazette(st, now);
+  const facts = gatherFacts(demoInput('weekly', NOW, demoAlmanac(NOW), [{ id: 'a', tag: 'app', name: 'flint' }]));
+  g.file(facts);
+  g.note({ k: 'gift', at: NOW - 1000, who: 'villager:hazel', item: 'hazelnut', tier: 'love' });
+  g.note({ k: 'catch', at: NOW - 2000, item: 'pike', cm: 70 });
+  fuzz('gazette', st.saved, (raw) => {
+    const s = createGazette(port(raw), now);
+    s.note({ k: 'find', at: NOW, item: 'acorn' });
+    s.due();
+    return s.data().issues.map((i) => composeIssue(i.facts));
   });
 });

@@ -4,6 +4,8 @@
  */
 import type { FarmerView, HelperView, Job, LetterKind, LinkState, PlotKind, PlotStage, Season, WeatherKind } from '../model/types.ts';
 import type { Status } from '../../../../shared/protocol.ts';
+import { costLabel, tokensLabel } from '../model/signals.ts';
+import type { RepoView, SpendView } from '../model/signals.ts';
 
 /** 'flint' → 'Flint'; ids and paths are left alone. */
 export function nice(name: string): string {
@@ -61,11 +63,32 @@ export const SEASON_LABEL: Record<Season, string> = { spring: 'Spring', summer: 
 
 export const TIER_LABEL: Record<string, string> = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', other: '' };
 
-/** 'Claude · Opus' */
-export function kindLine(f: Pick<FarmerView, 'kind' | 'tier'>): string {
+/** 'Claude · Opus 5.5' (the model's display name when known, else its tier) */
+export function kindLine(f: Pick<FarmerView, 'kind' | 'tier'> & { model?: string | null }): string {
   const k = f.kind === 'claude' ? 'Claude' : f.kind === 'codex' ? 'Codex' : f.kind === 'gemini' ? 'Gemini' : 'Agent';
-  const t = f.tier ? TIER_LABEL[f.tier] ?? '' : '';
+  const t = f.model && f.model !== k ? f.model : f.tier ? TIER_LABEL[f.tier] ?? '' : '';
   return t ? `${k} · ${t}` : k;
+}
+
+/** Context copy for the card: '82% · 164k of 200k', plus a hint near the top ('compaction soon'). */
+export function contextLine(f: Pick<FarmerView, 'context' | 'contextTokens' | 'contextWindow'>): string {
+  if (f.context == null) return '';
+  const of = f.contextTokens && f.contextWindow ? ` · ${tokensLabel(f.contextTokens)} of ${tokensLabel(f.contextWindow)}` : '';
+  return `${pct(f.context)}${of}${f.context > 0.85 ? ' · compaction soon' : ''}`;
+}
+
+/** The repo bits after the branch: '3 changed · 2 to push · 1 behind' (nothing when clean and in sync). */
+export function repoBits(g: Pick<RepoView, 'dirty' | 'ahead' | 'behind'>): string {
+  return [g.dirty ? `${g.dirty} changed` : '', g.ahead ? `${g.ahead} to push` : '', g.behind ? `${g.behind} behind` : ''].filter(Boolean).join(' · ');
+}
+
+/** 'feat/x' or a detached HEAD's short sha ('@abc1234'). */
+export const branchName = (g: Pick<RepoView, 'branch' | 'head'>): string => g.branch ?? (g.head ? `@${g.head}` : 'detached');
+
+/** '$1.24 · 2.1M tokens' ('at least' when the transcript's start of day could not be read). */
+export function spendLine(s: SpendView): string {
+  const c = costLabel(s.cost);
+  return `${s.partial ? 'at least ' : ''}${c ? `${c} · ` : ''}${tokensLabel(s.tokens)} tokens`;
 }
 
 /** Short relative duration: '12s', '4m', '2h', '3d'. */

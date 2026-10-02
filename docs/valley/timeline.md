@@ -28,6 +28,11 @@ Bounded: today only (reset at local midnight; a stored day from another date is 
 go), `MAX_FARMERS` 48 (the stalest go). `FarmerDay.rev` bumps only when a span starts / ends or a mark lands (an open span
 growing does not), and `TimelineView.rev` with any of them: the HUD keys its repaints on these.
 
+**Weekly roll-up** (for [The Valley Gazette](gazette.md)): when the day rolls over (midnight while open, or a stored day
+from an earlier date on load) `rollDay` keeps it as a few numbers per farmer (`FarmerRoll`: active, waited, asks,
+answered + their total wait, ships, passes, fails, finished; the busiest `ROLL_FARMERS` 24) in `TimelineData.past`, the
+last `ROLL_DAYS` (8) days, read as `TimelineView.past` (`parseRolls` / `pushRoll` prune and coerce).
+
 Persisted per browser profile in `claude-valley.timeline.v1` through a `TimelineStore` (like the almanac): saves are
 throttled to one per `SAVE_MS` (20 s), asks / ships / test runs save at once, and `main.ts` flushes on `pagehide`.
 

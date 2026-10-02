@@ -4,7 +4,7 @@
  *   HUD / scene ──AgentPort / HudNet──▶ net/store
  * Nothing below this file crosses those lines.
  *
- * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high, ?timescale=,
+ * URL params: ?t= (token, stripped), ?hour=, ?weather=, ?season=, ?pose=, ?quality=low|medium|high (beats Settings), ?timescale=,
  *             ?almanac=POINTS (demo: the almanac's starting prosperity), ?festival=ID (force a festival, model/calendar.ts)
  *             ?timeline=0 (demo: no seeded morning on the farmers' day timelines, model/timeline.ts)
  *             ?pose=inside[:VIEW] (inside the farmhouse, scene/interior), ?pose=barn-inside[:VIEW] (the barn)
@@ -27,7 +27,10 @@ import { createOnboarding, shouldWelcome, tipsAllowed, parseOnboarding, emptyOnb
 import type { YardPort } from './hud/shop.ts';
 import { installPhotoMode } from './photo.ts';
 import { installStampBook, watchPhotos } from './stampbook.ts';
+import { installNewsroom } from './newsroom.ts';
 import { localJson } from './storage.ts';
+import { createPrefsStore } from './prefs.ts';
+import { effectiveFpsCap, reducedMotion } from './model/prefs.ts';
 import { storeSource, createAgentPort } from './source.ts';
 import { createEngine } from './scene/engine.ts';
 import type { Quality } from './scene/context.ts';
@@ -85,14 +88,44 @@ if (params.get('festival')) valley.setSky({ festival: params.get('festival') });
 store.on('event', (e) => valley.ingest(e));
 store.on('hello', (h) => settings._applyServer(h.settings));
 
-const hud = createHud({ root: document.getElementById('hud') ?? document.body, net: hudNet, settings, platform });
+// browser-local comfort / graphics / accessibility prefs (model/prefs.ts; Settings in the pause menu)
+const prefs = createPrefsStore();
+const hud = createHud({ root: document.getElementById('hud') ?? document.body, net: hudNet, settings, platform, prefs });
 const agents = createAgentPort((id) => hud.openTerminal(id));
 const canvas = document.getElementById('valley') as HTMLCanvasElement;
-const quality = (['low', 'medium', 'high'] as const).find((q) => q === params.get('quality')) as Quality | undefined;
+// ?quality= wins over Settings → Graphics → quality (which systems read at start: it applies on reload)
+const quality = ((['low', 'medium', 'high'] as const).find((q) => q === params.get('quality')) ?? prefs.data.quality) as Quality;
 const engine = createEngine({
   canvas, valley: valley.state, onValley: valley.on, agents, ui: hud.ui, quality, now: () => store.now(),
 });
-const controller = createController(engine.ctx, canvas);
+const controller = createController(engine.ctx, canvas, () => prefs.data);
+// Settings → Controls / Graphics / Accessibility applied live: fov, render scale, shadows, weather amount, reduced
+// motion, the frame cap and the idle throttle (no input for `idleMin` minutes → a slow frame rate until you are back)
+const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+let lastInput = performance.now(), throttled = false;
+const applyCap = () => {
+  // automated browsers (tests, shots, bench, soak) never idle-throttle: their numbers must mean the real frame rate
+  const cap = effectiveFpsCap(navigator.webdriver ? { ...prefs.data, idleMin: 0 } : prefs.data, performance.now() - lastInput);
+  throttled = cap !== null && cap < (prefs.data.fpsCap || Infinity);
+  engine.setFpsCap(cap);
+};
+const applyPrefs = () => {
+  const p = prefs.data, cam = engine.ctx.camera;
+  if (cam.fov !== p.fov) { cam.fov = p.fov; cam.updateProjectionMatrix(); }
+  engine.setRenderScale(p.renderScale);
+  engine.setShadows(p.shadows);
+  engine.ctx.comfort.weatherFx = p.weatherFx;
+  engine.ctx.comfort.reducedMotion = reducedMotion(p.reducedMotion, !!motionQuery?.matches, settings.get('reducedMotion'));
+  applyCap();
+};
+prefs.onChange(applyPrefs);
+motionQuery?.addEventListener?.('change', applyPrefs);
+settings.onChange((c) => { if ('reducedMotion' in c) applyPrefs(); });
+for (const t of ['keydown', 'pointerdown', 'mousemove', 'wheel', 'touchstart'] as const) {
+  addEventListener(t, () => { lastInput = performance.now(); if (throttled) applyCap(); }, { capture: true, passive: true });
+}
+setInterval(() => { if (!throttled) applyCap(); }, 5000);
+applyPrefs();
 engine.onFrame((f) => controller.update(f));
 engine.ctx.services.set('controller', controller);
 engine.ctx.services.set('settings', settings);
@@ -143,6 +176,10 @@ collection.onFind((r) => onboarding.signal(r.def.kind === 'fish' ? 'fish' : 'for
 // off every service above; browser-local; stamps pay a few bits and bring yard trophies at 10 / 25 / all
 const stamps = installStampBook({ engine, controller, valley, collection, wallet, friends, ready: () => store.hello !== null });
 engine.ctx.services.set('stamps', stamps);
+// The Valley Gazette (model/gazette.ts, wired in newsroom.ts; hud/gazette.ts prints it): the weekly edition in the
+// mailbox every Monday morning, the morning edition on the noticeboard / G; browser-local, the demo's in memory
+const gazette = installNewsroom({ valley, collection, friends, stamps, demo: () => (store.hello ? !!store.hello.demo : null) });
+engine.ctx.services.set('gazette', gazette);
 for (const f of SYSTEMS) engine.add(f);
 
 // the model ticks off store changes (coalesced) and at 4 Hz regardless, so smoothing timers advance
@@ -186,6 +223,7 @@ hud.bind({
   friends: () => friends,
   onboarding: () => onboarding,
   stamps: () => stamps,
+  gazette: () => gazette,
   yard: () => engine.ctx.services.get('yard') as YardPort | undefined,
   service: (name) => engine.ctx.services.get(name),
 });
@@ -206,7 +244,7 @@ const pose = params.get('pose');
 if (pose) {
   const named = POSES[pose];
   const nums = pose.split(',').map(Number);
-  if (named) controller.teleport(named[0], named[1], named[2], named[3]);
+  if (named) (window as unknown as { __valley: { pose(n: string): void } }).__valley.pose(pose);   // nudged clear of stalls / trees (dev/api.ts)
   else if (nums.length >= 2 && nums.every(Number.isFinite)) controller.teleport(nums[0], nums[1], nums[2], nums[3]);
   // pose=inside (or inside:hearth, inside:shelf … see INSIDE_VIEWS in scene/interior/layout.ts): the farmhouse interior
   else if (/^inside(:|$)/.test(pose)) (engine.ctx.services.get('indoors') as IndoorSpace | undefined)?.view?.(pose.split(':')[1] || 'door');

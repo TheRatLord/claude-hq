@@ -28,6 +28,11 @@ export const VL_OCC_SLOTS = 12;
  * so writing it once a frame (lights.ts) updates every material. Layout per point slot: see `vlOcc` below.
  */
 export const VL_OCC = new Float32Array(VL_OCC_SLOTS * 4 * 4);
+/**
+ * Shared key-light (sun / moon) data for every toon program, by reference like `VL_OCC`: x = how much cast shadows
+ * fade out on faces the key light only grazes (0 by day, 1 under the moon; written by scene/sky/sky.ts).
+ */
+export const VL_KEY = new Float32Array(4);
 
 /** functions appended to the toon light pars (after `lights_pars_begin` declared the light uniforms) */
 export const VL_PARS = /* glsl */`
@@ -35,6 +40,11 @@ export const VL_PARS = /* glsl */`
 // painted bands: an outer wash, the pool, a hot core; soft edges so the rings read hand-painted, not posterised
 float vlRamp( const in float e ) {
   return 0.2 * smoothstep( 0.0, 0.12, e ) + 0.45 * smoothstep( 0.13, 0.22, e ) + 0.35 * smoothstep( 0.34, 0.48, e );
+}
+// the light's colour for a band: the faint outer wash is mostly its brightness, the pool and core its full colour (a
+// pure orange wash read as brown smudges wherever the moon is shadowed off, e.g. under the bunting)
+vec3 vlTint( const in vec3 c, const in float e ) {
+  return mix( vec3( dot( c, vec3( 0.2126, 0.7152, 0.0722 ) ) ), c, 0.3 + 0.7 * smoothstep( 0.1, 0.2, e ) );
 }
 // energy proxy before banding: distance shape × soft facing terminator
 float vlShade( const in vec3 lv, const in float r, const in vec3 n ) {
@@ -44,6 +54,13 @@ float vlShade( const in vec3 lv, const in float r, const in vec3 n ) {
   float x = 1.0 - d / r;
   float ndl = dot( n, lv ) / max( d, 1e-3 );
   return x * x * smoothstep( -0.2, 0.55, ndl );
+}
+// the key light's cast shadow on a face it only grazes fades out at night: a low moon otherwise drags stripes metres
+// long down cliff faces (trail fence posts) where its light barely reaches anyway
+uniform vec4 vlKey[ 1 ];
+float vlShadowMix( const in vec3 n, const in vec3 l, const in float s ) {
+  float k = mix( 1.0, smoothstep( 0.04, 0.4, dot( n, l ) ), vlKey[ 0 ].x );
+  return 1.0 - k * ( 1.0 - s );
 }
 #if NUM_POINT_LIGHTS > 0
 // building occluders per point slot: 2 boxes × [ (centre xyz, cos yaw), (half extents xyz, sin yaw) ], world space
@@ -76,7 +93,7 @@ void vlPoints( const in vec3 P, const in vec3 N, const in vec3 albedo, inout Ref
       if ( e <= 0.0 ) continue;
     }
     #endif
-    rl.directDiffuse += pointLights[ i ].color * ( vlRamp( e ) * ( 0.85 + 0.3 * e ) ) * albedo;
+    rl.directDiffuse += vlTint( pointLights[ i ].color, e ) * ( vlRamp( e ) * ( 0.85 + 0.3 * e ) ) * albedo;
   }
 }
 #endif
@@ -94,7 +111,7 @@ void vlSpots( const in vec3 P, const in vec3 N, const in vec3 albedo, inout Refl
     float k = smoothstep( spotLights[ i ].coneCos, spotLights[ i ].penumbraCos, dot( normalize( av ), spotLights[ i ].direction ) );
     if ( k <= 0.0 ) continue;
     float e = vlShade( lv, r, N ) * k;
-    if ( e > 0.0 ) rl.directDiffuse += spotLights[ i ].color * ( vlRamp( e ) * ( 0.85 + 0.3 * e ) ) * albedo;
+    if ( e > 0.0 ) rl.directDiffuse += vlTint( spotLights[ i ].color, e ) * ( vlRamp( e ) * ( 0.85 + 0.3 * e ) ) * albedo;
   }
 }
 #endif
@@ -116,20 +133,34 @@ export const VL_APPLY = /* glsl */`
   if ( vlDist < spotLights[ 0 ].decay ) vlSpots( geometryPosition, geometryNormal, material.diffuseColor, reflectedLight );
   #endif
   vec3 vlLocal = reflectedLight.directDiffuse - vlBefore;
+  // the sun / moon as if nothing shadowed it (luminance): the night grade's lamp share is measured against this, so a
+  // cast shadow (bunting, a fence post) does not suddenly turn a faint lamp wash into "lamp-lit" warmth in its shade
+  float vlSky = 0.0;
+  #if NUM_DIR_LIGHTS > 0
+  for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+    vlSky += dot( directionalLights[ i ].color, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( dot( geometryNormal, directionalLights[ i ].direction ), 0.0 );
+  }
+  #endif
 #endif
 `;
 
 /**
  * Opaque toon pixels write how much of their light is local (lamp / window / fire) into the scene target's alpha:
- * a = 1 - 0.5 * share (so 1 = moonlight only; blended transparents only push it back toward 1). The post grade reads
+ * a = 1 - 0.5 * share * strength (so 1 = moonlight only; a faint wash counts little; blended transparents only push it
+ * back toward 1). The post grade reads
  * it to keep lamp-lit pockets warm while the moonlit rest cools into blue.
  */
 export const VL_ALPHA = /* glsl */`
 #if defined( OPAQUE ) && defined( VL_TOON )
   {
     float vlL = dot( vlLocal, vec3( 0.2126, 0.7152, 0.0722 ) );
-    float vlT = dot( outgoingLight, vec3( 0.2126, 0.7152, 0.0722 ) );
-    gl_FragColor.a = 1.0 - 0.5 * clamp( vlL / max( vlT, 1e-4 ), 0.0, 1.0 );
+    // the share is taken against the unshadowed moon (vlSky): in a cast shadow a faint lamp wash is a big share of
+    // almost no light, and keeping that warm in the grade painted brown smudges (bunting shadows on the cobbles).
+    // Only a real pool counts, too: weigh by the pool's own strength (local light over albedo)
+    float vlA = dot( material.diffuseColor, vec3( 0.2126, 0.7152, 0.0722 ) );
+    float vlT = max( dot( outgoingLight, vec3( 0.2126, 0.7152, 0.0722 ) ), vlL + vlSky * vlA );
+    float vlS = smoothstep( 0.03, 0.2, vlL / max( vlA, 0.02 ) );
+    gl_FragColor.a = 1.0 - 0.5 * clamp( vlL / max( vlT, 1e-4 ), 0.0, 1.0 ) * vlS;
   }
 #endif
 `;
@@ -138,6 +169,7 @@ const MARK = '// valley-lights';
 const POINT_LOOP = '#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )';
 const SPOT_LOOP = '#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )';
 const ANCHOR = 'IncidentLight directLight;';
+const DIR_SHADOW = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
 
 /** Patch three's shader chunks (idempotent). Must run before the first toon program compiles. */
 export function installValleyLightShaders(): void {
@@ -145,14 +177,16 @@ export function installValleyLightShaders(): void {
   if (C.lights_toon_pars_fragment.includes(MARK)) return;
   const begin = C.lights_fragment_begin;
   const once = (s: string, what: string) => { if (s.split(what).length !== 2) throw new Error(`valley lights: three's lights_fragment_begin changed (${what})`); };
-  once(begin, POINT_LOOP); once(begin, SPOT_LOOP); once(begin, ANCHOR);
+  once(begin, POINT_LOOP); once(begin, SPOT_LOOP); once(begin, ANCHOR); once(begin, DIR_SHADOW);
   C.lights_fragment_begin = begin
     .replace(ANCHOR, `${ANCHOR}\n${VL_APPLY}`)
+    .replace(DIR_SHADOW, `#ifdef VL_TOON\n${DIR_SHADOW.replace('? getShadow(', '? vlShadowMix( geometryNormal, directLight.direction, getShadow(').replace(') : 1.0;', ') ) : 1.0;')}\n#else\n${DIR_SHADOW}\n#endif`)
     .replace(POINT_LOOP, `${POINT_LOOP} && !defined( VL_TOON )`)
     .replace(SPOT_LOOP, `${SPOT_LOOP} && !defined( VL_TOON )`);
   C.lights_toon_pars_fragment = `${C.lights_toon_pars_fragment}\n${MARK}\n${VL_PARS}`;
   C.opaque_fragment = `${C.opaque_fragment}\n${VL_ALPHA}`;
   (THREE.ShaderLib.toon.uniforms as Record<string, THREE.IUniform>).vlOcc = { value: VL_OCC };
+  (THREE.ShaderLib.toon.uniforms as Record<string, THREE.IUniform>).vlKey = { value: VL_KEY };
 }
 
 installValleyLightShaders();

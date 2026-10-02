@@ -6,6 +6,7 @@ import type { Entity, GoneMsg, TermAckMsg, TermStateMsg, ToastLevel } from '../.
 import type { TermNet } from '../../ui/terminal/view.ts';
 import type { Settings } from '../../core/settings.ts';
 import type { Platform } from '../../ui/platform.ts';
+import type { PrefsStore } from '../prefs.ts';
 
 export interface HudNet extends TermNet {
   /** connection open and the world received */
@@ -29,4 +30,6 @@ export interface HudDeps {
   net: HudNet;
   settings: Settings;
   platform: Platform;
+  /** the browser-local prefs store (main.ts shares it with the controller and engine); the HUD makes its own if absent */
+  prefs?: PrefsStore;
 }

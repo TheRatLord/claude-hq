@@ -32,7 +32,7 @@ import type { FriendsService } from '../../model/friends.ts';
 import { heightAt, structure, WORLD } from '../../world/map.ts';
 import type { XZ } from '../../world/map.ts';
 import { CAMPFIRE_SEATS } from '../structures/leisure.ts';
-import { bandstandSpot, marketSpots } from '../structures/upgrades.ts';
+import { STAGE_LANTERN, STAGE_LANTERN_Y, bandstandSpot, marketSpots } from '../structures/upgrades.ts';
 import { propOf } from '../farmers/brain.ts';
 import type { GatherSpot } from '../farmers/brain.ts';
 import type { Act } from '../farmers/pose.ts';
@@ -90,6 +90,7 @@ export const gatherSystem: SystemFactory = (ctx: SceneCtx) => {
   const tmp = new THREE.Vector3();
   /** a warm lamp under the bandstand's roof while the band plays after dark */
   const stageLight: LightEmitter = { pos: new THREE.Vector3(), color: new THREE.Color(1.0, 0.72, 0.4), intensity: 1.0, radius: 7.5, flicker: 0.05, gain: 0, when: 'night' };
+  const stageAt = new THREE.Vector3();
   const lightOff = (ctx.services.get('lights') as LightsService | undefined)?.add(stageLight) ?? (() => {});
 
   const audio = () => ctx.services.get('audio') as AudioService | undefined;
@@ -138,6 +139,9 @@ export const gatherSystem: SystemFactory = (ctx: SceneCtx) => {
         slots = [...band, ...crowd];
         roles = [...band.map(() => 'musician' as const), ...crowd.map(() => 'crowd' as const)];
         center = { x: bs.x, y: bs.floor + 1.4, z: bs.z };
+        // the stage light sits in the lantern hung under the front of the roof, ahead of and above the band, so it
+        // lights their faces (from the stage's middle it lit their backs and the roof kept the moon off)
+        stageAt.set(bs.x + Math.sin(bs.yaw) * STAGE_LANTERN, bs.floor + STAGE_LANTERN_Y, bs.z + Math.cos(bs.yaw) * STAGE_LANTERN);
       }
     } else {
       const ms = marketSpots();
@@ -305,7 +309,7 @@ export const gatherSystem: SystemFactory = (ctx: SceneCtx) => {
       s.spot.prop = propOf(act);
     }
     stageLight.gain = kind === 'concert' && center ? 1 : 0;
-    if (center) stageLight.pos.set(center.x, center.y + 1.6, center.z);
+    if (center) stageLight.pos.copy(stageAt);
     now.kind = kind; now.seg = seg; now.x = center?.x ?? 0; now.z = center?.z ?? 0; now.forced = !!g?.forced; now.attendees = occupied();
   }
 
@@ -421,7 +425,7 @@ export const gatherSystem: SystemFactory = (ctx: SceneCtx) => {
 /** Where a gathering happens (dev / shots: stand there). */
 export function gatherViewpoint(kind: GatherKind): (XZ & { yaw: number; look: XZ }) | null {
   if (kind === 'campfire') { const c = structure('campfire'); const p = toWorld(c, -1.2, 10.5); return { x: p.x, z: p.z, yaw: 0, look: c }; }
-  if (kind === 'concert') { const b = bandstandSpot(); if (!b) return null; const p = toWorld(b, 5.2, b.r + 3.6); return { x: p.x, z: p.z, yaw: 0, look: b }; }
+  if (kind === 'concert') { const b = bandstandSpot(); if (!b) return null; const p = toWorld(b, 6.7, 4.3); return { x: p.x, z: p.z, yaw: 0, look: b }; }   // three-quarter view, clear of the crowd's arc
   const m = marketSpots();
   if (!m?.length) return null;
   const p = toWorld(m[0], 2.5, 6.5);

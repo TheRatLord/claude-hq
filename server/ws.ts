@@ -15,7 +15,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { RawData, WebSocket } from 'ws';
 import {
-  PROTOCOL_VERSION, S2R, ERR, CLOSE, LIMITS, DEFAULT_LIMITS,
+  PROTOCOL_VERSION, PROTOCOL_REVISION, S2R, ERR, CLOSE, LIMITS, DEFAULT_LIMITS,
   parseClientText, decodeFrame, validateBinaryInput, reply, replyError,
 } from '../shared/protocol.ts';
 import type { ClientMsg, Hello, ServerMsg, Stats } from '../shared/protocol.ts';
@@ -128,7 +128,7 @@ export class WsHub {
     });
     ws.on('error', (e) => this.log.debug('ws error', e.message));
     client.sendJson({
-      t: S2R.HELLO, protocol: PROTOCOL_VERSION, serverNow: this.clock.now(), statsHistory: this.statsHistory(), limits: DEFAULT_LIMITS,
+      t: S2R.HELLO, protocol: PROTOCOL_VERSION, revision: PROTOCOL_REVISION, serverNow: this.clock.now(), statsHistory: this.statsHistory(), limits: DEFAULT_LIMITS,
       ...this.helloInfo(),
     });
   }

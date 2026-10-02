@@ -21,7 +21,7 @@ import type { WalletService } from '../../model/wallet.ts';
 import { createBarn } from '../../model/barn.ts';
 import type { BarnAnimal, BarnService } from '../../model/barn.ts';
 import { localJson } from '../../storage.ts';
-import { LAMP_LIGHT, setGlow } from '../structures/kit.ts';
+import { LAMP_LIGHT, setGlass, setGlow } from '../structures/kit.ts';
 import { levelsFrom, newLevels } from '../structures/rig.ts';
 import { buildBeams } from './view.ts';
 import type { BeamOpening } from './view.ts';
@@ -88,6 +88,7 @@ function buildBarn(host: RoomHost, season: Season): RoomBuilt {
     m.receiveShadow = !m.userData.emitters;
   }
   const glow = glowMat ?? new THREE.MeshBasicMaterial();
+  setGlass(glow, 0.38, 0.55);   // smoky amber glass (bright outdoor glass reads white in the room)
   const daylight = buildDaylight();
   const openings: BeamOpening[] = OPENINGS.map((o) => ({
     o: o.wall === 'front' ? [o.at, o.y, BARN_ROOM.z1 + 0.05] as const : o.wall === 'east' ? [BARN_ROOM.x1 + 0.05, o.y, o.at] as const : [BARN_ROOM.x0 - 0.05, o.y, o.at] as const,

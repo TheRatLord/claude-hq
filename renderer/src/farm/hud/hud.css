@@ -610,6 +610,81 @@ kbd.vh-k, .vh-k { display: inline-grid; place-items: center; min-width: 22px; he
   .vh-row .job, .vh-row .since { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .vh-layer *, .vh-layer *::before, .vh-layer *::after { animation: none !important; transition: none !important; }
+  /* the OS asks for less motion, unless Settings → Accessibility → reduced motion says Off (.motion-ok) */
+  .vh-layer:not(.motion-ok) *, .vh-layer:not(.motion-ok) *::before, .vh-layer:not(.motion-ok) *::after { animation: none !important; transition: none !important; }
 }
 .vh-layer.reduced *, .vh-layer.reduced *::before, .vh-layer.reduced *::after { animation: none !important; transition: none !important; }
+
+/* ================= Settings & accessibility (pause.ts Settings; prefs in model/prefs.ts; docs/valley/hud.md → Settings) */
+/* UI scale (+ larger text): the whole layer zooms; the world-anchored overlays (nameplates, bubbles, the interaction tag,
+   the crosshair) are positioned in screen pixels by anchors.ts / prompt.ts, so they zoom back to 1 */
+#hud > .vh-layer { zoom: var(--ui-zoom, 1); }
+.vh-layer .vh-anchors, .vh-layer .vh-prompt, .vh-layer .vh-cross { zoom: calc(1 / var(--ui-zoom, 1)); }
+.vh-layer .vh-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* visible focus everywhere in the HUD (keyboard only) */
+.vh-layer :is(button, select, input, textarea, summary, a, [role="tab"], [role="option"], [tabindex]):focus-visible { outline: 3px solid #ffcf4a; outline-offset: 2px; }
+.vh-layer .vh-modal:focus-visible { outline: none; }
+
+/* settings sections */
+.vh-setwrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.vh-setnav { flex-wrap: wrap; }
+.vh-setnav .vh-tab { font-size: 13px; padding: 4px 12px; }
+.vh-settings h4:first-child { margin-top: 0; }
+.vh-setnote { grid-column: 1 / -1; margin-top: -4px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.vh-set.full { grid-column: 1 / -1; }
+.vh-set.full .vh-setnote { margin: 0; flex: 1; }
+.vh-bind { min-width: 92px; font-variant-numeric: tabular-nums; }
+.vh-bind.wait { background: linear-gradient(#ffe38a, #f2b134); border-color: #9a6212; }
+.vh-setmsg { grid-column: 1 / -1; min-height: 1.35em; font-size: 13px; font-weight: 800; color: #8a5200; }
+.vh-controls .full { grid-column: 1 / -1; margin: 4px 0 0; }
+
+/* captions for sound cues: bottom centre, above the hints bar */
+.vh-captions { position: absolute; left: 50%; bottom: calc(var(--gut) + 48px); transform: translateX(-50%); z-index: var(--z-toasts);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; max-width: min(640px, 90vw); }
+.vh-captions[hidden] { display: none; }
+.vh-captions .cap { padding: 4px 14px; border-radius: 8px; background: rgba(18, 10, 3, .84); color: #fff; font-weight: 700; font-size: 16px; line-height: 1.3; text-align: center; }
+.vh-captions .cap b { color: #ffd76a; font-weight: 800; }
+
+/* colour-blind-safe status: Okabe-Ito colours (model/prefs.ts STATUS_PALETTE.safe) and a shape on every status mark */
+.vh-layer.cb { --st-blocked: #e69f00; --st-working: #009e73; --st-done: #0072b2; --st-idle: #9a9a9a; --st-unknown: #6f6f6f; }
+.vh-layer.cb .vh-pill.st-working, .vh-layer.cb .vh-pill.st-done { color: #fff; }
+.vh-layer.cb .vh-pill.st-idle { color: #1d1208; text-shadow: none; }
+.vh-layer.cb .vh-pill[class*="st-"]::before { display: inline-block; margin-right: 4px; font-size: .85em; line-height: 1; }
+.vh-layer.cb .vh-pill.st-blocked::before { content: "▲"; }
+.vh-layer.cb .vh-pill.st-working::before { content: "●"; }
+.vh-layer.cb .vh-pill.st-done::before { content: "■"; }
+.vh-layer.cb .vh-pill.st-idle::before { content: "◆"; }
+.vh-layer.cb .vh-pill.st-unknown::before { content: "◇"; }
+.vh-layer.cb .vh-dot { width: 12px; height: 12px; border: 0; box-shadow: none; }
+.vh-layer.cb .vh-dot.st-blocked { clip-path: polygon(50% 0, 100% 100%, 0 100%); border-radius: 0; }
+.vh-layer.cb .vh-dot.st-done { border-radius: 2px; }
+.vh-layer.cb .vh-dot.st-idle, .vh-layer.cb .vh-dot.st-unknown { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); border-radius: 0; }
+.vh-layer.cb .vt-name[data-st] b::before { display: inline-block; margin-right: 5px; font-size: .8em; vertical-align: .05em; }
+.vh-layer.cb .vt-name[data-st="blocked"] b::before { content: "▲"; color: #b37400; }
+.vh-layer.cb .vt-name[data-st="working"] b::before { content: "●"; color: #009e73; }
+.vh-layer.cb .vt-name[data-st="done"] b::before { content: "■"; color: #0072b2; }
+.vh-layer.cb .vt-name[data-st="idle"] b::before { content: "◆"; color: #6f6f6f; }
+.vh-layer.cb .vt-name[data-st="unknown"] b::before { content: "◇"; color: #6f6f6f; }
+
+/* high contrast: ink black, paper near white, firm borders, solid backdrops behind text on the world */
+.vh-layer.hc { --ink: #000; --ink-soft: #1d1208; --ink-faint: #33251a; --paper: #fffdf6; --paper-2: #fbf4e2; --paper-3: #f1e3c2;
+  --wood-dark: #24160a; --wood-deep: #140b03; }
+.vh-layer.hc .vh-paper, .vh-layer.hc .vh-need, .vh-layer.hc .vh-toast, .vh-layer.hc .vh-row { border-color: #000 !important; }
+.vh-layer.hc .vh-btn { border-color: #000; background: #fffdf6; color: #000; text-shadow: none; }
+.vh-layer.hc .vh-btn.primary { background: #1f5c12; color: #fff; }
+.vh-layer.hc .vh-btn.gold { background: #ffd04a; }
+.vh-layer.hc .vh-pill { color: #000; text-shadow: none; box-shadow: 0 0 0 1.5px #000; }
+.vh-layer.hc .vh-muted, .vh-layer.hc .vh-setnote { color: #1d1208; opacity: 1; }
+.vh-layer.hc .vh-hints { background: rgba(0, 0, 0, .88); color: #fff; opacity: 1 !important; }
+.vh-layer.hc kbd.vh-k { background: #fff; color: #000; border-color: #000; }
+.vh-layer.hc .vt-name, .vh-layer.hc .vt .card, .vh-layer.hc .vh-prompt { background: #fff; border-color: #000; color: #000; }
+.vh-layer.hc .vt-name span, .vh-layer.hc .vh-prompt .role { color: #1d1208; }
+.vh-layer.hc :is(button, select, input, textarea, summary, a, [role="tab"], [role="option"], [tabindex]):focus-visible { outline: 3px solid #000; box-shadow: 0 0 0 6px #ffd04a; }
+
+/* larger text: the world tags (which UI scale leaves alone) grow too; the rest of the HUD rides the zoom */
+.vh-layer.big .vt-name b, .vh-layer.big .vt-villager b { font-size: 18px; }
+.vh-layer.big .vt-name span { font-size: 14px; }
+.vh-layer.big .vt .card { font-size: 18px; max-width: 360px; }
+.vh-layer.big .vh-prompt .who b { font-size: 18px; }
+.vh-layer.big .vh-prompt { font-size: 16px; max-width: 380px; }

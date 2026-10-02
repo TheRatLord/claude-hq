@@ -44,7 +44,7 @@ export class Labels {
   begin(dt = 1 / 60): void { this.shown = 0; this.dt = dt; this.ctx.camera.getWorldPosition(this.eye); }
 
   /** Show a label this frame, its bottom centre at `pos` (just above the head). */
-  show(key: string, owner: string, style: LabelStyle, title: string, sub: string, pos: THREE.Vector3, alpha: number): void {
+  show(key: string, owner: string, style: LabelStyle, title: string, sub: string, pos: THREE.Vector3, alpha: number, meter = -1): void {
     const ui = this.ctx.ui;
     if (!ui.tag || alpha < 0.02 || !title) return;
     const e = this.eye;
@@ -59,7 +59,7 @@ export class Labels {
     const a = alpha * k;
     if (a < 0.02) return;
     const t = this.tag;
-    t.key = key; t.owner = owner; t.style = style; t.title = title; t.sub = sub; t.alpha = a;
+    t.key = key; t.owner = owner; t.style = style; t.title = title; t.sub = sub; t.alpha = a; t.meter = meter;
     t.pos.copy(pos);
     t.dist = e.distanceTo(pos);
     ui.tag(t);

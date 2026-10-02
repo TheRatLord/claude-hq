@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import type { Interactable } from '../scene/context.ts';
 import { farmerLine } from './format.ts';
 import { h, type HudCtx } from './ctx.ts';
+import { keyLabel } from '../model/prefs.ts';
 
 export interface Prompt {
   cross: HTMLElement;
@@ -27,8 +28,10 @@ export function createPrompt(ctx: HudCtx): Prompt {
   const roleEl = h('span.role');
   const verbEl = h('span');
   const altVerb = h('span');
-  const main = h('span.act', null, h('kbd.vh-k', { text: 'E' }), verbEl);
-  const alt = h('span.act.alt', null, h('kbd.vh-k', { text: 'F' }), altVerb);
+  // the key caps follow Settings → Controls (rebindable use / alt keys)
+  const useKey = h('kbd.vh-k', { text: 'E' }), altKey = h('kbd.vh-k', { text: 'F' });
+  const main = h('span.act', null, useKey, verbEl);
+  const alt = h('span.act.alt', null, altKey, altVerb);
   const sub = h('div.sub');
   const el = h('div.vh-prompt.hide', { 'data-testid': 'interact-prompt', 'aria-live': 'polite' },
     h('div.who', null, nameEl, roleEl), h('div.acts', null, main, alt), sub);
@@ -66,13 +69,15 @@ export function createPrompt(ctx: HudCtx): Prompt {
         if (hv) { role = 'scarecrow · shell'; subText = hv.running ? `running ${hv.label}` : hv.exit === 'fail' ? 'last run failed' : 'idle at the prompt'; }
       }
     }
-    const next = `${cur?.id ?? ''}|${verb}|${label}|${role}|${altText}|${subText}`;
+    const ku = keyLabel(ctx.prefs.keys.use), ka = keyLabel(ctx.prefs.keys.alt);
+    const next = `${cur?.id ?? ''}|${verb}|${label}|${role}|${altText}|${subText}|${ku}${ka}`;
     if (next === sig) return;
     const target = `${cur?.id ?? ''}`;
     if (target !== sig.slice(0, sig.indexOf('|'))) { ax = NaN; flipped = false; }
     sig = next;
     el.classList.toggle('hide', !cur);
     el.classList.toggle('ask', ask);
+    useKey.textContent = ku; altKey.textContent = ka;
     nameEl.textContent = label;
     roleEl.textContent = role;
     roleEl.style.display = role ? '' : 'none';

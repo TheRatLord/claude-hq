@@ -9,6 +9,12 @@ import { isRecord } from './guards.ts';
 
 
 export const PROTOCOL_VERSION = 1;
+/**
+ * Additive revision inside PROTOCOL_VERSION (sent as `hello.revision`; never gates a connection). Bump it when optional
+ * fields are added, so tools and recordings can tell what a server could send. 2: Entity.git, Entity.usage, commit
+ * event `detail.msg`.
+ */
+export const PROTOCOL_REVISION = 2;
 export const WS_PATH = '/ws';
 
 // ---------------------------------------------------------------------------------------------
@@ -343,6 +349,28 @@ export interface ProcessInfo {
   exit?: { code: number; at: number; summary?: string } | null;
   ports?: number[];
 }
+/**
+ * (git enricher, rev 2) the pane cwd's repository: branch (null when detached), short HEAD, `dirty` = changed tracked
+ * files (staged or not, conflicts included) + `untracked`, ahead/behind the upstream (null without one), the last
+ * commit's subject (≤ 120 chars) and time, `root` = the work tree's top-level path. Null outside a work tree.
+ */
+export interface GitInfo {
+  root: string;
+  branch: string | null;
+  head: string | null;
+  dirty: number;
+  untracked: number;
+  ahead: number | null;
+  behind: number | null;
+  lastCommit: { subject: string; at: number } | null;
+}
+/**
+ * (transcripts, rev 2) model spend on the server's local day `day` ('YYYY-MM-DD'): tokens = input + cache writes + cache
+ * reads + output of the assistant messages timestamped that day (each message id counted once), `cost` = an estimate in
+ * USD from shared/pricing.ts (null when the model has no known price). `partial`: the transcript's start of day could
+ * not be read (a huge file), so the numbers are a lower bound.
+ */
+export interface Usage { day: string; tokens: number; output: number; cost: number | null; partial: boolean }
 export interface Ack { at: number; by: 'hq' }
 /** Sticky note, `Entity.note`. */
 export interface Note { text: string; at: number }
@@ -394,6 +422,10 @@ export interface Entity {
   process: ProcessInfo | null;
   res: { cpu: number; rssMB: number } | null;
   note: Note | null;
+  /** rev 2 (absent from older servers and recordings: read as null) */
+  git?: GitInfo | null;
+  /** rev 2 (absent from older servers and recordings: read as null) */
+  usage?: Usage | null;
 }
 
 export interface WorkspaceTab { id: string; label: string; number: number; status: Status }
@@ -444,6 +476,8 @@ export interface Hello {
   session: string;
   instanceId: string;
   demo: boolean | number;
+  /** PROTOCOL_REVISION of the server (absent before rev 2) */
+  revision?: number;
   demoConfig?: DemoConfig;
   timescale: number;
   herdr: { connected: boolean; protocol: number | null; readOnly: boolean };
@@ -553,7 +587,7 @@ export function replyError(rid: number | string | null, error: string, extra: Re
 // Field & event ownership. A field has exactly one writer. `demo` replaces transcripts+subagents.
 
 /** The writers of Entity fields / events. */
-export type OwnerName = 'base' | 'transcripts' | 'subagents' | 'procinfo' | 'blocked' | 'acks' | 'notes' | 'demo';
+export type OwnerName = 'base' | 'transcripts' | 'subagents' | 'procinfo' | 'blocked' | 'acks' | 'notes' | 'git' | 'demo';
 type EntityField = keyof Entity;
 
 const BASE_FIELDS = Object.freeze([
@@ -562,6 +596,7 @@ const BASE_FIELDS = Object.freeze([
 ] as const satisfies readonly EntityField[]);
 const TRANSCRIPT_FIELDS = Object.freeze([
   'activity', 'model', 'modelTier', 'contextTokens', 'outputTokens', 'todos', 'lastPrompt', 'title', 'struggle', 'lastText', 'work',
+  'usage',
 ] as const satisfies readonly EntityField[]);
 
 /** owner name → Entity fields it writes */
@@ -573,7 +608,8 @@ export const FIELD_OWNERS: Readonly<Record<OwnerName, readonly EntityField[]>> =
   blocked: Object.freeze(['prompt'] as const),
   acks: Object.freeze(['ack'] as const),
   notes: Object.freeze(['note'] as const), // world/notes.ts (sticky notes): Entity.note {text, at}|null
-  demo: Object.freeze([...TRANSCRIPT_FIELDS, 'subagents'] as const),
+  git: Object.freeze(['git'] as const), // enrich/git.ts (repo state per cwd); the demo simulates it
+  demo: Object.freeze([...TRANSCRIPT_FIELDS, 'subagents', 'git'] as const),
 });
 
 /** owner name → EVENT_KINDS it may emit */
@@ -585,6 +621,7 @@ export const EVENT_OWNERS: Readonly<Record<OwnerName, readonly EventKind[]>> = O
   blocked: Object.freeze([] as const),
   acks: Object.freeze(['acked'] as const),
   notes: Object.freeze([] as const),
+  git: Object.freeze([] as const),
   demo: Object.freeze(['error', 'test-pass', 'test-fail', 'commit', 'compact', 'struggle', 'news', 'subagent-spawned', 'subagent-done'] as const),
 });
 
@@ -606,13 +643,13 @@ export function mayEmit(owner: OwnerName, kind: EventKind, entityKind: Kind): bo
 
 /** Owners wired in live mode vs demo mode (demo replaces transcripts + subagents). */
 // + 'notes' (world/notes.ts)
-export const LIVE_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'transcripts', 'subagents', 'procinfo', 'blocked', 'acks', 'notes'] as const);
+export const LIVE_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'transcripts', 'subagents', 'procinfo', 'blocked', 'acks', 'notes', 'git'] as const);
 export const DEMO_OWNERS: readonly OwnerName[] = Object.freeze(['base', 'demo', 'procinfo', 'blocked', 'acks', 'notes'] as const);
 
 /** Every Entity field, in declaration order-ish. */
 export const ENTITY_FIELDS: readonly EntityField[] = Object.freeze([
   ...BASE_FIELDS, 'ack', 'title', 'activity', 'model', 'modelTier', 'contextTokens', 'outputTokens', 'subagents',
-  'todos', 'struggle', 'lastPrompt', 'prompt', 'process', 'res', 'lastText', 'work', 'note',
+  'todos', 'struggle', 'lastPrompt', 'prompt', 'process', 'res', 'lastText', 'work', 'note', 'git', 'usage',
 ]);
 
 /**
@@ -635,7 +672,7 @@ export type FieldDefaults = Readonly<{ [K in EnricherField]: K extends 'subagent
 export const FIELD_DEFAULTS: FieldDefaults = Object.freeze({
   ack: null, title: null, activity: null, model: null, modelTier: null, contextTokens: null, outputTokens: null,
   subagents: Object.freeze([]), todos: null, struggle: null, lastPrompt: null, prompt: null, process: null, res: null,
-  lastText: null, work: null, note: null,
+  lastText: null, work: null, note: null, git: null, usage: null,
 });
 
 // ---------------------------------------------------------------------------------------------

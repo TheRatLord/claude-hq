@@ -11,6 +11,9 @@ import { altName, dur, fieldName, shortName, HELPER_LABEL, JOB_LABEL, JOB_REAL, 
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { earliest, stripRange } from '../model/timeline.ts';
 import { paintMiniStrip } from './timeline.ts';
+import { branchName, repoBits, spendLine } from './format.ts';
+import { costLabel, tokensLabel } from '../model/signals.ts';
+import './signals.css';
 
 const CHIPS = ['needs', 'working', 'done', 'idle'] as const;
 type Row = { id: string; kind: 'farmer'; f: FarmerView } | { id: string; kind: 'helper'; hp: HelperView };
@@ -79,8 +82,11 @@ export function createRoster(ctx: HudCtx): Panel {
   const task = (id: string) => ctx.panels.open('card', { id, task: canTask(ctx.farmer(id)) });
 
   const rowSig = (r: Row): string => r.kind === 'farmer'
-    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}`
+    ? `f|${r.f.name}|${r.f.tag}|${r.f.status}|${r.f.job}|${r.f.detail}|${r.f.title}|${r.f.needsYou}|${r.f.unseenDone}|${r.f.ducklings.filter((d) => d.active).length}|${r.f.question}|${r.f.tier}|${r.f.model}|${spendCell(r.f)}`
     : `h|${r.hp.name}|${r.hp.tag}|${r.hp.running}|${r.hp.exit}|${r.hp.label}|${r.hp.activity}|${r.hp.ports.join(',')}`;
+
+  /** the ledger's spend column: '$1.24' (or '2.1M tok' for an unpriced model); '' when nothing today */
+  const spendCell = (f: FarmerView): string => (f.spend ? costLabel(f.spend.cost) || `${tokensLabel(f.spend.tokens)} tok` : '');
 
   function rowFor(r: Row): HTMLElement {
     const id = r.id;
@@ -113,7 +119,7 @@ export function createRoster(ctx: HudCtx): Panel {
         h('div', null, h(`span.vh-pill.st-${f.status}`, { text: f.unseenDone ? 'Done ✓' : STATUS_LABEL[f.status] })),
         stripOf(id),
         job,
-        h('div.since', null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
+        h('div.since', null, spendCell(f) ? h('span.spend', { title: `Today: ${spendLine(f.spend!)}`, 'data-testid': 'roster-spend' }, spendCell(f)) : null, ducks ? h('span.ducks', { title: `${ducks} duckling${ducks === 1 ? '' : 's'} (subagents)` }, icon(ICONS.duck), String(ducks)) : null, ago),
         acts);
     } else {
       const hp = r.hp;
@@ -144,6 +150,8 @@ export function createRoster(ctx: HudCtx): Panel {
       h('span.gl', { text: p?.label ?? 'Wandering' }),
       p ? h('span.swatch', { style: { background: WS_COLORS[p.colorIndex % WS_COLORS.length] } }) : null,
       h('span.gs', { text: bits }),
+      p?.git ? h('span.repo', { title: `${p.git.repo} · ${branchName(p.git)}${repoBits(p.git) ? ` · ${repoBits(p.git)}` : ''}${p.git.lastCommit ? `\nLast commit: ${p.git.lastCommit.subject}` : ''}`, 'data-testid': 'roster-repo' },
+        `${branchName(p.git)}${p.git.branches > 1 ? ` +${p.git.branches - 1}` : ''}${p.git.dirty ? ` · ${p.git.dirty} changed` : ''}${p.git.ahead ? ` · ↑${p.git.ahead}` : ''}${p.git.behind ? ` · ↓${p.git.behind}` : ''}`) : null,
       need ? h('span.vh-pill.st-blocked', { text: `${need} need${need === 1 ? 's' : ''} you` }) : null);
   }
 
@@ -187,7 +195,7 @@ export function createRoster(ctx: HudCtx): Panel {
     for (const g of gs) for (const r of g.rows) byId.set(r.id, r);
     for (const g of gs) {
       const head = rowEls.get(g.rows[0]?.id ?? '')?.parentElement?.firstElementChild as HTMLElement | null | undefined;
-      const hs = `${g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}`;
+      const hs = `${g.plot?.stage}|${g.rows.map((r) => (r.kind === 'farmer' ? `${r.f.needsYou}${r.f.status}` : '')).join('')}|${g.plot?.git ? `${branchName(g.plot.git)}${g.plot.git.branches}${repoBits(g.plot.git)}` : ''}`;
       if (head && head.dataset.sig !== hs) { const nh = groupHead(g); nh.dataset.sig = hs; head.replaceWith(nh); }
     }
     // day strips share one window (the earliest record today → now, in 5-minute steps) and repaint only on a change
@@ -212,7 +220,9 @@ export function createRoster(ctx: HudCtx): Panel {
     select(sel, false);
     const n: Record<Exclude<RosterFilter, null>, number> = { needs: 0, working: 0, done: 0, idle: 0 };
     for (const f of s.farmers.values()) for (const k of CHIPS) if (rosterFilterHit(k, f)) n[k]++;
-    const ssig = `${n.needs}|${n.working}|${n.done}|${n.idle}|${s.farmers.size}|${s.helpers.size}|${only}`;
+    const sp = s.spend;
+    const spendTxt = sp && sp.tokens ? `${sp.partial ? '≥ ' : ''}${costLabel(sp.cost) || `${tokensLabel(sp.tokens)} tokens`} today` : '';
+    const ssig = `${n.needs}|${n.working}|${n.done}|${n.idle}|${s.farmers.size}|${s.helpers.size}|${only}|${spendTxt}`;
     if (summary.dataset.sig !== ssig) {
       summary.dataset.sig = ssig;
       const chip = (k: Exclude<RosterFilter, null>, cls: string, label: string) => (n[k] || only === k ? [h(`button.vh-pill.chip.${cls}${only === k ? '.on' : ''}`, {
@@ -225,7 +235,8 @@ export function createRoster(ctx: HudCtx): Panel {
         ...chip('working', 'st-working', 'working'),
         ...chip('done', 'st-done', 'done'),
         ...chip('idle', 'st-idle', 'idle'),
-        h('span.vh-muted.count', { text: `${s.farmers.size} farmer${s.farmers.size === 1 ? '' : 's'}${s.helpers.size ? ` · ${s.helpers.size} scarecrow${s.helpers.size === 1 ? '' : 's'}` : ''}${only ? ' · filtered' : ''}` }));
+        h('span.vh-muted.count', { text: `${s.farmers.size} farmer${s.farmers.size === 1 ? '' : 's'}${s.helpers.size ? ` · ${s.helpers.size} scarecrow${s.helpers.size === 1 ? '' : 's'}` : ''}${only ? ' · filtered' : ''}` }),
+        ...(spendTxt ? [h('span.vh-spend-sum', { 'data-testid': 'roster-spend-total', title: `${sp!.agents} agent${sp!.agents === 1 ? '' : 's'} today · ${tokensLabel(sp!.tokens)} tokens · an estimate at list prices` }, spendTxt)] : []));
     }
   }
 
@@ -268,7 +279,9 @@ export function createRoster(ctx: HudCtx): Panel {
         if (e.code === 'KeyW') { walk(sel); return true; }
         if (e.code === 'KeyC') { if (ctx.farmer(sel)) card(sel); return true; }
       }
-      if (e.key === 'Tab') { ctx.panels.close(); return true; }
+      // Tab closes the ledger while Tab is its key (Settings → Controls); Shift+Tab, or any Tab once the ledger has
+      // another key, walks the ledger's controls (hud.ts)
+      if (e.key === 'Tab' && !e.shiftKey && ctx.prefs.keys.ledger === 'Tab') { ctx.panels.close(); return true; }
       return false;
     },
   };

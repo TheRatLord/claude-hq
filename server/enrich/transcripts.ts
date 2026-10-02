@@ -16,6 +16,7 @@ import type { BaseEntity, Clock, EnricherCtx, Logger, TimerHandle } from '../int
 import type { Activity, EventKind, Status } from '../../shared/protocol.ts';
 import { errMessage } from '../../shared/guards.ts';
 import { TranscriptState } from './transcriptState.ts';
+import { dayStart } from '../../shared/pricing.ts';
 import type { TranscriptActivity, TranscriptEvent } from './transcriptState.ts';
 
 export const TAIL_BYTES = 512 * 1024;
@@ -25,6 +26,9 @@ const STAGGER_MS = 50;
 const POLL_MS = 1500;
 const GLOB_EVERY_MS = 10_000;
 const STRUGGLE_TICK_MS = 30_000;
+/** read-back of the transcript head (spend since midnight): chunk size and the most it reads before giving up (partial) */
+const HEAD_CHUNK = 1024 * 1024;
+export const HEAD_MAX = 64 * 1024 * 1024;
 
 /** `~/.claude/projects/<cwd with [^A-Za-z0-9] → '-'>` */
 export const projectSlug = (cwd: unknown): string => String(cwd ?? '').replace(/[^A-Za-z0-9]/g, '-');
@@ -59,6 +63,46 @@ interface Rec {
   actKey: string;
   actSince: number;
   struggleLevel: number;
+}
+
+/**
+ * Spend read-back: walk the file backwards from `end` in 1 MB chunks, feeding only assistant usage lines, until a line
+ * older than `since` (today's midnight) shows up, the file starts, or `max` bytes were read (then `st.partialHead`).
+ * Yields between chunks.
+ */
+export async function scanHead(fh: fs.promises.FileHandle, end: number, st: TranscriptState, since: number, tok: CancelToken, max = HEAD_MAX, chunk = HEAD_CHUNK): Promise<void> {
+  let pos = end, carry = '', read = 0;
+  while (pos > 0 && !tok.cancelled) {
+    const len = Math.min(chunk, pos);
+    pos -= len;
+    read += len;
+    const buf = Buffer.alloc(len);
+    await fh.read(buf, 0, len, pos);
+    const text = buf.toString('utf8') + carry;
+    const lines = text.split('\n');
+    carry = pos > 0 ? (lines.shift() ?? '') : ''; // the first line may continue in the previous chunk
+    let oldest = Infinity;
+    for (const line of lines) {
+      if (line.length < 2 || !line.includes('"usage"')) continue;
+      let o: unknown = null;
+      try {
+        o = JSON.parse(line);
+      } catch {}
+      const at = st.feedUsage(o);
+      if (at != null && at < oldest) oldest = at;
+    }
+    if (oldest < since) return;
+    if (pos > 0 && read >= max) {
+      st.partialHead = true;
+      return;
+    }
+    await yieldTurn();
+  }
+  if (carry) {
+    try {
+      st.feedUsage(JSON.parse(carry));
+    } catch {}
+  }
 }
 
 /**
@@ -175,7 +219,7 @@ export class TranscriptsEnricher extends Enricher {
         this._stop(found);
         this.recs.delete(id);
         this.onPatch(id, { activity: null, model: null, modelTier: null, contextTokens: null, outputTokens: null, todos: null,
-          lastPrompt: null, title: null, struggle: null, lastText: null, work: null });
+          lastPrompt: null, title: null, struggle: null, lastText: null, work: null, usage: null });
       }
       return;
     }
@@ -313,6 +357,9 @@ export class TranscriptsEnricher extends Enricher {
       r.offset = size;
       r.st.reset();
       await parseChunked(r.st, text, this.clock.now(), r.tok);
+      // today's spend: read back what the tail skipped, as far as this morning
+      const since = dayStart(this.clock.now());
+      if (start > 0 && !r.tok.cancelled && (r.st.firstTs == null || r.st.firstTs >= since)) await scanHead(fh, start, r.st, since, r.tok);
     } catch (e) {
       this.log.debug(`transcript backfill ${r.id}: ${errMessage(e)}`);
       r.file = null;
@@ -412,7 +459,7 @@ export class TranscriptsEnricher extends Enricher {
     }
     const struggle = working && r.ready ? r.st.struggle(r.workingSince, now) : null;
     const level = struggle?.level ?? 0;
-    const patch = { ...r.st.facts(), activity, struggle };
+    const patch = { ...r.st.facts(now), activity, struggle };
     const j = JSON.stringify(patch);
     if (j !== r.sent) {
       r.sent = j;

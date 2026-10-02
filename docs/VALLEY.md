@@ -18,6 +18,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [art.md](valley/art.md) | building or restyling anything visible: toon/facet rules, sculpted creatures, surface library, palette, local lights, post, seasons, the land (strata, ivy, meadow, horizon) |
 | [hud.md](valley/hud.md) | touching DOM overlays: names/tags, anchored bubbles, the interaction tag, terminal routes, power-user loop, keys, layout zones, z-order, layer classes, drawer |
 | [timeline.md](valley/timeline.md) | changing the per-farmer day timeline: what is recorded, its bounds and storage, the card's Today section, the ledger strips |
+| [signals.md](valley/signals.md) | changing what the server knows about an agent and where it shows: model, context fill, todo checklist, git per field, token spend; the known-vs-surfaced audit |
 | [map.md](valley/map.md) | changing the map panel or minimap: painted base, live layers, pin language, layer toggles |
 | [onboarding.md](valley/onboarding.md) | changing the first-run welcome, tour checklist or one-time tips |
 | [weather.md](valley/weather.md) | changing weather traces (wet, puddles, snow, frost), rainbow / mist / god rays, the night sky and meteors |
@@ -32,6 +33,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 | [gatherings.md](valley/gatherings.md) | changing campfire evenings, concerts or market mornings |
 | [festivals.md](valley/festivals.md) | changing the festival calendar or festival dressing |
 | [stamps.md](valley/stamps.md) | changing the stamp book: achievements across every system, their rewards and trophies, the Almanac's Stamps tab |
+| [gazette.md](valley/gazette.md) | changing The Valley Gazette: the weekly / morning editions, where its facts come from, the weekly roll-up, delivery, back issues, the newspaper page |
 | [interior.md](valley/interior.md) | changing the walk-in rooms (farmhouse, barn: chores, machine room) |
 | [trail.md](valley/trail.md) | changing the summit trail, its decks, the lookout or the valley viewer |
 | [tools.md](valley/tools.md) | taking screenshots, benchmarking, auditing placement, running browser tests, or using URL params, debug keys and the `__valley` / `__hud` dev API |
@@ -39,7 +41,7 @@ This file is the index: layers, conventions, ownership, budgets and how to verif
 ## Layers (enforced by `renderer/src/farm/layers.test.ts`)
 
 ```
-server/ (herdr → Entity wire protocol, unchanged)
+server/ (herdr → Entity wire protocol; additive revisions, signals.md)
   └─ renderer/src/net/store.ts           the only WebSocket user
        └─ farm/source.ts                  store → ValleySource adapter + AgentPort (the ONLY net importers, with main.ts)
             └─ farm/model/  (pure)        ValleyState: farmers, helpers, plots, letters, gauges, sky, events

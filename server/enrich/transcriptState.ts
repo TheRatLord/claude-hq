@@ -20,7 +20,9 @@
 import { toolClass, isGitCommit, editStats, contextWindow } from '../../shared/classify.ts';
 import type { ToolInput } from '../../shared/classify.ts';
 import { isRecord } from '../../shared/guards.ts';
-import type { EventKind, ModelTier, Struggle, Todo, ToolClass, WorkStats } from '../../shared/protocol.ts';
+import type { EventKind, ModelTier, Struggle, Todo, ToolClass, Usage, WorkStats } from '../../shared/protocol.ts';
+import { costOf, dayStart, localDay, tokensOf } from '../../shared/pricing.ts';
+import type { TokenUse } from '../../shared/pricing.ts';
 
 const MAX_PROMPT = 500;
 export const MAX_TEXT = 280;
@@ -113,6 +115,25 @@ export function testVerdict(isError: boolean, text: string): 'test-pass' | 'test
   return 'test-pass'; // a test command that exited 0 with no recognisable summary
 }
 
+/**
+ * The subject of a commit a Bash call made: git's own `[branch sha] subject` line in the result when present (the most
+ * reliable), else the command's first `-m "…"` / `-m '…'` / heredoc line. Null when neither says.
+ */
+export function commitSubject(cmd: string | null | undefined, result = ''): { msg: string; sha?: string; branch?: string } | null {
+  const m = /^\[([^\]\s]+)(?: \(root-commit\))? ([0-9a-f]{7,40})\] (.+)$/m.exec(result);
+  if (m) return { msg: clip(m[3], 120), sha: m[2], branch: m[1] };
+  const c = String(cmd ?? '');
+  const here = /-m\s+"?\$\(cat\s+<<-?\s*'?(\w+)'?\s*\n([\s\S]*?)\n\s*\1/.exec(c);
+  if (here) {
+    const first = here[2].split('\n').map((l) => l.trim()).find(Boolean);
+    return first ? { msg: clip(first, 120) } : null;
+  }
+  const q = /(?:^|\s)(?:-m|--message)(?:=|\s+)(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/.exec(c);
+  const text = q ? (q[1] ?? q[2] ?? '').replace(/\\(.)/g, '$1') : '';
+  const first = text.split('\n').map((l) => l.trim()).find(Boolean);
+  return first ? { msg: clip(first, 120) } : null;
+}
+
 const USER_REJECT = /doesn't want to proceed|was rejected|\[Request interrupted|user denied|tool use was rejected/i;
 
 function realPromptText(msg: Record<string, unknown>): string | null {
@@ -187,7 +208,13 @@ export interface TranscriptFacts {
   todos: Todo[] | null;
   lastText: string | null;
   work: WorkStats | null;
+  usage: Usage | null;
 }
+
+/** One assistant message's usage (the last block seen for its id). */
+interface MsgUse { at: number; model: string | null; u: TokenUse }
+/** Message ids kept for spend (a busy day is a few thousand; older ids are dropped, their spend stays counted). */
+const USES_MAX = 20_000;
 
 /**
  * Transcript state machine for one Claude session.
@@ -225,6 +252,13 @@ export class TranscriptState {
   declare turnMsgs: number;
   declare turnEdits: number;
   declare newsSent: boolean;
+  /** message.id → its usage (spend; one count per id however many blocks repeat it) */
+  declare uses: Map<string, MsgUse>;
+  /** local midnight the `today` sums cover (0 = not yet chosen) */
+  declare useDay: number;
+  declare today: { tokens: number; output: number; cost: number; priced: boolean };
+  /** the enricher could not read back to this day's start (the transcript head before the tail was skipped) */
+  declare partialHead: boolean;
 
   constructor() {
     this.reset();
@@ -259,6 +293,66 @@ export class TranscriptState {
     this.turnMsgs = 0;
     this.turnEdits = 0;
     this.newsSent = false;
+    this.uses = new Map();
+    this.useDay = 0;
+    this.today = { tokens: 0, output: 0, cost: 0, priced: false };
+    this.partialHead = false;
+  }
+
+  /** Add (+1) or remove (−1) one message's usage from today's sums. */
+  _sum(x: MsgUse, sign: 1 | -1): void {
+    if (x.at < this.useDay) return;
+    const t = this.today;
+    t.tokens += sign * tokensOf(x.u);
+    t.output += sign * x.u.output;
+    const c = costOf(x.model, x.u);
+    if (c != null) {
+      t.cost += sign * c;
+      t.priced = true;
+    }
+  }
+
+  /** Record one assistant line's usage block (streamed lines repeat an id with growing output: the last one wins). */
+  _usage(id: string, at: number, model: string | null, u: Record<string, unknown>): void {
+    if (!this.useDay) this.useDay = dayStart(at);
+    const x: MsgUse = { at, model, u: { input: numOf(u.input_tokens), cacheWrite: numOf(u.cache_creation_input_tokens), cacheRead: numOf(u.cache_read_input_tokens), output: numOf(u.output_tokens) } };
+    const prev = this.uses.get(id);
+    if (prev) {
+      x.at = prev.at; // a message belongs to the day it started
+      this._sum(prev, -1);
+    }
+    this.uses.set(id, x);
+    this._sum(x, 1);
+    if (this.uses.size > USES_MAX) {
+      const oldest = this.uses.keys().next();
+      if (!oldest.done) this.uses.delete(oldest.value);
+    }
+  }
+
+  /**
+   * Usage only (the enricher's read-back of the transcript head before its tail, to reach the start of today): records
+   * an assistant line's spend and nothing else. Returns the line's timestamp (ms) or null.
+   */
+  feedUsage(o: unknown): number | null {
+    if (!isRecord(o) || o.type !== 'assistant' || typeof o.timestamp !== 'string') return null;
+    const at = Date.parse(o.timestamp);
+    if (!Number.isFinite(at)) return null;
+    const m = recOf(o.message);
+    if (isRecord(m.usage) && typeof m.id === 'string' && m.id && m.model !== '<synthetic>') this._usage(m.id, at, typeof m.model === 'string' ? m.model : this.model, m.usage);
+    return at;
+  }
+
+  /** Spend on `now`'s local day; null before any usage was seen. Re-sums from the kept messages when the day rolls. */
+  usage(now: number): Usage | null {
+    if (!this.uses.size) return null;
+    const start = dayStart(now);
+    if (start !== this.useDay) {
+      this.useDay = start;
+      this.today = { tokens: 0, output: 0, cost: 0, priced: false };
+      for (const x of this.uses.values()) this._sum(x, 1);
+    }
+    const t = this.today;
+    return { day: localDay(now), tokens: t.tokens, output: t.output, cost: t.priced ? Math.round(t.cost * 10_000) / 10_000 : null, partial: this.partialHead };
   }
 
   /** Start a new task (a real user prompt): fresh work counters. */
@@ -337,6 +431,7 @@ export class TranscriptState {
       this.outputTokens = sum;
       const oldest = this.outputs.keys().next();
       if (this.outputs.size > 5000 && !oldest.done) this.outputs.delete(oldest.value);
+      if (m.model !== '<synthetic>') this._usage(m.id, at, this.model, u);
     }
     this.turnOver = m.stop_reason === 'end_turn';
     const main = !o.isSidechain;
@@ -408,7 +503,8 @@ export class TranscriptState {
         ev.push({ kind: 'error', detail: { tool: t.name } });
         this._fail('errors');
       } else if (t.cls === 'git' && typeof t.input.command === 'string' && isGitCommit(t.input.command)) {
-        ev.push({ kind: 'commit', detail: { push: /\bpush\b/.test(t.input.command) && !/\bcommit\b/.test(t.input.command) } });
+        const push = /\bpush\b/.test(t.input.command) && !/\bcommit\b/.test(t.input.command);
+        ev.push({ kind: 'commit', detail: { push, ...(push ? {} : commitSubject(t.input.command, text)) } });
       }
       if (!isError && (t.cls === 'edit' || t.cls === 'write')) {
         this.lastEditAt = at;
@@ -476,11 +572,11 @@ export class TranscriptState {
     });
   }
 
-  /** Transcript-owned Entity fields except activity/struggle (status-gated by the enricher). */
-  facts(): TranscriptFacts {
+  /** Transcript-owned Entity fields except activity/struggle (status-gated by the enricher); `now` picks the spend day. */
+  facts(now: number = this.lastTs ?? 0): TranscriptFacts {
     return {
       model: this.model, modelTier: modelTier(this.model), contextTokens: this.contextTokens, outputTokens: this.outputTokens,
-      title: this.title, lastPrompt: this.lastPrompt, todos: this.todos, lastText: this.lastText, work: this.work,
+      title: this.title, lastPrompt: this.lastPrompt, todos: this.todos, lastText: this.lastText, work: this.work, usage: this.usage(now),
     };
   }
 }

@@ -343,6 +343,8 @@ export interface FindResult {
   n: number;
   /** fish: a new personal best size */
   record: boolean;
+  /** fish: this one's size, cm (the Gazette's fishing report) */
+  cm?: number;
 }
 
 /** Record one find (mutates `data`). */
@@ -356,7 +358,7 @@ export function recordFind(data: CollectionData, id: string, nowMs: number, cm =
   if (record) rec.best = cm;
   data.found[id] = rec;
   if (def.kind === 'fish') data.fishDay = { day, n: (data.fishDay?.day === day ? data.fishDay.n : 0) + 1 };
-  return { def, isNew: !prev, n: rec.n, record: record && !!prev };
+  return { def, isNew: !prev, n: rec.n, record: record && !!prev, ...(cm > 0 ? { cm } : {}) };
 }
 
 export interface SightResult {

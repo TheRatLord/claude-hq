@@ -25,6 +25,10 @@ export const MAX_MARKS = 160;
 export const MAX_FARMERS = 48;
 /** at most one save per this long (asks, ships and test runs save sooner) */
 export const SAVE_MS = 20_000;
+/** the weekly roll-up: one compact summary per farmer per past day, kept this many days (the Gazette reads a week) */
+export const ROLL_DAYS = 8;
+/** at most this many farmers per rolled-up day (the busiest) */
+export const ROLL_FARMERS = 24;
 
 /** jobs that count as active work (the rest: asking you, done, idle, away) */
 export const WORK_JOBS: ReadonlySet<Job> = new Set<Job>(['plant', 'inspect', 'water', 'build', 'haul', 'fetch', 'plan', 'talk', 'delegate', 'rest']);
@@ -58,7 +62,24 @@ export interface FarmerDay {
   /** bumps whenever a span starts / ends or a mark lands (the HUD re-renders on it; an open span growing does not bump it) */
   rev: number;
 }
-export interface TimelineData { v: 1; day: string; farmers: Record<string, FarmerDay> }
+/**
+ * A finished day of one farmer, in a few numbers (the weekly roll-up: `rollDay` at midnight / on loading a stale day).
+ * Times are ms, rounded to the second.
+ */
+export interface FarmerRoll {
+  id: string; name: string; tag: string;
+  /** active work (WORK_JOBS) and waiting on you (ask spans) */
+  active: number; waited: number;
+  /** asks, how many got an answer, and the total wait of the answered ones */
+  asks: number; answered: number; wait: number;
+  ships: number; passes: number; fails: number; finished: number;
+}
+export interface DayRoll { day: string; farmers: FarmerRoll[] }
+export interface TimelineData {
+  v: 1; day: string; farmers: Record<string, FarmerDay>;
+  /** the last ROLL_DAYS days before `day`, oldest first (absent in old saves) */
+  past?: DayRoll[];
+}
 
 export interface TimelineView {
   /** local date key */
@@ -68,6 +89,8 @@ export interface TimelineView {
   farmers: ReadonlyMap<string, FarmerDay>;
   /** bumps with any farmer's rev */
   rev: number;
+  /** the weekly roll-up: the past ROLL_DAYS days, oldest first (today is live in `farmers`) */
+  past: readonly DayRoll[];
 }
 
 /** What `observe` needs of a farmer (a FarmerView fits). */
@@ -98,21 +121,87 @@ const clip = (s: string | null | undefined, n: number): string | undefined => {
   return t ? (t.length > n ? `${t.slice(0, n - 1)}…` : t) : undefined;
 };
 
-export const emptyTimeline = (day: string): TimelineData => ({ v: 1, day, farmers: {} });
+export const emptyTimeline = (day: string, past: DayRoll[] = []): TimelineData => ({ v: 1, day, farmers: {}, past });
 
-/** Loads stored data for `day`; anything from another day (or malformed) is dropped: the daily cleanup. */
-export function parseTimeline(raw: unknown, day: string): TimelineData {
-  if (!raw || typeof raw !== 'object') return emptyTimeline(day);
-  const r = raw as Partial<TimelineData>;
-  if (r.v !== 1 || r.day !== day || !r.farmers || typeof r.farmers !== 'object') return emptyTimeline(day);
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** whole days from date key `a` to `b` (DST-proof) */
+export function daysBetween(a: string, b: string): number {
+  const n = (k: string) => { const [y, m, d] = k.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86_400_000; };
+  return Math.round(n(b) - n(a));
+}
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+
+/** One finished day in a few numbers per farmer (the busiest ROLL_FARMERS who did anything at all). */
+export function rollDay(data: Pick<TimelineData, 'day' | 'farmers'>): DayRoll {
+  const out: FarmerRoll[] = [];
+  for (const fd of Object.values(data.farmers)) {
+    const s = summarize(fd);
+    let answered = 0, wait = 0;
+    for (const m of fd.marks) if (m.kind === 'ask' && typeof m.wait === 'number' && m.wait > 0) { answered++; wait += m.wait; }
+    if (!s.active && !s.waited && !fd.marks.length) continue;
+    const sec = (ms: number) => Math.round(ms / 1000) * 1000;
+    out.push({ id: fd.id, name: fd.name, tag: fd.tag, active: sec(s.active), waited: sec(s.waited), asks: s.asks, answered, wait: sec(wait),
+      ships: s.ships, passes: s.passes, fails: s.fails, finished: s.finished });
+  }
+  out.sort((a, b) => b.active - a.active || a.id.localeCompare(b.id));
+  return { day: data.day, farmers: out.slice(0, ROLL_FARMERS) };
+}
+
+/** Tolerant parse of stored roll-ups: well-formed days strictly before `day` and within ROLL_DAYS of it, oldest first, one per date. */
+export function parseRolls(raw: unknown, day: string): DayRoll[] {
+  if (!Array.isArray(raw)) return [];
+  const byDay = new Map<string, DayRoll>();
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue;
+    const o = r as Record<string, unknown>;
+    if (typeof o.day !== 'string' || !DAY_RE.test(o.day) || !Array.isArray(o.farmers)) continue;
+    const ago = daysBetween(o.day, day);
+    if (!(ago >= 1 && ago <= ROLL_DAYS)) continue;
+    const farmers: FarmerRoll[] = [];
+    for (const f of o.farmers) {
+      if (!f || typeof f !== 'object' || typeof (f as FarmerRoll).id !== 'string') continue;
+      const g = f as Record<string, unknown>;
+      farmers.push({ id: String(g.id), name: String(g.name ?? g.id).slice(0, 60), tag: String(g.tag ?? g.id).slice(0, 60),
+        active: num(g.active), waited: num(g.waited), asks: num(g.asks), answered: num(g.answered), wait: num(g.wait),
+        ships: num(g.ships), passes: num(g.passes), fails: num(g.fails), finished: num(g.finished) });
+      if (farmers.length >= ROLL_FARMERS) break;
+    }
+    byDay.set(o.day, { day: o.day, farmers });
+  }
+  return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1));
+}
+
+/** `past` with `roll` added (replacing the same date), pruned to the ROLL_DAYS before `day`. */
+export function pushRoll(past: readonly DayRoll[], roll: DayRoll, day: string): DayRoll[] {
+  return parseRolls([...past.filter((r) => r.day !== roll.day), roll], day);
+}
+
+function parseFarmers(raw: unknown): Record<string, FarmerDay> {
   const farmers: Record<string, FarmerDay> = {};
-  for (const [id, f] of Object.entries(r.farmers)) {
+  if (!raw || typeof raw !== 'object') return farmers;
+  for (const [id, f] of Object.entries(raw as Record<string, FarmerDay>)) {
     if (!f || !Array.isArray(f.spans) || !Array.isArray(f.marks)) continue;
     const spans = f.spans.filter((s) => s && typeof s.job === 'string' && Number.isFinite(s.from) && Number.isFinite(s.to) && s.to >= s.from);
     const marks = f.marks.filter((m) => m && typeof m.kind === 'string' && Number.isFinite(m.at));
     farmers[id] = { id, tag: String(f.tag ?? id), name: String(f.name ?? id), spans: spans.slice(-MAX_SPANS), marks: marks.slice(-MAX_MARKS), rev: 1 };
   }
-  return { v: 1, day, farmers };
+  return farmers;
+}
+
+/**
+ * Loads stored data for `day`. A stored day from an earlier date is rolled up into `past` (and its spans dropped: the
+ * daily cleanup); anything malformed is dropped.
+ */
+export function parseTimeline(raw: unknown, day: string): TimelineData {
+  if (!raw || typeof raw !== 'object') return emptyTimeline(day);
+  const r = raw as Partial<TimelineData>;
+  if (r.v !== 1 || typeof r.day !== 'string' || !DAY_RE.test(r.day) || !r.farmers || typeof r.farmers !== 'object') return emptyTimeline(day, parseRolls(r?.past, day));
+  const past = parseRolls(r.past, day);
+  if (r.day !== day) {
+    const stale = daysBetween(r.day, day);
+    return emptyTimeline(day, stale >= 1 && stale <= ROLL_DAYS ? pushRoll(past, rollDay({ day: r.day, farmers: parseFarmers(r.farmers) }), day) : past);
+  }
+  return { v: 1, day, farmers: parseFarmers(r.farmers), past };
 }
 
 /** Merge the shortest spans into a neighbour until the list fits (asks are kept: they matter). */
@@ -183,7 +272,7 @@ export function createTimeline(store?: TimelineStore, { now: start = 0, seed = n
   let data = load(dayKey(start || Date.now()));
   let dirty = false, urgent = false, savedAt = 0, rev = 0;
   const asking = new Map<string, Mark>();
-  const view: { day: string; now: number; farmers: Map<string, FarmerDay>; rev: number } = { day: data.day, now: start, farmers: new Map(Object.entries(data.farmers)), rev: 0 };
+  const view: { day: string; now: number; farmers: Map<string, FarmerDay>; rev: number; past: readonly DayRoll[] } = { day: data.day, now: start, farmers: new Map(Object.entries(data.farmers)), rev: 0, past: data.past ?? [] };
   const touch = (fd: FarmerDay) => { fd.rev++; view.rev = ++rev; dirty = true; };
   const save = (now: number) => {
     if (!dirty || !st) return;
@@ -194,9 +283,12 @@ export function createTimeline(store?: TimelineStore, { now: start = 0, seed = n
   const rollover = (now: number) => {
     const day = dayKey(now);
     if (day === data.day) return;
-    data = emptyTimeline(day);
+    // the finished day goes into the weekly roll-up (a valley left open across midnight)
+    const stale = daysBetween(data.day, day);
+    const past = data.past ?? [];
+    data = emptyTimeline(day, stale >= 1 && stale <= ROLL_DAYS ? pushRoll(past, rollDay(data), day) : parseRolls(past, day));
     asking.clear();
-    view.day = day; view.farmers = new Map(); view.rev = ++rev;
+    view.day = day; view.farmers = new Map(); view.rev = ++rev; view.past = data.past ?? [];
     dirty = true; urgent = true;
   };
   const farmer = (f: Pick<Observed, 'id' | 'tag' | 'name'>, now: number, full?: Observed): FarmerDay => {
@@ -253,6 +345,7 @@ export function createTimeline(store?: TimelineStore, { now: start = 0, seed = n
       data = load(view.day);
       asking.clear();
       view.farmers = new Map(Object.entries(data.farmers));
+      view.past = data.past ?? [];
       view.rev = ++rev;
     },
     put(fd) {

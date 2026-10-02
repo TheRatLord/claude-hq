@@ -120,6 +120,9 @@ All are sculpted pen-rig animals from `plots/beasts.ts`. The donkey's definition
   openings). Thin daylight also shows through the slits in the boards and round the door. All of this follows the sun.
 * **Night:** three hanging lanterns, a bench lamp and a banker's lamp. They are `LightEmitter`s with flicker and are
   always on, but brighter at night.
+* **Lantern glass** (both rooms): amber with a flame core when lit; unlit (the farmhouse by day) it is smoky amber
+  (`setGlass(glow, 0.38, 0.55)` in `house.ts` / `barn.ts`), not the bright outdoor glass, which read white in a room.
+* The mangers and the sheep's hay rack hold hay (a plain dark inside read as a black hole by lantern light).
 
 ### Sound
 

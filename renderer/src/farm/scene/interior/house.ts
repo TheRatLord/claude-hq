@@ -16,7 +16,7 @@ import type { Interactable, LightEmitter } from '../context.ts';
 import type { Season } from '../../model/types.ts';
 import type { CollectionService } from '../../model/collection.ts';
 import { CATALOG } from '../../model/collection.ts';
-import { setGlow, LAMP_LIGHT } from '../structures/kit.ts';
+import { setGlass, setGlow, LAMP_LIGHT } from '../structures/kit.ts';
 import { buildRoom } from './room.ts';
 import { buildFinds, buildFire, buildPaper, buildPendulum, buildScreen, buildTank } from './pieces.ts';
 import { buildBeams, buildGlass, createCaptures, disposeCaptures, houseOpenings, renderCapture, setFallback } from './view.ts';
@@ -66,6 +66,7 @@ function buildHouse(host: RoomHost, season: Season): RoomBuilt {
     m.receiveShadow = !m.userData.emitters;
   }
   const glow = glowMat ?? new THREE.MeshBasicMaterial();
+  setGlass(glow, 0.38, 0.55);   // smoky amber glass by day (bright outdoor glass reads white in the room)
   const fire = buildFire(), pendulum = buildPendulum(), paper = buildPaper(), screen = buildScreen(), finds = buildFinds(), tank = buildTank(), glass = buildGlass(), beams = buildBeams(houseOpenings());
   root.add(fire.mesh, pendulum, paper.mesh, screen.mesh, finds.mesh, tank.fish, tank.glass, glass.mesh, beams.mesh);
   // the window captures are placed in the world from the room's frame

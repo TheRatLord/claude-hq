@@ -15,6 +15,7 @@ import { almanacView, dayKey, emptyAlmanac, parseAlmanac, recapDue, recapLetter,
 import type { AlmanacData, HarvestKind } from './almanac.ts';
 import { createTimeline } from './timeline.ts';
 import type { MarkKind, SeedFn, TimelineRecorder, TimelineStore } from './timeline.ts';
+import { contextFill, emptySpendLedger, modelLabel, plotRepo, recordSpend, repoView, spendToday, todoItems, valleySpend } from './signals.ts';
 import type {
   FarmerView, Gauges, HelperView, Job, Letter, LetterKind, LinkState, Mood, PlotKind, PlotStage, PlotView, ValleyEvent, ValleyState,
 } from './types.ts';
@@ -62,6 +63,8 @@ export interface Valley {
   setAlmanac(points: number): void;
   /** switch where the almanac lives (the demo valley swaps in its own), loading what that store holds */
   useAlmanac(store: AlmanacStore): void;
+  /** the almanac as stored: per-day harvest counts (the Gazette sums a week of them) */
+  almanacData(): Readonly<AlmanacData>;
   /** a harvest that is not a valley event (the player's first-ever finds for the Collections book): points, maybe a rank */
   harvest(kind: HarvestKind): number;
   /** each farmer's day (model/timeline.ts): fed by tick / ingest; read through `state.timeline` */
@@ -110,6 +113,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
   };
   const tl = createTimeline(tlStore, { now: wallNow() });
   const farmerRecs = new Map<string, FarmerRec>();
+  const spendLedger = emptySpendLedger();
   const plotRecs = new Map<string, PlotRec>();
   const cpuHist: number[] = [], memHist: number[] = [];
   let lastStatsAt = 0;
@@ -126,6 +130,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     sky: skyAt(new Date(wallNow())),
     almanac: almanacView(alData, wallNow()),
     timeline: tl.view,
+    spend: valleySpend(spendLedger, wallNow()),
   };
 
   const letter = (kind: LetterKind, e: Entity | undefined, id: string, title: string, body = '') => {
@@ -172,7 +177,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
           seen: true, growthLines: 0,
           view: {
             id: w.id, label: w.label, site, kind, colorIndex: w.colorIndex, stage: primed ? 'tilling' : 'growing', stageSince: now,
-            growth: 0.25, vigor: 0, status: w.status, farmers: [], helpers: [],
+            growth: 0.25, vigor: 0, status: w.status, farmers: [], helpers: [], git: null,
           },
         };
         plotRecs.set(w.id, r);
@@ -230,9 +235,9 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       if (!subs.some((s) => s.label === label)) subs.push({ id: `${e.id}:s${i}`, label, type: 'sub', active: true });
     }
     const todos = e.todos && e.todos.length
-      ? { done: e.todos.filter((x) => x.status === 'completed').length, total: e.todos.length, current: e.todos.find((x) => x.status === 'in_progress')?.activeForm ?? null }
+      ? { done: e.todos.filter((x) => x.status === 'completed').length, total: e.todos.length, current: e.todos.find((x) => x.status === 'in_progress')?.activeForm ?? null, items: todoItems(e.todos) }
       : null;
-    const ctxMax = e.modelTier === 'haiku' ? 200_000 : 200_000;
+    const ctx = contextFill(e);
     return {
       id: e.id, name: e.name, project: projectName(e), tag: projectName(e), kind: e.kind === 'shell' ? 'agent' : e.kind, seed: e.seedKey, tier: e.modelTier, plotId: e.workspace.id, spot,
       status: e.status, job, jobSince: rec.smoother.since * 1000, rawJob: raw, tool: rec.tool,
@@ -243,7 +248,8 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       said: e.lastText, question: needsYou ? e.prompt?.question ?? e.activity?.detail ?? 'Needs your input' : null,
       options: needsYou ? (e.prompt?.options ?? []).map((o) => ({ key: o.key, label: o.label })) : [],
       todos, work: e.work ? { added: e.work.added, removed: e.work.removed, files: e.work.files } : null,
-      context: e.contextTokens ? Math.min(1, e.contextTokens / ctxMax) : null,
+      context: ctx?.fill ?? null, contextTokens: ctx ? e.contextTokens : null, contextWindow: ctx?.size ?? null,
+      model: modelLabel(e.model) ?? (e.kind === 'codex' ? 'Codex' : null), git: repoView(e.git), spend: spendToday(e.usage, wallNow()),
       lastActive: Math.max(e.statusSince, e.activity?.since ?? 0),
     };
   }
@@ -254,7 +260,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     const running = !!p && p.activity !== 'prompt';
     return {
       id: e.id, name: e.name, project: projectName(e), tag: projectName(e), plotId: e.workspace.id, spot, activity: p?.activity ?? 'prompt', running, exit,
-      label: shortDetail(p?.argv ?? e.baseTitle ?? e.name, 32), ports: p?.ports ?? [],
+      label: shortDetail(p?.argv ?? e.baseTitle ?? e.name, 32), ports: p?.ports ?? [], git: repoView(e.git),
     };
   }
 
@@ -332,6 +338,12 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
     state.helpers = helpers;
     state.plots = new Map([...plotRecs].map(([id, r]) => [id, r.view]));
     tl.observe(farmers.values(), wallNow());
+    // the field's repo (branch on the sign, weeds, crates) and the valley's spend today
+    const byPlot = new Map<string, Entity[]>();
+    for (const e of ordered) { const l = byPlot.get(e.workspace.id); if (l) l.push(e); else byPlot.set(e.workspace.id, [e]); }
+    for (const [id, p] of state.plots) if (p.stage !== 'harvest' && p.stage !== 'fallow') p.git = plotRepo(byPlot.get(id) ?? []);
+    for (const f of farmers.values()) recordSpend(spendLedger, f.id, f.spend ?? null, wallNow());
+    state.spend = valleySpend(spendLedger, wallNow());
     for (const l of state.letters) {
       if (l.kind === 'needs-you' && !l.resolved) {
         const f = farmers.get(l.farmerId);
@@ -405,6 +417,7 @@ export function createValley(src: ValleySource, { wallNow = Date.now, almanac: a
       state.almanac = almanacView(alData, wallNow());
     },
     harvest,
+    almanacData: () => alData,
     timeline: tl,
     useTimeline(st, seed) { tl.use(st, seed); state.timeline = tl.view; },
     post(l) {

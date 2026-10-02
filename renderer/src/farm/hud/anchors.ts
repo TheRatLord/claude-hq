@@ -17,6 +17,7 @@ import type { Interactable, TagStyle, WorldTag } from '../scene/context.ts';
 import { addPlaced, distScale, edgeClamp, pageMs, pageText, placeRect, placed, type EdgePoint } from './anchor.ts';
 import { h } from './ctx.ts';
 import './anchors.css';
+import './signals.css';
 
 /** internal style: 'note' = a narration card (structures, props), not a character speaking */
 type Style = TagStyle | 'note';
@@ -34,6 +35,10 @@ interface Item {
   /** frame it was last submitted (timed say items live by `until` instead) */
   seen: number; shown: boolean; lastUse: number;
   w: number; h: number; dirty: boolean;
+  /** the owner's status on a farmer nameplate (`data-st`: the colour-safe shape, hud.css) */
+  st: string;
+  /** nameplate gauge (WorldTag.meter, percent; -1 = none) and its node, made on first use */
+  meter: number; meterEl: HTMLElement | null;
   pages: string[]; page: number; pageAt: number;
   // applied
   ax: number; ay: number; as: number; ao: number; z: number; edge: boolean; edgeA: number; solo: boolean; tx: number;
@@ -61,9 +66,19 @@ export interface Anchors {
   watch(root: HTMLElement): void;
   /** move a w × h box at (x, y) off the HUD furniture (the interaction tag uses it); false when it cannot fit */
   fit(x: number, y: number, w: number, h: number, out: { x: number; y: number }): boolean;
+  /** re-measure every tag (a style change: larger text, high contrast) */
+  remeasure(): void;
 }
 
-export function createAnchors(focused: () => Interactable | null, all: () => Iterable<Interactable> | null): Anchors {
+/** Settings hooks: which nameplates show (Interface → nameplates), and a farmer's status for the colour-safe shape. */
+export interface AnchorOpts {
+  /** may a nameplate / signboard / duckling label `dist` metres away show? (bubbles always do) */
+  plate?(dist: number): boolean;
+  /** the status of a nameplate's owner (farmers), or null */
+  statusOf?(owner: string): string | null;
+}
+
+export function createAnchors(focused: () => Interactable | null, all: () => Iterable<Interactable> | null, opts: AnchorOpts = {}): Anchors {
   const el = h('div.vh-anchors', { 'aria-hidden': 'false', 'data-testid': 'anchors' });
   const live = h('div.vh-sr', { 'aria-live': 'polite', role: 'status' });
   el.append(live);
@@ -94,8 +109,8 @@ export function createAnchors(focused: () => Interactable | null, all: () => Ite
     el.append(node);
     const it: Item = {
       key, owner: '', style, title: '', sub: '', el: node, who, txt, sub2, pg, arrow, pos: new THREE.Vector3(), alpha: 0, dist: 0,
-      seen: -1, shown: false, lastUse: 0, w: 0, h: 0, dirty: true, pages: [''], page: 0, pageAt: 0,
-      ax: NaN, ay: NaN, as: 1, ao: -1, z: 0, edge: false, edgeA: NaN, solo: false, tx: 0, sx: 0, sy: 0, off: false, behind: false, until: 0, anchor: null, born: 0,
+      seen: -1, shown: false, lastUse: 0, w: 0, h: 0, dirty: true, st: '', pages: [''], page: 0, pageAt: 0,
+      ax: NaN, ay: NaN, as: 1, ao: -1, z: 0, edge: false, edgeA: NaN, solo: false, tx: 0, sx: 0, sy: 0, off: false, behind: false, until: 0, anchor: null, born: 0, meter: -1, meterEl: null,
     };
     items.set(key, it);
     list.push(it);
@@ -120,11 +135,29 @@ export function createAnchors(focused: () => Interactable | null, all: () => Ite
     }
   }
 
+  /** a farmer's context gauge under the name (signals.md): shown from 65 %, red past 85 % */
+  function setMeter(it: Item, v: number): void {
+    if (v === it.meter) return;
+    if ((v < 0) !== (it.meter < 0)) it.dirty = true; // the plate grows / shrinks
+    it.meter = v;
+    if (v < 0) { if (it.meterEl) it.meterEl.style.display = 'none'; return; }
+    if (!it.meterEl) { it.meterEl = h('span.vt-meter', { role: 'img' }, h('i')); it.el.append(it.meterEl); }
+    it.meterEl.style.display = '';
+    it.meterEl.classList.toggle('hot', v > 85);
+    it.meterEl.setAttribute('aria-label', `context ${v}% full`);
+    it.meterEl.title = `Context ${v}% full`;
+    (it.meterEl.firstChild as HTMLElement).style.width = `${v}%`;
+  }
+
   function submit(t: WorldTag): void {
+    if (!isBubble(t.style) && opts.plate && !opts.plate(t.dist)) return;
     const now = performance.now();
     let it = items.get(t.key);
     if (!it) it = make(t.key, t.style);
     setText(it, t.style, t.title, t.sub, now);
+    const st = t.style === 'name' ? opts.statusOf?.(t.owner) ?? '' : '';
+    if (st !== it.st) { it.st = st; if (st) it.el.dataset.st = st; else delete it.el.dataset.st; it.dirty = true; }
+    setMeter(it, t.style === 'name' && t.meter != null && t.meter >= 0 ? Math.round(Math.min(1, t.meter) * 100) : -1);
     it.owner = t.owner; it.alpha = t.alpha; it.dist = t.dist; it.pos.copy(t.pos);
     it.seen = frameNo + 1; // shown in the coming HUD frame
     it.lastUse = now;
@@ -366,7 +399,7 @@ export function createAnchors(focused: () => Interactable | null, all: () => Ite
   }
 
   const groupsPool: { owner: string; first: number; n: number; prio: number }[] = [];
-  return { el, submit, say, frame, count: () => order.length, watch, fit };
+  return { el, submit, say, frame, count: () => order.length, watch, fit, remeasure() { for (const it of list) it.dirty = true; dirty(); } };
 }
 
 function byOwnerRank(a: Item, b: Item): number {

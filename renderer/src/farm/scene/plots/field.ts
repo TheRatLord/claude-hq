@@ -373,7 +373,11 @@ export class Field {
     const p = this.plot;
     const n = p.farmers.length, h = p.helpers.length;
     const stage = { tilling: 'freshly tilled', thriving: 'thriving', growing: 'growing well', resting: 'resting in the sun', harvest: 'being harvested', fallow: 'fallow, resting' }[p.stage];
-    return `${p.label} — ${KIND_NAME[this.kind]}, ${stage}. ${n} farmer${n === 1 ? '' : 's'}${h ? `, ${h} scarecrow${h === 1 ? '' : 's'}` : ''}.`;
+    const g = p.git;
+    const weeds = g?.dirty ? ` ${g.dirty} weed${g.dirty === 1 ? '' : 's'} (changed files)` : '';
+    const crates = g?.ahead ? `${weeds ? ',' : ''} ${g.ahead} crate${g.ahead === 1 ? '' : 's'} waiting to ship (unpushed)` : '';
+    const repo = g ? ` Branch ${g.branch ?? 'detached'} of ${g.repo}.${weeds || crates ? `${weeds}${crates}.` : ' All tidy.'}` : '';
+    return `${p.label} — ${KIND_NAME[this.kind]}, ${stage}. ${n} farmer${n === 1 ? '' : 's'}${h ? `, ${h} scarecrow${h === 1 ? '' : 's'}` : ''}.${repo}`;
   }
 
   private petTarget(a: Animal) {
@@ -699,11 +703,13 @@ export class Field {
     const b = this.batchesFor(env);
     const p = this.plot;
     const fallow = p.stage === 'fallow';
-    const key = `sign:${p.id}:${p.label}:${this.color}:${fallow ? 'f' : 'l'}`;
+    // the sign's second line: the field's git branch when it has one (signals.md), else the crop
+    const sub = p.git ? `on ${p.git.branch ?? (p.git.head ? `@${p.git.head}` : 'detached')}` : KIND_NAME[this.kind];
+    const key = `sign:${p.id}:${p.label}:${this.color}:${fallow ? 'f' : 'l'}:${sub}`;
     if (key !== this.signKey) {
       if (this.signKey) env.atlas.release(this.signKey);
       this.signKey = key;
-      this.signRect = env.atlas.acquire(key, fallow ? signPainter('Fallow', `resting · was ${p.label}`, this.color, { faded: true }) : signPainter(p.label, KIND_NAME[this.kind], this.color));
+      this.signRect = env.atlas.acquire(key, fallow ? signPainter('Fallow', `resting · was ${p.label}`, this.color, { faded: true }) : signPainter(p.label, sub, this.color));
     }
     let k = bounce(clamp01((this.tillP - 0.5) / 0.12));
     if (this.closing) k *= 1 - smooth01((this.closeP - 0.4) / 0.3);

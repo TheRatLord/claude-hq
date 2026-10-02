@@ -403,3 +403,36 @@ test('demo: agent.start in a fresh workspace (its only pane) keeps the workspace
   assert.ok(e && e.kind === 'claude', 'the new claude is in the world');
   close();
 });
+
+test('rev-2 signals: every Claude spends today, repo workspaces carry git, a commit takes the weeds and stacks a crate', async () => {
+  const { clock, model, msgs, close } = setup({ scenario: 'mixed', seed: 3 });
+  try {
+    await run(clock, 2000);
+    const es = [...model.entities.values()];
+    const claudes = es.filter((e) => e.kind === 'claude' && e.status !== 'unknown');
+    assert.ok(claudes.length > 4);
+    for (const e of claudes) {
+      assert.ok(e.usage && e.usage.tokens > 100_000, `${e.id} usage`);
+      assert.ok(e.usage.cost != null && e.usage.cost > 0 && e.usage.cost < 200, `${e.id} cost ${e.usage.cost}`);
+    }
+    for (const e of es.filter((x) => x.kind !== 'claude')) assert.equal(e.usage, null);
+    const withGit = es.filter((e) => e.git);
+    assert.ok(withGit.length >= es.length / 2, 'repo workspaces carry git');
+    for (const e of withGit) {
+      assert.ok(e.git?.branch && e.git.lastCommit?.subject, e.id);
+      // every pane of a workspace shares its repo
+      for (const o of es.filter((x) => x.workspace.id === e.workspace.id)) assert.deepEqual(o.git, e.git);
+    }
+    // run the schedule until someone commits: the event names its subject, the repo is clean with that last commit
+    await run(clock, 25 * 60_000, 1000);
+    const commits = msgs.filter((m): m is EventMsg => m.t === S2R.EVENT && m.kind === 'commit' && isRecord(m.detail) && typeof m.detail.msg === 'string');
+    assert.ok(commits.length, 'a commit with a subject');
+    const commit = need(commits.reverse().find((m) => model.get(m.id)), 'a committer still in the valley');
+    const after = need(model.get(commit.id));
+    assert.ok(after.git?.lastCommit, 'git after commit');
+    const spentLater = need([...model.entities.values()].find((e) => e.id === claudes[0].id));
+    assert.ok((spentLater.usage?.tokens ?? 0) >= (claudes[0].usage?.tokens ?? 0), 'spend only grows within the day');
+  } finally {
+    await close();
+  }
+});

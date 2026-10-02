@@ -11,7 +11,8 @@ import type { Status } from '../../../../shared/protocol.ts';
 import type { VillagerPin } from '../scene/context.ts';
 import { inSite, POND, SITES, siteToWorld, STRUCTURES, type StructureId } from '../world/map.ts';
 import { KIND_ICON, iconImage } from './icons.ts';
-import { fieldName, pinGlyph, shortName, STATUS_COLOR, WS_COLORS } from './format.ts';
+import { fieldName, pinGlyph, shortName, WS_COLORS } from './format.ts';
+import { STATUS_SHAPE, statusColor } from '../model/prefs.ts';
 import { getBase, getHalf, baseReady, roundRectPath, S, WB, worldPois } from './mapbase.ts';
 import { FISH_SPOTS, HABITATS, heart, PIN_COLOR, PLACES, rosette, tile, TIME_SHORT, type Glyph } from './mappins.ts';
 
@@ -61,6 +62,23 @@ export interface DrawOpts {
   villagers?: readonly VillagerPin[];
   layers?: MapLayers;
   extra?: MapExtras | null;
+  /** Settings → Accessibility: the colour-blind-safe palette, with a shape per status (statusMark) */
+  safe?: boolean;
+  /** reduced motion: no pulsing rings (a steady ring instead) */
+  still?: boolean;
+}
+
+/**
+ * A farmer's status mark: a filled circle in the status colour, or (colour-safe) a shape per status (triangle needs
+ * you, circle working, square done, diamond idle) so status never rests on colour alone. The caller strokes / labels.
+ */
+export function statusMark(g: CanvasRenderingContext2D, x: number, y: number, r: number, st: Status, safe: boolean): void {
+  g.beginPath();
+  const shape = safe ? STATUS_SHAPE[st] : 'circle';
+  if (shape === 'triangle') { const k = r * 1.3; g.moveTo(x, y - k); g.lineTo(x + k * 0.95, y + k * 0.62); g.lineTo(x - k * 0.95, y + k * 0.62); g.closePath(); }
+  else if (shape === 'square') { const k = r * 0.9; g.rect(x - k, y - k, k * 2, k * 2); }
+  else if (shape === 'diamond') { const k = r * 1.2; g.moveTo(x, y - k); g.lineTo(x + k, y); g.lineTo(x, y + k); g.lineTo(x - k, y); g.closePath(); }
+  else g.arc(x, y, r, 0, Math.PI * 2);
 }
 
 const KIND_FILL: Record<PlotView['kind'], string> = {
@@ -173,7 +191,7 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
     g.setLineDash([]);
     g.strokeStyle = 'rgba(40, 25, 10, .5)'; g.lineWidth = 1; g.strokeRect(-w / 2 - 1, -d / 2 - 1, w + 2, d + 2);
     if (plot.status === 'blocked' && !fallow) {
-      const a = 0.35 + 0.35 * Math.sin(o.time * 5);
+      const a = o.still ? 0.6 : 0.35 + 0.35 * Math.sin(o.time * 5);
       g.strokeStyle = `rgba(240, 167, 44, ${a})`; g.lineWidth = Math.max(3, v.scale * 1.1);
       g.strokeRect(-w / 2 - 3, -d / 2 - 3, w + 6, d + 6);
     }
@@ -400,11 +418,11 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
       if (dd > lim) { x = cx + (dx / dd) * lim; y = cy + (dy / dd) * lim; edge = true; }
     }
     if (!onScreen(x, y)) continue;
-    const col = STATUS_COLOR[f.status as Status] ?? '#999';
+    const col = statusColor(f.status as Status, !!o.safe);
     const isHot = hot(f.id);
     const rr = mini && f.needsYou ? 6.5 : r;
     if (f.needsYou) {
-      const ph = (o.time * 1.2) % 1;
+      const ph = o.still ? 0.35 : (o.time * 1.2) % 1;
       g.strokeStyle = `rgba(240, 167, 44, ${1 - ph})`; g.lineWidth = mini ? 2.5 : 3;
       g.beginPath(); g.arc(x, y, rr + 2 + ph * rr * 1.6, 0, Math.PI * 2); g.stroke();
       if (mini) { g.fillStyle = 'rgba(255, 210, 63, .35)'; g.beginPath(); g.arc(x, y, rr + 3, 0, Math.PI * 2); g.fill(); }
@@ -417,7 +435,7 @@ export function drawValley(g: CanvasRenderingContext2D, v: View, s: ValleyState 
     }
     g.fillStyle = 'rgba(40,25,10,.35)'; g.beginPath(); g.ellipse(x + 1, y + rr * 0.85, rr * 0.9, rr * 0.4, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = col; g.strokeStyle = isHot ? '#fff' : INK; g.lineWidth = isHot ? 3 : mini ? 1.5 : 2;
-    g.beginPath(); g.arc(x, y, isHot ? rr + 2 : rr, 0, Math.PI * 2); g.fill(); g.stroke();
+    statusMark(g, x, y, isHot ? rr + 2 : rr, f.status as Status, !!o.safe); g.fill(); g.stroke();
     g.fillStyle = f.needsYou ? '#3a2400' : '#fff';
     g.font = `800 ${Math.round(rr * (mini ? 1.5 : 1.2))}px ui-rounded, "DejaVu Sans", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';

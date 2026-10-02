@@ -11,6 +11,7 @@ import type { AlmanacView, HarvestKind } from '../model/almanac.ts';
 import { ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { createStampPage } from './stamps.ts';
+import { costLabel, tokensLabel } from '../model/signals.ts';
 
 export const HARVEST_ICON: Record<HarvestKind, string> = {
   commit: LETTER_ICON.commit, tests: LETTER_ICON['test-pass'], finished: LETTER_ICON.finished,
@@ -59,7 +60,9 @@ export function createAlmanac(ctx: HudCtx): Panel {
   // today + week
   const tPts = h('span.val');
   const tList = h('ul.harvest');
-  const today = h('div.vh-al-card', null, h('div.l1', null, h('div.nm', { text: 'Today’s harvest' }), tPts), tList);
+  // what the day's work cost in model tokens (an estimate at list prices; docs/valley/signals.md)
+  const tSpend = h('div.sub', { 'data-testid': 'almanac-spend' });
+  const today = h('div.vh-al-card', null, h('div.l1', null, h('div.nm', { text: 'Today’s harvest' }), tPts), tList, tSpend);
   const bars = h('div.week');
   const wSub = h('div.sub');
   const week = h('div.vh-al-card', null, h('div.l1', null, h('div.nm', { text: 'This week' })), bars, wSub);
@@ -102,7 +105,8 @@ export function createAlmanac(ctx: HudCtx): Panel {
     const s = ctx.state();
     if (!s) return;
     const a = s.almanac;
-    const nsig = JSON.stringify([a.points, a.today, a.week, a.streak]);
+    const sp = s.spend;
+    const nsig = JSON.stringify([a.points, a.today, a.week, a.streak, sp && [sp.agents, sp.tokens >> 16, sp.cost]]);
     if (nsig === sig) return;
     sig = nsig;
     rName.textContent = `${a.name}${stars(a.stars)}`;
@@ -113,6 +117,8 @@ export function createAlmanac(ctx: HudCtx): Panel {
       : `Every ${STAR_POINTS.toLocaleString()} more earns the valley another star.`;
 
     tPts.textContent = `+${a.today.points}`;
+    tSpend.textContent = sp && sp.tokens ? `Model spend: ${sp.partial ? 'at least ' : ''}${costLabel(sp.cost) ? `${costLabel(sp.cost)} · ` : ''}${tokensLabel(sp.tokens)} tokens across ${sp.agents} farmer${sp.agents === 1 ? '' : 's'}` : '';
+    tSpend.hidden = !tSpend.textContent;
     const got = HARVEST_KINDS.filter((k) => (a.today.counts[k] ?? 0) > 0);
     tList.replaceChildren(...(got.length ? got.map((k) => {
       const n = a.today.counts[k] ?? 0;

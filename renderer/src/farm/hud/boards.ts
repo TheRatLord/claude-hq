@@ -4,12 +4,13 @@
  */
 import type { Gauges } from '../model/types.ts';
 import { ICONS, KIND_ICON, LETTER_ICON, SEASON_ICON, WEATHER_ICON, icon } from './icons.ts';
-import { ago, bytesRate, clock, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL, shortName, STAGE_LABEL, STATUS_RANK, WEATHER_LABEL } from './format.ts';
+import { ago, bytesRate, letterTitle, JOB_LABEL, nice, pct, SEASON_LABEL, shortName, STAGE_LABEL, STATUS_RANK, WEATHER_LABEL } from './format.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { FESTIVAL_ICON } from './festival.ts';
 import { SOON_DAYS, dayText, inDaysText } from '../model/calendar.ts';
 import type { RequestView } from '../model/friends.ts';
 import { HEART_ICON } from './friends.ts';
+import { clockText } from '../model/prefs.ts';
 
 export function createNoticeboard(ctx: HudCtx): Panel {
   const { el, body, closeBtn } = framePanel('noticeboard', 'Noticeboard', ICONS.board);
@@ -70,7 +71,7 @@ export function createNoticeboard(ctx: HudCtx): Panel {
     const wk = s.sky.weather.kind === 'clear' && s.sky.daylight < 0.25 ? 'night' : s.sky.weather.kind;
     notes.push(note('', () => ctx.panels.open('stats'),
       h('h4', null, icon(WEATHER_ICON[wk]), 'Today in the valley'),
-      h('p', null, h('b', { text: clock(s.sky.hour) }), ` · ${SEASON_LABEL[s.sky.season]} · ${WEATHER_LABEL[s.sky.weather.kind]}`),
+      h('p', null, h('b', { text: clockText(s.sky.hour, ctx.prefs.clock) }), ` · ${SEASON_LABEL[s.sky.season]} · ${WEATHER_LABEL[s.sky.weather.kind]}`),
       h('p', null, icon(SEASON_ICON[s.sky.season]), ` ${working.length} at work · ${farmers.length} farmers · ${plots.filter((p) => p.stage !== 'fallow').length} fields`),
       s.gauges ? h('p', { text: `${s.gauges.host}: CPU ${pct(s.gauges.cpu)} · RAM ${pct(s.gauges.mem)}` }) : null,
       h('p.vh-muted', { text: 'Tap for the numbers behind the landmarks.', style: { fontSize: '12px' } })));
@@ -80,6 +81,14 @@ export function createNoticeboard(ctx: HudCtx): Panel {
       h('div.big', { text: al.name }),
       h('p', { text: al.nextAt !== null ? `${al.points} / ${al.nextAt} prosperity toward ${al.nextName}` : `${al.points} prosperity` }),
       h('p.vh-muted', { text: al.today.points ? `+${al.today.points} today${al.streak > 1 ? ` · ${al.streak}-day streak` : ''}` : 'Nothing harvested yet today.', style: { fontSize: '12px' } })));
+    // The Valley Gazette (hud/gazette.ts): today's morning edition, its headline pinned up
+    let paperHead = '';
+    try { paperHead = ctx.b?.gazette?.()?.today().lead.head ?? ''; } catch { paperHead = ''; }
+    if (ctx.b?.gazette) notes.push(note('.gazette', () => ctx.panels.open('gazette'),
+      h('h4', null, icon(LETTER_ICON.news), 'The Valley Gazette'),
+      h('div.big', { text: 'Read today\'s paper' }),
+      paperHead ? h('p', { text: `“${paperHead}”`, style: { fontStyle: 'italic' } }) : null,
+      h('p.vh-muted', { text: 'The morning edition: the last seven days in the valley. G any time.', style: { fontSize: '12px' } })));
     if (done.length) notes.push(note('', null, h('h4', null, icon(LETTER_ICON.finished), 'Ready for review'),
       h('ul', null, ...done.slice(0, 6).map((f) => go(() => ctx.openTerminal(f.id), `${nice(f.name)}: open the terminal`, h('b', { text: shortName(f) }), f.title ? ` — ${f.title}` : ''))),
       more(done.length - 6, 'to review')));

@@ -4,12 +4,13 @@ Names in 3D, the anchored tag/bubble overlay, the interaction tag, every route t
 HUD layout zones and z-order, layer classes, the drawer, keys and HUD performance. The map has its own doc
 ([map.md](map.md)), as does the welcome tour ([onboarding.md](onboarding.md)).
 
-Key sources: `hud/hud.ts` (keys, layer classes, `__hud`), `hud/anchors.ts` + `anchors.css` (overlay), `hud/anchor.ts`
+Key sources: `hud/hud.ts` (keys, layer classes, `__hud`), `hud/pause.ts` (Settings), `model/prefs.ts` + `prefs.ts`
+(browser-local prefs; `prefs.test.ts`), `hud/anchors.ts` + `anchors.css` (overlay), `hud/anchor.ts`
 (pure maths: `placeRect`; `anchor.test.ts`), `hud/prompt.ts` (interaction tag), `hud/needs.ts` (needs-you strip),
 `hud/mailbox.ts`, `hud/roster.ts` (the ledger), `hud/cards.ts` (farmer card), `hud/drawer.ts` (terminal drawer),
 `hud/toasts.ts`, `hud/status.ts`, `hud/notify.ts`, `hud/pause.ts`, `hud/format.ts` (`shortName`, `altName`,
 `askOrder`, `nextAfter`, `rosterFilterHit`; `format.test.ts`), `hud/ctx.ts` (prefs), `hud/hud.css`,
-`scene/farmers/labels.ts`, `model/types.ts` (`FarmerView.tag`), `browser-tests/valley.spec.ts`. Paths are relative to
+`scene/farmers/labels.ts`, `model/types.ts` (`FarmerView.tag`), `browser-tests/valley.spec.ts`, `browser-tests/settings.spec.ts`. Paths are relative to
 `renderer/src/farm/` unless rooted.
 
 ## In-world UI (names, speech bubbles, the interaction tag)
@@ -71,17 +72,63 @@ the power-user loop below: add a flow there when you add one.
 * *Every key.* `?` opens the pause menu's Controls tab from anywhere outside a terminal: grouped (getting around,
   agents, mailbox, ledger, card & terminal, the valley). Add new keys there and to the hints bar's budget sparingly.
 
+## Settings (pause menu → Settings; `hud/pause.ts`)
+
+One section at a time (a tab row; ←/→ switch, like every tab row): **Controls · Graphics · Audio · Interface ·
+Accessibility · Alerts · Terminal**. `__hud.open('pause', 'settings:access')` opens a section directly.
+
+Two stores, on purpose:
+
+* **Server settings** (`core/settings.ts`, `hello.settings` / `settings.set`) roam with the HQ: volumes, mute, the
+  terminal (text size, leader key, paste confirm, …). The old wire keys `fov`, `headBob`, `quality` are no longer
+  shown; `reducedMotion` still counts while Accessibility → reduced motion follows the system.
+* **Browser-local prefs** (`model/prefs.ts`: shape, defaults, `sanitizePrefs`, pure helpers; `prefs.ts`: the live
+  store) describe this screen, GPU and person: one object in localStorage `valley.hud.prefs` (the same key as the old
+  HUD prefs, so `minimap`, `toasts`, `drawerH`, … carry over). `sanitizePrefs` = `pickTyped` + clamps (`RANGES`) +
+  enum checks + `sanitizeKeys`, so garbage in storage can only produce a valid, in-range object. main.ts makes the
+  store and shares it: HUD (`ctx.prefs` + `ctx.savePrefs()`, which persists **and** notifies), the controller
+  (`createController(ctx, canvas, () => prefs.data)`), the engine wiring (`applyPrefs` in main.ts). `__hud.prefs()`
+  reads, `__hud.prefs({ … })` patches (shots: `eval=__hud.prefs({uiScale:1.3})`).
+
+| section | pref | what it does |
+|---|---|---|
+| Controls | `mouseSens` (×0.2–3), `invertY`, `fov` (50–90°, default 62), `headBob`, `sprintToggle` | read live by `player/controller.ts` (fov by main.ts on the camera) |
+| Controls | `keys` | rebind use / alt / map / ledger / mail (defaults E F M Tab J). Click, press a key; Esc cancels. Refused with a message when it is another action's key or a fixed one (`RESERVED_KEYS`: walking, Space, Shift, Esc, Enter, B H K I Q N P C, digits, F3/F4/F6, modifiers): `keyConflict` / `rebind`. The interaction tag, hints bar, dock, menu and Controls list show the bound keys (`keyLabel`). *Reset keys* restores the defaults |
+| Graphics | `quality` (low / medium / high) | systems size pools at start, so it applies **on reload** (a *Reload now* button); `?quality=` wins and the note says so |
+| Graphics | `renderScale` (50–100 %), `shadows`, `weatherFx` (0–100 %) | live: `engine.setRenderScale` (× the quality's own scale), `engine.setShadows` (castShadow off on every light, re-applied after systems start), `ctx.comfort.weatherFx` (weather.ts scales rain / snow / leaves / motes) |
+| Graphics | `fpsCap` (display / 60 / 30) and `idleMin` (off / 2 / 5 / 10 / 30 min, default 10) | `engine.setFpsCap(effectiveFpsCap(…))`: after `idleMin` minutes with no key / mouse / wheel / touch the valley runs at `IDLE_FPS` (15) until the next input. Hidden tabs already stop rendering (core/loop.ts). Automated browsers (`navigator.webdriver`) never idle-throttle |
+| Interface | `uiScale` (80–150 %) | `--ui-zoom` on `.vh-layer` → CSS `zoom`; world-anchored overlays (`.vh-anchors`, `.vh-prompt`, `.vh-cross`) zoom back to 1 because they are placed in screen px |
+| Interface | `nameplates` (always / near ≤ 14 m / off) | `anchors.ts` drops nameplates, signboards and duckling labels (`nameplateShown`); bubbles and asks always show |
+| Interface | `toastK` (short / normal / long / very long), `clock` (24 h / 12 h) | toast lifetimes × k (captions too); `clockText` in the status sign and noticeboard |
+| Interface | `minimap`, `toasts`, `compactStrip`, `needsDoze`, valley tips | as before |
+| Accessibility | `reducedMotion` (follow the system / on / off) | `reducedMotion(pref, prefers-reduced-motion, server reducedMotion)` → `.vh-layer.reduced` (every HUD animation and transition off), `ctx.comfort.reducedMotion` (head bob ×0.25, weather particles ×0.5, lightning flashes ×0.3), map / minimap rings stop pulsing (`DrawOpts.still`). *Off* adds `.motion-ok`, which also overrides the OS media query in hud.css |
+| Accessibility | `colorSafe` | `.vh-layer.cb`: Okabe–Ito status colours (`STATUS_PALETTE.safe`) **and** a shape per status everywhere status shows: needs you ▲, working ●, done ■, idle ◆ (`STATUS_SHAPE` / `STATUS_GLYPH`) on map pins and the minimap (`statusMark` in mapdraw.ts, the map key redraws), list dots (`.vh-dot`), every status pill (ledger, card, map tips) and farmer nameplates (`data-st` set by anchors.ts from `statusOf`) |
+| Accessibility | `highContrast` | `.vh-layer.hc`: black ink, near-white paper, black borders, solid hints bar, white nameplates / bubbles / interaction tag, a black + gold focus ring |
+| Accessibility | `largeText` | the HUD zoom × 1.15 (`uiZoom`) and bigger nameplate / bubble / interaction-tag text (which the zoom leaves alone) |
+| Accessibility | `captions` | a caption line (bottom centre, `.vh-captions`, `role=log`) for the cues that carry news, from the valley events the audio layer voices (`captionFor`: needs you = alert bell, finished = done chime, cheer, oops, fanfare, a new field). One per kind and farmer per 1.5 s, three at most, ~5 s × `toastK` |
+| Alerts | `notify` | desktop notifications (above) |
+
+**Screen readers and keyboards.** Panels are `role=dialog` with a label (their plaque); the left column is a named
+region, the dock a `nav`, the hints a `note`, toasts `aria-live=polite`, captions a `log`. A visually hidden
+`aria-live=assertive` region (`sr-announce`) says who needs you and how to answer on every new ask. Inside any panel
+**Tab / Shift+Tab walk its controls and wrap** (focus never leaks behind it); the ledger keeps *Tab closes it* while Tab
+is its key (Shift+Tab walks it), and the ledger key opens the ledger from another panel only when it is not Tab.
+Everything focusable shows a ring on keyboard focus (`:focus-visible`, gold; black + gold in high contrast).
+`browser-tests/settings.spec.ts` covers the round-trips (incl. a reload), refused rebinds, reduced motion (OS and
+toggle), Tab containment, arrow-key tabs, captions and the live region.
+
 ## Keys (`hud/hud.ts`)
 
 | key | does |
 |---|---|
-| E / F | use / alt on the focused target (F on a farmer or scarecrow: its terminal; on a villager: chat or gift) |
-| Tab | the ledger (roster) |
-| M | the map ([map.md](map.md)) |
-| J | the mailbox |
+| E / F | use / alt on the focused target (F on a farmer or scarecrow: its terminal; on a villager: chat or gift); rebindable |
+| Tab | the ledger (roster); rebindable. Inside a panel Tab walks its controls instead |
+| M | the map ([map.md](map.md)); rebindable |
+| J | the mailbox; rebindable |
 | B | the noticeboard |
 | H | the Valley Almanac ([almanac.md](almanac.md)) |
 | K | the Collections book ([pastimes.md](pastimes.md)) |
+| G | The Valley Gazette: today's paper and the back issues ([gazette.md](gazette.md)) |
 | I | your pockets (shop panel, basket; 1/2/3 tabs; [economy.md](economy.md)) |
 | Q | keep the request tracker open ([friends.md](friends.md)) |
 | N | toggle the corner minimap |
@@ -166,8 +213,8 @@ on its own); never an empty frame.
 ## Drawer
 
 Bottom-anchored; drag the grip on its top edge (or ↑/↓ on the focused grip) to resize, double-click to reset; the
-height is the `drawerH` HUD pref (browser-local, like `minimap`, `toasts`, `compactStrip`, `notify`, `needsDoze`; all in
-localStorage `valley.hud.prefs`).
+height is the `drawerH` HUD pref (browser-local, like `minimap`, `toasts`, `compactStrip`, `notify`, `needsDoze` and
+every Settings pref above; all in localStorage `valley.hud.prefs`).
 
 ## Performance
 
@@ -179,5 +226,5 @@ nothing in the HUD reads layout per frame except the map canvas, which redraws o
 
 `open(id, arg?)` (any `PanelId` in `hud/ctx.ts`: `mailbox map roster card noticeboard stats almanac collection shop friends pause
 drawer welcome`), `close()`,
-`current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `tour`
+`current()`, `openTerminal(id)`, `patch(bindings)`, `dismissHint()`, `mapHits()`, `toast(spec)`, `notify()`, `prefs(patch?)`, `tour`
 ([onboarding.md](onboarding.md)). Full dev API: [tools.md](tools.md#dev-api).

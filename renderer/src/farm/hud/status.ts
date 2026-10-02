@@ -3,8 +3,9 @@
  * friendly offline banner, and the document-title badge. Kept to three short rows: it is always on screen. Driven from the HUD's slow timer so the title updates in hidden tabs.
  */
 import { SEASON_ICON, WEATHER_ICON, ICONS, icon } from './icons.ts';
-import { clock, LINK_LABEL, SEASON_LABEL, WEATHER_LABEL } from './format.ts';
+import { LINK_LABEL, SEASON_LABEL, WEATHER_LABEL } from './format.ts';
 import { h, type HudCtx } from './ctx.ts';
+import { clockText } from '../model/prefs.ts';
 import { rankChip } from './almanac.ts';
 import { coinChip } from './shop.ts';
 
@@ -40,12 +41,12 @@ export function createStatus(ctx: HudCtx): StatusCorner {
     const s = ctx.state();
     const now = new Date();
     if (!s) {
-      time.textContent = clock(now.getHours() + now.getMinutes() / 60);
+      time.textContent = clockText(now.getHours() + now.getMinutes() / 60, ctx.prefs.clock);
       link.className = 'vh-link connecting'; link.textContent = LINK_LABEL.connecting;
       return;
     }
     const sky = s.sky;
-    time.textContent = clock(sky.hour);
+    time.textContent = clockText(sky.hour, ctx.prefs.clock);
     rank.refresh(s.almanac);
     purse.refresh();
     const night = sky.daylight < 0.25;

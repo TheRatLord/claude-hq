@@ -15,7 +15,9 @@
 import { HerdrSource, Enricher } from '../interfaces.ts';
 import type { BaseEntity, Clock, Logger, RawAgent, RawLayout, RawPane, RawTab, RawWorkspace, TimerHandle } from '../interfaces.ts';
 import { FIELD_OWNERS, KINDS, SCENARIOS, STATUSES, TOOL_CLASSES, VALIDATE, mayEmit } from '../../shared/protocol.ts';
-import type { Activity, DemoConfig, Entity, EventKind, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, WorkStats } from '../../shared/protocol.ts';
+import type { Activity, DemoConfig, Entity, EventKind, GitInfo, Identity, Kind, ShellActivity, Status, Struggle, Subagent, Todo, ToolClass, Usage, WorkStats } from '../../shared/protocol.ts';
+import { costOf, localDay, tokensOf } from '../../shared/pricing.ts';
+import type { TokenUse } from '../../shared/pricing.ts';
 import { hashHex, identityKey, placeOf } from '../../shared/identity.ts';
 import { ProcInfoEnricher } from '../enrich/procinfo.ts';
 import { modelTier, struggleOf } from '../enrich/transcriptState.ts';
@@ -24,7 +26,7 @@ import { isRecord } from '../../shared/guards.ts';
 import type { SinceRecord } from '../world/since.ts';
 import type { OutLine, ReadOpts, ReadResult } from './fakeTerm.ts';
 import {
-  WORKSPACES, RENAMES, NAMES, TASKS, MODELS, SHELL_PROCS, buildScenario, rng, activityFor, pickSubagent,
+  WORKSPACES, RENAMES, NAMES, TASKS, MODELS, SHELL_PROCS, BRANCHES, COMMITS, buildScenario, rng, activityFor, pickSubagent,
   randomPrompt, permissionFor, PROMPTS, shellTick, shellEnd, SHELL_TICK_S, demoText,
 } from './scenarios.ts';
 import type { DemoActivity, DemoTextStage, NewPaneSpec, PromptSpec, Rng, Scenario, ShellLine } from './scenarios.ts';
@@ -141,6 +143,8 @@ export interface Facts {
   askActivity: boolean;
   lastText: string | null;
   work: WorkStats | null;
+  /** today's spend (rev 2): seeded with a believable morning, grown per tool step from the context it re-reads */
+  usage: Usage | null;
   /** the shell's (or agent's) foreground argv */
   proc: string[];
   /** shells: printed lines (DemoWorld is the shell; fakeTerm renders them) */
@@ -223,6 +227,8 @@ export class DemoWorld extends HerdrSource {
   log: Logger;
   /** pane id → transcript-ish facts (DemoEnricher reads) */
   facts: Map<string, Facts>;
+  /** workspace id → its repository (rev 2; every pane of the workspace shares it); null = not a git repo */
+  gits: Map<string, GitInfo | null>;
   /** pane id → schedule state */
   sims: Map<string, Sim>;
   /** Optional pane reader for pane.read visible/recent (app wires FakeTerminals.read). */
@@ -255,6 +261,7 @@ export class DemoWorld extends HerdrSource {
     this.seed = seed;
     this.log = log ?? { debug() {}, info() {}, warn() {}, error() {} };
     this.facts = new Map();
+    this.gits = new Map();
     this.sims = new Map();
     this.paneReader = null;
     this.paneScroll = null;
@@ -371,6 +378,7 @@ export class DemoWorld extends HerdrSource {
     this.connected = !sc.offline;
     this.raw = emptyRaw();
     this.facts.clear();
+    this.gits.clear();
     this.sims.clear();
     this._wsSeq = 0;
     this._termSeq = 0;
@@ -410,7 +418,37 @@ export class DemoWorld extends HerdrSource {
       ...(def.repo ? { worktree: { repo_name: def.repo, repo_root: def.cwd, checkout_path: def.cwd, is_linked_worktree: false, repo_key: def.repo } } : {}),
       _cwd: def.cwd, _paneSeq: 0, _tabSeq: 0,
     });
+    this.gits.set(id, def.repo ? this._seedGit(rng(`git:${this.scenarioName}:${this.seed}:${id}:${lbl}`), def.cwd) : null);
     return id;
+  }
+
+  /** A workspace's repo as the morning left it: a branch, a few changed files, maybe commits waiting to be pushed. */
+  _seedGit(R: Rng, root: string): GitInfo {
+    const branch = R.pick(BRANCHES);
+    const untracked = R.int(0, 2);
+    return {
+      root, branch, head: hashHex(`${root}:${R.next()}`).slice(0, 7), dirty: R.int(0, 6) + untracked, untracked,
+      ahead: branch === 'spike/webgpu' ? null : R.chance(0.5) ? R.int(1, 3) : 0, behind: R.chance(0.2) ? R.int(1, 4) : 0,
+      lastCommit: { subject: R.pick(COMMITS), at: this.clock.now() - R.int(4, 240) * MIN },
+    };
+  }
+
+  /** Change a workspace's repo and tell every pane in it. */
+  _gitEdit(wsId: string | undefined, fn: (g: GitInfo) => GitInfo): void {
+    const g = wsId ? this.gits.get(wsId) : null;
+    if (wsId && g) this._gitSet(wsId, fn(g));
+  }
+  _gitSet(wsId: string, g: GitInfo | null): void {
+    this.gits.set(wsId, g);
+    for (const p of this.raw.panes) if (p.workspace_id === wsId) this._facts(p.pane_id);
+  }
+
+  /** One model call's spend (rev 2): today's tokens and estimated cost, reset when the local day rolls. */
+  _spend(f: Facts, u: TokenUse): void {
+    const day = localDay(this.clock.now());
+    const cur = f.usage && f.usage.day === day ? f.usage : { day, tokens: 0, output: 0, cost: 0, partial: false };
+    const c = costOf(f.model, u);
+    f.usage = { day, tokens: cur.tokens + tokensOf(u), output: cur.output + u.output, cost: c == null ? cur.cost : Math.round(((cur.cost ?? 0) + c) * 10_000) / 10_000, partial: false };
   }
 
   _tabFor(wsId: string, label: string): DemoTab {
@@ -457,7 +495,7 @@ export class DemoWorld extends HerdrSource {
     };
     const f: Facts = {
       kind, title: null, activity: null, activitySince: 0, model: null, modelTier: null, contextTokens: null, outputTokens: null,
-      todos: null, lastPrompt: null, struggle: null, subagents: [], prompt: null, askActivity: false, lastText: null, work: null,
+      todos: null, lastPrompt: null, struggle: null, subagents: [], prompt: null, askActivity: false, lastText: null, work: null, usage: null,
       proc: kind === 'shell' ? spec.proc ?? ['bash'] : [kind === 'codex' ? 'codex' : 'claude'],
       out: [], outSeq: 0, // shells: printed lines {seq, text, kind} (DemoWorld is the shell; fakeTerm renders them)
     };
@@ -481,6 +519,11 @@ export class DemoWorld extends HerdrSource {
         // spread slot 3 starts near its context limit so compaction shows up early ("grow contextTokens")
         f.contextTokens = spec.nearCompact ? R.int(148_000, 158_000) : R.int(18_000, 140_000);
         f.outputTokens = Math.round(f.contextTokens * R.range(0.08, 0.2));
+        // the morning so far: some model calls re-reading a growing context (own stream: never shifts the schedule's R)
+        const M = rng(`spend:${this.scenarioName}:${this.seed}:${id}`);
+        if (status !== 'unknown') for (let i = 0, n = M.int(20, 160), ctx = M.int(15_000, 60_000); i < n; i++, ctx = Math.min(180_000, ctx + M.int(200, 3000))) {
+          this._spend(f, { input: M.int(2, 40), cacheWrite: M.int(200, 3000), cacheRead: ctx, output: M.int(40, 900) });
+        }
         if (f.title) this._seedWork(rng(`text:${this.scenarioName}:${this.seed}:${id}`), f, status);
       }
       if (spec.trust) f.prompt = { ...PROMPTS.trust(cwd), selected: 0, typed: '' };
@@ -881,8 +924,11 @@ export class DemoWorld extends HerdrSource {
     if (cls === 'task') this._spawnSubs(sim, dur);
     this._setActivity(f, a);
     this._seen.add(cls);
-    f.contextTokens = Math.min(199_000, (f.contextTokens ?? 20_000) + R.int(400, 4500));
-    f.outputTokens = (f.outputTokens ?? 0) + R.int(20, 900);
+    const ctxBefore = f.contextTokens ?? 20_000;
+    f.contextTokens = Math.min(199_000, ctxBefore + R.int(400, 4500));
+    const out = R.int(20, 900);
+    f.outputTokens = (f.outputTokens ?? 0) + out;
+    this._spend(f, { input: 3, cacheWrite: Math.max(0, f.contextTokens - ctxBefore), cacheRead: ctxBefore, output: out });
     this._struggle(sim);
     const p = this._pane(sim.id);
     if (p) {
@@ -929,7 +975,15 @@ export class DemoWorld extends HerdrSource {
       this._event(sim.id, 'compact', { preTokens: f.contextTokens, trigger: 'auto' });
       f.contextTokens = R.int(18_000, 40_000);
     } else if (cls === 'git' && /commit/.test(a.detail)) {
-      this._event(sim.id, 'commit', { push: false });
+      const msg = /-m "([^"]*)"/.exec(a.detail)?.[1] || (f.title ?? 'wip');
+      const subject = msg.charAt(0).toUpperCase() + msg.slice(1);
+      const head = hashHex(`${sim.id}:${this.clock.now()}:${subject}`).slice(0, 7);
+      // the commit takes the dirty files; every other commit gets pushed too (deterministic: no draw from R)
+      this._gitEdit(this._pane(sim.id)?.workspace_id, (g) => {
+        const ahead = g.ahead == null ? null : parseInt(head[0], 16) % 2 ? 0 : g.ahead + 1;
+        return { ...g, head, dirty: 0, untracked: 0, ahead, behind: 0, lastCommit: { subject, at: this.clock.now() } };
+      });
+      this._event(sim.id, 'commit', { push: false, msg: subject, sha: head, branch: this.gits.get(this._pane(sim.id)?.workspace_id ?? '')?.branch ?? undefined });
       this._todos(sim, 'git');
     } else if ((cls === 'build' && R.chance(0.15)) || (cls !== 'think' && cls !== 'talk' && R.chance(0.03))) {
       this._event(sim.id, 'error', { tool: a.tool });
@@ -948,7 +1002,10 @@ export class DemoWorld extends HerdrSource {
     const R = sim.T;
     f.work ??= { since: this.clock.now(), added: 0, removed: 0, files: 0 };
     sim.files ??= new Set();
+    const fresh = !sim.files.has(a.detail || 'file');
     sim.files.add(a.detail || 'file');
+    // a file this task had not touched yet is one more changed file in the repo (weeds until the next commit)
+    if (fresh) this._gitEdit(this._pane(sim.id)?.workspace_id, (g) => ({ ...g, dirty: Math.min(40, g.dirty + 1), untracked: g.untracked + (cls === 'write' ? 1 : 0) }));
     const added = cls === 'write' ? R.int(12, 140) : a.tool === 'MultiEdit' ? R.int(4, 40) : R.int(1, 18);
     const removed = cls === 'write' ? 0 : R.int(0, Math.max(1, Math.round(added * 0.8)));
     f.work = { since: f.work.since, added: f.work.added + added, removed: f.work.removed + removed, files: Math.max(f.work.files, sim.files.size) };
@@ -1477,6 +1534,7 @@ export class DemoWorld extends HerdrSource {
         const a = isRecord(v) ? v : null;
         this._setActivity(f, a ? { tool: str(a.tool) ?? null, cls: isToolClass(a.cls) ? a.cls : null, detail: str(a.detail) ?? '' } : null);
       } else if (k === 'process') f.proc = isRecord(v) && v.argv ? String(v.argv).split(/\s+/) : ['bash'];
+      else if (k === 'git') this._gitSet(p.workspace_id, isRecord(v) ? clone(v) as unknown as GitInfo : null); // the workspace's repo (its panes share it)
       else Object.assign(f, { [k]: clone(v) }); // any other demo-owned field: the caller (demo.force) is trusted to send the right shape
       if (k === 'model') f.modelTier = modelTier(typeof v === 'string' ? v : null);
     }
@@ -1597,7 +1655,7 @@ export class DemoEnricher extends Enricher {
     let patch: Partial<Entity>;
     if (!f || base.kind !== 'claude') {
       patch = { title: null, activity: null, model: null, modelTier: null, contextTokens: null, outputTokens: null, todos: null,
-        lastPrompt: null, struggle: null, subagents: [], lastText: null, work: null };
+        lastPrompt: null, struggle: null, subagents: [], lastText: null, work: null, usage: null, git: this._gitOf(id) };
     } else {
       const working = base.status === 'working';
       let activity: Activity | null = null;
@@ -1608,7 +1666,7 @@ export class DemoEnricher extends Enricher {
       patch = {
         title: f.title, activity, model: f.model, modelTier: f.modelTier, contextTokens: f.contextTokens, outputTokens: f.outputTokens,
         todos: f.todos, lastPrompt: f.lastPrompt, struggle: working ? f.struggle : null, subagents: f.subagents,
-        lastText: f.lastText, work: f.work,
+        lastText: f.lastText, work: f.work, usage: f.usage, git: this._gitOf(id),
       };
     }
     const j = JSON.stringify(patch);
@@ -1621,6 +1679,12 @@ export class DemoEnricher extends Enricher {
       this._level.set(id, level);
       if (base.kind === 'claude') this.emitEvent(id, 'struggle', { level, reason: patch.struggle?.reason ?? null, detail: patch.struggle?.detail ?? null });
     }
+  }
+
+  /** The pane's workspace repo (demo git, rev 2). */
+  _gitOf(id: string): GitInfo | null {
+    const ws = this.world._pane(id)?.workspace_id;
+    return (ws ? this.world.gits.get(ws) : null) ?? null;
   }
 
   /** `demo.event {id, kind}` for kinds this owner may emit (actions.ts). */

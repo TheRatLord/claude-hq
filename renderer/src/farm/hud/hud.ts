@@ -15,7 +15,9 @@ import { unreadCount } from '../model/valley.ts';
 import type { Camera } from 'three';
 import type { FrameInfo, Interactions, SfxName, UiPort, VillagerPin } from '../scene/context.ts';
 import type { HudDeps } from './port.ts';
-import { createPanels, displayName, h, loadPrefs, savePrefs, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
+import { createPanels, displayName, h, typingIn, type HudCtx, type ToastSpec } from './ctx.ts';
+import { createPrefsStore } from '../prefs.ts';
+import { captionFor, keyLabel, nameplateShown, reducedMotion, uiZoom, type Action } from '../model/prefs.ts';
 import { letterKey, matchCombo, parseCombo, STATUS_RANK } from './format.ts';
 import { ICONS, icon } from './icons.ts';
 import { createStatus } from './status.ts';
@@ -44,6 +46,8 @@ import { createHint, createPause } from './pause.ts';
 import { createNotifier } from './notify.ts';
 import { createOnboarding } from './onboarding.ts';
 import { createPetPanel } from './pet.ts';
+import { createGazettePanel } from './gazette.ts';
+import type { GazetteView } from './gazette.ts';
 import type { OnboardingService } from '../model/onboarding.ts';
 import type { StampsService } from '../model/stamps.ts';
 import { stampIconHtml } from './stamps.ts';
@@ -81,6 +85,8 @@ export interface HudBindings {
   onboarding?(): OnboardingService;
   /** optional: the stamp book (model/stamps.ts; the Almanac's Stamps tab, hud/stamps.ts) */
   stamps?(): StampsService;
+  /** optional: The Valley Gazette (farm/newsroom.ts; hud/gazette.ts prints it) */
+  gazette?(): GazetteView;
   /** optional: a scene service by name (ctx.services), duck-typed by the reader: the map reads 'forage', 'wildlife', 'festivals', 'yard' */
   service?(name: string): unknown;
 }
@@ -99,7 +105,10 @@ const TELL_RE = /tell (?:claude|codex|gemini|the agent|it)|differently|\(esc\)/i
 export function createHud(d: HudDeps): Hud {
   const layer = h('div.vh-layer', { 'data-testid': 'hud' });
   d.root.append(layer);
-  const prefs = loadPrefs();
+  // browser-local prefs (model/prefs.ts): main.ts shares its store with the controller and the engine
+  const store = d.prefs ?? createPrefsStore();
+  const prefs = store.data;
+  const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   let b: HudBindings | null = null;
   let pendingOpen: { id: string; enterAt?: number } | null = null;
   const backdrop = h('div.vh-backdrop');
@@ -137,7 +146,8 @@ export function createHud(d: HudDeps): Hud {
     },
     toast: (t: ToastSpec) => toasts.push(t),
     panels: null as unknown as HudCtx['panels'],
-    savePrefs: () => savePrefs(prefs),
+    savePrefs: () => store.save(),
+    reduced: () => reducedMotion(prefs.reducedMotion, !!motionQuery?.matches, !!d.settings.get('reducedMotion')),
     kick: () => tick(),
   };
   const panels = createPanels(() => ctx, panelHost, backdrop, () => overlays());
@@ -147,7 +157,10 @@ export function createHud(d: HudDeps): Hud {
   const status = createStatus(ctx);
   const needs = createNeeds(ctx);
   const prompt = createPrompt(ctx);
-  const anchors = createAnchors(() => prompt.focused() ?? safeFocus(), () => b?.interact.all() ?? null);
+  const anchors = createAnchors(() => prompt.focused() ?? safeFocus(), () => b?.interact.all() ?? null, {
+    plate: (dist) => nameplateShown(prefs.nameplates, dist),
+    statusOf: (owner) => { const f = ctx.farmer(owner); return f ? (f.needsYou ? 'blocked' : f.unseenDone ? 'done' : f.status) : null; },
+  });
   const safeFocus = () => { try { return b?.interact.focused() ?? null; } catch { return null; } };
   const toasts = createToasts(ctx);
   const notifier = createNotifier(ctx);
@@ -176,7 +189,7 @@ export function createHud(d: HudDeps): Hud {
   const card = createCard(ctx);
   const stats = createStats(ctx);
   const mapPanel = createMapPanel(ctx);
-  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createPause(ctx), drawer, tour.panel]) panels.register(p);
+  for (const p of [createMailbox(ctx, mark), mapPanel, createRoster(ctx), card, createNoticeboard(ctx), stats, createAlmanac(ctx), createCollectionPanel(ctx), createShopPanel(ctx), createFriendsPanel(ctx), createPetPanel(ctx), createGazettePanel(ctx, () => b?.gazette?.()), createPause(ctx), drawer, tour.panel]) panels.register(p);
 
   // ---- dock ----
   const dockBtn = (label: string, key: string, svg: string, fn: () => void, testid: string) => {
@@ -185,19 +198,29 @@ export function createHud(d: HudDeps): Hud {
     return bt;
   };
   const mailBtn = dockBtn('Mailbox', 'J', ICONS.mail, () => panels.toggle('mailbox'), 'dock-mail');
+  const mapBtn = dockBtn('Map', 'M', ICONS.map, () => panels.toggle('map'), 'dock-map');
+  const ledgerBtn = dockBtn('Farm ledger', 'Tab', ICONS.book, () => panels.toggle('roster'), 'dock-roster');
   const leaderLabel = () => (d.settings.get('leaderKey') || 'Ctrl+`').replace(/^Ctrl\+/i, '⌃').replace(/^Alt\+/i, '⌥');
   const termBtn = dockBtn('Terminals', leaderLabel(), ICONS.terminal, () => toggleTerminal(), 'dock-term');
-  const dock = h('div.vh-dock', null, minimap.el, h('div.vh-dockbtns.vh-wood', null,
-    mailBtn,
-    dockBtn('Map', 'M', ICONS.map, () => panels.toggle('map'), 'dock-map'),
-    dockBtn('Farm ledger', 'Tab', ICONS.book, () => panels.toggle('roster'), 'dock-roster'),
+  const dock = h('nav.vh-dock', { 'aria-label': 'Quick panels' }, minimap.el, h('div.vh-dockbtns.vh-wood', null,
+    mailBtn, mapBtn, ledgerBtn,
     termBtn,
     dockBtn('Menu', 'Esc', ICONS.gear, () => panels.toggle('pause'), 'dock-menu')), quests.el);
   const leaderKbd = h('kbd.vh-k');
-  const hints = h('div.vh-hints', null, freehint,
-    h('span.opt', null, h('kbd.vh-k', { text: 'E' }), 'talk'), h('span.opt', null, h('kbd.vh-k', { text: 'F' }), 'terminal'),
-    h('span', null, h('kbd.vh-k', { text: 'M' }), 'map'), h('span', null, h('kbd.vh-k', { text: 'Tab' }), 'ledger'),
-    h('span', null, h('kbd.vh-k', { text: 'J' }), 'mail'),
+  // key caps that follow Settings → Controls (rebindable keys)
+  const kcap: Record<Action, HTMLElement[]> = { use: [], alt: [], map: [], ledger: [], mail: [] };
+  const kc = (a: Action) => { const k = h('kbd.vh-k'); kcap[a].push(k); return k; };
+  const syncKeys = () => {
+    for (const a of Object.keys(kcap) as Action[]) for (const k of kcap[a]) k.textContent = keyLabel(prefs.keys[a]);
+    for (const [bt, a, label] of [[mailBtn, 'mail', 'Mailbox'], [mapBtn, 'map', 'Map'], [ledgerBtn, 'ledger', 'Farm ledger']] as const) {
+      (bt.querySelector('.key') as HTMLElement).textContent = keyLabel(prefs.keys[a]);
+      bt.title = `${label} (${keyLabel(prefs.keys[a])})`;
+    }
+  };
+  const hints = h('div.vh-hints', { role: 'note', 'aria-label': 'Key hints' }, freehint,
+    h('span.opt', null, kc('use'), 'talk'), h('span.opt', null, kc('alt'), 'terminal'),
+    h('span', null, kc('map'), 'map'), h('span', null, kc('ledger'), 'ledger'),
+    h('span', null, kc('mail'), 'mail'),
     h('span', null, leaderKbd, 'terminals'), h('span', null, h('kbd.vh-k', { text: 'Esc' }), 'menu'),
     h('span', null, h('kbd.vh-k', { text: '?' }), 'all keys'));
   const syncLeader = () => {
@@ -207,8 +230,23 @@ export function createHud(d: HudDeps): Hud {
     termBtn.title = `Terminals (${spec})`;
   };
   syncLeader();
+  syncKeys();
 
-  layer.append(anchors.el, prompt.cross, prompt.el, dock, hints, hint, backdrop, h('div.vh-left', null, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner, tour.el);
+  // captions for the important sound cues (Settings → Accessibility) and a screen-reader live region that announces
+  // who needs you (always on, visually hidden)
+  const captions = h('div.vh-captions', { role: 'log', 'aria-label': 'Sound captions', 'data-testid': 'captions' });
+  const announce = h('div.vh-sr', { 'aria-live': 'assertive', role: 'alert', 'data-testid': 'sr-announce' });
+  const capAt = new Map<string, number>();
+  const caption = (sound: string, text: string, key: string) => {
+    const now = performance.now();
+    if (now - (capAt.get(key) ?? -1e9) < 1500) return;
+    capAt.set(key, now);
+    const line = h('div.cap', null, h('b', { text: `[${sound}]` }), ` ${text}`);
+    captions.append(line);
+    while (captions.children.length > 3) captions.firstElementChild?.remove();
+    setTimeout(() => line.remove(), Math.round(5000 * (prefs.toastK || 1)));
+  };
+  layer.append(anchors.el, prompt.cross, prompt.el, dock, hints, hint, backdrop, h('div.vh-left', { role: 'region', 'aria-label': 'Valley status and who needs you' }, status.el, needs.el), drawer.dim, panelHost, toasts.el, status.banner, tour.el, captions, announce);
   // fixed HUD furniture the anchored bubbles / interaction tag keep clear of (anchors.ts measures them on change only;
   // "children" = each visible child, so the gaps in a column or a toast stack stay usable)
   for (const [el, how] of [[status.el, ''], [needs.el, 'children'], [dock, 'children'], [hints, ''], [hint, ''],
@@ -248,8 +286,19 @@ export function createHud(d: HudDeps): Hud {
   // photo mode (farm/photo.ts) owns the keyboard while it is on
   const inPhoto = () => document.body.classList.contains('photo-mode');
   const photoJustLeft = () => performance.now() - ((window as unknown as { __photoLeftAt?: () => number }).__photoLeftAt?.() ?? -1e9) < 400;
+  /** Tab / Shift+Tab inside a panel: the next / previous visible control, wrapping around */
+  const focusStep = (root: HTMLElement, dir: 1 | -1) => {
+    const all = [...root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')]
+      .filter((x) => !(x as HTMLButtonElement).disabled && x.getClientRects().length > 0 && !x.closest('[aria-hidden="true"], [inert]'));
+    if (!all.length) { root.focus({ preventScroll: true }); return; }
+    const i = all.indexOf(document.activeElement as HTMLElement);
+    const next = all[i < 0 ? (dir > 0 ? 0 : all.length - 1) : (i + dir + all.length) % all.length];
+    next.focus();
+    next.scrollIntoView?.({ block: 'nearest' });
+  };
   addEventListener('keydown', (e) => {
     if (inPhoto()) return;
+    const K = prefs.keys;
     if (e.defaultPrevented || e.isComposing) return;
     const cur = panels.current();
     if (leaderMatch(e)) {
@@ -274,40 +323,46 @@ export function createHud(d: HudDeps): Hud {
         if (!(cur.id === 'pause' && Date.now() - pausedAt < 400)) panels.close();
         return;
       }
+      // keyboard navigation: Tab / Shift+Tab walk the open panel's controls and wrap (focus never leaks into the
+      // valley behind it); the ledger key toggles the ledger only when it is not Tab
+      if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) { handled(e); focusStep(cur.el, e.shiftKey ? -1 : 1); return; }
       if (typing || e.ctrlKey || e.altKey || e.metaKey) return;
       if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
-      if (e.code === 'KeyJ') { handled(e); panels.toggle('mailbox'); return; }
-      if (e.code === 'KeyM') { handled(e); panels.toggle('map'); return; }
+      if (e.code === K.mail) { handled(e); panels.toggle('mailbox'); return; }
+      if (e.code === K.map) { handled(e); panels.toggle('map'); return; }
+      if (e.code === K.ledger) { handled(e); panels.toggle('roster'); return; }
       if (e.code === 'KeyH') { handled(e); panels.toggle('almanac'); return; }
       if (e.code === 'KeyK') { handled(e); panels.toggle('collection'); return; }
+      if (e.code === 'KeyG') { handled(e); panels.toggle('gazette'); return; }
       if (e.code === 'KeyI') { handled(e); panels.toggle('shop', { tab: 'sell', at: 'pocket' }); return; }
-      if (e.key === 'Tab' && cur.id !== 'pause') { handled(e); panels.toggle('roster'); return; }
-      if (e.code === 'KeyE' && cur.id === 'card') { handled(e); panels.close(); return; }
+      if (e.code === K.use && cur.id === 'card') { handled(e); panels.close(); return; }
       return;
     }
     if (typing || e.ctrlKey || e.metaKey) return;
     if (e.altKey) return;
     // ? (Shift+/ on most layouts): every key, grouped (the pause menu's Controls tab)
     if (e.key === '?') { handled(e); panels.open('pause', 'controls'); return; }
+    // the rebindable actions (Settings → Controls; defaults E / F / M / Tab / J)
+    if (e.code === K.use) { const f = prompt.focused(); if (f) { handled(e); if (f.kind === 'villager') tour.signal('talk'); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
+    if (e.code === K.alt) {
+      const f = prompt.focused();
+      if (!f) return;
+      handled(e);
+      if (f.kind === 'villager') tour.signal('talk');
+      try { if (f.alt) f.alt.use(); else if (f.kind === 'farmer' || f.kind === 'helper') openTerminal(f.id); } catch (err) { console.warn('[hud] alt.use() threw', err); }
+      return;
+    }
+    if (e.code === K.mail) { handled(e); panels.open('mailbox'); return; }
+    if (e.code === K.map) { handled(e); panels.open('map'); return; }
+    if (e.code === K.ledger) { handled(e); panels.open('roster'); return; }
     switch (e.code) {
-      case 'KeyE': { const f = prompt.focused(); if (f) { handled(e); if (f.kind === 'villager') tour.signal('talk'); try { f.use(); } catch (err) { console.warn('[hud] use() threw', err); } } return; }
-      case 'KeyF': {
-        const f = prompt.focused();
-        if (!f) return;
-        handled(e);
-        if (f.kind === 'villager') tour.signal('talk');
-        try { if (f.alt) f.alt.use(); else if (f.kind === 'farmer' || f.kind === 'helper') openTerminal(f.id); } catch (err) { console.warn('[hud] alt.use() threw', err); }
-        return;
-      }
-      case 'KeyJ': handled(e); panels.open('mailbox'); return;
-      case 'KeyM': handled(e); panels.open('map'); return;
       case 'KeyB': handled(e); panels.open('noticeboard'); return;
       case 'KeyH': handled(e); panels.open('almanac'); return;
       case 'KeyK': handled(e); panels.open('collection'); return;
+      case 'KeyG': handled(e); panels.open('gazette'); return;
       case 'KeyI': handled(e); panels.open('shop', { tab: 'sell', at: 'pocket' }); return;
       case 'KeyQ': if (quests.toggle()) handled(e); return;
-      case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; savePrefs(prefs); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
-      case 'Tab': handled(e); panels.open('roster'); return;
+      case 'KeyN': handled(e); prefs.minimap = !prefs.minimap; store.save(); anchors.say(prefs.minimap ? 'Minimap on' : 'Minimap off', 900, undefined, 'screen'); return;
       case 'Escape': handled(e); if (Date.now() - pausedAt > 400) { pausedAt = Date.now(); panels.open('pause'); } return;
     }
   }, true);
@@ -317,7 +372,7 @@ export function createHud(d: HudDeps): Hud {
   document.addEventListener('pointerlockchange', () => {
     const locked = !!document.pointerLockElement;
     if (locked && panels.modal) { document.exitPointerLock(); return; } // a late grant while a panel is open
-    if (locked && !prefs.hinted) { prefs.hinted = true; savePrefs(prefs); }
+    if (locked && !prefs.hinted) { prefs.hinted = true; store.save(); }
     if (!locked && wasLocked && !panels.modal && !inPhoto() && !photoJustLeft()) { pausedAt = Date.now(); panels.open('pause'); }
     wasLocked = locked;
     overlays();
@@ -380,9 +435,26 @@ export function createHud(d: HudDeps): Hud {
 
   // ---- network toasts, settings ----
   d.net.onToast((level, text) => toasts.push({ text, level: level === 'info' ? 'info' : level }, true));
-  const motion = () => layer.classList.toggle('reduced', !!d.settings.get('reducedMotion'));
-  d.settings.onChange((c) => { if ('reducedMotion' in c) motion(); if ('leaderKey' in c) syncLeader(); });
-  motion();
+  // Settings → Interface / Accessibility on the layer: UI zoom, reduced motion (or explicitly not, over the OS), high
+  // contrast, larger text, the colour-safe status palette (hud.css)
+  let styleSig = '';
+  const applyPrefs = () => {
+    const z = uiZoom(prefs);
+    layer.style.setProperty('--ui-zoom', String(z));
+    layer.classList.toggle('reduced', ctx.reduced());
+    layer.classList.toggle('motion-ok', prefs.reducedMotion === 'off');
+    layer.classList.toggle('hc', prefs.highContrast);
+    layer.classList.toggle('big', prefs.largeText);
+    layer.classList.toggle('cb', prefs.colorSafe);
+    captions.hidden = !prefs.captions;
+    syncKeys();
+    const sig = `${z}|${prefs.highContrast}|${prefs.largeText}|${prefs.colorSafe}`;
+    if (sig !== styleSig) { styleSig = sig; anchors.remeasure(); }
+  };
+  store.onChange(() => { applyPrefs(); tick(); });
+  motionQuery?.addEventListener?.('change', applyPrefs);
+  d.settings.onChange((c) => { if ('reducedMotion' in c) applyPrefs(); if ('leaderKey' in c) syncLeader(); });
+  applyPrefs();
 
   // dev/test handle (screenshots, browser tests): open any panel or terminal without key simulation
   (window as unknown as { __hud?: unknown }).__hud = {
@@ -393,7 +465,7 @@ export function createHud(d: HudDeps): Hud {
     patch: (o: Partial<HudBindings>) => { if (b) b = { ...b, ...o }; },
     openTerminal: (id: string) => openTerminal(id),
     /** dev: hide the welcome card as if the player had clicked in */
-    dismissHint: () => { prefs.hinted = true; savePrefs(prefs); overlays(); },
+    dismissHint: () => { prefs.hinted = true; store.save(); overlays(); },
     /** map hit targets in canvas css px (browser tests click farmers by these) */
     mapHits: () => mapPanel.hits().map((x) => ({ ...x })),
     /** push a toast (layout checks: `__hud.toast({ text, sub, level, key })`) */
@@ -402,6 +474,8 @@ export function createHud(d: HudDeps): Hud {
     notify: () => notifier.debug(),
     /** the welcome tour (hud/onboarding.ts): tip(id), signal(s), data() */
     tour: tour.dev,
+    /** browser-local prefs (model/prefs.ts): `prefs()` reads, `prefs({ uiScale: 1.3, colorSafe: true })` patches + applies */
+    prefs: (patch?: Record<string, unknown>) => { if (patch) store.set(patch); return JSON.parse(JSON.stringify(prefs)) as unknown; },
   };
 
   return {
@@ -426,6 +500,9 @@ export function createHud(d: HudDeps): Hud {
       b = x;
       x.onValley((e) => {
         notifier.event(e);
+        const who = e.kind === 'level-up' ? '' : ctx.nameOf(e.id);
+        if (prefs.captions) { const c = captionFor(e.kind, who, e.detail); if (c) caption(c.sound, c.text, `${c.key}|${e.id}`); }
+        if (e.kind === 'blocked') { const f = ctx.farmer(e.id); announce.textContent = `${who} needs you${f?.question ? `: ${f.question}` : ''}. Press Alt+1 for their terminal, or J for the mailbox.`; }
         if (e.kind === 'blocked') { mailBtn.classList.remove('bounce'); void mailBtn.offsetWidth; mailBtn.classList.add('bounce'); }
         else if (e.kind === 'plot-opened') { const p = ctx.plot(e.id); if (p) toasts.push({ text: `A new field was tilled: ${p.label}`, sub: 'a workspace opened in herdr', icon: ICONS.sprout, level: 'good' }); }
         else if (e.kind === 'level-up') {

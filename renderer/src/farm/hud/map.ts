@@ -5,8 +5,9 @@
  */
 import type { FrameInfo } from '../scene/context.ts';
 import { ICONS, KIND_ICON, icon } from './icons.ts';
-import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_COLOR, STATUS_LABEL, STATUS_RANK } from './format.ts';
-import { DEFAULT_LAYERS, drawValley, fitContent, fitView, hitTest, toWorld, villagerPin, type Hit, type MapExtras, type MapLayers, type View } from './mapdraw.ts';
+import { altName, farmerLine, fieldName, HELPER_LABEL, JOB_LABEL, nice, shortName, STAGE_LABEL, STATUS_LABEL, STATUS_RANK } from './format.ts';
+import { statusColor } from '../model/prefs.ts';
+import { DEFAULT_LAYERS, drawValley, statusMark, fitContent, fitView, hitTest, toWorld, villagerPin, type Hit, type MapExtras, type MapLayers, type View } from './mapdraw.ts';
 import { heart, PIN_COLOR, rosette, tile, type Glyph } from './mappins.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { fishOdds, SIGHTINGS } from '../model/collection.ts';
@@ -76,8 +77,8 @@ function swatch(draw: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement 
   if (g) { g.scale(k, k); g.translate(n / 2, n / 2); draw(g); }
   return c;
 }
-const dotSw = (st: Status, mark = '') => swatch((g) => {
-  g.fillStyle = STATUS_COLOR[st]; g.strokeStyle = '#3b2a1e'; g.lineWidth = 1.6; g.beginPath(); g.arc(0, 0, 7, 0, Math.PI * 2); g.fill(); g.stroke();
+const dotSw = (st: Status, mark = '', safe = false) => swatch((g) => {
+  g.fillStyle = statusColor(st, safe); g.strokeStyle = '#3b2a1e'; g.lineWidth = 1.6; statusMark(g, 0, 0, 7, st, safe); g.fill(); g.stroke();
   if (mark) { g.fillStyle = st === 'blocked' ? '#3a2400' : '#fff'; g.font = '800 10px ui-rounded, "DejaVu Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(mark, 0, 0.5); }
   if (st === 'blocked') { g.strokeStyle = '#f0a72c'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 9.6, 0, Math.PI * 2); g.stroke(); }
 });
@@ -100,8 +101,12 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
   const tip = h('div.vh-tip');
   const wrap = h('div.vh-mapwrap', null, canvas, tip);
   const key = (sw: HTMLCanvasElement, label: string, title?: string) => h('span', title ? { title } : null, sw, label);
+  // the four status swatches follow Settings → Accessibility → colour-safe status (redrawn on open when it changed)
+  let keySafe = false;
+  const statusKeys = (safe: boolean) => (['blocked', 'working', 'done', 'idle'] as const).map((st) =>
+    h('span.st-key', null, dotSw(st, st === 'blocked' ? '!' : st === 'done' ? '✓' : '', safe), STATUS_LABEL[st]));
   const legend = h('div.vh-legend.vh-mapkey', { 'data-testid': 'map-legend' },
-    key(dotSw('blocked', '!'), STATUS_LABEL.blocked), key(dotSw('working'), STATUS_LABEL.working), key(dotSw('done', '✓'), STATUS_LABEL.done), key(dotSw('idle'), STATUS_LABEL.idle),
+    ...statusKeys(false),
     key(swatch((g) => { g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 6.5); g.lineTo(0, 3.5); g.lineTo(-6, 6.5); g.closePath(); g.fillStyle = '#d0584a'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.stroke(); }), 'You'),
     key(swatch((g) => { g.strokeStyle = '#6e4a2a'; g.lineWidth = 2; g.beginPath(); g.moveTo(-5, -1); g.lineTo(5, -1); g.moveTo(0, -6); g.lineTo(0, 8); g.stroke(); g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, -6, 3, 0, Math.PI * 2); g.fill(); g.stroke(); }), 'Scarecrow'),
     key(swatch((g) => villagerPin(g, 0, 1, 7, '#3f6a4e', 1, null)), 'Villager'),
@@ -162,7 +167,7 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     if (!g || !view) return;
     const s = ctx.state();
     const ex = gather(ctx, t);
-    hits = drawValley(g, view, s, { time: t, locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover, villagers: ctx.b?.villagers?.(), layers, extra: ex });
+    hits = drawValley(g, view, s, { time: t, safe: ctx.prefs.colorSafe, still: ctx.reduced(), locate: ctx.b?.locate, player: ctx.b?.player?.() ?? null, hover: listHover ?? hover, villagers: ctx.b?.villagers?.(), layers, extra: ex });
     if (ex) {
       const n = (b: HTMLElement, v: string) => { const el = b.querySelector('.n') as HTMLElement; if (el.textContent !== v) el.textContent = v; };
       n(layerBtns.requests, ex.requests.length ? String(ex.requests.length) : '');
@@ -292,6 +297,7 @@ export function createMapPanel(ctx: HudCtx): Panel & { hits(): readonly Hit[] } 
     id: 'map', el,
     hits: () => hits,
     onOpen() {
+      if (keySafe !== ctx.prefs.colorSafe) { keySafe = ctx.prefs.colorSafe; legend.querySelectorAll('.st-key').forEach((e) => e.remove()); legend.prepend(...statusKeys(keySafe)); }
       view = null;
       requestAnimationFrame(() => { layout(); draw(); });
       layout(); refreshList(); draw();
@@ -351,7 +357,7 @@ export function createMinimap(ctx: HudCtx): { el: HTMLElement; frame(f: FrameInf
     const view: View = { cx: player.x, cz: player.z, scale: sz / 90, w: sz, h: sz };
     g.save();
     g.beginPath(); g.arc(sz / 2, sz / 2, sz / 2, 0, Math.PI * 2); g.clip();
-    drawValley(g, view, s, { time, locate: ctx.b?.locate, player, mini: true, villagers: ctx.b?.villagers?.(), layers, extra: gather(ctx, time) });
+    drawValley(g, view, s, { time, safe: ctx.prefs.colorSafe, still: ctx.reduced(), locate: ctx.b?.locate, player, mini: true, villagers: ctx.b?.villagers?.(), layers, extra: gather(ctx, time) });
     g.restore();
   }
   return {

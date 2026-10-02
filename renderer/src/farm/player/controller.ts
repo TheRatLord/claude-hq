@@ -64,8 +64,14 @@ export interface Controller {
   dispose(): void;
 }
 
-export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Controller {
+/** Settings → Controls (browser-local, model/prefs.ts); read every frame / mouse move, so changes apply at once. */
+export interface ControlPrefs { mouseSens: number; invertY: boolean; headBob: boolean; sprintToggle: boolean }
+const DEFAULT_CONTROLS: ControlPrefs = { mouseSens: 1, invertY: false, headBob: true, sprintToggle: false };
+
+export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement, prefs: () => ControlPrefs = () => DEFAULT_CONTROLS): Controller {
   const p = ctx.player;
+  /** sprint latched by Shift when Settings → sprint toggle is on (released when you stop moving) */
+  let sprintLatch = false;
   const keys = new Set<string>();
   const vel = new THREE.Vector3();
   let vy = 0, grounded = true, bob = 0, lastStep = 0, look: { yaw: number; pitch: number } | null = null;
@@ -99,15 +105,20 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
     if (p.frozen && down) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (down && !e.repeat && (e.code === 'ShiftLeft' || e.code === 'ShiftRight') && prefs().sprintToggle) sprintLatch = !sprintLatch;
     if (down) keys.add(e.code); else keys.delete(e.code);
   };
   const kd = (e: KeyboardEvent) => onKey(e, true), ku = (e: KeyboardEvent) => onKey(e, false);
   const blur = () => keys.clear();
   const mm = (e: MouseEvent) => {
     if (p.frozen || document.pointerLockElement !== canvas) return;
+    // a zero-delta move is no look input (headless Chromium sends one every frame once the pointer re-locks); don't
+    // let it cancel a pending lookAt (dev hooks, tests, sitting down)
+    if (!e.movementX && !e.movementY) return;
     look = null;
-    p.yaw -= e.movementX * sens;
-    p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch - e.movementY * sens));
+    const c = prefs(), k = sens * c.mouseSens;
+    p.yaw -= e.movementX * k;
+    p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch - e.movementY * k * (c.invertY ? -1 : 1)));
   };
   const click = () => { if (!p.frozen && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {}); };
   addEventListener('keydown', kd);
@@ -147,7 +158,9 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
       }
       const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
       const side = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-      const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      const toggle = prefs().sprintToggle;
+      if (!toggle || (!fwd && !side)) sprintLatch = false;
+      const sprint = toggle ? sprintLatch : keys.has('ShiftLeft') || keys.has('ShiftRight');
       if (flying) {
         // free camera: along the view (pitch included), Space / C for straight up / down; eased so moves glide
         const rise = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') || keys.has('ControlLeft') ? 1 : 0);
@@ -233,7 +246,9 @@ export function createController(ctx: SceneCtx, canvas: HTMLCanvasElement): Cont
         bob += bobAdvance(dt, hz);
         const s = bobShape(bob);
         const amp = Math.min(1, p.speed / WALK);
-        bobY = s.y * 0.045 * amp; bobX = s.x * 0.02 * amp;
+        // Settings: head bob off, or reduced motion (the footsteps keep their rhythm either way)
+        const bk = !prefs().headBob ? 0 : ctx.comfort.reducedMotion ? 0.25 : 1;
+        bobY = s.y * 0.045 * amp * bk; bobX = s.x * 0.02 * amp * bk;
         const si = stepIndex(bob);
         if (si !== lastStep) {
           lastStep = si;

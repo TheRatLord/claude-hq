@@ -5,7 +5,9 @@
  */
 import type { FarmerView, HelperView } from '../model/types.ts';
 import { farmerFace, ICONS, KIND_ICON, LETTER_ICON, icon } from './icons.ts';
-import { ago, altName, shortName, dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, nice, pct, seedHue, STATUS_LABEL } from './format.ts';
+import { ago, altName, branchName, contextLine, shortName, dur, HELPER_LABEL, JOB_LABEL, JOB_REAL, kindLine, nice, pct, repoBits, seedHue, spendLine, STATUS_LABEL } from './format.ts';
+import type { RepoView } from '../model/types.ts';
+import './signals.css';
 import { framePanel, h, typingIn, type HudCtx, type Panel } from './ctx.ts';
 import { createDayCard } from './timeline.ts';
 
@@ -46,15 +48,21 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     const grid = h('div.grid');
     if (f.todos && f.todos.total) {
       const r = f.todos.done / f.todos.total;
+      const items = f.todos.items ?? [];
       grid.append(h('span.lab', { text: 'Todos' }), h('div', null, h('div.vh-bar', null, h('i', { style: { width: pct(r) } })),
-        h('div', { text: `${f.todos.done}/${f.todos.total}${f.todos.current ? ` · ${f.todos.current}` : ''}`, style: { fontSize: '12px', marginTop: '2px' } })));
+        h('div', { text: `${f.todos.done}/${f.todos.total}${f.todos.current ? ` · ${f.todos.current}` : ''}`, style: { fontSize: '12px', marginTop: '2px' } }),
+        items.length ? h('ul.vh-todos', { 'data-testid': 'card-todos', 'aria-label': 'Todo list' }, ...items.map((t) => h(`li.${t.state}`, { title: t.text },
+          h('i', { 'aria-hidden': 'true', text: t.state === 'done' ? '✓' : t.state === 'doing' ? '▸' : '' }), h('span', { text: t.text })))) : null));
     }
     if (f.work && (f.work.added || f.work.removed || f.work.files)) {
       grid.append(h('span.lab', { text: 'Lines' }), h('div', null, h('span', { text: `+${f.work.added}`, style: { color: '#3f7f2c' } }), ' ', h('span', { text: `−${f.work.removed}`, style: { color: '#b0402f' } }), ` · ${f.work.files} file${f.work.files === 1 ? '' : 's'}`));
     }
     if (f.context != null) {
-      grid.append(h('span.lab', { text: 'Context' }), h('div', null, h(`div.vh-bar${f.context > 0.85 ? '.hot' : f.context > 0.65 ? '.warn' : ''}`, { title: `${pct(f.context)} of the context window` }, h('i', { style: { width: pct(f.context) } }))));
+      grid.append(h('span.lab', { text: 'Context' }), h('div', { 'data-testid': 'card-context' }, h(`div.vh-bar${f.context > 0.85 ? '.hot' : f.context > 0.65 ? '.warn' : ''}`, { title: `${pct(f.context)} of the context window` }, h('i', { style: { width: pct(f.context) } })),
+        h('div.vh-sig', { text: contextLine(f) })));
     }
+    if (f.git) grid.append(...repoRows(f.git, s.now));
+    if (f.spend) grid.append(h('span.lab', { text: 'Today' }), h('div', { 'data-testid': 'card-spend', title: 'Tokens and an estimated cost (list prices) of this agent\'s model calls since midnight', text: spendLine(f.spend) }));
     if (f.struggle) grid.append(h('span.lab', { text: 'Mood' }), h('div', { text: ['', 'a little stuck', 'struggling', 'badly stuck'][f.struggle] }));
     if (grid.childElementCount) kids.push(grid);
     if (f.said) kids.push(h('div.vh-said', { text: f.said }));
@@ -68,6 +76,15 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     if ((f.status === 'idle' || f.status === 'done') && !f.needsYou) kids.push(promptBox(f));
     kids.push(day.el);
     body.replaceChildren(...kids.filter((k): k is Node => !!k));
+  }
+
+  /** Branch (+ changed / to push / behind) and the last commit, for farmers and scarecrows. */
+  function repoRows(g: RepoView, now: number): HTMLElement[] {
+    const bits = repoBits(g);
+    const rows = [h('span.lab', { text: 'Branch' }), h('div.vh-repo', { 'data-testid': 'card-branch', title: `${g.repo}${g.head ? ` @ ${g.head}` : ''}` },
+      h('code', { text: branchName(g) }), bits ? h('span', { text: ` · ${bits}` }) : h('span.vh-muted', { text: ' · clean' }))];
+    if (g.lastCommit) rows.push(h('span.lab', { text: 'Last commit' }), h('div.vh-sig', { 'data-testid': 'card-commit', title: g.lastCommit.subject }, `“${g.lastCommit.subject}” · ${ago(g.lastCommit.at, now)}`));
+    return rows;
   }
 
   function promptBox(f: FarmerView): HTMLElement {
@@ -121,6 +138,7 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     if (hp.exit) grid.append(h('span.lab', { text: 'Last exit' }), h('div', null, h('span.vh-pill', { text: hp.exit === 'ok' ? 'OK' : `Failed${e?.process?.exit ? ` (${e.process.exit.code})` : ''}`, style: { background: hp.exit === 'ok' ? '#5fae45' : '#d0584a' } }), e?.process?.exit?.summary ? ` ${e.process.exit.summary}` : ''));
     if (hp.ports.length) grid.append(h('span.lab', { text: 'Ports' }), h('div', { text: hp.ports.map((p) => `:${p}`).join('  ') }));
     if (e?.res) grid.append(h('span.lab', { text: 'Using' }), h('div', { text: `${Math.round(e.res.cpu)}% CPU · ${Math.round(e.res.rssMB)} MB` }));
+    if (hp.git) grid.append(...repoRows(hp.git, s.now));
     if (grid.childElementCount) kids.push(grid);
     if (e?.process?.lastLine) kids.push(h('div.vh-said', { text: e.process.lastLine, style: { fontStyle: 'normal', fontFamily: 'ui-monospace, "DejaVu Sans Mono", monospace', fontSize: '12.5px' } }));
     kids.push(h('div.acts', null,
@@ -134,8 +152,9 @@ export function createCard(ctx: HudCtx): Panel & { showFarmer(id: string): void;
     if (!s || !id) return;
     const f = s.farmers.get(id), hp = s.helpers.get(id);
     if (f) day.update(f.id);
-    const nsig = f ? JSON.stringify([f.status, f.job, f.detail, f.title, f.needsYou, f.unseenDone, f.question, f.options, f.todos, f.work, Math.round((f.context ?? 0) * 50), f.said, f.ducklings, Math.floor((s.now - f.lastActive) / 60000)])
-      : hp ? JSON.stringify(hp) : 'gone';
+    const nsig = f ? JSON.stringify([f.status, f.job, f.detail, f.title, f.needsYou, f.unseenDone, f.question, f.options, f.todos, f.work, Math.round((f.context ?? 0) * 50), f.said, f.ducklings, Math.floor((s.now - f.lastActive) / 60000),
+      f.model, f.git, f.spend && [f.spend.tokens >> 14, Math.round((f.spend.cost ?? 0) * 100)]])
+      : hp ? JSON.stringify([hp, Math.floor(s.now / 60000)]) : 'gone';
     if (nsig === sig) return;
     // don't rebuild under the user's typing
     if (el.contains(document.activeElement) && document.activeElement?.tagName === 'TEXTAREA' && f && !f.needsYou) return;

@@ -21,6 +21,7 @@ import { createMeteors, showerOn } from './meteors.ts';
 import type { AudioService, IndoorSpace } from '../context.ts';
 import { sunTimes } from '../../model/sky.ts';
 import { hash32 } from '../../../../../shared/identity.ts';
+import { VL_KEY } from '../lights/shader.ts';
 
 /** dev service 'atmosphere': force the weather moments (null = follow the weather) */
 export interface AtmosphereService {
@@ -187,11 +188,13 @@ export const skySystem: SystemFactory = (ctx) => {
       // --- key light: the sun by day, moonlight by night, with a dip at the handover so the direction never pops
       const sunW = smooth(-0.1, 0.04, a.sunElev);
       moonLight.copy(a.moon);
-      moonLight.y = Math.max(moonLight.y, 0.2);
+      moonLight.y = Math.max(moonLight.y, 0.36);   // a low moon: shadows at most ~2.5× their caster's height
       moonLight.normalize();
       nightDir.copy(NIGHT_DIR).lerp(moonLight, smooth(0.05, 0.35, a.moon.y) * 0.8).normalize();
       if (sunW >= 0.5) { keyDir.copy(a.sun); keyDir.y = Math.max(keyDir.y, 0.2); keyDir.normalize(); } else keyDir.copy(nightDir);
       const handover = smooth(0, 0.35, Math.abs(sunW - 0.5));
+      // under the moon, cast shadows fade out on faces it only grazes (scene/lights/shader.ts vlShadowMix)
+      VL_KEY[0] = 1 - sunW;
       const moonBright = 0.55 + 0.45 * Math.sin(a.moonPhase * Math.PI); // fuller moon, brighter night
       let keyI = mix.keyI * handover * (sunW < 0.5 ? moonBright : 1);
       keyI *= 1 - clamp01(oc * 0.62 + rn * 0.18 + st * 0.15 + fg * 0.35 + sn * 0.2);

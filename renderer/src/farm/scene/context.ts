@@ -156,6 +156,8 @@ export interface WorldTag {
   alpha: number;
   /** metres from the camera (priority: nearer wins the spot, farther tags nudge away; also scales the tag down) */
   dist: number;
+  /** nameplates: a slim gauge under the name, 0..1 (a farmer's context fill once it runs high); absent / < 0 = none */
+  meter?: number;
 }
 
 export interface SceneCtx {
@@ -172,6 +174,12 @@ export interface SceneCtx {
   agents: AgentPort;
   ui: UiPort;
   quality: Quality;
+  /**
+   * comfort settings systems may read each frame (main.ts keeps it current from the browser-local prefs, model/prefs.ts):
+   * `weatherFx` scales rain / snow / leaves / motes (0–1); `reducedMotion` asks for calmer motion (softer lightning
+   * flashes, fewer particles, no camera bob)
+   */
+  comfort: { weatherFx: number; reducedMotion: boolean };
   /** debug flags (dev overlay, F-keys) */
   debug: Record<string, boolean>;
   /** systems publish lookups for each other here (e.g. 'farmers' → position of a farmer by id) */

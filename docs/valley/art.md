@@ -32,7 +32,7 @@ relative to `renderer/src/farm/`.
 * **Outlines + post:** a dark warm outline on silhouettes (post pass), soft bloom on emissives (lamps, "!" markers,
   fireflies), colour grade per time of day, gentle vignette. Keep emissive intensities > 1 only for things meant to glow.
 * **Seasons** follow the real month (`ctx.valley.sky.season`): spring blossoms, summer lush, autumn orange/red trees
-  and pumpkins, winter snow caps and bare trees. Assets take `season` in their build options.
+  (and deep gold, never pale lemon: lemon washes out to khaki under the moon's grade) and pumpkins, winter snow caps and bare trees. Assets take `season` in their build options.
 * **Everything alive sways/breathes:** wind service uniforms for foliage; idle squash-and-stretch; nothing freezes.
 * **No external assets.** All geometry, textures (canvas), sounds (WebAudio synthesis) and fonts (system) are made
   in code. No downloads, no image/model/audio files.
@@ -59,6 +59,14 @@ Lamps, lanterns, windows and fires are real lights, not ground decals.
   threshold so only sources halo.
 * Unlit emitters that must stay warm under the night grade (flames, lantern cores): `warmEmitter(material)` from
   `scene/lights/emitters.ts`. Toon pixels write their local-light share to the scene target's alpha for that grade.
+  The share is taken against the *unshadowed* sun / moon and weighted by the pool's own strength, and a pool's faint
+  outer wash is mostly brightness (`vlTint`), so a cast shadow inside a lamp's reach stays a cool moon shadow instead
+  of a brown smudge (the bunting over the cobbles).
+* Moon shadows: the night key light never sits lower than ~20° (shadows at most ~2.5× their caster), and on faces it
+  only grazes its cast shadow fades out (`vlShadowMix`, `VL_KEY` written by `scene/sky/sky.ts`; off by day), so a low
+  moon draws no long stripes down cliff faces (the trail's fence posts).
+* Lamp glass (`PAL.lampGlow` boxes) gets a mid-face vertex so the glass shader's flame core shows; rooms dim the unlit
+  glass with `setGlass(material, scale, tint)` (smoky amber instead of bright outdoor glass, which read white indoors).
 
 ## The land (land package)
 

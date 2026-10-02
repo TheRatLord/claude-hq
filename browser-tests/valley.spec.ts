@@ -293,6 +293,7 @@ test('power-user loop: answer + next, ? for keys, ledger chips + new task, backg
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('panel-pause')).toBeVisible();
   await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByTestId('set-sec-alerts').click();
   await page.getByTestId('set-notify').check();
   await expect(page.getByTestId('toasts')).toContainText(/notifications on/i);
   await page.keyboard.press('Escape');

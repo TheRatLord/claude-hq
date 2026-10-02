@@ -1,13 +1,20 @@
 /**
- * Pause menu (Esc with nothing open, or losing pointer lock): Resume, Settings (server-persisted settings plus local
- * HUD preferences, incl. opt-in desktop notifications: notify.ts), Controls help (also `?` from anywhere). Also the
- * first-run hint card.
+ * Pause menu (Esc with nothing open, or losing pointer lock): Resume, Settings, Controls help (also `?` from anywhere).
+ * Also the first-run hint card. Settings are sections (Controls, Graphics, Audio, Interface, Accessibility, Alerts,
+ * Terminal): server-persisted settings (volumes, the terminal: core/settings.ts) beside the browser-local prefs
+ * (model/prefs.ts: comfort, graphics, accessibility, key bindings; ctx.prefs), see docs/valley/hud.md → Settings.
  */
 import type { Settings as WireSettings } from '../../../../shared/protocol.ts';
 import { ICONS, icon } from './icons.ts';
 import { framePanel, h, type HudCtx, type Panel } from './ctx.ts';
 import { notifyPermission, requestNotify } from './notify.ts';
 import { replayWelcome } from './onboarding.ts';
+import { ACTIONS, ACTION_LABEL, DEFAULT_KEYS, IDLE_FPS, RANGES, keyLabel, rebind, type Action, type Prefs } from '../model/prefs.ts';
+
+type Section = 'controls' | 'graphics' | 'audio' | 'interface' | 'access' | 'alerts' | 'terminal';
+const SECTIONS: readonly (readonly [Section, string])[] = [
+  ['controls', 'Controls'], ['graphics', 'Graphics'], ['audio', 'Audio'], ['interface', 'Interface'], ['access', 'Accessibility'], ['alerts', 'Alerts'], ['terminal', 'Terminal'],
+];
 
 type Tab = 'menu' | 'settings' | 'controls';
 
@@ -25,7 +32,7 @@ export function createPause(ctx: HudCtx): Panel {
   function render(): void {
     plaque.textContent = tab === 'menu' ? 'Paused' : tab === 'settings' ? 'Settings' : 'Controls';
     tabs.replaceChildren(...(['menu', 'settings', 'controls'] as const).map((t) => {
-      const b = h('button.vh-tab', { type: 'button', role: 'tab', 'aria-selected': String(t === tab) }, t === 'menu' ? 'Menu' : t === 'settings' ? 'Settings' : 'Controls');
+      const b = h('button.vh-tab', { type: 'button', role: 'tab', 'aria-selected': String(t === tab), 'data-sec': `tab-${t}` }, t === 'menu' ? 'Menu' : t === 'settings' ? 'Settings' : 'Controls');
       b.addEventListener('click', () => setTab(t));
       return b;
     }));
@@ -38,9 +45,9 @@ export function createPause(ctx: HudCtx): Panel {
     return h('div.main', null,
       big('Back to the valley', ICONS.play, 'Esc', () => ctx.panels.close(), '.primary'),
       big('Terminals', ICONS.terminal, leader, () => { const id = bestId(); if (id) ctx.openTerminal(id); else ctx.panels.open('drawer'); }),
-      big('Farm ledger', ICONS.book, 'Tab', () => ctx.panels.open('roster')),
-      big('Map', ICONS.map, 'M', () => ctx.panels.open('map')),
-      big('Mailbox', ICONS.mail, 'J', () => ctx.panels.open('mailbox')),
+      big('Farm ledger', ICONS.book, keyLabel(ctx.prefs.keys.ledger), () => ctx.panels.open('roster')),
+      big('Map', ICONS.map, keyLabel(ctx.prefs.keys.map), () => ctx.panels.open('map')),
+      big('Mailbox', ICONS.mail, keyLabel(ctx.prefs.keys.mail), () => ctx.panels.open('mailbox')),
       big('Noticeboard', ICONS.board, 'B', () => ctx.panels.open('noticeboard')),
       big('Almanac (system stats)', ICONS.stats, '', () => ctx.panels.open('stats')),
       big('Settings', ICONS.gear, '', () => setTab('settings')),
@@ -56,52 +63,147 @@ export function createPause(ctx: HudCtx): Panel {
     return (fs.find((f) => f.needsYou) ?? fs.find((f) => f.unseenDone) ?? fs[0])?.id ?? [...s.helpers.keys()][0] ?? null;
   }
 
+  // ---- Settings: one section at a time (Controls, Graphics, Audio, Interface, Accessibility, Alerts, Terminal)
+  let section: Section = 'controls';
+  /** the action waiting for its new key (key capture in `key()` below), and the last rebind message */
+  let capturing: Action | null = null, bindMsg = '';
+  const P = ctx.prefs;
+  const savePref = () => { ctx.savePrefs(); ctx.kick(); };
+
   function settings(): HTMLElement {
-    const wrap = h('div.vh-settings.vh-scroll');
-    const range = <K extends keyof WireSettings>(label: string, k: K, min: number, max: number, step: number, fmt: (v: number) => string) => {
-      const v = h('span.v', { text: fmt(Number(S.get(k))) });
-      const inp = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(S.get(k)), 'aria-label': label });
-      inp.addEventListener('input', () => { v.textContent = fmt(inp.valueAsNumber); S.set({ [k]: inp.valueAsNumber } as Partial<WireSettings>); });
-      return h('label.vh-set', null, h('span', { text: label }), inp, v);
-    };
-    const check = (label: string, get: () => boolean, set: (v: boolean) => void) => {
-      const inp = h('input', { type: 'checkbox', 'aria-label': label });
-      inp.checked = get();
-      inp.addEventListener('change', () => set(inp.checked));
-      return h('label.vh-set', null, h('span', { text: label }), inp);
-    };
-    const flag = <K extends keyof WireSettings>(label: string, k: K) => check(label, () => !!S.get(k), (v) => S.set({ [k]: v } as Partial<WireSettings>));
-    const pref = (label: string, k: 'minimap' | 'toasts' | 'compactStrip' | 'needsDoze') => check(label, () => ctx.prefs[k], (v) => { ctx.prefs[k] = v; ctx.savePrefs(); ctx.kick(); });
-    const vol = (v: number) => `${Math.round(v * 100)}%`;
-    const quality = h('select', { 'aria-label': 'Graphics quality' }, ...(['auto', 'low', 'medium', 'high', 'photo'] as const).map((q) => h('option', { value: q, text: q[0].toUpperCase() + q.slice(1) })));
-    quality.value = S.get('quality');
-    quality.addEventListener('change', () => S.set({ quality: quality.value as WireSettings['quality'] }));
-    const leader = h('input', { type: 'text', value: S.get('leaderKey'), 'aria-label': 'Terminal leader key', spellcheck: 'false' });
-    leader.addEventListener('change', () => { if (leader.value.trim()) S.set({ leaderKey: leader.value.trim() }); });
-    const paste = h('input', { type: 'number', min: '0', max: '200', value: String(S.get('pasteConfirmLines')), 'aria-label': 'Confirm pastes longer than' });
-    paste.addEventListener('change', () => S.set({ pasteConfirmLines: Math.max(0, Math.round(paste.valueAsNumber || 0)) }));
-    wrap.append(
-      h('h4', { text: 'Sound' }),
-      range('Master volume', 'volumeMaster', 0, 1, 0.05, vol), range('Effects', 'volumeSfx', 0, 1, 0.05, vol),
-      range('Ambience', 'volumeAmbient', 0, 1, 0.05, vol), range('Alerts & chimes', 'volumeNotify', 0, 1, 0.05, vol),
-      range('Farmer voices', 'volumeVoices', 0, 1, 0.05, vol), range('Music', 'volumeMusic', 0, 1, 0.05, vol), flag('Mute everything', 'audioMuted'),
-      h('h4', { text: 'Alerts' }),
-      notifyRow(),
-      h('h4', { text: 'Look & feel' }),
-      h('label.vh-set', null, h('span', { text: 'Graphics quality' }), quality),
-      range('Field of view', 'fov', 55, 75, 1, (v) => `${v}°`),
-      flag('Head bob', 'headBob'), flag('Reduced motion', 'reducedMotion'),
-      tipsRow(),
+    const nav = h('div.vh-tabs.vh-setnav', { role: 'tablist', 'aria-label': 'Settings sections' }, ...SECTIONS.map(([id, label]) => {
+      const b = h('button.vh-tab', { type: 'button', role: 'tab', 'aria-selected': String(id === section), 'data-testid': `set-sec-${id}`, 'data-sec': id }, label);
+      b.addEventListener('click', () => { section = id; capturing = null; render(); (content.querySelector(`[data-sec="${id}"]`) as HTMLElement | null)?.focus(); });
+      return b;
+    }));
+    const wrap = h('div.vh-settings.vh-scroll', { role: 'tabpanel', 'aria-label': SECTIONS.find(([id]) => id === section)?.[1] ?? '', 'data-testid': `set-${section}` });
+    wrap.append(...SECTION_BODY[section]());
+    return h('div.vh-setwrap', null, nav, wrap);
+  }
+
+  // ---- row builders
+  const note = (text: string, testid?: string) => h('small.vh-setnote', { text, ...(testid ? { 'data-testid': testid } : {}) });
+  const rangeRow = (label: string, get: () => number, set: (v: number) => void, min: number, max: number, step: number, fmt: (v: number) => string, testid?: string) => {
+    const v = h('span.v', { text: fmt(get()) });
+    const inp = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(get()), 'aria-label': label, 'aria-valuetext': fmt(get()), ...(testid ? { 'data-testid': testid } : {}) });
+    inp.addEventListener('input', () => { v.textContent = fmt(inp.valueAsNumber); inp.setAttribute('aria-valuetext', fmt(inp.valueAsNumber)); set(inp.valueAsNumber); });
+    return h('label.vh-set', null, h('span', { text: label }), inp, v);
+  };
+  const check = (label: string, get: () => boolean, set: (v: boolean) => void, testid?: string) => {
+    const inp = h('input', { type: 'checkbox', 'aria-label': label, ...(testid ? { 'data-testid': testid } : {}) });
+    inp.checked = get();
+    inp.addEventListener('change', () => set(inp.checked));
+    return h('label.vh-set', null, h('span', { text: label }), inp);
+  };
+  const choose = <T extends string | number>(label: string, opts: readonly (readonly [T, string])[], get: () => T, set: (v: T) => void, testid?: string) => {
+    const sel = h('select', { 'aria-label': label, ...(testid ? { 'data-testid': testid } : {}) }, ...opts.map(([v, t]) => h('option', { value: String(v), text: t })));
+    sel.value = String(get());
+    sel.addEventListener('change', () => { const o = opts.find(([v]) => String(v) === sel.value); if (o) set(o[0]); });
+    return h('label.vh-set', null, h('span', { text: label }), sel);
+  };
+  // server settings (roam with the HQ) and browser-local prefs (this machine)
+  const range = <K extends keyof WireSettings>(label: string, k: K, min: number, max: number, step: number, fmt: (v: number) => string) =>
+    rangeRow(label, () => Number(S.get(k)), (v) => S.set({ [k]: v } as Partial<WireSettings>), min, max, step, fmt);
+  const flag = <K extends keyof WireSettings>(label: string, k: K) => check(label, () => !!S.get(k), (v) => S.set({ [k]: v } as Partial<WireSettings>));
+  type BoolPref = { [K in keyof Prefs]: Prefs[K] extends boolean ? K : never }[keyof Prefs];
+  type NumPref = { [K in keyof Prefs]: Prefs[K] extends number ? K : never }[keyof Prefs];
+  const pref = (label: string, k: BoolPref, testid?: string) => check(label, () => P[k], (v) => { P[k] = v; savePref(); }, testid);
+  const num = (label: string, k: NumPref & keyof typeof RANGES, step: number, fmt: (v: number) => string, testid?: string) =>
+    rangeRow(label, () => P[k], (v) => { P[k] = v; savePref(); }, RANGES[k][0], RANGES[k][1], step, fmt, testid);
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+  const SECTION_BODY: Record<Section, () => Node[]> = {
+    controls: () => [
+      num('Mouse sensitivity', 'mouseSens', 0.05, (v) => `×${v.toFixed(2)}`, 'set-sens'),
+      pref('Invert mouse Y', 'invertY', 'set-invert'),
+      num('Field of view', 'fov', 1, (v) => `${v}°`, 'set-fov'),
+      pref('Head bob while walking', 'headBob', 'set-bob'),
+      choose('Sprint (Shift)', [['hold', 'Hold'], ['toggle', 'Toggle']] as const, () => (P.sprintToggle ? 'toggle' : 'hold'), (v) => { P.sprintToggle = v === 'toggle'; savePref(); }, 'set-sprint'),
+      h('h4', { text: 'Keys' }),
+      ...ACTIONS.map((a) => {
+        const b = h('button.vh-btn.small.vh-bind', { type: 'button', 'data-testid': `bind-${a}`, 'aria-label': `${ACTION_LABEL[a]}: ${keyLabel(P.keys[a])}. Press to change.` },
+          capturing === a ? 'Press a key…' : keyLabel(P.keys[a]));
+        b.classList.toggle('wait', capturing === a);
+        b.addEventListener('click', () => { capturing = capturing === a ? null : a; bindMsg = capturing ? `Press the new key for ${ACTION_LABEL[a].toLowerCase()} (Esc cancels)` : ''; render(); focusBind(a); });
+        return h('div.vh-set', null, h('span', { text: ACTION_LABEL[a] }), b);
+      }),
+      h('div.vh-set', null, h('span.vh-muted', { text: 'Walking (WASD, arrows), Space, Shift, Esc and the panel keys stay fixed.' }),
+        h('button.vh-btn.small', { type: 'button', 'data-testid': 'bind-reset', onclick: () => { P.keys = { ...DEFAULT_KEYS }; capturing = null; bindMsg = 'Keys back to E / F / M / Tab / J'; savePref(); render(); } }, 'Reset keys')),
+      h('div.vh-setmsg', { 'aria-live': 'polite', 'data-testid': 'bind-msg', text: bindMsg }),
+    ],
+    graphics: () => {
+      const urlQ = new URLSearchParams(location.search).get('quality');
+      return [
+        choose('Quality preset', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] as const, () => P.quality, (v) => { P.quality = v; savePref(); render(); }, 'set-quality'),
+        h('div.vh-set.full', null, note(urlQ ? `This page's ?quality=${urlQ} wins until you open the valley without it.` : 'The preset sizes the world as it loads (shadow maps, particles, lights): it takes effect on reload.', 'quality-note'),
+          h('button.vh-btn.small', { type: 'button', 'data-testid': 'quality-reload', onclick: () => location.reload() }, 'Reload now')),
+        num('Render scale', 'renderScale', 0.05, pct, 'set-scale'),
+        pref('Shadows', 'shadows', 'set-shadows'),
+        num('Weather effects', 'weatherFx', 0.05, pct, 'set-weather'),
+        choose('Frame rate', [[0, 'Match the display'], [60, '60 fps'], [30, '30 fps (battery saver)']] as const, () => P.fpsCap as 0 | 30 | 60, (v) => { P.fpsCap = v; savePref(); }, 'set-fps'),
+        choose('Idle throttle', [[0, 'Off'], [2, 'After 2 minutes'], [5, 'After 5 minutes'], [10, 'After 10 minutes'], [30, 'After 30 minutes']] as const,
+          () => ([0, 2, 5, 10, 30].includes(P.idleMin) ? P.idleMin : 10) as 0 | 2 | 5 | 10 | 30, (v) => { P.idleMin = v; savePref(); }, 'set-idle'),
+        note(`Without any key or mouse input the valley drops to ${IDLE_FPS} fps; touch anything to wake it. A hidden tab already pauses drawing.`),
+      ];
+    },
+    audio: () => {
+      const vol = (v: number) => `${Math.round(v * 100)}%`;
+      return [
+        range('Master volume', 'volumeMaster', 0, 1, 0.05, vol), range('Effects', 'volumeSfx', 0, 1, 0.05, vol),
+        range('Ambience', 'volumeAmbient', 0, 1, 0.05, vol), range('Alerts & chimes', 'volumeNotify', 0, 1, 0.05, vol),
+        range('Farmer voices', 'volumeVoices', 0, 1, 0.05, vol), range('Music', 'volumeMusic', 0, 1, 0.05, vol), flag('Mute everything', 'audioMuted'),
+      ];
+    },
+    interface: () => [
+      num('UI scale', 'uiScale', 0.05, pct, 'set-uiscale'),
+      choose('Nameplates', [['always', 'Always'], ['near', 'Only up close'], ['off', 'Off']] as const, () => P.nameplates, (v) => { P.nameplates = v; savePref(); }, 'set-plates'),
+      choose('Toasts stay for', [[0.6, 'Short'], [1, 'Normal'], [1.8, 'Long'], [3, 'Very long']] as const,
+        () => ([0.6, 1, 1.8, 3].includes(P.toastK) ? P.toastK : 1) as 0.6 | 1 | 1.8 | 3, (v) => { P.toastK = v; savePref(); }, 'set-toastk'),
+      choose('Clock', [['24h', '24-hour (16:30)'], ['12h', '12-hour (4:30 pm)']] as const, () => P.clock, (v) => { P.clock = v; savePref(); }, 'set-clock'),
       pref('Corner minimap (N)', 'minimap'), pref('Pop-up toasts', 'toasts'), pref('Fold the needs-you list (Alt+0)', 'compactStrip'),
       pref('Tuck an unanswered ask away to its chip after a while', 'needsDoze'),
-      h('h4', { text: 'Terminal' }),
-      range('Text size', 'termFontPx', 8, 32, 1, (v) => `${v}px`),
-      h('label.vh-set', null, h('span', { text: 'Leader key (close / open)' }), leader),
-      flag('Opening a finished farmer acknowledges it', 'autoAckOnOpen'), flag('Copy on select', 'copyOnSelect'),
-      h('label.vh-set', null, h('span', { text: 'Confirm pastes longer than (lines)' }), paste),
-      flag('Ask before Ctrl+C while watching', 'peekCtrlCConfirm'), flag('Release control after 10 idle minutes', 'idleDemotion'),
-    );
-    return wrap;
+      tipsRow(),
+    ],
+    access: () => {
+      const sys = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      return [
+        choose('Reduced motion', [['system', `Follow the system (${sys ? 'on' : 'off'})`], ['on', 'On'], ['off', 'Off']] as const, () => P.reducedMotion, (v) => { P.reducedMotion = v; savePref(); }, 'set-motion'),
+        note('Calms the camera bob, HUD pulses and pop-ins, map rings, weather particles and lightning flashes.'),
+        pref('Colour-blind-safe status (shapes + safe colours)', 'colorSafe', 'set-cb'),
+        note('Needs you ▲, working ●, done ■, idle ◆ on pins, the minimap, nameplates, the ledger and every status pill.'),
+        pref('High-contrast HUD', 'highContrast', 'set-hc'),
+        pref('Larger text', 'largeText', 'set-big'),
+        pref('Captions for sound cues', 'captions', 'set-captions'),
+        note('A caption line for the alert bell (someone needs you), the done chime and other cues that carry news.'),
+      ];
+    },
+    alerts: () => [notifyRow()],
+    terminal: () => {
+      const leader = h('input', { type: 'text', value: S.get('leaderKey'), 'aria-label': 'Terminal leader key', spellcheck: 'false' });
+      leader.addEventListener('change', () => { if (leader.value.trim()) S.set({ leaderKey: leader.value.trim() }); });
+      const paste = h('input', { type: 'number', min: '0', max: '200', value: String(S.get('pasteConfirmLines')), 'aria-label': 'Confirm pastes longer than' });
+      paste.addEventListener('change', () => S.set({ pasteConfirmLines: Math.max(0, Math.round(paste.valueAsNumber || 0)) }));
+      return [
+        range('Text size', 'termFontPx', 8, 32, 1, (v) => `${v}px`),
+        h('label.vh-set', null, h('span', { text: 'Leader key (close / open)' }), leader),
+        flag('Opening a finished farmer acknowledges it', 'autoAckOnOpen'), flag('Copy on select', 'copyOnSelect'),
+        h('label.vh-set', null, h('span', { text: 'Confirm pastes longer than (lines)' }), paste),
+        flag('Ask before Ctrl+C while watching', 'peekCtrlCConfirm'), flag('Release control after 10 idle minutes', 'idleDemotion'),
+      ];
+    },
+  };
+  const focusBind = (a: Action) => (content.querySelector(`[data-testid="bind-${a}"]`) as HTMLElement | null)?.focus();
+  /** key capture for a rebind: true when the key was taken (or refused with a message) */
+  function captureKey(e: KeyboardEvent): boolean {
+    const a = capturing;
+    if (!a) return false;
+    if (e.code === 'Escape') { capturing = null; bindMsg = 'Unchanged'; render(); focusBind(a); return true; }
+    if (e.ctrlKey || e.altKey || e.metaKey) return true;
+    const r = rebind(P.keys, a, e.code);
+    if (r.conflict) bindMsg = r.conflict.action ? `${keyLabel(e.code)} is already ${ACTION_LABEL[r.conflict.action].toLowerCase()}: pick another key, or change that one first` : `${keyLabel(e.code)} is kept for ${r.conflict.reserved}: pick another key`;
+    else { P.keys = r.keys; capturing = null; bindMsg = `${ACTION_LABEL[a]}: ${keyLabel(e.code)}`; savePref(); }
+    render(); focusBind(a);
+    return true;
   }
 
   /** one-time valley tips (model/onboarding.ts; stored with the welcome tour, browser-local) */
@@ -141,14 +243,15 @@ export function createPause(ctx: HudCtx): Panel {
     const row = (keys: string[], what: string) => [h('div.k', null, ...keys.map((k) => h('kbd.vh-k', { text: k }))), h('span', { text: what })];
     const leader = S.get('leaderKey') || 'Ctrl+`';
     const head = (t: string) => h('h4.grp', { text: t });
+    const K = (a: Action) => keyLabel(ctx.prefs.keys[a]);
     return h('div.vh-controls', { 'data-testid': 'controls' },
       head('Getting around'),
       ...row(['Click'], 'look around (capture mouse)'), ...row(['W', 'A', 'S', 'D'], 'walk'),
       ...row(['Shift'], 'sprint'), ...row(['Space'], 'hop'),
-      ...row(['E'], 'talk / use'), ...row(['F'], "terminal of the farmer you're facing"),
-      ...row(['M'], 'map (click a farmer → terminal)'), ...row(['N'], 'toggle minimap'),
+      ...row([K('use')], 'talk / use'), ...row([K('alt')], "terminal of the farmer you're facing"),
+      ...row([K('map')], 'map (click a farmer → terminal)'), ...row(['N'], 'toggle minimap'),
       head('Your agents'),
-      ...row(['Tab'], 'farm ledger: everyone at a glance'), ...row(['J'], 'mailbox (Needs you first)'),
+      ...row([K('ledger')], 'farm ledger: everyone at a glance'), ...row([K('mail')], 'mailbox (Needs you first)'),
       ...row(['Alt+1…9'], "the Nth needs-you farmer's terminal"), ...row(['Alt+0'], 'show / fold the needs-you list'),
       ...row([leader], 'open / close the terminal drawer'), ...row(['Ctrl+PgUp', 'PgDn'], 'previous / next terminal'),
       head('In the mailbox'),
@@ -163,16 +266,40 @@ export function createPause(ctx: HudCtx): Panel {
       ...row(['type'], 'in a terminal: take control'), ...row(['Esc'], 'close (in a terminal: only while watching)'),
       head('The valley'),
       ...row(['B'], 'noticeboard'), ...row(['H'], 'valley almanac'),
-      ...row(['K'], 'collections book'), ...row(['Q'], "today's requests: keep open / tuck away"), ...row(['I'], 'your basket & the shop'),
+      ...row(['K'], 'collections book'), ...row(['G'], 'the Valley Gazette'), ...row(['Q'], "today's requests: keep open / tuck away"), ...row(['I'], 'your basket & the shop'),
       ...row(['F'], 'facing a villager: give a gift from your basket (1…9 picks)'),
       ...row(['P'], 'photo mode (fly, [ ] time, Enter saves a PNG)'),
-      ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'));
+      ...row(['?'], 'this list'), ...row(['F3'], 'performance overlay'),
+      head('In any panel'),
+      ...row(['Tab', 'Shift+Tab'], 'next / previous control (the ledger: Tab closes it while Tab is its key)'), ...row(['←', '→'], 'switch tabs'),
+      ...row(['Esc'], 'close'),
+      h('p.vh-muted.full', { text: 'Keys, mouse, motion, text size and more: Settings.' }));
   }
 
   return {
     id: 'pause', el,
-    onOpen(arg) { tab = arg === 'settings' || arg === 'controls' ? arg : 'menu'; render(); (content.querySelector('button') as HTMLElement | null)?.focus(); },
+    onOpen(arg) {
+      // 'settings', 'controls', or 'settings:<section>' (e.g. 'settings:access')
+      const [t, sec] = typeof arg === 'string' ? arg.split(':') : [];
+      tab = t === 'settings' || t === 'controls' ? t : 'menu';
+      if (sec && SECTIONS.some(([id]) => id === sec)) section = sec as Section;
+      capturing = null; bindMsg = '';
+      render();
+      (content.querySelector(tab === 'settings' ? '.vh-setnav [aria-selected="true"]' : 'button') as HTMLElement | null)?.focus();
+    },
+    onClose() { capturing = null; },
     key(e) {
+      if (captureKey(e)) return true;
+      // ←/→ walk a tab row (the pause tabs, the settings sections) like any tablist
+      const row = (document.activeElement as HTMLElement | null)?.closest?.('[role="tablist"]');
+      if (row && el.contains(row) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const bs = [...row.querySelectorAll<HTMLElement>('[role="tab"]')];
+        const i = bs.indexOf(document.activeElement as HTMLElement);
+        const next = bs[(i + (e.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length];
+        next.click();
+        (el.querySelector(`[role="tab"][data-sec="${next.dataset.sec}"]`) as HTMLElement | null ?? next).focus();
+        return true;
+      }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const bs = [...content.querySelectorAll<HTMLElement>('.main button')];
         if (!bs.length) return false;

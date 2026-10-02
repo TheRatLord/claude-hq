@@ -30,8 +30,9 @@ visit from their post).
   finished task title, the streak, the next rank; first person for the teller's own deeds), **laughter** ("ha!"
   emotes, a chuckle chorus), **toasting marshmallows** (held prop), a **sing-along** (the music plays the `campfire`
   waltz, notes over heads) and chat.
-* **Concert:** three farmers climb the steps and play fiddle, banjo and flute (props + strum / bow / blow poses, a warm
-  lamp under the roof after dark), the crowd arcs out front dancing and clapping, applause between songs; the music
+* **Concert:** three farmers climb the steps and play fiddle, banjo and flute (props + strum / bow / blow poses; after
+  dark the stage light sits in the lantern hung under the front of the roof, `STAGE_LANTERN` in `structures/upgrades.ts`,
+  ahead of and above the band so it lights their faces), the crowd arcs out front dancing and clapping, applause between songs; the music
   plays the `concert` piece *live* from the stage (see [audio.md](audio.md#gathering-music)).
 * **Market:** villagers browse the counters and gossip between the stalls.
 * **Join in:** E on a free log bench ("Sit on") sits you down (`controller.sit`, the eye lowers to 0.98 m and turns to

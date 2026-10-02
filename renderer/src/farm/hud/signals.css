@@ -1,0 +1,20 @@
+/* Work signals on the farmer / scarecrow card and the ledger (docs/valley/signals.md). */
+.vh-card .vh-sig { font-size: 12px; font-weight: 600; color: var(--ink-soft); margin-top: 2px; overflow-wrap: anywhere; }
+.vh-card .vh-repo code { font: 700 12.5px/1.2 ui-monospace, "DejaVu Sans Mono", monospace; padding: 1px 5px; border-radius: 5px; background: rgba(160, 112, 63, .14); overflow-wrap: anywhere; }
+.vh-card .vh-repo span { font-size: 12.5px; }
+.vh-todos { list-style: none; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; font-weight: 600; max-height: 172px; overflow-y: auto; }
+.vh-todos li { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.vh-todos li i { flex: none; width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid rgba(59,42,30,.45); font: 800 10px/11px var(--sans, sans-serif); text-align: center; font-style: normal; color: #fff; }
+.vh-todos li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vh-todos li.done { color: var(--ink-soft); }
+.vh-todos li.done span { text-decoration: line-through; text-decoration-color: rgba(59,42,30,.35); }
+.vh-todos li.done i { background: #5fae45; border-color: #3f7f2c; }
+.vh-todos li.doing { font-weight: 800; }
+.vh-todos li.doing i { background: #f0a72c; border-color: #b8761a; }
+.vh-row .spend { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); margin-right: 6px; white-space: nowrap; }
+.vh-ghead .repo { font: 700 11.5px/1.2 ui-monospace, "DejaVu Sans Mono", monospace; color: var(--ink-soft); padding: 1px 6px; border-radius: 6px; background: rgba(160, 112, 63, .12); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vh-spend-sum { font-size: 12px; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+.vt-name .vt-meter { display: block; width: 46px; height: 5px; margin-top: 3px; border-radius: 3px; background: rgba(59,42,30,.18); overflow: hidden; }
+.vt-name .vt-meter i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(#ffd66b, #f0a72c); }
+.vt-name .vt-meter.hot i { background: linear-gradient(#f59a8a, #d0584a); }
+.vh-card .vh-body > .vh-said { flex-shrink: 0; }

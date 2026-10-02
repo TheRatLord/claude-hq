@@ -508,9 +508,18 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
       for (const x of [-0.8, 0.8]) { k.cyl(0.02, 1.0, PAL.ink, { x, y: 1.2, z: 0.4 }, 4); k.box(0.42, 0.3, 0.02, PAL.ink, { x, y: 1.75, z: 0.42, rx: -0.4 }); }
       k.cyl(0.32, 0.36, PAL.red, { x: 0, y: 0.88, z: -0.9 }, 10);
       k.cyl(0.33, 0.04, PAL.cloth, { x: 0, y: 1.07, z: -0.9 }, 10);
+      // a stage lantern hung under the front of the roof: it lights the band's faces (scene/gather's stage light sits
+      // in it while they play), and reads as the bandstand's own lamp on any other night
+      k.part('stageLantern', () => k.at({ y: 2.85, z: STAGE_LANTERN }, () => {
+        k.rod(0, 0.18, 0, 0, 0.62, 0, 0.012, PAL.ink);
+        k.cone(0.15, 0.1, PAL.ink, { y: 0.22 }, 6);
+        k.box(0.2, 0.025, 0.2, PAL.ink, { y: -0.15 });
+        for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.02, 0.3, 0.02, PAL.ink, { x: a * 0.09, z: b * 0.09 });
+        k.emit({ radius: 4.5, intensity: 0.4, flicker: 0.2 }, () => k.box(0.16, 0.26, 0.16, PAL.lampGlow, {}, 'glow'));
+      }));
     }));
     const root = new THREE.Group();
-    kitInto(k, root);
+    const lamps = kitInto(k, root);
     // weathervane: a little rooster that swings into the wind
     const vk = new Kit(17);
     vk.prism([[-0.3, 0], [0.32, 0], [0.38, 0.18], [0.22, 0.36], [0.06, 0.3], [-0.12, 0.42], [-0.3, 0.3]], 0.03, PAL.ink, { y: 0, ry: Math.PI / 2 });
@@ -521,7 +530,7 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
     root.add(vane);
     let vy = 0;
     add({
-      id: 'bandstand', root, anchor: new THREE.Vector3(s.x, y0 + 3.5, s.z), emitters: [], colliders: [[s.x, s.z, R8 + 0.3]], rects: [],
+      id: 'bandstand', root, anchor: new THREE.Vector3(s.x, y0 + 3.5, s.z), emitters: lamps, colliders: [[s.x, s.z, R8 + 0.3]], rects: [],
       use: { verb: 'Strike up', label: 'The bandstand', pos: new THREE.Vector3(s.x, y0 + 1.6, s.z), reach: 4.2, act: () => {
         audio()?.play('fanfare', { pos: new THREE.Vector3(s.x, y0 + 2, s.z), volume: 0.8 });
         confetti(new THREE.Vector3(s.x, y0 + 3.2, s.z));
@@ -786,6 +795,8 @@ export function createUpgrades(ctx: SceneCtx, host: UpgradesHost): Upgrades {
   };
 }
 
+/** the bandstand's stage lantern: local z (toward the road) and height above the stage floor */
+export const STAGE_LANTERN = 1.6, STAGE_LANTERN_Y = 2.15;
 let bandstandAt: { x: number; z: number; y: number; yaw: number; r: number; floor: number } | null = null;
 /** where the bandstand stands (front = +z local, toward the road; `r` its radius, `floor` the stage's height), null until
  * built: the evening concerts (scene/gather) put the band on it */

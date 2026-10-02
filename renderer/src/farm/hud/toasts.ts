@@ -27,7 +27,8 @@ export function createToasts(ctx: HudCtx): Toasts {
   const live: Live[] = [];
 
   const groupOf = (t: ToastSpec) => t.group ?? (t.key && t.key.includes('|') ? t.key.slice(0, t.key.indexOf('|')) : t.key ?? t.text);
-  const lifeOf = (t: ToastSpec) => t.ms ?? (t.level === 'error' ? LIFE.error : t.level === 'warn' ? LIFE.warn : t.level === 'ask' ? LIFE.ask : LIFE.other);
+  // Settings → Interface → toast duration scales every lifetime (asks and errors keep their longer base)
+  const lifeOf = (t: ToastSpec) => (t.ms ?? (t.level === 'error' ? LIFE.error : t.level === 'warn' ? LIFE.warn : t.level === 'ask' ? LIFE.ask : LIFE.other)) * (ctx.prefs.toastK || 1);
 
   function dismiss(x: Live): void {
     if (x.gone) return;

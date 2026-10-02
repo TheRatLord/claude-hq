@@ -2,7 +2,7 @@
  * createApp(opts) → {port, url, token, instanceId, session, close(), kill()}.
  * `server/main.ts` is the CLI around it. Live and demo differ ONLY in which implementations are wired:
  *
- *   live:  HerdrClient (allowlist, read-only) → HerdrLive (HerdrSource) + transcripts/subagents/procinfo/blocked/acks
+ *   live:  HerdrClient (allowlist, read-only) → HerdrLive (HerdrSource) + transcripts/subagents/procinfo/blocked/acks/notes/git
  *          enrichers → WorldModel; HerdrTerminals (TerminalBackend) → TerminalHub. Reaper scan before the first spawn.
  *   demo:  static demo source + DemoEnricher/procinfo + blocked/acks → WorldModel; FakeTerminals → hub.
  *          `--demo` never constructs a herdr client.
@@ -299,6 +299,7 @@ async function wireLive(cfg: ResolvedConfig, { clock, log, instanceId, opts }: W
   const { TranscriptsEnricher } = await import('./enrich/transcripts.ts');
   const { SubagentsEnricher } = await import('./enrich/subagents.ts');
   const { ProcInfoEnricher } = await import('./enrich/procinfo.ts');
+  const { GitEnricher } = await import('./enrich/git.ts');
   // ONE default-session verdict (realpath of the session socket AND of a socket override) for every gate
   const isDefault = isDefaultTarget(cfg.session, opts.herdrSocket ?? null);
   if (isDefault && cfg.session !== 'default') log.warn(`herdr session "${cfg.session}" resolves to the DEFAULT socket: treated as the default session (structural actions refused)`);
@@ -317,6 +318,7 @@ async function wireLive(cfg: ResolvedConfig, { clock, log, instanceId, opts }: W
     new BlockedEnricher({ clock, log: log.child('blocked') }),
     new AcksEnricher({ dir: stateDir, clock, log }),
     new NotesEnricher({ dir: stateDir, clock, log }),
+    new GitEnricher({ clock, log: log.child('git') }),
   ];
   const terminals = new HerdrTerminals({ client, clock, log: log.child('herdr-term') });
   await source.start(); // first attempt; offline keeps retrying every 2 s

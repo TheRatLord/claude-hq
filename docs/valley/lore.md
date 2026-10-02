@@ -74,6 +74,10 @@ bare. Gallery `field-traces`; dev `__valley.ctx.services.get('farmers').react(id
   drift back.
 * *Personality:* burlap **yield sacks** fill the front-right corner (one per log step of lines changed in the workspace
   since the valley loaded, banked across tasks from `FarmerView.work`, 6 at ~1000).
+* *The sign knows the branch:* a field in a git repo paints `on <branch>` under its name, and reading the sign tells
+  its weeds (changed files) and the crates waiting to ship (unpushed commits). A farmer's water can running low is the
+  context window filling: the nameplate grows a gauge from 65 % (red near compaction). Copy and derivations:
+  [signals.md](signals.md).
 
 ## Idle = leisure
 

@@ -34,6 +34,20 @@ function blockWeather(y: number, doy: number, block: number, season: Season): { 
   return { kind: 'clear', r };
 }
 
+/**
+ * The weather of each 3-hour block of a local calendar day (`YYYY-MM-DD`), as the sky shows it (the season from the
+ * month, no overrides): eight kinds, midnight first. Deterministic, so it is also a true forecast for days to come.
+ */
+export function blockKinds(dayKey: string): WeatherKind[] {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const date = new Date(y, m - 1, d, 12);
+  const season = seasonOf(date.getMonth());
+  const doy = dayOfYear(date);
+  const out: WeatherKind[] = [];
+  for (let b = 0; b < 24 / BLOCK_H; b++) out.push(blockWeather(date.getFullYear(), doy, b, season).kind);
+  return out;
+}
+
 export function dayOfYear(d: Date): number {
   // calendar days in UTC: local midnights are 23 or 25 h apart across DST, so wall-ms maths would roll the day at 01:00
   return Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 86_400_000);

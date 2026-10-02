@@ -8,11 +8,13 @@ import type { HudDeps } from './port.ts';
 import type { HudBindings } from './hud.ts';
 import { h } from '../../ui/dom.ts';
 import { shortName } from './format.ts';
-import { readTyped, writeJson } from '../storage.ts';
+import { readJson, writeJson } from '../storage.ts';
+import { sanitizePrefs, type Prefs } from '../model/prefs.ts';
+import { PREFS_KEY } from '../prefs.ts';
 
 export { h };
 
-export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet';
+export type PanelId = 'mailbox' | 'map' | 'roster' | 'card' | 'noticeboard' | 'stats' | 'almanac' | 'collection' | 'shop' | 'friends' | 'pause' | 'drawer' | 'welcome' | 'pet' | 'gazette';
 
 export interface Panel {
   id: PanelId;
@@ -58,25 +60,12 @@ export interface ToastSpec {
   group?: string;
 }
 
-/** Browser-local HUD preferences (not server settings). Every access is guarded: storage may be unavailable. */
-export interface Prefs {
-  minimap: boolean;
-  toasts: boolean;
-  hinted: boolean;
-  /** the needs-you strip is folded down to its count chip */
-  compactStrip: boolean;
-  /** terminal drawer height as a fraction of the viewport (0 = default) */
-  drawerH: number;
-  /** opt-in desktop notifications (needs you / finished) while the window is in the background (notify.ts) */
-  notify: boolean;
-  /** the open needs-you card tucks itself away to the (pulsing) chip after a while without attention (needs.ts) */
-  needsDoze: boolean;
-}
-const PREFS_KEY = 'valley.hud.prefs';
-export function loadPrefs(): Prefs {
-  const def: Prefs = { minimap: true, toasts: true, hinted: false, compactStrip: false, drawerH: 0, notify: false, needsDoze: true };
-  return readTyped(PREFS_KEY, def);
-}
+/**
+ * Browser-local HUD + comfort preferences (not server settings): model/prefs.ts has the shape and defaults, farm/prefs.ts
+ * the live store (localStorage `valley.hud.prefs`). Every access is guarded: storage may be unavailable.
+ */
+export type { Prefs } from '../model/prefs.ts';
+export function loadPrefs(): Prefs { return sanitizePrefs(readJson(PREFS_KEY)); }
 export function savePrefs(p: Prefs): void { writeJson(PREFS_KEY, p); }
 
 export interface HudCtx {
@@ -99,7 +88,10 @@ export interface HudCtx {
   toast(t: ToastSpec): void;
   panels: Panels;
   prefs: Prefs;
+  /** persist the prefs and apply them everywhere (the HUD's classes, the controller, the engine: farm/prefs.ts) */
   savePrefs(): void;
+  /** reduced motion in effect (Settings → Accessibility, or the OS asking) */
+  reduced(): boolean;
   /** ask every open view to refresh soon */
   kick(): void;
 }

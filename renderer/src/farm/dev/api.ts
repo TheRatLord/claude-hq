@@ -5,13 +5,14 @@
  *   __valley.ready                        true once the first frame rendered with the world loaded
  *   __valley.state()                      ValleyState as plain JSON (farmers, plots, letters, gauges, sky)
  *   __valley.teleport(x, z, yaw?, pitch?) move the player (yaw 0 faces north / −z)
- *   __valley.pose(name)                   named viewpoints (see POSES)
+ *   __valley.pose(name)                   named viewpoints (see POSES), nudged back / aside when a stall or tree blocks the view
  *   __valley.cam(x, y, z, yaw, pitch)     free camera (detached from the player); cam(null) re-attaches
  *   __valley.goTo(id)                     stand in front of a farmer / helper / plot / structure / villager id ('villager:posy' or 'posy')
  *   __valley.villagers()                  the villager pins, and __valley.villager(id) → what one is doing
  *   __valley.setHour(h|null)  setWeather(kind|null, intensity?)  setSeason(s|null)  festival(id|null)
  *   __valley.atmo({ wet, snow, rainbow, mist, rays, frost } | null)   force weather moments (puddles, lying snow, …)
  *   __valley.timeScale(k)                 animation speed (0 freezes animation)
+ *   __valley.service(name)                any published service (ctx.services.get): 'lights', 'trail', 'farmers', …
  *   __valley.perf()                       fps, draw calls, triangles, per-system ms
  *   __valley.systems()                    system names
  *   __valley.debug(flag, on?)             toggle ctx.debug flags (e.g. 'labels', 'colliders', 'nav')
@@ -28,6 +29,9 @@
  *   __valley.stamps(step?)  stamp(id)      the stamp book (model/stamps.ts): stamps() lists every stamp (earned / at / progress),
  *                                         stamps(n) inks the first n quietly (shots), stamps('reset') forgets; stamp(id) inks one now
  *                                         (reward, toast, thunk)
+ *   __valley.gazette(cmd?)               The Valley Gazette (model/gazette.ts, newsroom.ts): gazette() → today's morning edition (lead,
+ *                                         stories, back issues); 'open' opens it (also 'latest' / a back-issue index); 'deliver' files
+ *                                         and posts a weekly edition now; 'weekly' | 'daily' → the facts an edition would print
  *   __valley.gather(kind?, seg?, stay?)   evening gatherings (scene/gather): gather('campfire' | 'concert' | 'market') puts one on now and
  *                                         stands you there (stay=true: don't move); seg jumps the campfire to 'story' | 'laugh' |
  *                                         'toast' | 'sing' | 'chat'; gather(null) back to the calendar; gather() → what's going on
@@ -58,6 +62,7 @@ import type { WildId } from '../scene/life/wild.ts';
 import type { WalletService } from '../model/wallet.ts';
 import type { FriendsService } from '../model/friends.ts';
 import type { StampsService } from '../model/stamps.ts';
+import type { Newsroom } from '../newsroom.ts';
 import type { YardService } from '../scene/yard/yard.ts';
 import type { GatherService } from '../scene/gather/gather.ts';
 import type { SeasonsService } from '../scene/seasons/seasons.ts';
@@ -67,23 +72,25 @@ import { SITES, STRUCTURES, heightAt, siteToWorld, structure } from '../world/ma
 import type { StructureId } from '../world/map.ts';
 
 export const POSES: Record<string, [number, number, number, number]> = {
-  // x, z, yaw, pitch — yaw 0 = north (−z), π/2 = west, −π/2 = east
+  // x, z, yaw, pitch — yaw 0 = north (−z), π/2 = west, −π/2 = east. Pick spots with open ground in front in every
+  // season (festival stalls, scarecrows and town upgrades come and go); pose() still steps aside if something blocks it
   hub: [0, 10, 0, -0.05],
   farmhouse: [0, -6, 0, 0.02],
-  square: [8, 12, 0.6, -0.08],
+  square: [12, 3, 1.35, -0.06],
   windmill: [46, -22, -0.9, 0.12],
   pond: [28, 40, -1.9, -0.1],
-  barn: [-16, -6, 0.6, 0],
+  barn: [-13.5, -11.5, 0.95, 0.02],
   river: [-44, 12, 1.6, -0.05],
   plots: [0, 24, Math.PI, -0.1],
-  east: [40, 16, -1.75, 0.02],
+  east: [57, 18.5, -1.15, 0.03],
   // the summit trail (world/trail.ts): its foot, halfway up, the rope bridge, the lookout facing the valley
   trailhead: [-1, 72, -2.75, 0.14],
   trail: [-6, 106.8, -1.47, 0.02],
   bridge: [14.2, 119.9, 1.91, -0.1],
   summit: [-2.2, 127.0, 0.04, -0.16],
-  // the seasonal pastimes (scene/seasons): the dock with the rowboat alongside, the pond from its south-west shore
-  dock: [36.9, 38.4, -1.88, -0.25],
+  // the seasonal pastimes (scene/seasons): the dock with the rowboat alongside (from the west shore), the pond from its
+  // south-west shore
+  dock: [33.5, 46.5, -0.75, -0.15],
   ice: [31.0, 51.5, -0.97, -0.14],
 };
 
@@ -130,6 +137,54 @@ export function installDevApi(d: DevDeps): void {
     return null;
   };
 
+  /**
+   * A clear view for a named pose: festival stalls, town upgrades and seasonal dressing come and go, so a fixed spot can
+   * end up inside a stall or right behind a tree. Rays fan across the middle of the view from the eye; when something
+   * solid is closer than `near`, step back and to the sides (never into a collider) and take the first clear spot,
+   * else the least blocked one. Reads the built scene, so call it once the world is in (main.ts does at ready).
+   */
+  const ray = new THREE.Raycaster();
+  const rayO = new THREE.Vector3(), rayD = new THREE.Vector3();
+  // not view blockers: sky and anything placed in a vertex shader, soft cover, and whatever walks off by itself
+  const SOFT = /sky|cloud|dome|horizon|grass|flower|clover|pebble|reed|cattail|lily|drift|meadow|petal|mote|rain|snow|splash|ripple|dust|smoke|spark|^life:|mascot|duckling|farmer|villager|^forage|fx:/i;
+  const solids = (): THREE.Object3D[] => {
+    const out: THREE.Object3D[] = [];
+    ctx.scene.traverseVisible((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || SOFT.test(m.name) || (m.material as THREE.Material).transparent) return;
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      if ((m as THREE.InstancedMesh).isInstancedMesh) (m as THREE.InstancedMesh).boundingSphere = null;   // instances get repacked
+      out.push(m);
+    });
+    return out;
+  };
+  const blockedRays = (objs: THREE.Object3D[], x: number, z: number, yaw: number, pitch: number, near: number): number => {
+    let n = 0;
+    rayO.set(x, heightAt(x, z) + 1.62, z);
+    ray.near = 0.05; ray.far = near;
+    for (const dp of [-0.12, 0.04, 0.2, 0.36]) for (const dy of [-0.5, -0.25, 0, 0.25, 0.5]) {
+      const a = yaw + dy, b = pitch + dp;
+      rayD.set(-Math.sin(a) * Math.cos(b), Math.sin(b), -Math.cos(a) * Math.cos(b));
+      ray.set(rayO, rayD);
+      ray.far = near;
+      if (ray.intersectObjects(objs, false).length) n += Math.abs(dy) < 0.3 ? 2 : 1;   // the middle counts double
+    }
+    return n;
+  };
+  const clearView = (x: number, z: number, yaw: number, pitch: number, near = 4.5): [number, number] => {
+    const objs = solids();
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    let best: [number, number] = [x, z], bestN = Infinity;
+    for (const back of [0, 1.5, 3, 4.5, 6]) for (const side of [0, -1.5, 1.5, -3, 3]) {
+      const px = x - fx * back + rx * side, pz = z - fz * back + rz * side;
+      if ((back || side) && ctx.colliders.blocked(px, pz, 0.45)) continue;
+      const n = blockedRays(objs, px, pz, yaw, pitch, near) + (back + Math.abs(side)) * 0.01;
+      if (n < bestN) { bestN = n; best = [px, pz]; }
+      if (n < 1) return best;
+    }
+    return best;
+  };
+
   const api = {
     ready: false,
     state: () => toJSON(valley.state),
@@ -138,6 +193,15 @@ export function installDevApi(d: DevDeps): void {
       const p = POSES[name];
       if (!p) throw new Error(`unknown pose ${name}; have ${Object.keys(POSES).join(', ')}`);
       api.teleport(p[0], p[1], p[2], p[3]);
+      // a few frames on (flora packs the instances around the new view), step out of anything blocking it
+      let frames = 6;
+      const off = engine.onFrame(() => {
+        if (--frames > 0) return;
+        off();
+        if (freeCam || Math.hypot(ctx.player.pos.x - p[0], ctx.player.pos.z - p[1]) > 0.5) return;   // moved on meanwhile
+        const [x, z] = clearView(p[0], p[1], p[2], p[3]);
+        if (x !== p[0] || z !== p[1]) controller.teleport(x, z, p[2], p[3]);
+      });
     },
     cam(x: number | null, y?: number, z?: number, yaw = 0, pitch = 0) {
       freeCam = x === null ? null : { x, y: y ?? heightAt(x, z ?? 0) + 30, z: z ?? 0, yaw, pitch };
@@ -183,6 +247,8 @@ export function installDevApi(d: DevDeps): void {
       }
       stand(base);
     },
+    /** any published service by name (ctx.services: 'lights', 'trail', 'farmers', 'audio', …) */
+    service: (name: string) => ctx.services.get(name),
     setHour: (h: number | null) => valley.setSky({ hour: h }),
     setWeather: (w: WeatherKind | null, intensity?: number) => valley.setSky({ weather: w, intensity: intensity ?? null }),
     setSeason: (s: Season | null) => valley.setSky({ season: s }),
@@ -348,6 +414,23 @@ export function installDevApi(d: DevDeps): void {
       return { earned: v.earned, total: v.total, trophies: v.trophies, bits: v.bits, stamps: v.entries.map((e) => ({ id: e.def.id, cat: e.def.cat, name: e.def.name, earned: e.earned, day: e.day, secret: !!e.def.secret, progress: e.progress })) };
     },
     /** ink one stamp now, as if earned (bits, a trophy at a milestone, the toast and the thunk) */
+    /** The Valley Gazette: gazette() → today's edition; 'open' / 'latest' / n opens the panel; 'deliver' posts a weekly now; 'weekly' | 'daily' → facts */
+    gazette(cmd?: 'open' | 'latest' | 'deliver' | 'weekly' | 'daily' | number) {
+      const nr = ctx.services.get('gazette') as Newsroom | undefined;
+      if (!nr) return null;
+      const hud = (window as unknown as { __hud?: { open(id: string, arg?: unknown): void } }).__hud;
+      if (cmd === 'weekly' || cmd === 'daily') return nr.facts(cmd);
+      if (cmd === 'deliver') { const rec = nr.deliver(true); return rec ? { no: rec.no, from: rec.facts.from, to: rec.facts.to, head: nr.issue(rec).lead.head } : null; }
+      if (cmd === 'open') hud?.open('gazette');
+      else if (cmd === 'latest') hud?.open('gazette', 'latest');
+      else if (typeof cmd === 'number') hud?.open('gazette', { index: cmd });
+      const t = nr.today();
+      return {
+        no: t.no, kind: t.kind, date: t.facts.date, from: t.facts.from, to: t.facts.to, demo: t.facts.demo, lead: t.lead.head,
+        stories: t.stories.map((s) => ({ id: s.id, head: s.head })), gossip: t.gossip, numbers: t.numbers,
+        issues: nr.issues().map((r) => ({ no: r.no, from: r.facts.from, to: r.facts.to, at: r.at })), due: nr.paper.due(),
+      };
+    },
     stamp(id: string) { const st = ctx.services.get('stamps') as StampsService | undefined; const e = st?.devAward(id); return e ? { id: e.def.id, count: e.count, bits: e.bits, trophy: e.trophy?.decor ?? null } : null; },
     /** buy a decor item at the store's price (free = ignore price, rank and season); it goes on the first free yard spot */
     buy(id: string, free = false) { const w = ctx.services.get('wallet') as WalletService | undefined; return w?.buy(id, { rank: valley.state.almanac.rank, season: valley.state.sky.season, autoPlace: true, free }) ?? null; },

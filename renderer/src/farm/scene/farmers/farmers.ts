@@ -966,7 +966,8 @@ export const farmersSystem: SystemFactory = (ctx: SceneCtx) => {
         const verb = ctx.debug.labels ? `${f.job} ← ${f.rawJob}${f.tool ? ` · ${f.tool}` : ''}` : (a.mind.job === f.job && a.mind.tool && TOOL_VERB[a.mind.tool]) || (f.job === 'idle' && gather?.label(a.id)) || JOB_VERB[f.job];
         const sub = f.detail && !f.needsYou && f.job !== 'idle' && f.job !== 'away' ? `${verb} · ${f.detail}` : verb;
         tmpV.set(a.head.x, a.head.y + HAT_CLEAR * a.look.scale, a.head.z);
-        labels.show(a.id, a.id, 'name', f.tag, sub, tmpV, a.nameA);
+        // the water can runs low: a context gauge under the name once the window is two-thirds full (signals.md)
+        labels.show(a.id, a.id, 'name', f.tag, sub, tmpV, a.nameA, f.context != null && f.context >= 0.65 ? f.context : -1);
       }
       // speech bubbles: talkers you can hear, farmers asking for you, and the campfire's storyteller
       const talkers = [...actors.values()].filter((a) => a.mind.leaving === null && ((a.view.job === 'talk' && a.view.said) || (a.view.needsYou && a.view.question) || !!gather?.line(a.id)))

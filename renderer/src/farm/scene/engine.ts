@@ -28,6 +28,12 @@ export interface Engine {
   /** render one frame now (screenshots) */
   renderOnce(): void;
   setTimeScale(k: number): void;
+  /** resolution multiplier on top of the quality's own (Settings → Graphics → render scale); applies at once */
+  setRenderScale(k: number): void;
+  /** frames per second cap (null = the display's rate): Settings → Graphics, the idle throttle */
+  setFpsCap(fps: number | null): void;
+  /** the shadow-casting lights on / off (Settings → Graphics → shadows); materials recompile once on a change */
+  setShadows(on: boolean): void;
 }
 
 export interface EngineOpts {
@@ -137,12 +143,19 @@ export function createEngine(o: EngineOpts): Engine {
   ctx = {
     renderer, scene, camera, valley: o.valley, onValley: o.onValley, lighting,
     player: { pos: new THREE.Vector3(WORLD.spawn.x, spawnY, WORLD.spawn.z), eye: new THREE.Vector3(WORLD.spawn.x, spawnY + 1.62, WORLD.spawn.z), yaw: WORLD.spawn.yaw, pitch: 0, speed: 0, frozen: false },
-    interact: interactions, colliders: createColliders(), agents: o.agents, ui: o.ui, quality: o.quality ?? 'high', debug: {}, services: new Map(),
+    interact: interactions, colliders: createColliders(), agents: o.agents, ui: o.ui, quality: o.quality ?? 'high', comfort: { weatherFx: 1, reducedMotion: false }, debug: {}, services: new Map(),
   };
 
+  let renderScale = 1, shadows = true;
+  /** lights we switched off (so switching back only restores what cast shadows before) */
+  const shadowOff = new Set<THREE.Light>();
+  const applyShadows = () => {
+    if (!shadows) scene.traverse((o) => { if ((o as THREE.Light).isLight && o.castShadow) { o.castShadow = false; shadowOff.add(o as THREE.Light); } });
+    else { for (const l of shadowOff) l.castShadow = true; shadowOff.clear(); }
+  };
   const fit = () => {
     const w = o.canvas.clientWidth || innerWidth, h = o.canvas.clientHeight || innerHeight;
-    const scale = ctx.quality === 'low' ? 0.66 : ctx.quality === 'medium' ? 0.85 : 1;
+    const scale = (ctx.quality === 'low' ? 0.66 : ctx.quality === 'medium' ? 0.85 : 1) * renderScale;
     resize(w, h, scale);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
@@ -184,11 +197,23 @@ export function createEngine(o: EngineOpts): Engine {
       } catch (e) { console.error('[engine] system failed to start', e); return null; }
     },
     systems: () => systems,
-    start() { fit(); loop.start(); },
+    // lights made by systems exist now: a saved "shadows off" applies to them
+    start() { fit(); applyShadows(); loop.start(); },
     stop() { loop.stop(); },
     onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
     perf: () => ({ ...state.perf, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, systemMs: { ...systemMs } }),
     renderOnce() { fit(); frame(state); },
     setTimeScale(k) { clock.setScale(k); },
+    setRenderScale(k) {
+      const v = Math.max(0.25, Math.min(1, k));
+      if (v === renderScale) return;
+      renderScale = v; fit();
+    },
+    setFpsCap(fps) { loop.setFpsCap(fps); },
+    setShadows(on) {
+      if (on === shadows) return;
+      shadows = on;
+      applyShadows();
+    },
   };
 }

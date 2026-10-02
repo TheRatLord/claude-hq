@@ -10,6 +10,8 @@ import type { Kind, ModelTier, Status, ToolClass } from '../../../../shared/prot
 import type { AlmanacView } from './almanac.ts';
 import type { FestivalView } from './calendar.ts';
 import type { TimelineView } from './timeline.ts';
+import type { PlotRepoView, RepoView, SpendView, TodoItem, ValleySpend } from './signals.ts';
+export type { PlotRepoView, RepoView, SpendView, TodoItem, ValleySpend } from './signals.ts';
 
 /** What a farmer is visibly doing. Coarse on purpose: tool churn inside a family never shows as a switch. */
 export const JOBS = Object.freeze([
@@ -92,10 +94,24 @@ export interface FarmerView {
   /** blocked prompt question + option labels (only when needsYou) */
   question: string | null;
   options: { key: string; label: string }[];
-  todos: { done: number; total: number; current: string | null } | null;
+  /** the TodoWrite list: counts, the in-progress item, and the checklist (≤ 12 items, model/signals.ts todoItems) */
+  todos: { done: number; total: number; current: string | null; items: TodoItem[] } | null;
   work: { added: number; removed: number; files: number } | null;
-  /** 0..1 context window fill */
+  /** 0..1 context window fill (against `contextWindow`) */
   context: number | null;
+  /**
+   * The work signals below (rev 2, model/signals.ts) are optional so hand-built views (gallery, tests) may leave them
+   * out: absent reads as unknown. createValley always fills them.
+   */
+  /** tokens in the context right now, and the model's window (200k, or 1M); null when unknown */
+  contextTokens?: number | null;
+  contextWindow?: number | null;
+  /** display name of the model ('Opus 5.5', 'Sonnet 5', 'Codex'); null when unknown */
+  model?: string | null;
+  /** the repository of the farmer's cwd (branch, changed files, unpushed commits, last commit); null outside git */
+  git?: RepoView | null;
+  /** tokens and estimated USD spent today; null when nothing today (or the agent reports no usage) */
+  spend?: SpendView | null;
   /** ms epoch of the last status/activity change */
   lastActive: number;
 }
@@ -119,6 +135,8 @@ export interface HelperView {
   exit: 'ok' | 'fail' | null;
   label: string;
   ports: number[];
+  /** the repository of the shell's cwd */
+  git?: RepoView | null;
 }
 
 /** One field per workspace. Twelve kinds; picked stably from the workspace label. */
@@ -161,6 +179,8 @@ export interface PlotView {
   status: Status;
   farmers: string[];
   helpers: string[];
+  /** the field's repository (the one most of its panes work in): branch on the sign, weeds, crates to ship */
+  git?: PlotRepoView | null;
 }
 
 /** Mailbox letters. `needs-you` letters resolve themselves when the farmer is unblocked. */
@@ -274,6 +294,8 @@ export interface ValleyState {
   sky: Sky;
   /** each farmer's day so far: spans of what they did, asks + how long they waited, ships, test runs (model/timeline.ts) */
   timeline: TimelineView;
+  /** tokens and estimated USD the valley's agents spent today (farmers who went home still count) */
+  spend?: ValleySpend;
 }
 
 /** What the presentation may ask for. Implemented over the store in main; faked in the gallery and tests. */

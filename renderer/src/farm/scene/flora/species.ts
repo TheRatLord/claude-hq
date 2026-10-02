@@ -145,7 +145,8 @@ function leaves(season: Season, slot: number): LeafSet | null {
     case 'autumn': return [
       { dark: C(0xb85a24), light: C(0xf0a040), accent: C(0xf6c84a), p: 0.18 },
       { dark: C(0x9c2f24), light: C(0xde5a38), accent: C(0xf09040), p: 0.2 },
-      { dark: C(0xc08a22), light: C(0xf6d04a), accent: C(0xe8903a), p: 0.15 },
+      // gold, not lemon: a pale lemon canopy washes out to khaki under the moon's grade; a deeper gold keeps its hue
+      { dark: C(0xa86e14), light: C(0xeab432), accent: C(0xe0862e), p: 0.15 },
       { dark: C(0x8a5a26), light: C(0xd88a3a), accent: C(0x9a3a2a), p: 0.15 },
     ][slot];
     default: return null;
@@ -214,7 +215,7 @@ export function treeGeometry(kind: TreeKind, season: Season, seed = 1): THREE.Bu
       const t = trunk(h, 0.16, 0.08, seed);
       parts.push(tagSurface(paintFaces(t, (y, _ny, rr) => (rr() < 0.18 || Math.sin(y * 9) > 0.86 ? tc.set(0x3a3430) : tc.set(0xeee8dc).multiplyScalar(0.92 + rr() * 0.1)), seed), SURF.bark, { variant: 1 }));
       if (winter) { parts.push(...bare(branches(new THREE.Vector3(0, h - 0.3, 0), r, 4, 1.0, 0.06), h + 2, true, seed)); break; }
-      const L = season === 'autumn' ? { dark: C(0xc8962a), light: C(0xf8dc58), accent: C(0xf0b040), p: 0.15 } : season === 'spring' ? leaves(season, 0)! : leaves(season, 2)!;
+      const L = season === 'autumn' ? { dark: C(0xb07c1c), light: C(0xf0c440), accent: C(0xe89a34), p: 0.15 } : season === 'spring' ? leaves(season, 0)! : leaves(season, 2)!;
       const blobs: [number, number, number, number][] = [[0, h - 0.4, 0, 1.05], [0.6, h + 0.3, 0.2, 0.8], [-0.5, h + 0.5, -0.3, 0.75], [0.1, h + 1.2, 0, 0.7], [0.5, h - 1.3, -0.4, 0.7], [-0.6, h - 1.0, 0.4, 0.65]];
       const core: Core = [new THREE.Vector3(0, h - 1.2, 0), new THREE.Vector3(0, h + 0.6, 0)];
       for (const [x, y, z, rad] of blobs) {

@@ -175,6 +175,13 @@ const SUBAGENTS: [string, string][] = [['Explore', 'Find every location block'],
   ['Plan', 'Plan the migration steps'], ['general-purpose', 'Survey failing tests'], ['Explore', 'Find callers of fetchOrders']];
 const MCP_TOOLS = ['mcp__playwright__browser_take_screenshot', 'mcp__playwright__browser_click', 'mcp__github__create_pull_request'];
 
+/** Demo git (rev 2): branch names and last-commit subjects a workspace starts with. */
+export const BRANCHES = Object.freeze(['main', 'main', 'feat/valley-signals', 'fix/reconnect-backoff', 'feat/orders-pagination', 'chore/deps',
+  'feat/dark-mode', 'refactor/store', 'fix/flaky-ws-test', 'spike/webgpu']);
+export const COMMITS = Object.freeze(['Coalesce entity messages per id', 'Back off WS reconnects exponentially', 'Add cursor pagination to orders',
+  'Fix flaky timeline test', 'Bump three to 0.186', 'Split docs per area', 'Cache the parsed config', 'Tidy the drawer layout',
+  'Guard against empty stats history', 'Add a soak tool for leaks']);
+
 export const MODELS: readonly (readonly [string, number])[] = Object.freeze([['claude-opus-5-5', 0.6], ['claude-sonnet-5', 0.3], ['claude-haiku-5', 0.1]] as const);
 
 /** Seeded RNG with helpers. */

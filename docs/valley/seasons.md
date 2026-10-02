@@ -83,7 +83,7 @@ change). Not done (cheap enough to add later): villagers / idle farmers skating.
   `skate('off')`.
 * `__valley.snowman()` state; `snowman('build', pieces?)` a whole snowman 2.6 m ahead, `snowman('roll', r?)`,
   `snowman('place')`, `snowman('reset')`.
-* Poses `dock` (on the dock by the boat) and `ice` (the pond's south-west shore).
+* Poses `dock` (the dock and the moored boat from the pond's west shore) and `ice` (the pond's south-west shore).
 * Gallery: `rowboat` (`rowing` / `shipped` / `winter`, param = stroke rate), `snowman` (`base two three face dressed
   pinecone`), `pond-ice` (param = snow).
 

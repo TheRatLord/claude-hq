@@ -303,7 +303,7 @@ export function buildBarnRoom(o: BarnRoomOpts): THREE.Group {
         k.box(B.manger.w, 0.5, d, 0x7a5236, { x: B.manger.x, y: F + 0.55, z: zc });
         k.box(0.06, 0.8, d, 0x7a5236, { x: fx + 0.03, y: F + 0.4, z: zc });
       });
-      k.box(B.manger.w - 0.1, 0.04, d - 0.1, 0x3a2a1a, { x: B.manger.x, y: F + 0.79, z: zc }); // the manger's inside
+      k.box(B.manger.w - 0.1, 0.04, d - 0.1, 0xc9a54a, { x: B.manger.x, y: F + 0.79, z: zc }); // hay in the manger (dark wood read as a hole)
       k.box(0.1, 0.1, d + 0.1, TIMBER, { x: fx + 0.03, y: F + 1.38, z: zc });
       k.box(0.12, 1.4, 0.12, TIMBER, { x: fx + 0.03, y: F + 0.7, z: st.z0 + 0.06 });
     }
@@ -356,7 +356,7 @@ export function buildBarnRoom(o: BarnRoomOpts): THREE.Group {
     pen(k, B.pen.x0, B.pen.z1, X1 - 0.05, B.pen.z1, 1.0);
     k.at({ x: B.trough.x + 0.12, z: B.trough.z }, () => {
       k.box(0.35, 0.5, 1.2, 0x7a5236, { y: F + 0.25 });
-      k.box(0.27, 0.03, 1.12, 0x3a2a1a, { y: F + 0.49 });
+      k.box(0.27, 0.03, 1.12, 0xc9a54a, { y: F + 0.49 });   // hay in the rack's trough
       for (let i = 0; i < 7; i++) k.box(0.025, 0.55, 0.025, TIMBER, { x: 0.1, y: F + 0.78, z: -0.5 + i * 0.165, rz: -0.25 });
       k.box(0.05, 0.05, 1.15, TIMBER, { x: 0.18, y: F + 1.05 });
     });

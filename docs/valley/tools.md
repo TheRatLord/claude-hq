@@ -59,11 +59,14 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 
 * **Poses** (`POSES` in `dev/api.ts`): `hub farmhouse square windmill pond barn river plots east trailhead trail bridge
   summit dock ice`; also `pose=x,z[,yaw,pitch]` and `pose=inside[:view]` / `pose=barn-inside[:view]` ([interior.md](interior.md)).
+  Named poses are picked with open ground in front in every season, but festival stalls, scarecrows and town upgrades
+  come and go: a few frames after a named pose, `pose()` fans rays across the middle of the view and, if something solid
+  is within 4.5 m, steps back / aside (never into a collider) to the first clear spot. `pose=x,z,…` is never nudged.
 * **Demo scenarios** (`server/demo/scenarios.ts`, `--scenario`): `mixed allStates crowd40 trio longIdle queue churn
   empty offline`.
 * **URL parameters** (`main.ts`): `t` (server token), `pose`, `hour`, `weather`, `season`, `festival=ID`
   ([festivals.md](festivals.md)), `almanac=POINTS` (demo; [almanac.md](almanac.md)), `quality=low|medium|high` (`low`
-  compiles the wet / snow surfaces out and skips god rays; [weather.md](weather.md)), `timescale=K`, `welcome=1|0`
+  compiles the wet / snow surfaces out and skips god rays; [weather.md](weather.md); beats Settings → Graphics → quality), `timescale=K`, `welcome=1|0`
   ([onboarding.md](onboarding.md)). The gallery (`/gallery/`, `dev/gallery.ts`) takes `asset variant season night param
   grid time turn pitch zoom`.
 
@@ -79,9 +82,10 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
 
 `window.__valley` (`dev/api.ts`; the header there is the full list):
 
-* `ready`, `state()` (ValleyState as JSON), `teleport(x, z, yaw?, pitch?)`, `pose(name)`, `cam(x, y, z, yaw, pitch)` /
-  `cam(null)`, `goTo(id)` (farmer / helper / plot / structure / villager id; `'villager:posy'`), `interact()`,
-  `focused()`.
+* `ready`, `state()` (ValleyState as JSON), `service(name)` (any published service), `teleport(x, z, yaw?, pitch?)`,
+  `pose(name)`, `cam(x, y, z, yaw, pitch)` / `cam(null)`, `look(x, y, z)` (turn toward a point; the controller ignores
+  zero-delta mouse moves, so headless Chromium's per-frame move under pointer lock does not cancel it), `goTo(id)`
+  (farmer / helper / plot / structure / villager id; `'villager:posy'`), `interact()`, `focused()`.
 * `setHour(h | null)`, `setWeather(kind | null, intensity?)`, `setSeason(s | null)`, `festival(id | null)`,
   `timeScale(k)` (0 freezes animation), `atmo(…)`, `meteor()` ([weather.md](weather.md)).
 * `perf()` (fps, `calls`, `tris`, `systemMs`), `systems()`, `debug(flag, on?)` (`'labels'`, `'colliders'`, `'nav'`),
@@ -91,7 +95,7 @@ npm run shoot -- --shot 'name=q,pose=hub,log=__valley.state().plots.map(p => p.k
   service (e.g. `'trail'`, `'farmers'`, `'audio'`).
 * `audit(opts?)`, `auditShow(keys, focus, view)`, `auditClear()` (placement audit, below).
 
-`window.__hud` (`hud/hud.ts`): `open`, `close`, `current`, `openTerminal`, `dismissHint`, `mapHits`, `toast`, `notify`,
+`window.__hud` (`hud/hud.ts`): `open`, `close`, `current`, `openTerminal`, `dismissHint`, `mapHits`, `toast`, `notify`, `prefs` (browser-local Settings prefs: read or patch),
 `tour` ([hud.md](hud.md#dev-handle-window__hud)). `window.__atmo.bench(n)`: GPU ms per frame.
 
 ## Budgets check
@@ -179,7 +183,8 @@ Playwright (`playwright.config.ts`, specs in `browser-tests/`: `valley.spec.ts` 
 loop, see [hud.md](hud.md#every-terminal-is-a-menu-away)), `trail.spec.ts` (the valley viewer), `stamps.spec.ts` (the stamp
 book, [stamps.md](stamps.md)), `seasons.spec.ts` (rowboat, skating, snowmen, [seasons.md](seasons.md)), `robust.spec.ts` (corrupt or old localStorage in every store, midnight
 with the page open, a tab hidden for hours, a dropped socket under a terminal, long / unicode / emoji names, status
-flapping: all with a clean console), `workbench.spec.ts`;
+flapping: all with a clean console), `settings.spec.ts` (Settings round-trips, rebinding, reduced motion, keyboard
+navigation, captions; [hud.md](hud.md#settings-pause-menu--settings-hudpausets)), `workbench.spec.ts`;
 `server.ts` starts a demo server fixture). Add a flow to `valley.spec.ts` when you add a route to a terminal.
 
 The specs load `dist/`, so **`npm run build` first** (a stale build tests old code). Each test gets its own demo

@@ -45,6 +45,8 @@ export const weatherSystem: SystemFactory = (ctx) => {
   const cam = new THREE.Vector3(), vel = new THREE.Vector3(), tmpC = new THREE.Color(), rippleC = new THREE.Color();
   let leafSeason = '', firstFrame = true, frostDoy = -1, frostTimes = sunTimes(0);
   const g = a.ground;
+  // Settings → Graphics → weather effects (0–1), halved again under reduced motion (Settings → Accessibility)
+  const fx = () => ctx.comfort.weatherFx * (ctx.comfort.reducedMotion ? 0.5 : 1);
 
   const writeSurfaces = (indoor: boolean, rainNow: number, time: number) => {
     const L = ctx.lighting;
@@ -71,7 +73,7 @@ export const weatherSystem: SystemFactory = (ctx) => {
 
       // --- rain
       const r = a.rain;
-      rain.setAmount(r * (0.35 + 0.65 * r) * (1 + a.storm * 0.3));
+      rain.setAmount(r * (0.35 + 0.65 * r) * (1 + a.storm * 0.3) * fx());
       if (rain.mesh.visible) {
         vel.set(wx * 0.45, -13 - a.storm * 3, wz * 0.45);
         rain.step(vel, dt, f.time, cam);
@@ -84,7 +86,7 @@ export const weatherSystem: SystemFactory = (ctx) => {
 
       // --- snow
       const s = a.snow;
-      snow.setAmount(s * (0.3 + 0.7 * s));
+      snow.setAmount(s * (0.3 + 0.7 * s) * fx());
       if (snow.mesh.visible) {
         vel.set(wx * 0.55, -1.15, wz * 0.55);
         snow.step(vel, dt, f.time, cam);
@@ -103,7 +105,7 @@ export const weatherSystem: SystemFactory = (ctx) => {
       }
       const windy = clamp01((Math.hypot(wx, wz) - 1) / 5);
       const leafAmt = (season === 'autumn' ? 0.35 + 0.65 * windy : season === 'spring' ? 0.2 + 0.4 * windy : 0) * (1 - r * 0.8) * (1 - s);
-      leaves.setAmount(leafAmt);
+      leaves.setAmount(leafAmt * fx());
       if (leaves.mesh.visible) {
         vel.set(wx * 0.8, -0.75, wz * 0.8);
         leaves.step(vel, dt, f.time, cam);
@@ -114,7 +116,7 @@ export const weatherSystem: SystemFactory = (ctx) => {
 
       // --- sunbeam motes on clear, dry days (and a few at dusk)
       const moteAmt = clamp01(a.daylight * 1.2) * (1 - a.overcast) * (1 - clamp01(L.wet * 2)) * (1 - a.fog) * (1 - s);
-      motes.setAmount(moteAmt * (low ? 0.5 : 1));
+      motes.setAmount(moteAmt * (low ? 0.5 : 1) * fx());
       if (motes.mesh.visible) {
         vel.set(wx * 0.12, 0.05, wz * 0.12);
         motes.step(vel, dt, f.time, cam);
@@ -124,7 +126,7 @@ export const weatherSystem: SystemFactory = (ctx) => {
 
       // --- lightning
       if (ctx.debug.lightning) { ctx.debug.lightning = false; lightning.strike(); }
-      a.flash = lightning.update(dt, a.storm, cam, ctx.player.yaw) * (low ? 0.7 : 1);
+      a.flash = lightning.update(dt, a.storm, cam, ctx.player.yaw) * (low ? 0.7 : 1) * (ctx.comfort.reducedMotion ? 0.3 : 1);
 
       // --- what the weather left on the ground (model trace: puddles linger, snow builds), eased
       const tr = sky.trace;
